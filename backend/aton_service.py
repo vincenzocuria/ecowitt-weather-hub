@@ -111,8 +111,9 @@ class AtonService:
         soc = safe_float(raw.get("soc"))
         
         # Correzioni e direzione flussi
-        # pBatteria negativo = carica batteria, positivo = scarica verso casa
-        battery_charging = p_batteria < 0
+        # In Aton: pBatteria > 0 = carica batteria (flusso FV -> batteria),
+        #          pBatteria < 0 = scarica batteria (flusso batteria -> casa).
+        battery_charging = p_batteria > 0
         battery_power_abs = abs(p_batteria)
 
         parsed = {

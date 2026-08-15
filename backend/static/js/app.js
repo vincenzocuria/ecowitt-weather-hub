@@ -317,11 +317,11 @@ function startDashboardPolling() {
                 }
 
                 if (pBattEl && d.p_batteria !== undefined) {
-                    if (d.p_batteria < 0) {
-                        pBattEl.innerHTML = `+${Math.round(Math.abs(d.p_batteria))} <span class="unit">W (In Carica)</span>`;
+                    if (d.p_batteria > 0) {
+                        pBattEl.innerHTML = `+${Math.round(d.p_batteria)} <span class="unit">W (In Carica)</span>`;
                         if (battIcon) battIcon.innerText = '⚡🔋';
-                    } else if (d.p_batteria > 0) {
-                        pBattEl.innerHTML = `-${Math.round(d.p_batteria)} <span class="unit">W (In Scarica)</span>`;
+                    } else if (d.p_batteria < 0) {
+                        pBattEl.innerHTML = `-${Math.round(Math.abs(d.p_batteria))} <span class="unit">W (In Scarica)</span>`;
                         if (battIcon) battIcon.innerText = '🔋';
                     } else {
                         pBattEl.innerHTML = `0 <span class="unit">W (Standby)</span>`;

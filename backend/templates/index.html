@@ -143,10 +143,10 @@
 
                 <div class="node-value" id="p_batteria_val">
                     {% if energy_latest.p_batteria is defined %}
-                        {% if energy_latest.p_batteria < 0 %}
-                            +{{ (energy_latest.p_batteria | abs) | int }} <span class="unit">W (In Carica)</span>
-                        {% elif energy_latest.p_batteria > 0 %}
-                            -{{ energy_latest.p_batteria | int }} <span class="unit">W (In Scarica)</span>
+                        {% if energy_latest.p_batteria > 0 %}
+                            +{{ energy_latest.p_batteria | int }} <span class="unit">W (In Carica)</span>
+                        {% elif energy_latest.p_batteria < 0 %}
+                            -{{ (energy_latest.p_batteria | abs) | int }} <span class="unit">W (In Scarica)</span>
                         {% else %}
                             0 <span class="unit">W (Standby)</span>
                         {% endif %}
