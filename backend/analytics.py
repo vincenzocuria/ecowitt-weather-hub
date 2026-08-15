@@ -509,15 +509,19 @@ def calc_sun_ephemeris(lat: float, lon: float, current_dt: Optional[datetime] = 
     
     sunrise_local_min = sunrise_utc_min + (local_offset_hours * 60.0)
     sunset_local_min = sunset_utc_min + (local_offset_hours * 60.0)
+    solar_noon_local_min = solar_noon_utc_min + (local_offset_hours * 60.0)
     
     # Formatta in HH:MM
     sr_h = int(sunrise_local_min // 60) % 24
     sr_m = int(sunrise_local_min % 60)
     ss_h = int(sunset_local_min // 60) % 24
     ss_m = int(sunset_local_min % 60)
+    sn_h = int(solar_noon_local_min // 60) % 24
+    sn_m = int(solar_noon_local_min % 60)
     
     sunrise_str = f"{sr_h:02d}:{sr_m:02d}"
     sunset_str = f"{ss_h:02d}:{ss_m:02d}"
+    solar_noon_str = f"{sn_h:02d}:{sn_m:02d}"
     
     daylight_minutes = int(sunset_local_min - sunrise_local_min)
     daylight_hours = daylight_minutes // 60
@@ -543,11 +547,13 @@ def calc_sun_ephemeris(lat: float, lon: float, current_dt: Optional[datetime] = 
     return {
         "sunrise": sunrise_str,
         "sunset": sunset_str,
+        "solar_noon": solar_noon_str,
         "daylight_duration": daylight_str,
         "is_daylight": is_daylight,
         "status_text": status_text,
         "sun_progress_pct": max(0, min(100, sun_progress_pct))
     }
+
 
 
 def calc_moon_phase(target_date: Optional[date] = None, tz_name: Optional[str] = None) -> Dict[str, Any]:

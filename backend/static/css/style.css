@@ -2348,6 +2348,418 @@ body {
     font-weight: 600;
 }
 
+/* ==========================================================================
+   SUN EPHEMERIS & CELESTIAL HERO COMPONENT (MAJESTIC FULL-WIDTH & ANIMATIONS)
+   ========================================================================== */
+.sun-ephemeris-hero {
+    background: linear-gradient(135deg, rgba(23, 33, 53, 0.92) 0%, rgba(13, 18, 30, 0.98) 100%);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: var(--radius-lg);
+    padding: 1.35rem 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.45), 0 0 20px rgba(245, 158, 11, 0.12);
+    backdrop-filter: blur(12px);
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+}
+
+.sun-ephemeris-hero::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #f59e0b, #fbbf24, #f97316, #818cf8);
+}
+
+.sun-ephemeris-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ephemeris-title-group {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.ephemeris-header-icon {
+    font-size: 1.8rem;
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    width: 46px;
+    height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.2);
+}
+
+.ephemeris-title-group h2 {
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: #f8fafc;
+    margin: 0;
+}
+
+.ephemeris-sub-header {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin-top: 3px;
+}
+
+.ephemeris-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.sun-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.sun-status-pill.pill-daylight {
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #fbbf24;
+}
+
+.sun-status-pill.pill-night {
+    background: rgba(129, 140, 248, 0.15);
+    border: 1px solid rgba(129, 140, 248, 0.35);
+    color: #a5b4fc;
+}
+
+.pulse-dot-sun {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #fbbf24;
+    box-shadow: 0 0 8px #fbbf24;
+    animation: pulse-dot-anim 2s infinite ease-in-out;
+}
+
+@keyframes pulse-dot-anim {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.3); opacity: 0.5; }
+}
+
+.moon-phase-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    color: #e2e8f0;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.moon-phase-icon {
+    font-size: 1.15rem;
+    animation: float-celestial 4s infinite ease-in-out;
+}
+
+.moon-illum-tag {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #cbd5e1;
+}
+
+/* CELESTIAL DOME & SKY CANVAS */
+.celestial-dome-container {
+    width: 100%;
+    background: rgba(15, 23, 42, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.25rem 1.25rem 0.75rem 1.25rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.celestial-sky-backdrop {
+    width: 100%;
+    height: 180px;
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.celestial-sky-backdrop.sky-is-day {
+    background: radial-gradient(ellipse at 50% 100%, rgba(245, 158, 11, 0.18) 0%, rgba(14, 165, 233, 0.08) 60%, rgba(15, 23, 42, 0.8) 100%);
+}
+
+.celestial-sky-backdrop.sky-is-night {
+    background: radial-gradient(ellipse at 50% 100%, rgba(79, 70, 229, 0.15) 0%, rgba(30, 27, 75, 0.2) 60%, rgba(15, 23, 42, 0.9) 100%);
+}
+
+.celestial-stars {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.c-star {
+    position: absolute;
+    color: #cbd5e1;
+    opacity: 0.6;
+    font-size: 0.75rem;
+    animation: twinkle-stars 3s infinite ease-in-out alternate;
+}
+
+.c-star.s1 { top: 15%; left: 18%; animation-delay: 0.2s; font-size: 0.85rem; }
+.c-star.s2 { top: 25%; left: 42%; animation-delay: 0.7s; color: #fde047; }
+.c-star.s3 { top: 12%; left: 68%; animation-delay: 1.2s; }
+.c-star.s4 { top: 35%; left: 82%; animation-delay: 1.8s; font-size: 0.85rem; }
+.c-star.s5 { top: 40%; left: 25%; animation-delay: 2.2s; }
+.c-star.s6 { top: 20%; left: 88%; animation-delay: 0.5s; color: #fde047; }
+
+@keyframes twinkle-stars {
+    0% { opacity: 0.2; transform: scale(0.8); }
+    100% { opacity: 0.85; transform: scale(1.1); }
+}
+
+.celestial-arc-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+/* CELESTIAL TRAVELLING ORB (SUN / MOON) */
+.celestial-orb-traveler {
+    position: absolute;
+    bottom: 20px;
+    transform: translate(-50%, 0);
+    transition: left 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.sun-orb-body {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sun-orb-core {
+    font-size: 1.8rem;
+    z-index: 2;
+    filter: drop-shadow(0 0 10px #f59e0b);
+    animation: float-celestial 3.5s infinite ease-in-out;
+}
+
+.sun-orb-aura {
+    position: absolute;
+    width: 48px;
+    height: 48px;
+    background: radial-gradient(circle, rgba(245, 158, 11, 0.4) 0%, rgba(245, 158, 11, 0) 70%);
+    border-radius: 50%;
+    animation: pulse-sun-aura 2.5s infinite ease-in-out;
+}
+
+.moon-orb-body {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.moon-orb-core {
+    font-size: 1.8rem;
+    z-index: 2;
+    filter: drop-shadow(0 0 10px #818cf8);
+    animation: float-celestial 4s infinite ease-in-out;
+}
+
+.moon-orb-aura {
+    position: absolute;
+    width: 48px;
+    height: 48px;
+    background: radial-gradient(circle, rgba(129, 140, 248, 0.35) 0%, rgba(129, 140, 248, 0) 70%);
+    border-radius: 50%;
+    animation: pulse-sun-aura 3s infinite ease-in-out;
+}
+
+@keyframes float-celestial {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+}
+
+@keyframes pulse-sun-aura {
+    0%, 100% { transform: scale(1); opacity: 0.8; }
+    50% { transform: scale(1.4); opacity: 0.3; }
+}
+
+/* HORIZON MARKERS */
+.horizon-marker {
+    position: absolute;
+    bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 4px 10px;
+    border-radius: 8px;
+    backdrop-filter: blur(8px);
+    z-index: 5;
+}
+
+.horizon-marker.marker-left { left: 10px; }
+.horizon-marker.marker-noon { left: 50%; transform: translateX(-50%); }
+.horizon-marker.marker-right { right: 10px; }
+
+.horizon-icon { font-size: 1rem; }
+.horizon-text { display: flex; flex-direction: column; }
+.horizon-label { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.horizon-val { font-size: 0.85rem; font-weight: 700; color: #fff; }
+
+/* PROGRESS BAR */
+.sun-day-progress-bar {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    margin-top: 0.85rem;
+    overflow: hidden;
+    position: relative;
+}
+
+.sun-day-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #f59e0b, #fbbf24, #f97316);
+    border-radius: 10px;
+    transition: width 0.8s ease;
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+}
+
+/* EPHEMERIS 4-CARD FULL-WIDTH STATS GRID */
+.ephemeris-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    width: 100%;
+}
+
+.ephemeris-stat-card {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    transition: all 0.2s ease;
+}
+
+.ephemeris-stat-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(245, 158, 11, 0.35);
+    background: rgba(30, 41, 59, 0.85);
+}
+
+.stat-icon-wrap {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    flex-shrink: 0;
+}
+
+.stat-icon-wrap.icon-amber {
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
+}
+
+.stat-icon-wrap.icon-gold {
+    background: rgba(251, 191, 36, 0.15);
+    border: 1px solid rgba(251, 191, 36, 0.35);
+    box-shadow: 0 0 10px rgba(251, 191, 36, 0.2);
+}
+
+.stat-icon-wrap.icon-orange {
+    background: rgba(249, 115, 22, 0.15);
+    border: 1px solid rgba(249, 115, 22, 0.35);
+    box-shadow: 0 0 10px rgba(249, 115, 22, 0.2);
+}
+
+.stat-icon-wrap.icon-indigo {
+    background: rgba(99, 102, 241, 0.15);
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+}
+
+.ephemeris-stat-card .stat-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.ephemeris-stat-card .stat-lbl {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ephemeris-stat-card .stat-num {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1.2;
+    margin-top: 2px;
+}
+
+.ephemeris-stat-card .stat-sub-text {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+@media (max-width: 640px) {
+    .horizon-marker.marker-noon { display: none; }
+    .ephemeris-stats-grid { grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+    .ephemeris-stat-card { padding: 0.75rem; }
+    .ephemeris-stat-card .stat-num { font-size: 1.1rem; }
+}
+
+
 
 
 

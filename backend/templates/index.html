@@ -159,45 +159,148 @@
 
 
 <!-- OROLOGIO SOLARE & EFFEMERIDI ASTRONOMICHE ODRIERNE -->
-<div class="card sun-ephemeris-card" id="sun_ephemeris_section">
+<div class="sun-ephemeris-hero" id="sun_ephemeris_section">
     <div class="sun-ephemeris-header">
-        <div class="ephemeris-title">
-            <span class="ephemeris-icon">🌅</span>
+        <div class="ephemeris-title-group">
+            <span class="ephemeris-header-icon">🌅</span>
             <div>
-                <strong>Luce Solare ed Effemeridi Odierne</strong>
-                <span class="sun-status-tag" id="sun_status_tag">{{ analytics.sun_ephemeris.status_text if analytics else '--' }}</span>
+                <h2>Luce Solare & Effemeridi Astronomiche</h2>
+                <div class="ephemeris-sub-header">
+                    Progressione Solare • Fasi Lunari • Algoritmo Astronomico NOAA
+                </div>
             </div>
         </div>
-        <div class="moon-badge" id="moon_phase_badge">
-            <span class="moon-icon" id="moon_icon">{{ analytics.moon_phase.icon if analytics else '🌕' }}</span>
-            <span class="moon-name" id="moon_name">{{ analytics.moon_phase.phase_name if analytics else 'Luna' }} ({{ analytics.moon_phase.illumination_pct if analytics else '0' }}%)</span>
+        <div class="ephemeris-badges">
+            <span class="sun-status-pill {% if analytics and analytics.sun_ephemeris.is_daylight %}pill-daylight{% else %}pill-night{% endif %}" id="sun_status_tag">
+                <span class="pulse-dot-sun"></span> <span id="sun_status_text">{{ analytics.sun_ephemeris.status_text if analytics else '--' }}</span>
+            </span>
+            <div class="moon-phase-pill" id="moon_phase_badge">
+                <span class="moon-phase-icon" id="moon_icon">{{ analytics.moon_phase.icon if analytics else '🌕' }}</span>
+                <span class="moon-phase-name" id="moon_name">{{ analytics.moon_phase.phase_name if analytics else 'Luna' }}</span>
+                <span class="moon-illum-tag" id="moon_illum">{{ analytics.moon_phase.illumination_pct if analytics else '0' }}%</span>
+            </div>
         </div>
     </div>
 
-    <!-- ARCO SOLARE GRAFICO -->
-    <div class="sun-arc-container">
-        <div class="sun-arc-track">
-            <div class="sun-arc-progress" id="sun_arc_progress" style="width: {{ analytics.sun_ephemeris.sun_progress_pct if analytics else 0 }}%;"></div>
-            <div class="sun-travel-orb" id="sun_travel_orb" style="left: {{ analytics.sun_ephemeris.sun_progress_pct if analytics else 0 }}%;">
-                {{ '☀️' if analytics and analytics.sun_ephemeris.is_daylight else '🌙' }}
+    <!-- CUPOLA / ARCO CELESTE DINAMICO CON SOLE/LUNA ANIMATI -->
+    <div class="celestial-dome-container">
+        <div class="celestial-sky-backdrop {% if analytics and analytics.sun_ephemeris.is_daylight %}sky-is-day{% else %}sky-is-night{% endif %}">
+            <!-- Sfondo Stelle (per la notte) -->
+            <div class="celestial-stars">
+                <span class="c-star s1">✦</span>
+                <span class="c-star s2">★</span>
+                <span class="c-star s3">✦</span>
+                <span class="c-star s4">★</span>
+                <span class="c-star s5">✦</span>
+                <span class="c-star s6">★</span>
+            </div>
+
+            <!-- Arco Celeste SVG Guida -->
+            <svg class="celestial-arc-svg" viewBox="0 0 800 200" preserveAspectRatio="none">
+                <defs>
+                    <linearGradient id="arcGlowGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.3"/>
+                        <stop offset="50%" stop-color="#fbbf24" stop-opacity="0.9"/>
+                        <stop offset="100%" stop-color="#f97316" stop-opacity="0.3"/>
+                    </linearGradient>
+                    <linearGradient id="arcFillGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stop-color="rgba(245, 158, 11, 0.15)"/>
+                        <stop offset="100%" stop-color="rgba(245, 158, 11, 0.0)"/>
+                    </linearGradient>
+                </defs>
+                <!-- Tracciato Curvo dell'Arco Solare -->
+                <path d="M 40 180 Q 400 25 760 180" fill="url(#arcFillGradient)" stroke="url(#arcGlowGradient)" stroke-width="3" />
+                <!-- Linea dell'Orizzonte -->
+                <line x1="20" y1="180" x2="780" y2="180" stroke="rgba(255, 255, 255, 0.18)" stroke-width="2" stroke-dasharray="4,4" />
+            </svg>
+
+            <!-- Astro Viaggiante (Sole o Luna Animati) -->
+            <div class="celestial-orb-traveler" id="celestial_orb" style="left: {{ analytics.sun_ephemeris.sun_progress_pct if analytics else 0 }}%;">
+                {% if analytics and analytics.sun_ephemeris.is_daylight %}
+                <div class="sun-orb-body">
+                    <div class="sun-orb-aura"></div>
+                    <div class="sun-orb-core">☀️</div>
+                </div>
+                {% else %}
+                <div class="moon-orb-body">
+                    <div class="moon-orb-aura"></div>
+                    <div class="moon-orb-core">{{ analytics.moon_phase.icon if analytics else '🌙' }}</div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Indicatori di Alba & Tramonto sull'Orizzonte -->
+            <div class="horizon-marker marker-left">
+                <span class="horizon-icon">🌅</span>
+                <div class="horizon-text">
+                    <span class="horizon-label">Alba</span>
+                    <strong class="horizon-val" id="sunrise_time">{{ analytics.sun_ephemeris.sunrise if analytics else '--:--' }}</strong>
+                </div>
+            </div>
+
+            <div class="horizon-marker marker-noon">
+                <span class="horizon-icon">☀️</span>
+                <div class="horizon-text">
+                    <span class="horizon-label">Mezzodì Solare</span>
+                    <strong class="horizon-val" id="solar_noon_time">{{ analytics.sun_ephemeris.solar_noon if analytics else '13:00' }}</strong>
+                </div>
+            </div>
+
+            <div class="horizon-marker marker-right">
+                <span class="horizon-icon">🌇</span>
+                <div class="horizon-text">
+                    <span class="horizon-label">Tramonto</span>
+                    <strong class="horizon-val" id="sunset_time">{{ analytics.sun_ephemeris.sunset if analytics else '--:--' }}</strong>
+                </div>
             </div>
         </div>
-        <div class="sun-arc-times">
-            <div class="sun-time sunrise">
-                <span>Alba</span>
-                <strong id="sunrise_time">{{ analytics.sun_ephemeris.sunrise if analytics else '--:--' }}</strong>
+
+        <!-- Barra di Progresso Giornaliera Integrata -->
+        <div class="sun-day-progress-bar">
+            <div class="sun-day-progress-fill" id="sun_arc_progress" style="width: {{ analytics.sun_ephemeris.sun_progress_pct if analytics else 0 }}%;"></div>
+        </div>
+    </div>
+
+    <!-- STRISCIA STATISTICHE ASTRONOMICHE A TUTTA LARGHEZZA (4 CARDS) -->
+    <div class="ephemeris-stats-grid">
+        <div class="ephemeris-stat-card">
+            <div class="stat-icon-wrap icon-amber">🌅</div>
+            <div class="stat-info">
+                <span class="stat-lbl">Primo Raggio (Alba)</span>
+                <strong class="stat-num" id="ephem_sunrise">{{ analytics.sun_ephemeris.sunrise if analytics else '--:--' }}</strong>
+                <span class="stat-sub-text">Inizio luce naturale</span>
             </div>
-            <div class="sun-duration">
-                <span>Ore di Luce Totali</span>
-                <strong id="daylight_duration">{{ analytics.sun_ephemeris.daylight_duration if analytics else '--' }}</strong>
+        </div>
+
+        <div class="ephemeris-stat-card">
+            <div class="stat-icon-wrap icon-gold">☀️</div>
+            <div class="stat-info">
+                <span class="stat-lbl">Culmine Solare</span>
+                <strong class="stat-num" id="ephem_noon">{{ analytics.sun_ephemeris.solar_noon if analytics else '13:00' }}</strong>
+                <span class="stat-sub-text">Zenith & Massima elevazione</span>
             </div>
-            <div class="sun-time sunset">
-                <span>Tramonto</span>
-                <strong id="sunset_time">{{ analytics.sun_ephemeris.sunset if analytics else '--:--' }}</strong>
+        </div>
+
+        <div class="ephemeris-stat-card">
+            <div class="stat-icon-wrap icon-orange">🌇</div>
+            <div class="stat-info">
+                <span class="stat-lbl">Crepuscolo (Tramonto)</span>
+                <strong class="stat-num" id="ephem_sunset">{{ analytics.sun_ephemeris.sunset if analytics else '--:--' }}</strong>
+                <span class="stat-sub-text">Fine luce solare diretta</span>
+            </div>
+        </div>
+
+        <div class="ephemeris-stat-card">
+            <div class="stat-icon-wrap icon-indigo">⏳</div>
+            <div class="stat-info">
+                <span class="stat-lbl">Ore di Luce Totali</span>
+                <strong class="stat-num" id="daylight_duration">{{ analytics.sun_ephemeris.daylight_duration if analytics else '--' }}</strong>
+                <span class="stat-sub-text" id="sun_progress_pct_txt">Progressione: {{ analytics.sun_ephemeris.sun_progress_pct if analytics else 0 }}%</span>
             </div>
         </div>
     </div>
 </div>
+
 
 <!-- SEZIONE SMART ADVICE & MICROCLIMA CASA (INDICI INTELLIGENTI) -->
 <div class="card smart-advice-hero">

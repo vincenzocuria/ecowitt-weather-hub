@@ -304,23 +304,46 @@ function startDashboardPolling() {
 
                     // Effemeridi Sole & Luna
                     if (a.sun_ephemeris) {
+                        const ep = a.sun_ephemeris;
                         const sRise = document.getElementById('ephem_sunrise');
+                        const sRiseH = document.getElementById('sunrise_time');
                         const sSet = document.getElementById('ephem_sunset');
-                        const sProg = document.getElementById('sun_progress');
-                        const sStat = document.getElementById('sun_status');
-                        if (sRise) sRise.innerText = a.sun_ephemeris.sunrise;
-                        if (sSet) sSet.innerText = a.sun_ephemeris.sunset;
-                        if (sProg) sProg.style.width = a.sun_ephemeris.sun_progress_pct + '%';
-                        if (sStat) sStat.innerText = a.sun_ephemeris.status_text + ' (' + a.sun_ephemeris.daylight_duration + ' luce)';
+                        const sSetH = document.getElementById('sunset_time');
+                        const sNoon = document.getElementById('ephem_noon');
+                        const sNoonH = document.getElementById('solar_noon_time');
+                        const sDur = document.getElementById('daylight_duration');
+                        const sProg = document.getElementById('sun_arc_progress');
+                        const sProgTxt = document.getElementById('sun_progress_pct_txt');
+                        const sStatTxt = document.getElementById('sun_status_text');
+                        const sStatTag = document.getElementById('sun_status_tag');
+                        const orb = document.getElementById('celestial_orb');
+
+                        if (sRise && ep.sunrise) sRise.innerText = ep.sunrise;
+                        if (sRiseH && ep.sunrise) sRiseH.innerText = ep.sunrise;
+                        if (sSet && ep.sunset) sSet.innerText = ep.sunset;
+                        if (sSetH && ep.sunset) sSetH.innerText = ep.sunset;
+                        if (sNoon && ep.solar_noon) sNoon.innerText = ep.solar_noon;
+                        if (sNoonH && ep.solar_noon) sNoonH.innerText = ep.solar_noon;
+                        if (sDur && ep.daylight_duration) sDur.innerText = ep.daylight_duration;
+                        if (sProg && ep.sun_progress_pct !== undefined) sProg.style.width = ep.sun_progress_pct + '%';
+                        if (sProgTxt && ep.sun_progress_pct !== undefined) sProgTxt.innerText = 'Progressione: ' + ep.sun_progress_pct + '%';
+                        if (sStatTxt && ep.status_text) sStatTxt.innerText = ep.status_text;
+                        if (sStatTag) {
+                            sStatTag.className = 'sun-status-pill ' + (ep.is_daylight ? 'pill-daylight' : 'pill-night');
+                        }
+                        if (orb && ep.sun_progress_pct !== undefined) {
+                            orb.style.left = ep.sun_progress_pct + '%';
+                        }
                     }
                     if (a.moon_phase) {
                         const mIcon = document.getElementById('moon_icon');
-                        const mPhase = document.getElementById('moon_phase');
+                        const mPhase = document.getElementById('moon_name');
                         const mIllum = document.getElementById('moon_illum');
                         if (mIcon) mIcon.innerText = a.moon_phase.icon;
                         if (mPhase) mPhase.innerText = a.moon_phase.phase_name;
-                        if (mIllum) mIllum.innerText = a.moon_phase.illumination_pct + '%';
+                        if (mIllum) mIllum.innerText = (a.moon_phase.illumination_pct || 0) + '%';
                     }
+
 
                     // Cross-Check Modello vs Stazione
                     if (a.cross_check && a.cross_check.available) {
