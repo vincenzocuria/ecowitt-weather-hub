@@ -155,49 +155,8 @@
     </div>
 </div>
 
-<!-- NOWCASTING & CONSIGLI SMART CASA / COMFORT -->
-<div class="nowcast-hero">
-    <div class="nowcast-top">
-                </div>
-                <div class="hero-cond-desc" id="hero_sky_desc">
-                    {{ analytics.current_condition.desc if analytics and analytics.current_condition else 'Condizioni atmosferiche stabili.' }}
-                </div>
-            </div>
-        </div>
 
-        <!-- STRISCIA QUICK GLANCE METEO -->
-        <div class="hero-quick-strip">
-            <div class="quick-stat-item">
-                <span class="qs-icon">💧</span>
-                <div class="qs-info">
-                    <span class="qs-label">Umidità</span>
-                    <strong class="qs-val" id="hero_hum_val">{{ latest.humidity if latest.humidity is not none else '--' }}%</strong>
-                </div>
-            </div>
-            <div class="quick-stat-item">
-                <span class="qs-icon">💨</span>
-                <div class="qs-info">
-                    <span class="qs-label">Vento & Raffica</span>
-                    <strong class="qs-val" id="hero_wind_val">{{ latest.wind_speed_kmh or 0 }} <small>km/h</small> ({{ wind_dir_text }})</strong>
-                </div>
-            </div>
-            <div class="quick-stat-item">
-                <span class="qs-icon">⏱️</span>
-                <div class="qs-info">
-                    <span class="qs-label">Pressione</span>
-                    <strong class="qs-val" id="hero_press_val">{{ latest.pressure_rel_hpa if latest.pressure_rel_hpa is not none else '--' }} <small>hPa</small></strong>
-                </div>
-            </div>
-            <div class="quick-stat-item">
-                <span class="qs-icon">☀️</span>
-                <div class="qs-info">
-                    <span class="qs-label">Radiazione & UV</span>
-                    <strong class="qs-val" id="hero_solar_val">{{ latest.solar_radiation or 0 }} <small>W/m²</small> (UV {{ latest.uv_index or 0 }})</strong>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+
 
 <!-- OROLOGIO SOLARE & EFFEMERIDI ASTRONOMICHE ODRIERNE -->
 <div class="card sun-ephemeris-card" id="sun_ephemeris_section">
