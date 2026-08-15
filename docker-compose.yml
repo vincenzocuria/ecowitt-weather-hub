@@ -1,0 +1,35 @@
+services:
+  ecowitt-hub:
+    image: python:3.11-slim
+    container_name: ecowitt-hub
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8090}:8080"
+    environment:
+      - TZ=${TZ:-Europe/Rome}
+      - TIMEZONE=${TIMEZONE:-Europe/Rome}
+      - DATA_DIR=/data
+      - SOIL_MOISTURE_LOW_THRESHOLD=${SOIL_MOISTURE_LOW_THRESHOLD:-25.0}
+      - LIGHTNING_MAX_DISTANCE_KM=${LIGHTNING_MAX_DISTANCE_KM:-30.0}
+      - TEMP_FREEZE_THRESHOLD_C=${TEMP_FREEZE_THRESHOLD_C:-1.0}
+      - TEMP_HEAT_THRESHOLD_C=${TEMP_HEAT_THRESHOLD_C:-38.0}
+      - RAIN_RATE_ALERT_MM_HR=${RAIN_RATE_ALERT_MM_HR:-5.0}
+      - LATITUDE=${LATITUDE:-41.9028}
+      - LONGITUDE=${LONGITUDE:-12.4964}
+      - NTFY_TOPIC=${NTFY_TOPIC:-}
+    volumes:
+      - ./backend:/app/backend:ro
+      - ecowitt-data:/data
+    working_dir: /app
+    command: >
+      sh -c "pip install --no-cache-dir fastapi uvicorn requests python-multipart jinja2 aiofiles pywebpush tzdata &&
+             python -m uvicorn backend.main:app --host 0.0.0.0 --port 8080"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared-meteo
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+
+volumes:
+  ecowitt-data:

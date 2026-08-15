@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title or "Ecowitt & Sainlogic Weather Hub" }}</title>
+    
+    <!-- PWA Settings -->
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#0b0f19">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Meteo Hub">
+    
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌤️</text></svg>">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌤️</text></svg>">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-brand">🌤️ Weather Hub</a>
+            <div class="nav-links">
+                <a href="/" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">🏠 Dashboard</a>
+                <a href="/records" class="nav-link {% if active_page == 'records' %}active{% endif %}">🏆 Albo dei Record</a>
+                <a href="/charts" class="nav-link {% if active_page == 'charts' %}active{% endif %}">📈 Grafici</a>
+                <a href="/history" class="nav-link {% if active_page == 'history' %}active{% endif %}">🔍 Archivio</a>
+                <a href="/alerts-page" class="nav-link {% if active_page == 'alerts' %}active{% endif %}">🔔 Notifiche</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <p>Ecowitt & Sainlogic Weather Station Hub • Esecuzione Locale & QNAP Ready • <a href="/api/live" style="color: var(--accent); text-decoration: none;">API Live</a></p>
+    </footer>
+
+    <script src="/static/js/app.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+            });
+        }
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
+

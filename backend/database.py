@@ -1,0 +1,848 @@
+import os
+import json
+import math
+import sqlite3
+from typing import Dict, Any, Optional, List, Tuple
+from datetime import datetime, timezone, timedelta
+from backend.config import settings
+
+DB_DIR = settings.DATA_DIR
+os.makedirs(DB_DIR, exist_ok=True)
+DB_PATH = os.path.join(DB_DIR, "weather_history.db")
+
+def get_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+# Definizioni dei record tracciati nell'Albo dei Record
+RECORD_DEFINITIONS = [
+    {"key": "temp_max", "category": "temperature", "title": "Temperatura Massima", "unit": "°C", "type": "max"},
+    {"key": "temp_min", "category": "temperature", "title": "Temperatura Minima", "unit": "°C", "type": "min"},
+    {"key": "dew_point_max", "category": "temperature", "title": "Punto di Rugiada Max", "unit": "°C", "type": "max"},
+    {"key": "wind_gust_max", "category": "wind", "title": "Raffica di Vento Max", "unit": "km/h", "type": "max"},
+    {"key": "wind_speed_max", "category": "wind", "title": "Velocità Media Vento Max", "unit": "km/h", "type": "max"},
+    {"key": "rain_rate_max", "category": "rain", "title": "Intensità Pioggia Max", "unit": "mm/h", "type": "max"},
+    {"key": "rain_daily_max", "category": "rain", "title": "Accumulo Giornaliero Max", "unit": "mm", "type": "max"},
+    {"key": "pressure_max", "category": "pressure", "title": "Pressione Più Alta (Anticiclone)", "unit": "hPa", "type": "max"},
+    {"key": "pressure_min", "category": "pressure", "title": "Pressione Più Bassa (Ciclone)", "unit": "hPa", "type": "min"},
+    {"key": "uv_max", "category": "solar", "title": "Indice UV Massimo", "unit": "UV", "type": "max"},
+    {"key": "solar_max", "category": "solar", "title": "Radiazione Solare Max", "unit": "W/m²", "type": "max"},
+    {"key": "lightning_closest", "category": "lightning", "title": "Fulmine Più Vicino", "unit": "km", "type": "min"}
+]
+
+def init_db():
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # 1. Letture Meteorologiche Principali
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS weather_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            temp_c REAL,
+            humidity REAL,
+            dew_point_c REAL,
+            temp_in_c REAL,
+            humidity_in REAL,
+            pressure_rel_hpa REAL,
+            pressure_abs_hpa REAL,
+            wind_speed_kmh REAL,
+            wind_gust_kmh REAL,
+            wind_dir_deg INTEGER,
+            max_daily_gust_kmh REAL,
+            rain_rate_mm_hr REAL,
+            daily_rain_mm REAL,
+            event_rain_mm REAL,
+            yearly_rain_mm REAL,
+            solar_radiation REAL,
+            uv_index INTEGER,
+            vpd REAL,
+            lightning_count INTEGER,
+            lightning_distance_km REAL,
+            lightning_last_time TEXT,
+            soil_moisture_json TEXT,
+            raw_data_json TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON weather_records (timestamp)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_temp ON weather_records (temp_c)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_wind_gust ON weather_records (wind_gust_kmh)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_rain_rate ON weather_records (rain_rate_mm_hr)")
+
+    # 2. Albo dei Record Attuali
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS weather_extremes (
+            record_key TEXT PRIMARY KEY,
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            value REAL NOT NULL,
+            unit TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            details_json TEXT
+        )
+    """)
+
+    # 3. Cronologia dei Record Battuti nel Tempo
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS records_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            record_key TEXT NOT NULL,
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            old_value REAL,
+            new_value REAL NOT NULL,
+            unit TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            details_json TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_record_key ON records_history (record_key)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_rec_timestamp ON records_history (timestamp)")
+
+    # 4. Log Allarmi / Notifiche
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS alert_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            alert_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            data_json TEXT
+        )
+    """)
+
+    # 5. Sottoscrizioni Web Push PWA (iOS / Android / Desktop)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            endpoint TEXT UNIQUE NOT NULL,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            user_agent TEXT,
+            created_at TEXT NOT NULL,
+            last_seen TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_push_endpoint ON push_subscriptions (endpoint)")
+    
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# ----------------- CALCOLI METEO SCIENTIFICI -----------------
+
+def calc_dew_point(temp_c: Optional[float], humidity: Optional[float]) -> Optional[float]:
+    """Punto di rugiada (Formula di Magnus-Tetens)."""
+    if temp_c is None or humidity is None or humidity <= 0:
+        return None
+    try:
+        a = 17.27
+        b = 237.7
+        alpha = ((a * float(temp_c)) / (b + float(temp_c))) + math.log(float(humidity) / 100.0)
+        dp = (b * alpha) / (a - alpha)
+        return round(dp, 1)
+    except Exception:
+        return None
+
+def calc_apparent_temp(temp_c: Optional[float], humidity: Optional[float], wind_kmh: Optional[float]) -> Optional[float]:
+    """
+    Temperatura Percepita (Sensazione Termica):
+    - Wind Chill (se T <= 10°C e Vento >= 5 km/h)
+    - Heat Index / Umidità (se T >= 26°C)
+    - Altrimenti temperatura reale
+    """
+    if temp_c is None:
+        return None
+    t = float(temp_c)
+    w = float(wind_kmh) if wind_kmh is not None else 0.0
+    h = float(humidity) if humidity is not None else 50.0
+
+    # Wind Chill
+    if t <= 10.0 and w >= 4.8:
+        wc = 13.12 + (0.6215 * t) - (11.37 * (w ** 0.16)) + (0.3965 * t * (w ** 0.16))
+        return round(wc, 1)
+    
+    # Heat Index (Steadman / Rothfusz)
+    if t >= 26.0 and h >= 40.0:
+        tf = (t * 9.0 / 5.0) + 32.0
+        hi = -42.379 + 2.04901523*tf + 10.14333127*h - 0.22475541*tf*h - 0.00683783*tf*tf - 0.05481717*h*h + 0.00122874*tf*tf*h + 0.00085282*tf*h*h - 0.00000199*tf*tf*h*h
+        hi_c = (hi - 32.0) * 5.0 / 9.0
+        return round(hi_c, 1)
+
+    return round(t, 1)
+
+def deg_to_compass(deg: Optional[float]) -> str:
+    if deg is None:
+        return "--"
+    try:
+        d = float(deg)
+        val = int((d / 22.5) + 0.5)
+        dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+        return f"{int(d)}° ({dirs[val % 16]})"
+    except Exception:
+        return f"{deg}°"
+
+# ----------------- ANALISI TREND & ANOMALIE -----------------
+
+def get_pressure_trend(current_hpa: Optional[float]) -> Dict[str, Any]:
+    """
+    Analizza la variazione della pressione barometrica nelle ultime 3 ore.
+    Determina la tendenza e rileva cali bruschi tipici di tempeste/burrasche.
+    """
+    if current_hpa is None:
+        return {"trend": "stabile", "diff": 0.0, "text": "Stabile", "icon": "➡️", "is_storm_alert": False}
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    target_time = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+    cursor.execute("""
+        SELECT pressure_rel_hpa FROM weather_records
+        WHERE timestamp <= ? AND pressure_rel_hpa IS NOT NULL
+        ORDER BY timestamp DESC LIMIT 1
+    """, (target_time,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row or row["pressure_rel_hpa"] is None:
+        return {"trend": "stabile", "diff": 0.0, "text": "Stabile", "icon": "➡️", "is_storm_alert": False}
+
+    old_hpa = float(row["pressure_rel_hpa"])
+    diff = round(float(current_hpa) - old_hpa, 1)
+
+    if diff <= -settings.PRESSURE_DROP_3H_THRESHOLD:
+        return {
+            "trend": "rapid_drop",
+            "diff": diff,
+            "text": f"In forte calo ({diff:+} hPa/3h) ⚠️ Burrasca in arrivo!",
+            "icon": "⚠️ ↘️",
+            "is_storm_alert": True
+        }
+    elif diff <= -1.0:
+        return {"trend": "drop", "diff": diff, "text": f"In calo ({diff:+} hPa/3h)", "icon": "↘️", "is_storm_alert": False}
+    elif diff >= 1.0:
+        return {"trend": "rise", "diff": diff, "text": f"In aumento ({diff:+} hPa/3h) • Miglioramento", "icon": "↗️", "is_storm_alert": False}
+    else:
+        return {"trend": "steady", "diff": diff, "text": f"Stabile ({diff:+} hPa/3h)", "icon": "➡️", "is_storm_alert": False}
+
+def get_temp_1h_change(current_temp: Optional[float]) -> Tuple[Optional[float], bool, bool]:
+    """Restituisce (variazione_temp_1h, is_plunge, is_spike)."""
+    if current_temp is None:
+        return None, False, False
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    target_time = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    cursor.execute("""
+        SELECT temp_c FROM weather_records
+        WHERE timestamp <= ? AND temp_c IS NOT NULL
+        ORDER BY timestamp DESC LIMIT 1
+    """, (target_time,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row or row["temp_c"] is None:
+        return None, False, False
+
+    old_t = float(row["temp_c"])
+    diff = round(float(current_temp) - old_t, 1)
+    is_plunge = diff <= -settings.TEMP_DROP_1H_THRESHOLD
+    is_spike = diff >= settings.TEMP_RISE_1H_THRESHOLD
+    return diff, is_plunge, is_spike
+
+# ----------------- STATUS & WATCHDOG -----------------
+
+def get_station_status() -> Dict[str, Any]:
+    """
+    Verifica se la stazione è Online, In ritardo o Offline in base all'ultimo pacchetto.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT timestamp FROM weather_records ORDER BY id DESC LIMIT 1")
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row or not row["timestamp"]:
+        return {
+            "status": "waiting",
+            "is_online": False,
+            "seconds_ago": None,
+            "text": "In attesa dei primi dati dal gateway...",
+            "badge_class": "badge-waiting"
+        }
+
+    try:
+        last_dt = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        seconds_ago = int((now - last_dt).total_seconds())
+        
+        timeout_sec = settings.STATION_OFFLINE_TIMEOUT_MIN * 60
+
+        if seconds_ago <= 120:
+            return {
+                "status": "online",
+                "is_online": True,
+                "seconds_ago": seconds_ago,
+                "text": f"🟢 Online (ricevuto {seconds_ago}s fa)",
+                "badge_class": "badge-live",
+                "last_seen_iso": row["timestamp"]
+            }
+        elif seconds_ago <= timeout_sec:
+            mins = seconds_ago // 60
+            return {
+                "status": "delayed",
+                "is_online": True,
+                "seconds_ago": seconds_ago,
+                "text": f"🟡 In ritardo (ultimo dato {mins}m fa)",
+                "badge_class": "badge-warning",
+                "last_seen_iso": row["timestamp"]
+            }
+        else:
+            mins = seconds_ago // 60
+            return {
+                "status": "offline",
+                "is_online": False,
+                "seconds_ago": seconds_ago,
+                "text": f"🔴 OFFLINE da {mins} minuti!",
+                "badge_class": "badge-offline",
+                "last_seen_iso": row["timestamp"]
+            }
+    except Exception:
+        return {"status": "unknown", "is_online": False, "seconds_ago": None, "text": "Stato sconosciuto", "badge_class": "badge-waiting"}
+
+def save_reading(data: Dict[str, Any]) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    lightning = data.get("lightning", {})
+    
+    temp_c = data.get("temp_c")
+    hum = data.get("humidity")
+    dew_c = data.get("dew_point_c") or calc_dew_point(temp_c, hum)
+    
+    cursor.execute("""
+        INSERT INTO weather_records (
+            timestamp, temp_c, humidity, dew_point_c, temp_in_c, humidity_in,
+            pressure_rel_hpa, pressure_abs_hpa, wind_speed_kmh, wind_gust_kmh,
+            wind_dir_deg, max_daily_gust_kmh, rain_rate_mm_hr, daily_rain_mm,
+            event_rain_mm, yearly_rain_mm, solar_radiation, uv_index, vpd,
+            lightning_count, lightning_distance_km, lightning_last_time,
+            soil_moisture_json, raw_data_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        data.get("timestamp"),
+        temp_c,
+        hum,
+        dew_c,
+        data.get("temp_in_c"),
+        data.get("humidity_in"),
+        data.get("pressure_rel_hpa"),
+        data.get("pressure_abs_hpa"),
+        data.get("wind_speed_kmh"),
+        data.get("wind_gust_kmh"),
+        data.get("wind_dir_deg"),
+        data.get("max_daily_gust_kmh"),
+        data.get("rain_rate_mm_hr"),
+        data.get("daily_rain_mm"),
+        data.get("event_rain_mm"),
+        data.get("yearly_rain_mm"),
+        data.get("solar_radiation"),
+        data.get("uv_index"),
+        data.get("vpd"),
+        lightning.get("count_total"),
+        lightning.get("distance_km"),
+        lightning.get("last_strike_time"),
+        json.dumps(data.get("soil_moisture", {})),
+        json.dumps(data.get("raw_payload", {}))
+    ))
+    record_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return record_id
+
+def get_latest_reading() -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM weather_records ORDER BY id DESC LIMIT 1")
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    d = dict(row)
+    if d.get("soil_moisture_json"):
+        try:
+            d["soil_moisture"] = json.loads(d["soil_moisture_json"])
+        except Exception:
+            d["soil_moisture"] = {}
+            
+    # Arricchimento dati calcolati
+    d["dew_point_c"] = d.get("dew_point_c") or calc_dew_point(d.get("temp_c"), d.get("humidity"))
+    d["apparent_temp_c"] = calc_apparent_temp(d.get("temp_c"), d.get("humidity"), d.get("wind_speed_kmh"))
+    d["pressure_trend"] = get_pressure_trend(d.get("pressure_rel_hpa"))
+    return d
+
+# ----------------- GESTIONE RECORD & EXTREMES -----------------
+
+def check_and_update_records(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    ts = data.get("timestamp") or datetime.now(timezone.utc).isoformat()
+    new_records_broken = []
+    
+    candidates = {
+        "temp_max": (data.get("temp_c"), {}),
+        "temp_min": (data.get("temp_c"), {}),
+        "dew_point_max": (data.get("dew_point_c") or calc_dew_point(data.get("temp_c"), data.get("humidity")), {}),
+        "wind_gust_max": (data.get("wind_gust_kmh"), {"dir": deg_to_compass(data.get("wind_dir_deg"))}),
+        "wind_speed_max": (data.get("wind_speed_kmh"), {"dir": deg_to_compass(data.get("wind_dir_deg"))}),
+        "rain_rate_max": (data.get("rain_rate_mm_hr"), {}),
+        "rain_daily_max": (data.get("daily_rain_mm"), {}),
+        "pressure_max": (data.get("pressure_rel_hpa"), {}),
+        "pressure_min": (data.get("pressure_rel_hpa"), {}),
+        "uv_max": (data.get("uv_index"), {}),
+        "solar_max": (data.get("solar_radiation"), {})
+    }
+    
+    lightning = data.get("lightning", {})
+    l_dist = lightning.get("distance_km")
+    if l_dist is not None and l_dist > 0:
+        candidates["lightning_closest"] = (l_dist, {"count": lightning.get("count_total")})
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM weather_extremes")
+    current_extremes = {row["record_key"]: dict(row) for row in cursor.fetchall()}
+
+    for defn in RECORD_DEFINITIONS:
+        key = defn["key"]
+        if key not in candidates:
+            continue
+        
+        val, details = candidates[key]
+        if val is None:
+            continue
+            
+        val = float(val)
+        if defn["type"] == "max" and val <= 0 and key in ("rain_rate_max", "rain_daily_max", "uv_max", "solar_max"):
+            continue
+
+        curr = current_extremes.get(key)
+        is_broken = False
+        old_val = None
+
+        if curr is None:
+            is_broken = True
+        else:
+            old_val = curr["value"]
+            if defn["type"] == "max" and val > old_val:
+                is_broken = True
+            elif defn["type"] == "min" and val < old_val:
+                is_broken = True
+
+        if is_broken:
+            cursor.execute("""
+                INSERT OR REPLACE INTO weather_extremes (record_key, category, title, value, unit, timestamp, details_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (key, defn["category"], defn["title"], val, defn["unit"], ts, json.dumps(details)))
+
+            cursor.execute("""
+                INSERT INTO records_history (record_key, category, title, old_value, new_value, unit, timestamp, details_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (key, defn["category"], defn["title"], old_val, val, defn["unit"], ts, json.dumps(details)))
+
+            new_records_broken.append({
+                "key": key,
+                "title": defn["title"],
+                "category": defn["category"],
+                "old_value": old_val,
+                "new_value": val,
+                "unit": defn["unit"],
+                "timestamp": ts,
+                "details": details
+            })
+
+    conn.commit()
+    conn.close()
+    return new_records_broken
+
+def get_all_records() -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM weather_extremes")
+    stored = {row["record_key"]: dict(row) for row in cursor.fetchall()}
+    conn.close()
+
+    result = []
+    for defn in RECORD_DEFINITIONS:
+        key = defn["key"]
+        if key in stored:
+            item = stored[key]
+            if item.get("details_json"):
+                try:
+                    item["details"] = json.loads(item["details_json"])
+                except Exception:
+                    item["details"] = {}
+            result.append(item)
+        else:
+            result.append({
+                "record_key": key,
+                "category": defn["category"],
+                "title": defn["title"],
+                "value": None,
+                "unit": defn["unit"],
+                "timestamp": None,
+                "details": {}
+            })
+    return result
+
+def get_records_history(record_key: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    if record_key:
+        cursor.execute("SELECT * FROM records_history WHERE record_key = ? ORDER BY id DESC LIMIT ?", (record_key, limit))
+    else:
+        cursor.execute("SELECT * FROM records_history ORDER BY id DESC LIMIT ?", (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    res = []
+    for r in rows:
+        d = dict(r)
+        if d.get("details_json"):
+            try:
+                d["details"] = json.loads(d["details_json"])
+            except Exception:
+                d["details"] = {}
+        res.append(d)
+    return res
+
+# ----------------- SERIE TEMPORALI PER GRAFICI -----------------
+
+def get_timeseries(period: str = "24h") -> Dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    if period == "7d":
+        since = (now - timedelta(days=7)).isoformat()
+        group_sql = "strftime('%Y-%m-%d %H:00:00', timestamp)"
+    elif period == "30d":
+        since = (now - timedelta(days=30)).isoformat()
+        group_sql = "strftime('%Y-%m-%d %H:00:00', timestamp)"
+    elif period == "1y":
+        since = (now - timedelta(days=365)).isoformat()
+        group_sql = "strftime('%Y-%m-%d', timestamp)"
+    else:
+        since = (now - timedelta(hours=24)).isoformat()
+        group_sql = None
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    if group_sql:
+        query = f"""
+            SELECT 
+                {group_sql} AS bucket,
+                ROUND(AVG(temp_c), 1) AS temp_avg,
+                ROUND(MIN(temp_c), 1) AS temp_min,
+                ROUND(MAX(temp_c), 1) AS temp_max,
+                ROUND(AVG(humidity), 1) AS humidity_avg,
+                ROUND(AVG(dew_point_c), 1) AS dew_point_avg,
+                ROUND(AVG(pressure_rel_hpa), 1) AS pressure_avg,
+                ROUND(AVG(wind_speed_kmh), 1) AS wind_avg,
+                ROUND(MAX(wind_gust_kmh), 1) AS wind_gust_max,
+                ROUND(MAX(daily_rain_mm), 1) AS rain_day,
+                ROUND(AVG(solar_radiation), 1) AS solar_avg,
+                MAX(uv_index) AS uv_max
+            FROM weather_records
+            WHERE timestamp >= ?
+            GROUP BY bucket
+            ORDER BY bucket ASC
+        """
+        cursor.execute(query, (since,))
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return {
+            "period": period,
+            "labels": [r["bucket"] for r in rows],
+            "temp_c": [r["temp_avg"] for r in rows],
+            "temp_min": [r["temp_min"] for r in rows],
+            "temp_max": [r["temp_max"] for r in rows],
+            "humidity": [r["humidity_avg"] for r in rows],
+            "dew_point": [r["dew_point_avg"] for r in rows],
+            "pressure": [r["pressure_avg"] for r in rows],
+            "wind_speed": [r["wind_avg"] for r in rows],
+            "wind_gust": [r["wind_gust_max"] for r in rows],
+            "daily_rain": [r["rain_day"] for r in rows],
+            "solar": [r["solar_avg"] for r in rows],
+            "uv": [r["uv_max"] for r in rows]
+        }
+    else:
+        cursor.execute("""
+            SELECT timestamp, temp_c, humidity, dew_point_c, pressure_rel_hpa,
+                   wind_speed_kmh, wind_gust_kmh, rain_rate_mm_hr, daily_rain_mm,
+                   solar_radiation, uv_index
+            FROM weather_records
+            WHERE timestamp >= ?
+            ORDER BY timestamp ASC
+            LIMIT 600
+        """, (since,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        return {
+            "period": "24h",
+            "labels": [r["timestamp"] for r in rows],
+            "temp_c": [r["temp_c"] for r in rows],
+            "humidity": [r["humidity"] for r in rows],
+            "dew_point": [r["dew_point_c"] for r in rows],
+            "pressure": [r["pressure_rel_hpa"] for r in rows],
+            "wind_speed": [r["wind_speed_kmh"] for r in rows],
+            "wind_gust": [r["wind_gust_kmh"] for r in rows],
+            "rain_rate": [r["rain_rate_mm_hr"] for r in rows],
+            "daily_rain": [r["daily_rain_mm"] for r in rows],
+            "solar": [r["solar_radiation"] for r in rows],
+            "uv": [r["uv_index"] for r in rows]
+        }
+
+# ----------------- RICERCA ARCHIVIO & EXPORT -----------------
+
+def search_history(start_date: Optional[str] = None, end_date: Optional[str] = None, limit: int = 100, offset: int = 0) -> Tuple[List[Dict[str, Any]], int]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    where_clauses = []
+    params = []
+    if start_date:
+        where_clauses.append("timestamp >= ?")
+        params.append(start_date if "T" in start_date else f"{start_date}T00:00:00")
+    if end_date:
+        where_clauses.append("timestamp <= ?")
+        params.append(end_date if "T" in end_date else f"{end_date}T23:59:59")
+
+    where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+    
+    cursor.execute(f"SELECT COUNT(*) FROM weather_records {where_sql}", params)
+    total_count = cursor.fetchone()[0]
+
+    cursor.execute(f"""
+        SELECT * FROM weather_records {where_sql}
+        ORDER BY timestamp DESC
+        LIMIT ? OFFSET ?
+    """, params + [limit, offset])
+    rows = cursor.fetchall()
+    conn.close()
+
+    records = []
+    for r in rows:
+        d = dict(r)
+        if d.get("soil_moisture_json"):
+            try:
+                d["soil_moisture"] = json.loads(d["soil_moisture_json"])
+            except Exception:
+                d["soil_moisture"] = {}
+        records.append(d)
+    return records, total_count
+
+def log_alert_db(alert_type: str, title: str, message: str, data: Optional[Dict[str, Any]] = None):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO alert_logs (timestamp, alert_type, title, message, data_json)
+        VALUES (?, ?, ?, ?, ?)
+    """, (datetime.now(timezone.utc).isoformat(), alert_type, title, message, json.dumps(data or {})))
+    conn.commit()
+    conn.close()
+
+def get_alert_logs(limit: int = 20) -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM alert_logs ORDER BY id DESC LIMIT ?", (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+# ----------------- ANALISI GIORNALIERA & CONFRONTI -----------------
+
+def get_today_extremes() -> Dict[str, Any]:
+    """
+    Recupera i valori minimi e massimi registrati nella giornata odierna
+    (da mezzanotte locale a oggi) con i rispettivi timestamp formattati nel fuso orario locale.
+    """
+    tz = settings.get_tz()
+    now = settings.now_local()
+    today_start_local = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=tz)
+    today_start_utc = today_start_local.astimezone(timezone.utc).isoformat()
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Max Temp
+    cursor.execute("""
+        SELECT temp_c, timestamp FROM weather_records
+        WHERE timestamp >= ? AND temp_c IS NOT NULL
+        ORDER BY temp_c DESC, timestamp ASC LIMIT 1
+    """, (today_start_utc,))
+    max_t_row = cursor.fetchone()
+
+    # Min Temp
+    cursor.execute("""
+        SELECT temp_c, timestamp FROM weather_records
+        WHERE timestamp >= ? AND temp_c IS NOT NULL
+        ORDER BY temp_c ASC, timestamp ASC LIMIT 1
+    """, (today_start_utc,))
+    min_t_row = cursor.fetchone()
+
+    # Max Raffica Vento Oggi
+    cursor.execute("""
+        SELECT wind_gust_kmh, timestamp FROM weather_records
+        WHERE timestamp >= ? AND wind_gust_kmh IS NOT NULL
+        ORDER BY wind_gust_kmh DESC LIMIT 1
+    """, (today_start_utc,))
+    gust_row = cursor.fetchone()
+
+    # Pioggia Massima di Oggi (o ultimo daily_rain_mm registrato)
+    cursor.execute("""
+        SELECT daily_rain_mm FROM weather_records
+        WHERE timestamp >= ? AND daily_rain_mm IS NOT NULL
+        ORDER BY daily_rain_mm DESC LIMIT 1
+    """, (today_start_utc,))
+    rain_row = cursor.fetchone()
+
+    conn.close()
+
+    def _fmt_time(ts_str):
+        if not ts_str:
+            return None
+        try:
+            dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(tz)
+            return dt.strftime("%H:%M")
+        except Exception:
+            return ts_str[11:16] if len(ts_str) >= 16 else ts_str
+
+    max_t = float(max_t_row["temp_c"]) if max_t_row and max_t_row["temp_c"] is not None else None
+    min_t = float(min_t_row["temp_c"]) if min_t_row and min_t_row["temp_c"] is not None else None
+    max_t_time = _fmt_time(max_t_row["timestamp"]) if max_t_row else None
+    min_t_time = _fmt_time(min_t_row["timestamp"]) if min_t_row else None
+
+    range_t = round(max_t - min_t, 1) if (max_t is not None and min_t is not None) else None
+    max_gust = float(gust_row["wind_gust_kmh"]) if gust_row and gust_row["wind_gust_kmh"] is not None else None
+    today_rain = float(rain_row["daily_rain_mm"]) if rain_row and rain_row["daily_rain_mm"] is not None else 0.0
+
+    return {
+        "temp_max": max_t,
+        "temp_max_time": max_t_time,
+        "temp_min": min_t,
+        "temp_min_time": min_t_time,
+        "temp_range": range_t,
+        "max_gust": max_gust,
+        "today_rain": today_rain
+    }
+
+def get_yesterday_same_time(current_temp: Optional[float]) -> Dict[str, Any]:
+    """
+    Recupera la lettura della temperatura di ieri a quest'ora (tra 23h e 25h fa)
+    e calcola la differenza termica (+X°C / -X°C rispetto a ieri).
+    """
+    if current_temp is None:
+        return {"temp_c": None, "diff_c": None, "text": "In attesa dati"}
+
+    now_utc = datetime.now(timezone.utc)
+    target_start = (now_utc - timedelta(hours=25)).isoformat()
+    target_end = (now_utc - timedelta(hours=23)).isoformat()
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT temp_c, timestamp FROM weather_records
+        WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
+        ORDER BY ABS(strftime('%s', timestamp) - strftime('%s', ?)) ASC
+        LIMIT 1
+    """, (target_start, target_end, (now_utc - timedelta(hours=24)).isoformat()))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row or row["temp_c"] is None:
+        return {"temp_c": None, "diff_c": None, "text": "Nessun dato 24h fa"}
+
+    old_temp = float(row["temp_c"])
+    diff = round(float(current_temp) - old_temp, 1)
+    sign = "+" if diff > 0 else ""
+    return {
+        "temp_c": old_temp,
+        "diff_c": diff,
+        "text": f"{sign}{diff}°C vs ieri a quest'ora"
+    }
+
+def get_recent_rain_totals() -> Dict[str, float]:
+    """
+    Calcola gli accumuli pioggia degli ultimi 7 giorni e del mese in corso.
+    """
+    tz = settings.get_tz()
+    now = settings.now_local()
+    month_start_local = datetime(now.year, now.month, 1, 0, 0, 0, tzinfo=tz)
+    month_start_utc = month_start_local.astimezone(timezone.utc).isoformat()
+    week_start_utc = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Per calcolare la pioggia totale degli ultimi 7 giorni, sommiamo il massimo giornaliero di ogni giorno
+    cursor.execute("""
+        SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
+        FROM weather_records
+        WHERE timestamp >= ? AND daily_rain_mm IS NOT NULL
+        GROUP BY date(timestamp)
+    """, (week_start_utc,))
+    week_rows = cursor.fetchall()
+    week_rain = round(sum([float(r["day_rain"] or 0) for r in week_rows]), 1)
+
+    # Pioggia del mese corrente
+    cursor.execute("""
+        SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
+        FROM weather_records
+        WHERE timestamp >= ? AND daily_rain_mm IS NOT NULL
+        GROUP BY date(timestamp)
+    """, (month_start_utc,))
+    month_rows = cursor.fetchall()
+    month_rain = round(sum([float(r["day_rain"] or 0) for r in month_rows]), 1)
+
+    conn.close()
+    return {
+        "week_rain_mm": week_rain,
+        "month_rain_mm": month_rain
+    }
+
+# ----------------- SOTTOSCRIZIONI WEB PUSH PWA -----------------
+
+def save_push_subscription(endpoint: str, p256dh: str, auth: str, user_agent: Optional[str] = None):
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT INTO push_subscriptions (endpoint, p256dh, auth, user_agent, created_at, last_seen)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(endpoint) DO UPDATE SET
+            p256dh=excluded.p256dh,
+            auth=excluded.auth,
+            user_agent=excluded.user_agent,
+            last_seen=excluded.last_seen
+    """, (endpoint, p256dh, auth, user_agent, now_iso, now_iso))
+    conn.commit()
+    conn.close()
+
+def delete_push_subscription(endpoint: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+    conn.commit()
+    conn.close()
+
+def get_all_push_subscriptions() -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM push_subscriptions")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+

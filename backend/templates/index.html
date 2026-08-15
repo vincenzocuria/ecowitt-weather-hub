@@ -1,0 +1,447 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- HEADER CARD CON STATO STAZIONE DINAMICO -->
+<div class="header-card">
+    <div class="header-title">
+        <h1>🌤️ Stazione Meteo Live</h1>
+        <p>Dispositivo: <strong>{{ station_model }}</strong> • Ultimo pacchetto: <span id="ts">{{ latest.timestamp or 'In attesa...' }}</span></p>
+    </div>
+    <div id="status-badge" class="status-pill {{ status_info.badge_class }}">
+        {{ status_info.text }}
+    </div>
+</div>
+
+<!-- BANNER BURRASCA / ANOMALIA SE ATTIVO -->
+{% if pressure_trend and pressure_trend.is_storm_alert %}
+<div class="alert-banner">
+    <div>
+        <strong>⚠️ ALLERTA BURRASCA / MALTEMPO IMMINENTE</strong>
+        <p style="font-size: 0.84rem; margin-top: 2px;">Crollo barometrico rapido rilevato: {{ pressure_trend.text }}.</p>
+    </div>
+    <span style="font-size: 1.8rem;">🌪️</span>
+</div>
+{% endif %}
+
+<!-- NOWCASTING & CONSIGLI SMART CASA / COMFORT -->
+<div class="nowcast-hero">
+    <div class="nowcast-top">
+        <div class="nowcast-forecast-box">
+            <span class="nowcast-icon" id="nowcast_icon">{{ analytics.zambretti.icon if analytics else '🌤️' }}</span>
+            <div class="nowcast-title-group">
+                <h2 id="nowcast_text">{{ analytics.zambretti.text if analytics else 'Previsione a breve termine' }}</h2>
+                <div class="nowcast-desc" id="nowcast_desc">{{ analytics.zambretti.desc if analytics else 'Nowcasting barometrico 6-12h locale.' }}</div>
+            </div>
+        </div>
+        <div class="nowcast-badge" id="nowcast_badge">
+            🔮 Previsione Locale 6-12h (Zambretti)
+        </div>
+    </div>
+
+    <!-- GRIGLIA CONSIGLI PRATICI -->
+    <div class="comfort-grid">
+        <!-- 1. FINESTRE & AERAZIONE -->
+        <div class="comfort-pill-card" id="card_window">
+            <span class="comfort-icon" id="window_icon">{{ analytics.comfort.window.icon if analytics else '🪟' }}</span>
+            <div class="comfort-body">
+                <div class="comfort-body-header">
+                    <span class="comfort-name">Finestre & Clima</span>
+                </div>
+                <div class="comfort-status-text" id="window_title">{{ analytics.comfort.window.title if analytics else 'In attesa' }}</div>
+                <div class="comfort-sub" id="window_desc">{{ analytics.comfort.window.desc if analytics else '--' }}</div>
+            </div>
+        </div>
+
+        <!-- 2. BUCATO & ASCIUGATURA -->
+        <div class="comfort-pill-card" id="card_laundry">
+            <span class="comfort-icon" id="laundry_icon">{{ analytics.comfort.laundry.icon if analytics else '🧺' }}</span>
+            <div class="comfort-body">
+                <div class="comfort-body-header">
+                    <span class="comfort-name">Stendere i Panni</span>
+                </div>
+                <div class="comfort-status-text" id="laundry_title">{{ analytics.comfort.laundry.title if analytics else 'In attesa' }} ({{ analytics.comfort.laundry.time_estimate if analytics else '--' }})</div>
+                <div class="comfort-sub" id="laundry_desc">{{ analytics.comfort.laundry.desc if analytics else '--' }}</div>
+            </div>
+        </div>
+
+        <!-- 3. INDICE AFA / HUMIDEX -->
+        <div class="comfort-pill-card" id="card_humidex">
+            <span class="comfort-icon" id="humidex_icon">{{ analytics.comfort.humidex.icon if analytics else '😊' }}</span>
+            <div class="comfort-body">
+                <div class="comfort-body-header">
+                    <span class="comfort-name">Indice Afa & Comfort</span>
+                </div>
+                <div class="comfort-status-text" id="humidex_text">{{ analytics.comfort.humidex.text if analytics else 'Normale' }}</div>
+                <div class="comfort-sub" id="humidex_desc">Punto di rugiada: {{ analytics.dew_point_c if analytics else '--' }}°C</div>
+            </div>
+        </div>
+
+        <!-- 4. ATTIVITA ALL'APERTO / SPORT -->
+        <div class="comfort-pill-card" id="card_outdoor">
+            <span class="comfort-icon" id="outdoor_icon">{{ analytics.comfort.outdoor.icon if analytics else '🏃' }}</span>
+            <div class="comfort-body">
+                <div class="comfort-body-header">
+                    <span class="comfort-name">Attività Outdoor</span>
+                </div>
+                <div class="comfort-status-text" id="outdoor_title">{{ analytics.comfort.outdoor.title if analytics else 'Buono' }}</div>
+                <div class="comfort-sub" id="outdoor_desc">{{ analytics.comfort.outdoor.desc if analytics else '--' }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PREVISIONI IBRIDE 7 GIORNI (OPEN-METEO + CROSS-CHECK LOCALE) -->
+<div class="forecast-section">
+    <div class="forecast-header">
+        <div class="forecast-title-group">
+            <span style="font-size: 1.4rem;">🌐</span>
+            <h2>Previsioni 7 Giorni & Modelli Numerici</h2>
+        </div>
+        <div class="forecast-source-badge">
+            ⚡ Open-Meteo • ECMWF IFS 9km / ICON-EU
+        </div>
+    </div>
+
+    <!-- CROSS CHECK CONFRONTO MODELLO VS STAZIONE FISICA -->
+    {% if cross_check and cross_check.available %}
+    <div class="cross-check-bar" id="cross_check_bar">
+        <div>
+            <strong>🛰️ Cross-Check Modello vs Stazione Reale:</strong>
+            <span id="cross_check_text" style="color: var(--text-dim); margin-left: 5px;">{{ cross_check.text }}</span>
+        </div>
+        <span class="cross-check-badge {{ cross_check.badge_class }}" id="cross_check_badge">
+            {{ cross_check.status }} (Δ {{ cross_check.delta_str }})
+        </span>
+    </div>
+    {% endif %}
+
+    <!-- SCROLL / GRID PREVISIONI 7 GIORNI -->
+    {% if forecast and forecast.daily %}
+    <div class="forecast-7day-grid" id="forecast_7day_grid">
+        {% for day in forecast.daily %}
+        <div class="forecast-day-card {% if loop.first %}is-today{% endif %}">
+            <span class="forecast-day-name">{{ day.day_name }}</span>
+            <span class="forecast-day-date">{{ day.formatted_date }}</span>
+            <span class="forecast-day-icon">{{ day.icon }}</span>
+            <span class="forecast-day-condition">{{ day.condition }}</span>
+            <div class="forecast-temps">
+                <span class="t-max">{{ day.temp_max }}°</span>
+                <span class="t-min">{{ day.temp_min }}°</span>
+            </div>
+            {% if day.rain_prob_pct > 0 or day.rain_sum_mm > 0 %}
+            <span class="forecast-rain-pill">
+                💧 {{ day.rain_prob_pct }}% ({{ day.rain_sum_mm }}mm)
+            </span>
+            {% else %}
+            <span class="forecast-rain-pill dry">
+                💧 0% (asciutto)
+            </span>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- ORE PROSSIME 24H -->
+    {% if forecast and forecast.hourly_next_36h %}
+    <div class="hourly-strip-title">🕒 Previsione Dettagliata Prossime Ore</div>
+    <div class="hourly-scroll-container" id="hourly_scroll_container">
+        {% for h in forecast.hourly_next_36h[:18] %}
+        <div class="hourly-pill" title="{{ h.condition }} • Prob. Pioggia: {{ h.rain_prob_pct }}% • Vento: {{ h.wind_kmh }} km/h">
+            <span class="hourly-time">{{ h.hour_label }}</span>
+            <span class="hourly-icon">{{ h.icon }}</span>
+            <span class="hourly-temp">{{ h.temp_c }}°C</span>
+            {% if h.rain_prob_pct > 0 %}
+            <span class="hourly-rain">💧 {{ h.rain_prob_pct }}%</span>
+            {% else %}
+            <span class="hourly-rain" style="color: var(--text-dim); font-size: 0.68rem; opacity: 0.7;">💧 0%</span>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- BANNER RECORD IN EVIDENZA -->
+<div class="records-banner">
+    <div class="records-banner-header">
+        <div class="records-banner-title">
+            🏆 Record Storici Assoluti
+        </div>
+        <a href="/records" class="btn btn-gold" style="padding: 0.4rem 0.9rem; font-size: 0.82rem;">Vedi Albo dei Record Completo →</a>
+    </div>
+    <div class="records-mini-grid">
+        {% for r in top_records %}
+        <div class="rec-mini-card">
+            <span class="rec-mini-label">{{ r.title }}</span>
+            <span class="rec-mini-val">
+                {% if r.value is not none %}{{ r.value }} {{ r.unit }}{% else %}--{% endif %}
+            </span>
+            <span class="rec-mini-date">
+                {% if r.timestamp %}{{ r.timestamp[:10] }}{% else %}In attesa{% endif %}
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- GRID METEO TELEMETRIA -->
+<div class="grid">
+    <!-- 1. TEMPERATURA & UMIDITA ESTERNA -->
+    <div class="card">
+        <div class="card-header">
+            <span>🌡️ Esterno (7 in 1)</span>
+            <span class="sub-badge" id="apparent_temp_badge">Percepita: {{ apparent_temp if apparent_temp is not none else '--' }}°C</span>
+        </div>
+        <div class="main-stat">
+            <span class="val" id="temp_c">{{ latest.temp_c if latest.temp_c is not none else '--' }}</span>
+            <span class="unit">°C</span>
+        </div>
+
+        <!-- DIFFERENZIALE IERI & MIN/MAX OGGI -->
+        <div class="today-extremes-box">
+            <div class="extreme-item">
+                <span class="extreme-label">Min Oggi</span>
+                <span class="extreme-val min-t" id="today_min">{{ analytics.today_extremes.temp_min if analytics and analytics.today_extremes.temp_min is not none else '--' }}°C</span>
+                <span class="extreme-time" id="today_min_time">{{ analytics.today_extremes.temp_min_time or '--:--' }}</span>
+            </div>
+            <div class="extreme-item">
+                <span class="extreme-label">Max Oggi</span>
+                <span class="extreme-val max-t" id="today_max">{{ analytics.today_extremes.temp_max if analytics and analytics.today_extremes.temp_max is not none else '--' }}°C</span>
+                <span class="extreme-time" id="today_max_time">{{ analytics.today_extremes.temp_max_time or '--:--' }}</span>
+            </div>
+            <div class="extreme-item">
+                <span class="extreme-label">vs Ieri</span>
+                <span class="delta-badge {% if analytics and analytics.yesterday_comparison.diff_c and analytics.yesterday_comparison.diff_c > 0 %}warmer{% elif analytics and analytics.yesterday_comparison.diff_c and analytics.yesterday_comparison.diff_c < 0 %}cooler{% else %}neutral{% endif %}" id="yesterday_badge">
+                    {{ analytics.yesterday_comparison.text if analytics else '--' }}
+                </span>
+            </div>
+        </div>
+
+        <div class="item-list">
+            <div class="item"><span>Umidità:</span> <strong id="humidity">{{ latest.humidity if latest.humidity is not none else '--' }} %</strong></div>
+            <div class="item"><span>Punto di Rugiada:</span> <strong id="dew_point">{{ latest.dew_point_c if latest.dew_point_c is not none else '--' }} °C</strong></div>
+            <div class="item"><span>Pressione Relativa:</span> <strong id="press_rel">{{ latest.pressure_rel_hpa if latest.pressure_rel_hpa is not none else '--' }} hPa</strong></div>
+            <div class="item"><span>Tendenza Pressione:</span> <strong id="press_trend">{{ pressure_trend.text if pressure_trend else '--' }}</strong></div>
+        </div>
+    </div>
+
+    <!-- 2. VENTO CON ROSA DEI VENTI GRAFICA -->
+    <div class="card">
+        <div class="card-header">
+            <span>💨 Vento & Direzione</span>
+        </div>
+        <div class="main-stat">
+            <span class="val" id="wind_spd">{{ latest.wind_speed_kmh if latest.wind_speed_kmh is not none else '--' }}</span>
+            <span class="unit">km/h</span>
+        </div>
+
+        <!-- BUSSOLA / ROSA DEI VENTI -->
+        <div class="compass-wrapper">
+            <div class="compass-dial">
+                <span class="compass-cardinal n">N</span>
+                <span class="compass-cardinal e">E</span>
+                <span class="compass-cardinal s">S</span>
+                <span class="compass-cardinal w">W</span>
+                <div class="compass-needle" id="compass_needle" style="transform: rotate({{ latest.wind_dir_deg or 0 }}deg);"></div>
+                <div class="compass-center"></div>
+            </div>
+        </div>
+
+        <div class="item-list">
+            <div class="item"><span>Raffica attuale:</span> <strong id="wind_gst">{{ latest.wind_gust_kmh if latest.wind_gust_kmh is not none else '--' }} km/h</strong></div>
+            <div class="item"><span>Raffica max oggi:</span> <strong id="max_gust">{{ latest.max_daily_gust_kmh or analytics.today_extremes.max_gust or '--' }} km/h</strong></div>
+            <div class="item"><span>Direzione:</span> <strong id="wind_dir">{{ wind_dir_text }}</strong></div>
+        </div>
+    </div>
+
+    <!-- 3. PIOGGIA & ACCUMULI -->
+    <div class="card">
+        <div class="card-header">
+            <span>🌧️ Pioggia & Accumuli</span>
+        </div>
+        <div class="main-stat">
+            <span class="val" id="rain_rate">{{ latest.rain_rate_mm_hr if latest.rain_rate_mm_hr is not none else '0.0' }}</span>
+            <span class="unit">mm/h</span>
+        </div>
+        <div class="item-list">
+            <div class="item"><span>Pioggia di oggi:</span> <strong id="rain_day">{{ latest.daily_rain_mm if latest.daily_rain_mm is not none else '0.0' }} mm</strong></div>
+            <div class="item"><span>Totale ultimi 7 giorni:</span> <strong id="rain_week">{{ analytics.rain_totals.week_rain_mm if analytics else '0.0' }} mm</strong></div>
+            <div class="item"><span>Totale mese corrente:</span> <strong id="rain_month">{{ analytics.rain_totals.month_rain_mm if analytics else '0.0' }} mm</strong></div>
+            <div class="item"><span>Totale anno:</span> <strong id="rain_year">{{ latest.yearly_rain_mm if latest.yearly_rain_mm is not none else '--' }} mm</strong></div>
+        </div>
+    </div>
+
+    <!-- 4. SOLE, UV & EFFEMERIDI ASTRONOMICHE -->
+    <div class="card">
+        <div class="card-header">
+            <span>☀️ Sole, UV & Effemeridi</span>
+        </div>
+        
+        <!-- SCALA GRAFICA UV -->
+        <div class="uv-scale-box">
+            <div style="display: flex; justify-content: space-between; font-size: 0.82rem; font-weight: 700; margin-bottom: 4px;">
+                <span>Indice UV</span>
+                <span id="uv_val">{{ latest.uv_index if latest.uv_index is not none else '0' }}</span>
+            </div>
+            <div class="uv-gradient-bar">
+                <div class="uv-pointer" id="uv_pointer" style="left: {{ ((latest.uv_index or 0) / 12 * 100)|round }}%;"></div>
+            </div>
+            <div class="uv-labels">
+                <span>0 Basso</span>
+                <span>3 Mod</span>
+                <span>6 Alto</span>
+                <span>8 Molto Alto</span>
+                <span>11+ Estr</span>
+            </div>
+        </div>
+
+        <div class="item-list">
+            <div class="item"><span>Radiazione Solare:</span> <strong id="solar">{{ latest.solar_radiation if latest.solar_radiation is not none else '0.0' }} W/m²</strong></div>
+            <div class="item"><span>VPD (Deficit Pressione):</span> <strong id="vpd">{{ latest.vpd if latest.vpd is not none else '--' }} kPa</strong></div>
+        </div>
+
+        <!-- EFFEMERIDI SOLE E LUNA -->
+        <div class="ephem-box">
+            <div class="ephem-row">
+                <span>🌅 Alba: <strong id="ephem_sunrise">{{ analytics.sun_ephemeris.sunrise if analytics else '--:--' }}</strong></span>
+                <span>🌇 Tramonto: <strong id="ephem_sunset">{{ analytics.sun_ephemeris.sunset if analytics else '--:--' }}</strong></span>
+            </div>
+            <div class="ephem-sun-bar">
+                <div class="ephem-sun-fill" id="sun_progress" style="width: {{ analytics.sun_ephemeris.sun_progress_pct if analytics else 50 }}%;"></div>
+            </div>
+            <div class="ephem-row" style="margin-bottom: 0;">
+                <span style="font-size: 0.8rem; color: var(--text-muted);" id="sun_status">{{ analytics.sun_ephemeris.status_text if analytics else '--' }} ({{ analytics.sun_ephemeris.daylight_duration if analytics else '--' }} luce)</span>
+                <span><span id="moon_icon">{{ analytics.moon_phase.icon if analytics else '🌓' }}</span> <strong id="moon_phase">{{ analytics.moon_phase.phase_name if analytics else 'Fase Lunare' }}</strong> (<span id="moon_illum">{{ analytics.moon_phase.illumination_pct if analytics else '50' }}%</span>)</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. CLIMA INTERNO & FULMINI / TERRENO -->
+    <div class="card">
+        <div class="card-header">
+            <span>🏠 Casa, Fulmini & Terreno</span>
+        </div>
+        <div class="item-list">
+            <div class="item"><span>Temperatura Interna:</span> <strong id="temp_in">{{ latest.temp_in_c if latest.temp_in_c is not none else '--' }} °C</strong></div>
+            <div class="item"><span>Umidità Interna:</span> <strong id="hum_in">{{ latest.humidity_in if latest.humidity_in is not none else '--' }} %</strong></div>
+            <div class="divider"></div>
+            <div class="item">
+                <span>Sensore Fulmini (WH57):</span>
+                <strong id="lightning">
+                    {% if latest.lightning_distance_km is not none %}
+                        ⚡ {{ latest.lightning_distance_km }} km
+                    {% else %}
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">In attesa di GW3000</span>
+                    {% endif %}
+                </strong>
+            </div>
+            <div class="divider"></div>
+            {% if soil_moisture %}
+                {% for ch, val in soil_moisture.items() %}
+                <div class="item"><span>Umidità {{ ch }}:</span> <strong>{{ val }}%</strong></div>
+                {% endfor %}
+            {% else %}
+                <div class="item"><span>Sensori Umidità Terreno:</span> <span style="color: var(--text-muted); font-size: 0.85rem;">In attesa di GW3000 / sensori</span></div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 6. STATO, DIGEST & TEST -->
+    <div class="card">
+        <div class="card-header">
+            <span>🔔 Notifiche & Digest</span>
+        </div>
+        <div class="item-list">
+            <div class="item"><span>Batteria Sensore 7 in 1:</span> <strong>{{ batt_wh65 }}</strong></div>
+            <div class="item"><span>Canale Push (ntfy):</span> <strong>{{ ntfy_topic }}</strong></div>
+            <div class="item"><span>Digest 'Buongiorno':</span> <strong>Attivo (08:00)</strong></div>
+            <div class="item"><span>Watchdog Offline:</span> <strong>Attivo (10 min)</strong></div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap;">
+            <a href="/api/daily-digest/send" class="btn btn-gold" style="flex: 1; text-align: center;" target="_blank">☕ Invia Buongiorno Ora</a>
+            <a href="/api/test-alert" class="btn" style="flex: 1; text-align: center;" target="_blank">🚀 Test Notifica</a>
+        </div>
+    </div>
+</div>
+
+<!-- MINI GRAFICO ANDAMENTO RAPIDO 24H -->
+<div class="card" style="margin-top: 0.5rem;">
+    <div class="card-header">
+        <span>📈 Andamento Ultime 24 Ore</span>
+        <a href="/charts" style="color: var(--accent); text-decoration: none; font-size: 0.85rem;">Apri Grafici Dettagliati →</a>
+    </div>
+    <div style="height: 220px; position: relative;">
+        <canvas id="quickChart"></canvas>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    startDashboardPolling();
+
+    // Carica mini grafico 24h
+    fetch('/api/history?period=24h')
+        .then(r => r.json())
+        .then(d => {
+            if (!d || !d.labels || d.labels.length === 0) return;
+            const ctx = document.getElementById('quickChart').getContext('2d');
+            const cleanLabels = d.labels.map(l => {
+                const dt = new Date(l);
+                return dt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+            });
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: cleanLabels,
+                    datasets: [
+                        {
+                            label: 'Temperatura (°C)',
+                            data: d.temp_c,
+                            borderColor: '#38bdf8',
+                            backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Raffica Vento (km/h)',
+                            data: d.wind_gust,
+                            borderColor: '#f59e0b',
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            tension: 0.2,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { labels: { color: '#94a3b8', font: { family: 'Plus Jakarta Sans' } } }
+                    },
+                    scales: {
+                        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b' } },
+                        y: {
+                            type: 'linear',
+                            position: 'left',
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#38bdf8' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            position: 'right',
+                            grid: { display: false },
+                            ticks: { color: '#f59e0b' }
+                        }
+                    }
+                }
+            });
+        });
+</script>
+{% endblock %}

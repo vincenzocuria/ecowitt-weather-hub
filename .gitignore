@@ -1,0 +1,40 @@
+# Database e dati sensibili
+data/
+*.db
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Chiavi crittografiche e certificati
+*.pem
+*.key
+*.crt
+vapid_*.txt
+b64.txt
+
+# File di configurazione locale con credenziali
+.env
+.env.local
+.env.production
+deploy_to_qnap.ps1
+docker-compose-qnap.yml
+
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Editor e OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

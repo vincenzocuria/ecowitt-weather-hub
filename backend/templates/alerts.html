@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header-card">
+    <div class="header-title">
+        <h1>🔔 Centro Notifiche & Allarmi</h1>
+        <p>Gestisci le notifiche push native per iPhone, Android e PC, e consulta il catalogo degli eventi meteorologici monitorati.</p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <a href="/api/export/alerts-csv" class="btn btn-gold" style="padding: 0.6rem 1.2rem;">📥 Esporta Registro in Excel</a>
+        <button id="btn-test-alert" class="btn" style="padding: 0.6rem 1.2rem;" onclick="testPushNotification()">🚀 Invia Notifica di Test</button>
+    </div>
+</div>
+
+<!-- SEZIONE NOTIFICHE PUSH NATIVE PWA -->
+<div class="card" style="border: 1px solid var(--accent); background: linear-gradient(145deg, rgba(56, 189, 248, 0.05), var(--card-bg));">
+    <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span>📱 Notifiche Push Native Web App (PWA)</span>
+        </div>
+        <span id="push-status-badge" class="status-pill badge-waiting">Verifica in corso...</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0;">
+        <p id="push-status-text" style="color: var(--text); font-size: 0.95rem; line-height: 1.5;">
+            Ricevi avvisi meteo istantanei direttamente sul tuo smartphone o PC, anche ad applicazione chiusa, senza bisogno di installare app esterne.
+        </p>
+
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
+            <button id="btn-push-toggle" class="btn btn-primary" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
+                🔔 Attiva Notifiche Push PWA
+            </button>
+            <button class="btn btn-outline" style="padding: 0.75rem 1.2rem; font-size: 0.9rem;" onclick="testPushNotification()">
+                🧪 Prova Notifica Istantanea
+            </button>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.25); border-radius: 12px; padding: 1rem; margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-dim); display: flex; flex-direction: column; gap: 0.4rem;">
+            <strong style="color: var(--accent);">💡 Come funziona sui tuoi dispositivi:</strong>
+            <div>🍏 <strong>iPhone / iPad (iOS 16.4+):</strong> Apri il tuo link meteo in Safari, tocca il tasto Condividi (icona quadrato con freccia in su) e scegli <em>"Aggiungi alla schermata Home"</em>. Apri l'app dalla schermata Home e tocca <strong>Attiva Notifiche</strong>.</div>
+            <div>🤖 <strong>Android:</strong> Clicca semplicemente su <em>"Attiva Notifiche Push"</em> (funziona sia da browser che da PWA installata).</div>
+            <div>💻 <strong>PC / Mac:</strong> Clicca su <em>"Attiva Notifiche"</em> e consenti le notifiche del browser Chrome, Edge, Safari o Firefox.</div>
+        </div>
+    </div>
+</div>
+
+<!-- SEZIONE CANALE OPZIONALE NTFY -->
+<div class="card">
+    <div class="card-header">
+        <span>📡 Canale Push Parallelo (ntfy.sh)</span>
+        <span style="font-size: 0.85rem; color: var(--text-dim);">Topic: <strong>{{ ntfy_topic }}</strong></span>
+    </div>
+    <div style="font-size: 0.9rem; color: var(--text-dim); line-height: 1.5; display: flex; flex-direction: column; gap: 0.5rem;">
+        <p>In parallelo alle notifiche PWA, il server invia tutti gli allarmi sul canale pubblico cifrato ntfy. Utile se vuoi ricevere notifiche su smartwatch o integrarlo con automazioni esterne.</p>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <a href="https://ntfy.sh/{{ ntfy_topic }}" target="_blank" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.85rem;">🌐 Apri Canale ntfy.sh</a>
+        </div>
+    </div>
+</div>
+
+<!-- CATALOGO COMPLETO DELLE NOTIFICHE ATTIVE -->
+<div class="card">
+    <div class="card-header">
+        <span>📋 Catalogo Allarmi & Soglie Attive</span>
+    </div>
+    <div class="table-responsive">
+        <table class="weather-table">
+            <thead>
+                <tr>
+                    <th>Evento</th>
+                    <th>Icona</th>
+                    <th>Condizione di Scatto</th>
+                    <th>Priorità</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>⚡ Temporale / Fulmini</strong></td>
+                    <td><span style="font-size: 1.2rem;">⚡</span></td>
+                    <td>Fulmine rilevato a meno di 30 km dalla stazione</td>
+                    <td><span class="badge-tag urgent">Alta</span></td>
+                </tr>
+                <tr>
+                    <td><strong>⚠️ Burrasca / Crollo Pressione</strong></td>
+                    <td><span style="font-size: 1.2rem;">⚠️ ↘️</span></td>
+                    <td>Calo barometrico ≥ 2.0 hPa in 3 ore (forte peggioramento)</td>
+                    <td><span class="badge-tag urgent">Urgente</span></td>
+                </tr>
+                <tr>
+                    <td><strong>🌧️ Nubifragio / Bomba d'Acqua</strong></td>
+                    <td><span style="font-size: 1.2rem;">🌧️</span></td>
+                    <td>Intensità di pioggia estrema ≥ 25.0 mm/h</td>
+                    <td><span class="badge-tag urgent">Urgente</span></td>
+                </tr>
+                <tr>
+                    <td><strong>🌧️ Pioggia Intensa</strong></td>
+                    <td><span style="font-size: 1.2rem;">🌧️</span></td>
+                    <td>Rovescio moderato/forte ≥ 5.0 mm/h</td>
+                    <td><span class="badge-tag">Normale</span></td>
+                </tr>
+                <tr>
+                    <td><strong>💨 Raffica di Vento Anomala</strong></td>
+                    <td><span style="font-size: 1.2rem;">💨</span></td>
+                    <td>Raffica improvvisa (Wind Spike) ≥ 45.0 km/h</td>
+                    <td><span class="badge-tag urgent">Alta</span></td>
+                </tr>
+                <tr>
+                    <td><strong>❄️ Allerta Gelo</strong></td>
+                    <td><span style="font-size: 1.2rem;">❄️</span></td>
+                    <td>Temperatura scesa a ≤ 1.0°C (rischio ghiaccio/piante)</td>
+                    <td><span class="badge-tag urgent">Alta</span></td>
+                </tr>
+                <tr>
+                    <td><strong>🔥 Caldo Estremo</strong></td>
+                    <td><span style="font-size: 1.2rem;">🔥</span></td>
+                    <td>Temperatura salita a ≥ 38.0°C</td>
+                    <td><span class="badge-tag">Normale</span></td>
+                </tr>
+                <tr>
+                    <td><strong>🌡️ Sbalzo Termico Repentino</strong></td>
+                    <td><span style="font-size: 1.2rem;">🌡️</span></td>
+                    <td>Crollo o impennata di temperatura ≥ 4.0°C in 1 ora</td>
+                    <td><span class="badge-tag">Normale</span></td>
+                </tr>
+                <tr>
+                    <td><strong>☀️ Indice UV Pericoloso</strong></td>
+                    <td><span style="font-size: 1.2rem;">☀️</span></td>
+                    <td>Indice UV ≥ 8 (rischio scottature in pochi minuti)</td>
+                    <td><span class="badge-tag">Normale</span></td>
+                </tr>
+                <tr>
+                    <td><strong>🌱 Terreno Secco</strong></td>
+                    <td><span style="font-size: 1.2rem;">🌱</span></td>
+                    <td>Umidità suolo sensore WH51 ≤ 25.0% (promemoria annaffiatura)</td>
+                    <td><span class="badge-tag">Normale</span></td>
+                </tr>
+                <tr>
+                    <td><strong>🏆 Record Storico Infranto</strong></td>
+                    <td><span style="font-size: 1.2rem;">🏆</span></td>
+                    <td>Battuto un nuovo record assoluto (es. Max Temp, Raffica, Pioggia)</td>
+                    <td><span class="badge-tag urgent">Alta</span></td>
+                </tr>
+                <tr>
+                    <td><strong>☀️ Buongiorno Meteo</strong></td>
+                    <td><span style="font-size: 1.2rem;">☕</span></td>
+                    <td>Ogni giorno alle 08:00 (Previsione, Minima, Sole, Asciugatura bucato)</td>
+                    <td><span class="badge-tag">Digest</span></td>
+                </tr>
+                <tr>
+                    <td><strong>🔴 Stazione Offline / Riconnessa</strong></td>
+                    <td><span style="font-size: 1.2rem;">📡</span></td>
+                    <td>Watchdog: assenza segnale per oltre 10 minuti</td>
+                    <td><span class="badge-tag urgent">Urgente</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- REGISTRO CRONOLOGICO ULTIMI EVENTI -->
+<div class="card">
+    <div class="card-header">
+        <span>Ultime Notifiche Generate dal Sistema</span>
+        <span style="font-size: 0.85rem; color: var(--text-dim);">Totale nel registro: {{ alerts|length }}</span>
+    </div>
+
+    {% if alerts %}
+    <div class="table-responsive">
+        <table class="weather-table">
+            <thead>
+                <tr>
+                    <th>Data & Ora</th>
+                    <th>Tipo</th>
+                    <th>Titolo Allarme</th>
+                    <th>Messaggio</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in alerts %}
+                <tr>
+                    <td>{{ a.timestamp.replace('T', ' ')[:19] }}</td>
+                    <td>
+                        <span style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border-radius: 8px; background: rgba(56, 189, 248, 0.15); color: var(--accent);">
+                            {{ a.alert_type }}
+                        </span>
+                    </td>
+                    <td><strong>{{ a.title }}</strong></td>
+                    <td style="color: var(--text-dim);">{{ a.message }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p style="color: var(--text-dim); padding: 1.5rem; text-align: center;">Nessun allarme generato di recente.</p>
+    {% endif %}
+</div>
+
+<style>
+.badge-tag {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(148, 163, 184, 0.15);
+    color: var(--text-dim);
+}
+.badge-tag.urgent {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+}
+.btn-primary {
+    background: linear-gradient(135deg, #0284c7, #0369a1);
+    color: white;
+    border: none;
+}
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--card-border);
+    color: var(--text);
+}
+.btn-outline:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+</style>
+{% endblock %}

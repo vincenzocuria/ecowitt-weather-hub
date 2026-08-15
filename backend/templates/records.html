@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header-card" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, #0f172a 100%); border-color: rgba(245, 158, 11, 0.3);">
+    <div class="header-title">
+        <h1 style="color: #f59e0b;">🏆 Albo dei Record Meteorologici</h1>
+        <p>I valori estremi assoluti registrati dalla tua stazione meteo. Se un record viene battuto, viene aggiornato all'istante e memorizzato nella cronologia.</p>
+    </div>
+    <a href="/api/export/records-csv" class="btn btn-gold" style="padding: 0.6rem 1.2rem;">📥 Esporta Record in Excel</a>
+</div>
+
+<!-- CATEGORIE RECORD -->
+<h2 style="font-size: 1.3rem; margin-top: 1rem; color: var(--accent);">📊 Record Assoluti in Vigore</h2>
+
+<div class="grid">
+    {% for r in records %}
+    <div class="card" style="border-left: 4px solid {% if r.category == 'temperature' %}#ef4444{% elif r.category == 'wind' %}#f59e0b{% elif r.category == 'rain' %}#38bdf8{% elif r.category == 'pressure' %}#8b5cf6{% elif r.category == 'lightning' %}#eab308{% else %}#10b981{% endif %};">
+        <div class="card-header">
+            <span>{{ r.title }}</span>
+            <span style="font-size: 0.75rem; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.06); color: var(--text-dim);">
+                {{ r.category }}
+            </span>
+        </div>
+        <div class="main-stat">
+            <span class="val" style="color: {% if r.value is not none %}#fff{% else %}var(--text-muted){% endif %};">
+                {% if r.value is not none %}{{ r.value }}{% else %}--{% endif %}
+            </span>
+            <span class="unit">{{ r.unit }}</span>
+        </div>
+        <div class="item-list">
+            <div class="item">
+                <span>Stabilito il:</span>
+                <strong>{% if r.timestamp %}{{ r.timestamp.replace('T', ' ')[:19] }}{% else %}<span style="color: var(--text-muted);">In attesa di rilevamento</span>{% endif %}</strong>
+            </div>
+            {% if r.details and r.details.dir %}
+            <div class="item"><span>Direzione associata:</span> <strong>{{ r.details.dir }}</strong></div>
+            {% endif %}
+            {% if r.details and r.details.count %}
+            <div class="item"><span>Scariche associate:</span> <strong>{{ r.details.count }}</strong></div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- CRONOLOGIA DEI RECORD INFRANTI -->
+<div class="card" style="margin-top: 1.5rem;">
+    <div class="card-header">
+        <span>📜 Cronologia dei Record Infranti nel Tempo</span>
+        <span style="font-size: 0.85rem; color: var(--text-dim);">Storico degli eventi</span>
+    </div>
+    
+    {% if history %}
+    <div class="table-responsive">
+        <table class="weather-table">
+            <thead>
+                <tr>
+                    <th>Data & Ora</th>
+                    <th>Record</th>
+                    <th>Vecchio Valore</th>
+                    <th>Nuovo Record Battuto</th>
+                    <th>Dettagli</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for h in history %}
+                <tr>
+                    <td>{{ h.timestamp.replace('T', ' ')[:19] }}</td>
+                    <td><strong>{{ h.title }}</strong></td>
+                    <td style="color: var(--text-muted);">
+                        {% if h.old_value is not none %}{{ h.old_value }} {{ h.unit }}{% else %}Prima registrazione{% endif %}
+                    </td>
+                    <td style="color: var(--gold); font-weight: 800;">
+                        {{ h.new_value }} {{ h.unit }}
+                    </td>
+                    <td>
+                        {% if h.details and h.details.dir %}Vento da {{ h.details.dir }}{% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p style="color: var(--text-dim); padding: 1.5rem; text-align: center;">
+        Nessun record infranto finora. I nuovi primati registrati dalla stazione appariranno qui automaticamente con data e vecchio valore sostituito.
+    </p>
+    {% endif %}
+</div>
+{% endblock %}

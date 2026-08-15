@@ -1,0 +1,34 @@
+# ==========================================================
+# Script di Esempio di Deploy Automatico su NAS QNAP
+# Rinomina questo file in 'deploy_to_qnap.ps1' e inserisci i tuoi parametri.
+# ==========================================================
+
+$qnapIp = "192.168.1.100"
+$qnapUser = "admin"
+$qnapPort = "22"
+$remotePath = "/share/Container/ecowitt-hub"
+$sshKey = "$env:USERPROFILE\.ssh\id_ed25519"
+$composeBin = "/share/CACHEDEV1_DATA/.qpkg/container-station/usr/local/lib/docker/cli-plugins/docker-compose"
+
+Write-Host "==========================================================" -ForegroundColor Cyan
+Write-Host " Ecowitt Weather Hub su QNAP ($qnapIp)" -ForegroundColor Cyan
+Write-Host "==========================================================" -ForegroundColor Cyan
+
+Write-Host "1. Creazione cartella remota su QNAP ($remotePath)..." -ForegroundColor Yellow
+ssh -i $sshKey -p $qnapPort -o StrictHostKeyChecking=accept-new "$qnapUser@$qnapIp" "mkdir -p $remotePath/backend $remotePath/data"
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Errore di connessione SSH." -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "2. Trasferimento file su QNAP..." -ForegroundColor Yellow
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+scp -O -i $sshKey -P $qnapPort -r "$scriptDir/backend" "$qnapUser@${qnapIp}:$remotePath/"
+scp -O -i $sshKey -P $qnapPort "$scriptDir/docker-compose.yml" "$qnapUser@${qnapIp}:$remotePath/"
+scp -O -i $sshKey -P $qnapPort "$scriptDir/.env" "$qnapUser@${qnapIp}:$remotePath/"
+
+Write-Host "3. Riavvio container..." -ForegroundColor Yellow
+ssh -i $sshKey -p $qnapPort "$qnapUser@$qnapIp" "cd $remotePath && $composeBin up -d --force-recreate"
+
+Write-Host "DEPLOY COMPLETATO!" -ForegroundColor Green

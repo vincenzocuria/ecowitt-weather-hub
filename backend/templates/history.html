@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header-card">
+    <div class="header-title">
+        <h1>🔍 Archivio & Ricerche Storiche</h1>
+        <p>Cerca tra le letture registrate dalla stazione meteo, analizza periodi specifici ed esporta i dati in formato CSV.</p>
+    </div>
+</div>
+
+<!-- BARRA DI FILTRO & RICERCA -->
+<form method="GET" action="/history" class="filter-bar">
+    <div class="form-group">
+        <label for="start_date">Data Inizio:</label>
+        <input type="date" id="start_date" name="start_date" class="form-control" value="{{ start_date or '' }}">
+    </div>
+    <div class="form-group">
+        <label for="end_date">Data Fine:</label>
+        <input type="date" id="end_date" name="end_date" class="form-control" value="{{ end_date or '' }}">
+    </div>
+    <button type="submit" class="btn" style="padding: 0.6rem 1.2rem;">Filtra</button>
+    <a href="/history" class="btn btn-secondary" style="padding: 0.6rem 1.2rem;">Azzera</a>
+    
+    <div style="margin-left: auto;">
+        <a href="/api/export/csv?start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-gold" style="padding: 0.6rem 1.2rem;">📥 Esporta CSV</a>
+    </div>
+</form>
+
+<!-- TABELLA RISULTATI -->
+<div class="card">
+    <div class="card-header">
+        <span>Risultati Trovati: {{ total_count }} letture</span>
+        <span style="font-size: 0.85rem; color: var(--text-dim);">Pagina {{ page }} di {{ max_pages }}</span>
+    </div>
+
+    {% if records %}
+    <div class="table-responsive">
+        <table class="weather-table">
+            <thead>
+                <tr>
+                    <th>Data & Ora</th>
+                    <th>Temp (°C)</th>
+                    <th>Umidità</th>
+                    <th>Rug. (°C)</th>
+                    <th>Pressione</th>
+                    <th>Vento (km/h)</th>
+                    <th>Raffica (km/h)</th>
+                    <th>Pioggia Oggi</th>
+                    <th>Rad. (W/m²)</th>
+                    <th>UV</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in records %}
+                <tr>
+                    <td>{{ r.timestamp.replace('T', ' ')[:19] }}</td>
+                    <td><strong>{{ r.temp_c if r.temp_c is not none else '--' }}</strong></td>
+                    <td>{{ r.humidity if r.humidity is not none else '--' }} %</td>
+                    <td>{{ r.dew_point_c if r.dew_point_c is not none else '--' }}</td>
+                    <td>{{ r.pressure_rel_hpa if r.pressure_rel_hpa is not none else '--' }}</td>
+                    <td>{{ r.wind_speed_kmh if r.wind_speed_kmh is not none else '--' }}</td>
+                    <td>{{ r.wind_gust_kmh if r.wind_gust_kmh is not none else '--' }}</td>
+                    <td>{{ r.daily_rain_mm if r.daily_rain_mm is not none else '0.0' }} mm</td>
+                    <td>{{ r.solar_radiation if r.solar_radiation is not none else '0' }}</td>
+                    <td>{{ r.uv_index if r.uv_index is not none else '0' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- PAGINAZIONE -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
+        {% if page > 1 %}
+        <a href="/history?page={{ page - 1 }}&start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-secondary" style="padding: 0.5rem 1rem;">← Precedente</a>
+        {% else %}
+        <div></div>
+        {% endif %}
+
+        {% if page < max_pages %}
+        <a href="/history?page={{ page + 1 }}&start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-secondary" style="padding: 0.5rem 1rem;">Successivo →</a>
+        {% endif %}
+    </div>
+
+    {% else %}
+    <p style="color: var(--text-dim); padding: 1.5rem; text-align: center;">Nessun dato trovato per l'intervallo selezionato.</p>
+    {% endif %}
+</div>
+{% endblock %}

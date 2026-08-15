@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header-card">
+    <div class="header-title">
+        <h1>📈 Grafici & Analisi Meteorologica</h1>
+        <p>Esplora l'andamento storico di temperatura, vento, pioggia, pressione e radiazione.</p>
+    </div>
+    <!-- SELETTORE PERIODO -->
+    <div style="display: flex; gap: 0.5rem;">
+        <button class="btn btn-secondary period-btn active" data-period="24h">24 Ore</button>
+        <button class="btn btn-secondary period-btn" data-period="7d">7 Giorni</button>
+        <button class="btn btn-secondary period-btn" data-period="30d">30 Giorni</button>
+        <button class="btn btn-secondary period-btn" data-period="1y">1 Anno</button>
+    </div>
+</div>
+
+<!-- GRAFICO 1: TEMPERATURA & PUNTO DI RUGIADA -->
+<div class="card">
+    <div class="card-header">
+        <span>🌡️ Andamento Temperatura & Punto di Rugiada (°C)</span>
+    </div>
+    <div style="height: 280px; position: relative;">
+        <canvas id="chartTemp"></canvas>
+    </div>
+</div>
+
+<!-- GRAFICO 2: VENTO & RAFFICHE -->
+<div class="card">
+    <div class="card-header">
+        <span>💨 Vento Medio & Raffica Massima (km/h)</span>
+    </div>
+    <div style="height: 260px; position: relative;">
+        <canvas id="chartWind"></canvas>
+    </div>
+</div>
+
+<!-- GRAFICO 3: PIOGGIA & PRESSIONE -->
+<div class="grid">
+    <div class="card">
+        <div class="card-header">
+            <span>🌧️ Pioggia (mm)</span>
+        </div>
+        <div style="height: 240px; position: relative;">
+            <canvas id="chartRain"></canvas>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <span>📈 Pressione Barometrica (hPa)</span>
+        </div>
+        <div style="height: 240px; position: relative;">
+            <canvas id="chartPress"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- GRAFICO 4: SOLE & UV -->
+<div class="card">
+    <div class="card-header">
+        <span>☀️ Radiazione Solare (W/m²) & Indice UV</span>
+    </div>
+    <div style="height: 240px; position: relative;">
+        <canvas id="chartSolar"></canvas>
+    </div>
+</div>
+
+<!-- GRAFICO 5: MODELLO IBRIDO (PREVISIONE 48H OPEN-METEO & VERIFICA) -->
+<div class="card">
+    <div class="card-header">
+        <span>🛰️ Previsione Modello ECMWF/ICON Prossime 36 Ore (°C & Pioggia)</span>
+        <span class="badge badge-info" style="font-size: 0.75rem;">Open-Meteo Hybrid</span>
+    </div>
+    <div style="height: 250px; position: relative;">
+        <canvas id="chartForecast"></canvas>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let chartTemp, chartWind, chartRain, chartPress, chartSolar;
+    const defaultFont = { family: 'Plus Jakarta Sans' };
+
+    function loadCharts(period = '24h') {
+        fetch(`/api/history?period=${period}`)
+            .then(r => r.json())
+            .then(d => {
+                if (!d || !d.labels) return;
+
+                const labels = d.labels.map(l => {
+                    const dt = new Date(l);
+                    if (period === '24h') {
+                        return dt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                    } else if (period === '7d' || period === '30d') {
+                        return dt.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' }) + ' ' + dt.toLocaleTimeString('it-IT', { hour: '2-digit' }) + 'h';
+                    } else {
+                        return dt.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                    }
+                });
+
+                // Distruggi istanze precedenti se esistono
+                if (chartTemp) chartTemp.destroy();
+                if (chartWind) chartWind.destroy();
+                if (chartRain) chartRain.destroy();
+                if (chartPress) chartPress.destroy();
+                if (chartSolar) chartSolar.destroy();
+
+                // 1. Chart Temp
+                const datasetsTemp = [
+                    {
+                        label: 'Temperatura (°C)',
+                        data: d.temp_c,
+                        borderColor: '#38bdf8',
+                        backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: true
+                    },
+                    {
+                        label: 'Punto di Rugiada (°C)',
+                        data: d.dew_point,
+                        borderColor: '#10b981',
+                        borderWidth: 1.5,
+                        borderDash: [4, 4],
+                        tension: 0.3
+                    }
+                ];
+                if (d.temp_max && d.temp_min) {
+                    datasetsTemp.push({ label: 'Max (°C)', data: d.temp_max, borderColor: '#ef4444', borderWidth: 1, pointRadius: 0 });
+                    datasetsTemp.push({ label: 'Min (°C)', data: d.temp_min, borderColor: '#60a5fa', borderWidth: 1, pointRadius: 0 });
+                }
+
+                chartTemp = new Chart(document.getElementById('chartTemp').getContext('2d'), {
+                    type: 'line',
+                    data: { labels, datasets: datasetsTemp },
+                    options: getChartOptions('°C')
+                });
+
+                // 2. Chart Vento
+                chartWind = new Chart(document.getElementById('chartWind').getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [
+                            {
+                                label: 'Raffica Max (km/h)',
+                                data: d.wind_gust,
+                                borderColor: '#f59e0b',
+                                backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                                borderWidth: 2,
+                                fill: true,
+                                tension: 0.2
+                            },
+                            {
+                                label: 'Vento Medio (km/h)',
+                                data: d.wind_speed,
+                                borderColor: '#94a3b8',
+                                borderWidth: 1.5,
+                                tension: 0.2
+                            }
+                        ]
+                    },
+                    options: getChartOptions('km/h')
+                });
+
+                // 3. Chart Pioggia
+                chartRain = new Chart(document.getElementById('chartRain').getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels,
+                        datasets: [{
+                            label: 'Pioggia (mm)',
+                            data: d.daily_rain,
+                            backgroundColor: '#0284c7',
+                            borderRadius: 4
+                        }]
+                    },
+                    options: getChartOptions('mm')
+                });
+
+                // 4. Chart Pressione
+                chartPress = new Chart(document.getElementById('chartPress').getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [{
+                            label: 'Pressione (hPa)',
+                            data: d.pressure,
+                            borderColor: '#a855f7',
+                            backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.3
+                        }]
+                    },
+                    options: getChartOptions('hPa')
+                });
+
+                // 5. Chart Sole & UV
+                chartSolar = new Chart(document.getElementById('chartSolar').getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [
+                            {
+                                label: 'Radiazione Solare (W/m²)',
+                                data: d.solar,
+                                borderColor: '#facc15',
+                                backgroundColor: 'rgba(250, 204, 21, 0.1)',
+                                borderWidth: 2,
+                                fill: true,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: 'Indice UV',
+                                data: d.uv,
+                                borderColor: '#ec4899',
+                                borderWidth: 2,
+                                yAxisID: 'y1'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: { legend: { labels: { color: '#94a3b8', font: defaultFont } } },
+                        scales: {
+                            x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b' } },
+                            y: { position: 'left', grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#facc15' } },
+                            y1: { position: 'right', grid: { display: false }, ticks: { color: '#ec4899' } }
+                        }
+                    }
+                });
+            });
+
+        // Carica Previsioni Modello Orarie Prossime 36h
+        fetch('/api/forecast')
+            .then(r => r.json())
+            .then(res => {
+                if (!res || !res.forecast || !res.forecast.hourly_next_36h) return;
+                const hours = res.forecast.hourly_next_36h;
+                const fLabels = hours.map(h => h.hour_label + ' (' + h.day_short + ')');
+                const fTemps = hours.map(h => h.temp_c);
+                const fRains = hours.map(h => h.rain_mm);
+
+                if (chartForecast) chartForecast.destroy();
+
+                chartForecast = new Chart(document.getElementById('chartForecast').getContext('2d'), {
+                    data: {
+                        labels: fLabels,
+                        datasets: [
+                            {
+                                type: 'line',
+                                label: 'Temp Prevista ECMWF/ICON (°C)',
+                                data: fTemps,
+                                borderColor: '#38bdf8',
+                                backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                                borderWidth: 2.5,
+                                tension: 0.3,
+                                fill: true,
+                                yAxisID: 'y'
+                            },
+                            {
+                                type: 'bar',
+                                label: 'Pioggia Prevista (mm)',
+                                data: fRains,
+                                backgroundColor: 'rgba(96, 165, 250, 0.65)',
+                                borderRadius: 4,
+                                yAxisID: 'y1'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { labels: { color: '#94a3b8', font: defaultFont } },
+                            tooltip: {
+                                callbacks: {
+                                    afterBody: function(context) {
+                                        const idx = context[0].dataIndex;
+                                        const cond = hours[idx] ? hours[idx].condition : '';
+                                        const prob = hours[idx] ? hours[idx].rain_prob_pct : 0;
+                                        return `Condizioni: ${cond}\nProb. Pioggia: ${prob}%`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', maxTicksLimit: 12 } },
+                            y: {
+                                type: 'linear',
+                                position: 'left',
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                                ticks: { color: '#38bdf8' },
+                                title: { display: true, text: '°C', color: '#38bdf8' }
+                            },
+                            y1: {
+                                type: 'linear',
+                                position: 'right',
+                                grid: { display: false },
+                                ticks: { color: '#60a5fa' },
+                                min: 0,
+                                title: { display: true, text: 'mm', color: '#60a5fa' }
+                            }
+                        }
+                    }
+                });
+            })
+            .catch(e => console.error("Errore caricamento forecast chart:", e));
+    }
+
+    function getChartOptions(unit) {
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { labels: { color: '#94a3b8', font: defaultFont } }
+            },
+            scales: {
+                x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', maxTicksLimit: 12 } },
+                y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } }
+            }
+        };
+    }
+
+    // Gestione click bottoni periodo
+    document.querySelectorAll('.period-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.period-btn').forEach(b => {
+                b.classList.remove('active');
+                b.classList.remove('btn-gold');
+                b.classList.add('btn-secondary');
+            });
+            btn.classList.add('active');
+            btn.classList.add('btn-gold');
+            btn.classList.remove('btn-secondary');
+            loadCharts(btn.dataset.period);
+        });
+    });
+
+    // Carica periodo default (24h)
+    document.querySelector('.period-btn.active').classList.add('btn-gold');
+    document.querySelector('.period-btn.active').classList.remove('btn-secondary');
+    loadCharts('24h');
+</script>
+{% endblock %}
