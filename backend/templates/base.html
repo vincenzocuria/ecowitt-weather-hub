@@ -42,9 +42,7 @@
     <script src="/static/js/app.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/static/sw.js').catch(() => {});
-            });
+            navigator.serviceWorker.register('/static/sw.js').catch((e) => console.warn('SW error:', e));
         }
     </script>
     {% block scripts %}{% endblock %}

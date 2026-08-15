@@ -417,13 +417,28 @@ function urlBase64ToUint8Array(base64String) {
     return outputArray;
 }
 
+async function getServiceWorkerRegistration() {
+    if (!('serviceWorker' in navigator)) return null;
+    try {
+        let reg = await navigator.serviceWorker.getRegistration('/static/');
+        if (!reg) {
+            reg = await navigator.serviceWorker.register('/static/sw.js');
+        }
+        await navigator.serviceWorker.ready;
+        return reg;
+    } catch (e) {
+        console.warn('Errore registrazione Service Worker:', e);
+        return null;
+    }
+}
+
 async function checkPushSubscriptionStatus() {
     const btn = document.getElementById('btn-push-toggle');
     const statusText = document.getElementById('push-status-text');
     const badge = document.getElementById('push-status-badge');
 
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        if (statusText) statusText.innerText = 'Notifiche Push non supportate in questa vista. Se usi iPhone (iOS 16.4+), tocca Condividi e poi "Aggiungi alla schermata Home", quindi apri l\'icona creata.';
+        if (statusText) statusText.innerText = 'Notifiche Push non supportate in questa vista del browser. Su iPhone (iOS 16.4+): tocca il tasto Condividi e scegli "Aggiungi alla schermata Home", poi apri la Web App.';
         if (btn) btn.style.display = 'none';
         if (badge) {
             badge.className = 'status-pill badge-offline';
@@ -433,11 +448,13 @@ async function checkPushSubscriptionStatus() {
     }
 
     try {
-        const reg = await navigator.serviceWorker.ready;
+        const reg = await getServiceWorkerRegistration();
+        if (!reg) return;
+
         const sub = await reg.pushManager.getSubscription();
 
-        if (sub) {
-            if (statusText) statusText.innerText = '✅ Notifiche attive! Questo dispositivo riceverà gli avvisi meteo in tempo reale anche ad app chiusa.';
+        if (sub && Notification.permission === 'granted') {
+            if (statusText) statusText.innerText = '✅ Notifiche PWA attive e sincronizzate! Questo dispositivo riceverà tutti gli avvisi meteo in tempo reale anche ad applicazione chiusa.';
             if (badge) {
                 badge.className = 'status-pill badge-live';
                 badge.innerText = 'Notifiche Attive 🟢';
@@ -449,7 +466,7 @@ async function checkPushSubscriptionStatus() {
                 btn.onclick = unsubscribeFromPush;
             }
         } else {
-            if (statusText) statusText.innerText = 'Abilita le notifiche native per ricevere allarmi istantanei (fulmini, gelate, nubifragi, record e buongiorno meteo).';
+            if (statusText) statusText.innerText = 'Abilita le notifiche native per ricevere allarmi istantanei (fulmini, burrasche, gelate, nubifragi, record e buongiorno meteo).';
             if (badge) {
                 badge.className = 'status-pill badge-waiting';
                 badge.innerText = 'Non Attive ⚪';
@@ -476,7 +493,7 @@ async function subscribeToPush() {
     try {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-            alert('Permesso notifiche non concesso. Per riceverle, autorizza le notifiche nelle impostazioni del browser/iOS.');
+            alert('Permesso notifiche non concesso. Per riceverle, autorizza le notifiche nelle impostazioni del browser/dispositivo.');
             checkPushSubscriptionStatus();
             return;
         }
@@ -487,14 +504,19 @@ async function subscribeToPush() {
             throw new Error('Chiave VAPID non disponibile dal server.');
         }
 
-        const reg = await navigator.serviceWorker.ready;
-        let sub = await reg.pushManager.getSubscription();
-        if (!sub) {
-            sub = await reg.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(vapidData.public_key)
-            });
+        const reg = await getServiceWorkerRegistration();
+        if (!reg) throw new Error('Service Worker non pronto.');
+
+        // Rimuovi eventuale sottoscrizione precedente obsoleta per garantire chiave VAPID aggiornata
+        const existingSub = await reg.pushManager.getSubscription();
+        if (existingSub) {
+            await existingSub.unsubscribe().catch(() => {});
         }
+
+        const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidData.public_key)
+        });
 
         const subJson = sub.toJSON();
         const res = await fetch('/api/push/subscribe', {
@@ -507,7 +529,15 @@ async function subscribeToPush() {
         });
 
         if (res.ok) {
-            alert('🎉 Notifiche Push PWA attivate con successo su questo dispositivo!');
+            // Mostra notifica di benvenuto
+            if (Notification.permission === 'granted') {
+                reg.showNotification('🌤️ Weather Hub Notifiche Attive', {
+                    body: 'Le notifiche push sono state collegate con successo alla tua stazione meteo!',
+                    icon: '/static/icons/icon.svg',
+                    tag: 'welcome-alert'
+                }).catch(() => {});
+            }
+            alert('🎉 Notifiche Push PWA collegate con successo a questo dispositivo!');
         } else {
             alert('Errore durante la registrazione sul server.');
         }
@@ -528,17 +558,19 @@ async function unsubscribeFromPush() {
     }
 
     try {
-        const reg = await navigator.serviceWorker.ready;
-        const sub = await reg.pushManager.getSubscription();
-        if (sub) {
-            await fetch('/api/push/unsubscribe', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ endpoint: sub.endpoint })
-            });
-            await sub.unsubscribe();
-            alert('Notifiche disattivate per questo dispositivo.');
+        const reg = await getServiceWorkerRegistration();
+        if (reg) {
+            const sub = await reg.pushManager.getSubscription();
+            if (sub) {
+                await fetch('/api/push/unsubscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ endpoint: sub.endpoint })
+                }).catch(() => {});
+                await sub.unsubscribe();
+            }
         }
+        alert('Notifiche disattivate per questo dispositivo.');
     } catch (err) {
         console.error('Errore disiscrizione push:', err);
     } finally {
@@ -557,7 +589,15 @@ async function testPushNotification() {
     try {
         const res = await fetch('/api/test-alert', { method: 'POST' });
         const data = await res.json();
-        alert(`🚀 Notifica di test inviata a ${data.devices_notified || 0} dispositivi PWA registrati e su canale ntfy '${data.ntfy_topic}'!`);
+        
+        let msg = `🚀 Notifica inviata con successo!\n• Dispositivi PWA registrati: ${data.devices_notified || 0}`;
+        if (data.ntfy_topic) {
+            msg += `\n• Canale ntfy: '${data.ntfy_topic}'`;
+        }
+        if (data.devices_notified === 0) {
+            msg += `\n\n💡 Suggerimento: Per ricevere le notifiche direttamente su questo smartphone o PC, tocca prima "Attiva Notifiche Push PWA"!`;
+        }
+        alert(msg);
     } catch (e) {
         alert('Errore invio notifica di test: ' + e.message);
     } finally {
@@ -566,6 +606,15 @@ async function testPushNotification() {
             btn.innerText = '🚀 Invia Notifica di Test';
         }
     }
+}
+
+// Ascolta messaggi Push in foreground dal Service Worker
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'PUSH_RECEIVED') {
+            console.log('Push ricevuto in foreground:', event.data);
+        }
+    });
 }
 
 // Inizializza automaticamente lo stato Push al caricamento

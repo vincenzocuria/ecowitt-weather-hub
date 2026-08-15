@@ -39,16 +39,35 @@ self.addEventListener('push', (event) => {
 
     const options = {
         body: payload.body,
-        icon: 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌤️</text></svg>',
-        badge: 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔔</text></svg>',
+        icon: '/static/icons/icon.svg',
+        badge: '/static/icons/icon.svg',
         tag: payload.tag,
         renotify: true,
-        data: payload.data,
-        vibrate: [200, 100, 200, 100, 200]
+        data: payload.data
     };
 
+    // Su browser che supportano la vibrazione (es. Android Chrome)
+    if ('vibrate' in navigator) {
+        options.vibrate = [200, 100, 200];
+    }
+
+    // Invia evento anche ai client aperti
+    const notifyClients = clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+            client.postMessage({
+                type: 'PUSH_RECEIVED',
+                title: payload.title,
+                body: payload.body,
+                tag: payload.tag
+            });
+        }
+    });
+
     event.waitUntil(
-        self.registration.showNotification(payload.title, options)
+        Promise.all([
+            self.registration.showNotification(payload.title, options),
+            notifyClients
+        ])
     );
 });
 

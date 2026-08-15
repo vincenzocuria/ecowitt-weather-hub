@@ -135,22 +135,30 @@ class NotificationService:
         except Exception as e:
             logger.error(f"[WEBPUSH] Eccezione non gestita: {e}")
 
-        # 2. ntfy.sh
+        # 2. ntfy.sh (invio JSON compatibile al 100% con caratteri UTF-8, emoji e formattazione)
         if settings.ENABLE_NTFY and settings.NTFY_TOPIC:
             try:
-                headers = {
-                    "Title": title.encode("utf-8"),
-                    "Priority": "5" if priority == "urgent" else ("4" if priority == "high" else "3"),
-                    "Tags": self._get_tags(alert_type)
+                tags = self._get_tags(alert_type).split(",")
+                prio_val = 5 if priority == "urgent" else (4 if priority == "high" else 3)
+                ntfy_payload = {
+                    "topic": settings.NTFY_TOPIC,
+                    "title": title,
+                    "message": message,
+                    "priority": prio_val,
+                    "tags": tags
                 }
-                requests.post(
-                    f"https://ntfy.sh/{settings.NTFY_TOPIC}",
-                    data=message.encode("utf-8"),
-                    headers=headers,
-                    timeout=5
+                res = requests.post(
+                    "https://ntfy.sh",
+                    json=ntfy_payload,
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                    timeout=8
                 )
+                if res.status_code == 200:
+                    logger.info(f"[NTFY] Notifica inviata con successo su topic '{settings.NTFY_TOPIC}'")
+                else:
+                    logger.warning(f"[NTFY] Risposta server ntfy HTTP {res.status_code}: {res.text}")
             except Exception as e:
-                logger.error(f"Errore invio notifica ntfy: {e}")
+                logger.error(f"[NTFY] Errore invio notifica ntfy: {e}")
 
     @staticmethod
     def _get_tags(alert_type: str) -> str:
