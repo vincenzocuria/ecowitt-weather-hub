@@ -61,7 +61,7 @@ class AlertEngine:
                     old_str = f" (precedente: {rec['old_value']} {rec['unit']})" if rec['old_value'] is not None else ""
                     msg = f"🏆 Nuovo record assoluto per '{rec['title']}': {rec['new_value']} {rec['unit']}{old_str}!"
                     logger.info(msg)
-                    if (now - self.last_record_alert) >= (settings.RECORD_BROKEN_COOLDOWN_MIN * 60):
+                    if rec.get("should_notify", True) and (now - self.last_record_alert) >= (settings.RECORD_BROKEN_COOLDOWN_MIN * 60):
                         self.last_record_alert = now
                         notifier.send_alert(
                             alert_type="record",

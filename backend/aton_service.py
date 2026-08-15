@@ -111,10 +111,12 @@ class AtonService:
         soc = safe_float(raw.get("soc"))
         
         # Correzioni e direzione flussi
-        # In Aton: pBatteria > 0 = carica batteria (flusso FV -> batteria),
-        #          pBatteria < 0 = scarica batteria (flusso batteria -> casa).
-        battery_charging = p_batteria > 0
+        # In Aton: pBatteria > 0 = scarica batteria (eroga potenza verso la casa: P_FV + P_Batt = P_Utenze),
+        #          pBatteria < 0 = carica batteria (assorbe potenza dal FV/Rete).
+        battery_discharging = p_batteria > 0
+        battery_charging = p_batteria < 0
         battery_power_abs = abs(p_batteria)
+        battery_status = "discharging" if battery_discharging else ("charging" if battery_charging else "idle")
 
         parsed = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -125,6 +127,8 @@ class AtonService:
             "p_batteria": p_batteria,
             "battery_power_abs": battery_power_abs,
             "battery_charging": battery_charging,
+            "battery_discharging": battery_discharging,
+            "battery_status": battery_status,
             "p_rete": p_rete,
             "p_rete_in": p_rete_in,
             "p_rete_out": p_rete_out,

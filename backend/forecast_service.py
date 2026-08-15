@@ -303,18 +303,18 @@ class ForecastService:
         sign = "+" if delta_t > 0 else ""
         
         if abs(delta_t) <= 0.8:
-            accuracy_status = "Ottima Correlazione"
+            accuracy_status = "Ottimo accordo col modello"
             badge_class = "badge-success"
-            accuracy_desc = f"Stazione ({station_temp}°C) perfettamente allineata al modello ({model_temp}°C, Δ {sign}{delta_t}°C)."
+            accuracy_desc = f"Stazione ({station_temp}°C) in ottimo accordo col modello ECMWF ({model_temp}°C, scarto {sign}{delta_t}°C)."
         elif abs(delta_t) <= 2.0:
-            accuracy_status = "Buon Allineamento"
+            accuracy_status = "Buon accordo col modello"
             badge_class = "badge-info"
-            accuracy_desc = f"Microclima locale: Stazione {station_temp}°C vs Modello {model_temp}°C ({sign}{delta_t}°C)."
+            accuracy_desc = f"Stazione ({station_temp}°C) vs Modello ECMWF ({model_temp}°C, scarto {sign}{delta_t}°C)."
         else:
-            accuracy_status = "Microclima Specifico"
+            accuracy_status = "Scostamento locale"
             badge_class = "badge-warning"
             loc_str = f" a {settings.LOCATION_NAME}" if settings.LOCATION_NAME else ""
-            accuracy_desc = f"Marcata variazione locale{loc_str}: Stazione {station_temp}°C vs Modello {model_temp}°C ({sign}{delta_t}°C)."
+            accuracy_desc = f"Marcata variazione microclimatica{loc_str}: Stazione {station_temp}°C vs Modello ({model_temp}°C, scarto {sign}{delta_t}°C)."
 
         return {
             "available": True,

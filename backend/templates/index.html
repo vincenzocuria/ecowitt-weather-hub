@@ -158,41 +158,118 @@
 <!-- NOWCASTING & CONSIGLI SMART CASA / COMFORT -->
 <div class="nowcast-hero">
     <div class="nowcast-top">
-        <div class="nowcast-forecast-box">
-            <span class="nowcast-icon" id="nowcast_icon">{{ analytics.zambretti.icon if analytics else '🌤️' }}</span>
-            <div class="nowcast-title-group">
-                <h2 id="nowcast_text">{{ analytics.zambretti.text if analytics else 'Previsione a breve termine' }}</h2>
-                <div class="nowcast-desc" id="nowcast_desc">{{ analytics.zambretti.desc if analytics else 'Nowcasting barometrico 6-12h locale.' }}</div>
+                </div>
+                <div class="hero-cond-desc" id="hero_sky_desc">
+                    {{ analytics.current_condition.desc if analytics and analytics.current_condition else 'Condizioni atmosferiche stabili.' }}
+                </div>
             </div>
         </div>
-        <div class="nowcast-badge" id="nowcast_badge">
-            🔮 Previsione Locale 6-12h (Zambretti)
+
+        <!-- STRISCIA QUICK GLANCE METEO -->
+        <div class="hero-quick-strip">
+            <div class="quick-stat-item">
+                <span class="qs-icon">💧</span>
+                <div class="qs-info">
+                    <span class="qs-label">Umidità</span>
+                    <strong class="qs-val" id="hero_hum_val">{{ latest.humidity if latest.humidity is not none else '--' }}%</strong>
+                </div>
+            </div>
+            <div class="quick-stat-item">
+                <span class="qs-icon">💨</span>
+                <div class="qs-info">
+                    <span class="qs-label">Vento & Raffica</span>
+                    <strong class="qs-val" id="hero_wind_val">{{ latest.wind_speed_kmh or 0 }} <small>km/h</small> ({{ wind_dir_text }})</strong>
+                </div>
+            </div>
+            <div class="quick-stat-item">
+                <span class="qs-icon">⏱️</span>
+                <div class="qs-info">
+                    <span class="qs-label">Pressione</span>
+                    <strong class="qs-val" id="hero_press_val">{{ latest.pressure_rel_hpa if latest.pressure_rel_hpa is not none else '--' }} <small>hPa</small></strong>
+                </div>
+            </div>
+            <div class="quick-stat-item">
+                <span class="qs-icon">☀️</span>
+                <div class="qs-info">
+                    <span class="qs-label">Radiazione & UV</span>
+                    <strong class="qs-val" id="hero_solar_val">{{ latest.solar_radiation or 0 }} <small>W/m²</small> (UV {{ latest.uv_index or 0 }})</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- OROLOGIO SOLARE & EFFEMERIDI ASTRONOMICHE ODRIERNE -->
+<div class="card sun-ephemeris-card" id="sun_ephemeris_section">
+    <div class="sun-ephemeris-header">
+        <div class="ephemeris-title">
+            <span class="ephemeris-icon">🌅</span>
+            <div>
+                <strong>Luce Solare ed Effemeridi Odierne</strong>
+                <span class="sun-status-tag" id="sun_status_tag">{{ analytics.sun_ephemeris.status_text if analytics else '--' }}</span>
+            </div>
+        </div>
+        <div class="moon-badge" id="moon_phase_badge">
+            <span class="moon-icon" id="moon_icon">{{ analytics.moon_phase.icon if analytics else '🌕' }}</span>
+            <span class="moon-name" id="moon_name">{{ analytics.moon_phase.phase_name if analytics else 'Luna' }} ({{ analytics.moon_phase.illumination_pct if analytics else '0' }}%)</span>
         </div>
     </div>
 
-    <!-- GRIGLIA CONSIGLI PRATICI -->
+    <!-- ARCO SOLARE GRAFICO -->
+    <div class="sun-arc-container">
+        <div class="sun-arc-track">
+            <div class="sun-arc-progress" id="sun_arc_progress" style="width: {{ analytics.sun_ephemeris.sun_progress_pct if analytics else 0 }}%;"></div>
+            <div class="sun-travel-orb" id="sun_travel_orb" style="left: {{ analytics.sun_ephemeris.sun_progress_pct if analytics else 0 }}%;">
+                {{ '☀️' if analytics and analytics.sun_ephemeris.is_daylight else '🌙' }}
+            </div>
+        </div>
+        <div class="sun-arc-times">
+            <div class="sun-time sunrise">
+                <span>Alba</span>
+                <strong id="sunrise_time">{{ analytics.sun_ephemeris.sunrise if analytics else '--:--' }}</strong>
+            </div>
+            <div class="sun-duration">
+                <span>Ore di Luce Totali</span>
+                <strong id="daylight_duration">{{ analytics.sun_ephemeris.daylight_duration if analytics else '--' }}</strong>
+            </div>
+            <div class="sun-time sunset">
+                <span>Tramonto</span>
+                <strong id="sunset_time">{{ analytics.sun_ephemeris.sunset if analytics else '--:--' }}</strong>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SEZIONE SMART ADVICE & MICROCLIMA CASA (INDICI INTELLIGENTI) -->
+<div class="card smart-advice-hero">
+    <div class="card-header">
+        <span>🧠 Consigli Smart per la Casa & Benessere</span>
+        <span style="font-size: 0.85rem; color: var(--text-dim);">Analisi in tempo reale</span>
+    </div>
+
     <div class="comfort-grid">
-        <!-- 1. FINESTRE & AERAZIONE -->
+        <!-- 1. AERAZIONE E FINESTRE -->
         <div class="comfort-pill-card" id="card_window">
             <span class="comfort-icon" id="window_icon">{{ analytics.comfort.window.icon if analytics else '🪟' }}</span>
             <div class="comfort-body">
                 <div class="comfort-body-header">
-                    <span class="comfort-name">Finestre & Clima</span>
+                    <span class="comfort-name">Gestione Finestre</span>
+                    <span class="badge-tag {{ analytics.comfort.window.badge_class if analytics else 'badge-neutral' }}" id="window_badge">{{ analytics.comfort.window.title if analytics else 'Normale' }}</span>
                 </div>
-                <div class="comfort-status-text" id="window_title">{{ analytics.comfort.window.title if analytics else 'In attesa' }}</div>
-                <div class="comfort-sub" id="window_desc">{{ analytics.comfort.window.desc if analytics else '--' }}</div>
+                <div class="comfort-sub" id="window_desc">{{ analytics.comfort.window.desc if analytics else 'Verifica clima in corso...' }}</div>
             </div>
         </div>
 
-        <!-- 2. BUCATO & ASCIUGATURA -->
+        <!-- 2. ASCIUGATURA BUCATO -->
         <div class="comfort-pill-card" id="card_laundry">
             <span class="comfort-icon" id="laundry_icon">{{ analytics.comfort.laundry.icon if analytics else '🧺' }}</span>
             <div class="comfort-body">
                 <div class="comfort-body-header">
-                    <span class="comfort-name">Stendere i Panni</span>
+                    <span class="comfort-name">Indice Bucato</span>
+                    <span class="badge-tag {{ analytics.comfort.laundry.badge_class if analytics else 'badge-neutral' }}" id="laundry_badge">{{ analytics.comfort.laundry.title if analytics else 'In attesa' }}</span>
                 </div>
-                <div class="comfort-status-text" id="laundry_title">{{ analytics.comfort.laundry.title if analytics else 'In attesa' }} ({{ analytics.comfort.laundry.time_estimate if analytics else '--' }})</div>
-                <div class="comfort-sub" id="laundry_desc">{{ analytics.comfort.laundry.desc if analytics else '--' }}</div>
+                <div class="comfort-status-text" id="laundry_time">{{ analytics.comfort.laundry.time_estimate if analytics else '--' }}</div>
+                <div class="comfort-sub" id="laundry_desc">{{ analytics.comfort.laundry.desc if analytics else 'Calcolo evaporazione...' }}</div>
             </div>
         </div>
 
@@ -202,8 +279,8 @@
             <div class="comfort-body">
                 <div class="comfort-body-header">
                     <span class="comfort-name">Indice Afa & Comfort</span>
+                    <span class="badge-tag {{ analytics.comfort.humidex.badge_class if analytics else 'badge-neutral' }}" id="humidex_badge">{{ analytics.comfort.humidex.text if analytics else 'Normale' }}</span>
                 </div>
-                <div class="comfort-status-text" id="humidex_text">{{ analytics.comfort.humidex.text if analytics else 'Normale' }}</div>
                 <div class="comfort-sub" id="humidex_desc">Punto di rugiada: {{ analytics.dew_point_c if analytics else '--' }}°C</div>
             </div>
         </div>
@@ -214,9 +291,9 @@
             <div class="comfort-body">
                 <div class="comfort-body-header">
                     <span class="comfort-name">Attività Outdoor</span>
+                    <span class="badge-tag {{ analytics.comfort.outdoor.badge_class if analytics else 'badge-neutral' }}" id="outdoor_badge">{{ analytics.comfort.outdoor.title if analytics else 'Buono' }}</span>
                 </div>
-                <div class="comfort-status-text" id="outdoor_title">{{ analytics.comfort.outdoor.title if analytics else 'Buono' }}</div>
-                <div class="comfort-sub" id="outdoor_desc">{{ analytics.comfort.outdoor.desc if analytics else '--' }}</div>
+                <div class="comfort-sub" id="outdoor_desc">{{ analytics.comfort.outdoor.desc if analytics else 'Analisi attività...' }}</div>
             </div>
         </div>
 
@@ -226,9 +303,9 @@
             <div class="comfort-body">
                 <div class="comfort-body-header">
                     <span class="comfort-name">Clima Indoor</span>
+                    <span class="badge-tag {{ analytics.comfort.indoor.badge_class if analytics and analytics.comfort.indoor else 'badge-neutral' }}" id="indoor_badge">{{ analytics.comfort.indoor.title if analytics and analytics.comfort.indoor else 'In attesa' }}</span>
                 </div>
-                <div class="comfort-status-text" id="indoor_title">{{ analytics.comfort.indoor.title if analytics and analytics.comfort.indoor else 'In attesa' }}</div>
-                <div class="comfort-sub" id="indoor_desc">{{ analytics.comfort.indoor.desc if analytics and analytics.comfort.indoor else '--' }}</div>
+                <div class="comfort-sub" id="indoor_desc">{{ analytics.comfort.indoor.desc if analytics and analytics.comfort.indoor else 'Dati in attesa...' }}</div>
             </div>
         </div>
     </div>
@@ -288,9 +365,9 @@
                 <div class="node-value" id="p_batteria_val">
                     {% if energy_latest.p_batteria is defined %}
                         {% if energy_latest.p_batteria > 0 %}
-                            +{{ energy_latest.p_batteria | int }} <span class="unit">W (In Carica)</span>
+                            +{{ energy_latest.p_batteria | int }} <span class="unit">W (In Scarica)</span>
                         {% elif energy_latest.p_batteria < 0 %}
-                            -{{ (energy_latest.p_batteria | abs) | int }} <span class="unit">W (In Scarica)</span>
+                            -{{ (energy_latest.p_batteria | abs) | int }} <span class="unit">W (In Carica)</span>
                         {% else %}
                             0 <span class="unit">W (Standby)</span>
                         {% endif %}
@@ -315,7 +392,7 @@
                     {{ energy_latest.p_utenze | int if energy_latest.p_utenze is defined else '--' }} <span class="unit">W</span>
                 </div>
                 <div class="node-sub" id="house_today_sub">
-                    Fabbisogno stimato: <strong>{{ energy_summary.total_house_kwh or '0.0' }} kWh</strong>
+                    Consumo integrato: <strong>{{ energy_summary.total_house_kwh or '0.0' }} kWh</strong>
                 </div>
             </div>
         </div>
@@ -479,7 +556,7 @@
                 {% if r.value is not none %}{{ r.value }} {{ r.unit }}{% else %}--{% endif %}
             </span>
             <span class="rec-mini-date">
-                {% if r.timestamp %}{{ r.timestamp[:10] }}{% else %}In attesa{% endif %}
+                {% if r.timestamp %}{{ r.timestamp | local_date }}{% else %}In attesa{% endif %}
             </span>
         </div>
         {% endfor %}
@@ -570,7 +647,8 @@
             <div class="item"><span>Pioggia di oggi:</span> <strong id="rain_day">{{ latest.daily_rain_mm if latest.daily_rain_mm is not none else '0.0' }} mm</strong></div>
             <div class="item"><span>Totale ultimi 7 giorni:</span> <strong id="rain_week">{{ analytics.rain_totals.week_rain_mm if analytics else '0.0' }} mm</strong></div>
             <div class="item"><span>Totale mese corrente:</span> <strong id="rain_month">{{ analytics.rain_totals.month_rain_mm if analytics else '0.0' }} mm</strong></div>
-            <div class="item"><span>Totale anno:</span> <strong id="rain_year">{{ latest.yearly_rain_mm if latest.yearly_rain_mm is not none else '--' }} mm</strong></div>
+            <div class="item"><span>Accumulo anno (da DB):</span> <strong id="rain_year">{{ analytics.rain_totals.year_rain_mm if analytics else '0.0' }} mm</strong></div>
+            <div class="item"><span>Contatore stazione:</span> <strong id="rain_station_counter">{{ latest.yearly_rain_mm if latest.yearly_rain_mm is not none else '--' }} mm</strong></div>
         </div>
     </div>
 

@@ -30,7 +30,7 @@
         <div class="item-list">
             <div class="item">
                 <span>Stabilito il:</span>
-                <strong>{% if r.timestamp %}{{ r.timestamp.replace('T', ' ')[:19] }}{% else %}<span style="color: var(--text-muted);">In attesa di rilevamento</span>{% endif %}</strong>
+                <strong>{% if r.timestamp %}{{ r.timestamp | local_dt }}{% else %}<span style="color: var(--text-muted);">In attesa di rilevamento</span>{% endif %}</strong>
             </div>
             {% if r.details and r.details.dir %}
             <div class="item"><span>Direzione associata:</span> <strong>{{ r.details.dir }}</strong></div>
@@ -65,7 +65,7 @@
             <tbody>
                 {% for h in history %}
                 <tr>
-                    <td>{{ h.timestamp.replace('T', ' ')[:19] }}</td>
+                    <td>{{ h.timestamp | local_dt }}</td>
                     <td><strong>{{ h.title }}</strong></td>
                     <td style="color: var(--text-muted);">
                         {% if h.old_value is not none %}{{ h.old_value }} {{ h.unit }}{% else %}Prima registrazione{% endif %}

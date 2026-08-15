@@ -15,6 +15,19 @@ def get_connection() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     return conn
 
+def to_local_datetime_str(iso_str: Optional[str], fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
+    """Converte una stringa timestamp ISO UTC nel fuso orario locale configurato (default Europe/Rome)."""
+    if not iso_str:
+        return ""
+    try:
+        dt = datetime.fromisoformat(str(iso_str).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        local_dt = dt.astimezone(settings.get_tz())
+        return local_dt.strftime(fmt)
+    except Exception:
+        return str(iso_str).replace("T", " ")[:19]
+
 # Definizioni dei record tracciati nell'Albo dei Record
 RECORD_DEFINITIONS = [
     {"key": "temp_max", "category": "temperature", "title": "Temperatura Massima", "unit": "°C", "type": "max"},
@@ -24,8 +37,8 @@ RECORD_DEFINITIONS = [
     {"key": "wind_speed_max", "category": "wind", "title": "Velocità Media Vento Max", "unit": "km/h", "type": "max"},
     {"key": "rain_rate_max", "category": "rain", "title": "Intensità Pioggia Max", "unit": "mm/h", "type": "max"},
     {"key": "rain_daily_max", "category": "rain", "title": "Accumulo Giornaliero Max", "unit": "mm", "type": "max"},
-    {"key": "pressure_max", "category": "pressure", "title": "Pressione Più Alta (Anticiclone)", "unit": "hPa", "type": "max"},
-    {"key": "pressure_min", "category": "pressure", "title": "Pressione Più Bassa (Ciclone)", "unit": "hPa", "type": "min"},
+    {"key": "pressure_max", "category": "pressure", "title": "Pressione Massima", "unit": "hPa", "type": "max"},
+    {"key": "pressure_min", "category": "pressure", "title": "Pressione Minima", "unit": "hPa", "type": "min"},
     {"key": "uv_max", "category": "solar", "title": "Indice UV Massimo", "unit": "UV", "type": "max"},
     {"key": "solar_max", "category": "solar", "title": "Radiazione Solare Max", "unit": "W/m²", "type": "max"},
     {"key": "lightning_closest", "category": "lightning", "title": "Fulmine Più Vicino", "unit": "km", "type": "min"}
@@ -385,7 +398,7 @@ def save_reading(data: Dict[str, Any]) -> int:
         lightning.get("distance_km"),
         lightning.get("last_strike_time"),
         json.dumps(data.get("soil_moisture", {})),
-        json.dumps(data.get("raw_payload", {}))
+        json.dumps({k: v for k, v in data.get("raw_payload", {}).items() if k != "PASSKEY"})
     ))
     record_id = cursor.lastrowid
     conn.commit()
@@ -471,26 +484,48 @@ def check_and_update_records(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                 is_broken = True
 
         if is_broken:
+            # Soglie minime di variazione per evitare spam nei log e notifiche per ogni 0.1
+            min_step = 0.0
+            if key in ("temp_max", "temp_min", "dew_point_max"):
+                min_step = 0.5
+            elif key in ("wind_gust_max", "wind_speed_max"):
+                min_step = 5.0
+            elif key in ("rain_rate_max", "rain_daily_max"):
+                min_step = 1.0
+            elif key in ("pressure_max", "pressure_min"):
+                min_step = 2.0
+            elif key == "solar_max":
+                min_step = 50.0
+
+            is_significant = (old_val is None) or (abs(val - old_val) >= min_step)
+
+            # Aggiorna sempre il record estremo assoluto attuale
             cursor.execute("""
                 INSERT OR REPLACE INTO weather_extremes (record_key, category, title, value, unit, timestamp, details_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (key, defn["category"], defn["title"], val, defn["unit"], ts, json.dumps(details)))
 
-            cursor.execute("""
-                INSERT INTO records_history (record_key, category, title, old_value, new_value, unit, timestamp, details_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (key, defn["category"], defn["title"], old_val, val, defn["unit"], ts, json.dumps(details)))
+            # Inserisci nella cronologia storica solo se l'incremento è significativo
+            if is_significant:
+                cursor.execute("""
+                    INSERT INTO records_history (record_key, category, title, old_value, new_value, unit, timestamp, details_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (key, defn["category"], defn["title"], old_val, val, defn["unit"], ts, json.dumps(details)))
 
-            new_records_broken.append({
-                "key": key,
-                "title": defn["title"],
-                "category": defn["category"],
-                "old_value": old_val,
-                "new_value": val,
-                "unit": defn["unit"],
-                "timestamp": ts,
-                "details": details
-            })
+                # Non inviare notifiche push per pressione e solare
+                should_notify = key not in ("pressure_max", "pressure_min", "solar_max")
+
+                new_records_broken.append({
+                    "key": key,
+                    "title": defn["title"],
+                    "category": defn["category"],
+                    "old_value": old_val,
+                    "new_value": val,
+                    "unit": defn["unit"],
+                    "timestamp": ts,
+                    "details": details,
+                    "should_notify": should_notify
+                })
 
     conn.commit()
     conn.close()
@@ -837,10 +872,12 @@ def get_yesterday_same_time(current_temp: Optional[float]) -> Dict[str, Any]:
 
 def get_recent_rain_totals() -> Dict[str, float]:
     """
-    Calcola gli accumuli pioggia degli ultimi 7 giorni e del mese in corso.
+    Calcola gli accumuli pioggia degli ultimi 7 giorni, del mese in corso e dell'anno dal 1° gennaio.
     """
     tz = settings.get_tz()
     now = settings.now_local()
+    year_start_local = datetime(now.year, 1, 1, 0, 0, 0, tzinfo=tz)
+    year_start_utc = year_start_local.astimezone(timezone.utc).isoformat()
     month_start_local = datetime(now.year, now.month, 1, 0, 0, 0, tzinfo=tz)
     month_start_utc = month_start_local.astimezone(timezone.utc).isoformat()
     week_start_utc = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
@@ -848,7 +885,7 @@ def get_recent_rain_totals() -> Dict[str, float]:
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Per calcolare la pioggia totale degli ultimi 7 giorni, sommiamo il massimo giornaliero di ogni giorno
+    # Ultimi 7 giorni: somma dei massimi giornalieri
     cursor.execute("""
         SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
         FROM weather_records
@@ -858,7 +895,7 @@ def get_recent_rain_totals() -> Dict[str, float]:
     week_rows = cursor.fetchall()
     week_rain = round(sum([float(r["day_rain"] or 0) for r in week_rows]), 1)
 
-    # Pioggia del mese corrente
+    # Mese corrente: somma dei massimi giornalieri
     cursor.execute("""
         SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
         FROM weather_records
@@ -868,10 +905,21 @@ def get_recent_rain_totals() -> Dict[str, float]:
     month_rows = cursor.fetchall()
     month_rain = round(sum([float(r["day_rain"] or 0) for r in month_rows]), 1)
 
+    # Anno corrente dal 1° Gennaio (calcolato da DB)
+    cursor.execute("""
+        SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
+        FROM weather_records
+        WHERE timestamp >= ? AND daily_rain_mm IS NOT NULL
+        GROUP BY date(timestamp)
+    """, (year_start_utc,))
+    year_rows = cursor.fetchall()
+    year_rain = round(sum([float(r["day_rain"] or 0) for r in year_rows]), 1)
+
     conn.close()
     return {
         "week_rain_mm": week_rain,
-        "month_rain_mm": month_rain
+        "month_rain_mm": month_rain,
+        "year_rain_mm": year_rain
     }
 
 # ----------------- SOTTOSCRIZIONI WEB PUSH PWA -----------------
@@ -907,24 +955,19 @@ def get_all_push_subscriptions() -> List[Dict[str, Any]]:
     conn.close()
     return [dict(r) for r in rows]
 
-# ----------------- TELEMETRIA ENERGETICA ATON GREEN STORAGE -----------------
+# ----------------- TELEMETRIA ENERGETICA ATON & FV -----------------
 
 def save_energy_reading(data: Dict[str, Any]) -> int:
-    """Salva una lettura telemetrica istantanea da Aton Storage."""
     conn = get_connection()
     cursor = conn.cursor()
-    
-    timestamp = data.get("timestamp") or datetime.now(timezone.utc).isoformat()
-    raw_json = json.dumps(data.get("raw_data") or data)
-    
     cursor.execute("""
         INSERT INTO energy_records (
             timestamp, p_solare, p_utenze, p_batteria, p_rete, p_rete_in, p_rete_out,
             soc, vb, ib, temp_battery, string1_v, string1_i, string2_v, string2_i,
-            grid_v, grid_hz, e_pannelli_wh, e_comprata_wh, e_venduta_wh, e_batteria_wh, raw_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            grid_v, grid_hz, e_pannelli_wh, e_comprata_wh, e_venduta_wh, e_batteria_wh
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        timestamp,
+        data.get("timestamp") or datetime.now(timezone.utc).isoformat(),
         data.get("p_solare"),
         data.get("p_utenze"),
         data.get("p_batteria"),
@@ -944,31 +987,24 @@ def save_energy_reading(data: Dict[str, Any]) -> int:
         data.get("e_pannelli_wh"),
         data.get("e_comprata_wh"),
         data.get("e_venduta_wh"),
-        data.get("e_batteria_wh"),
-        raw_json
+        data.get("e_batteria_wh")
     ))
-    
     record_id = cursor.lastrowid
     conn.commit()
     conn.close()
     return record_id
 
 def get_latest_energy() -> Optional[Dict[str, Any]]:
-    """Restituisce l'ultima lettura energetica disponibile."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM energy_records ORDER BY id DESC LIMIT 1")
     row = cursor.fetchone()
     conn.close()
-    if not row:
-        return None
-    return dict(row)
+    return dict(row) if row else None
 
 def get_energy_timeseries(hours: int = 24) -> List[Dict[str, Any]]:
-    """Restituisce la serie temporale energetica per i grafici."""
     conn = get_connection()
     cursor = conn.cursor()
-    
     since_dt = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     cursor.execute("""
         SELECT timestamp, p_solare, p_utenze, p_batteria, p_rete, soc
@@ -981,7 +1017,12 @@ def get_energy_timeseries(hours: int = 24) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 def get_today_energy_summary() -> Dict[str, Any]:
-    """Calcola il bilancio energetico odierno (produzione, consumi, autosufficienza)."""
+    """
+    Calcola il bilancio energetico odierno:
+    - Integrazione esatta dei consumi di casa a partire dalla potenza assorbita dalle utenze (P_utenze)
+    - Autosufficienza energetica reale: (1 - energia_prelevata_rete / consumo_totale_casa) * 100
+    - Autoconsumo reale: quota di energia solare utilizzata rispetto al totale prodotto
+    """
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -989,50 +1030,86 @@ def get_today_energy_summary() -> Dict[str, Any]:
     today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
     today_start_utc = today_start_local.astimezone(timezone.utc).isoformat()
     
-    # Prendi l'ultimo record di oggi
+    # 1. Recupera tutte le letture odierne in ordine cronologico per integrazione
     cursor.execute("""
-        SELECT * FROM energy_records 
+        SELECT timestamp, p_solare, p_utenze, p_batteria, p_rete, p_rete_in, p_rete_out,
+               soc, e_pannelli_wh, e_comprata_wh, e_venduta_wh, e_batteria_wh
+        FROM energy_records 
         WHERE timestamp >= ? 
-        ORDER BY id DESC LIMIT 1
+        ORDER BY id ASC
     """, (today_start_utc,))
-    latest = cursor.fetchone()
+    rows = cursor.fetchall()
     
-    if not latest:
-        # Fallback all'ultimo record assoluto
+    if not rows:
         cursor.execute("SELECT * FROM energy_records ORDER BY id DESC LIMIT 1")
-        latest = cursor.fetchone()
-
+        last_row = cursor.fetchone()
+        rows = [last_row] if last_row else []
+    
     conn.close()
 
-    if not latest:
+    if not rows:
         return {
             "solar_today_kwh": 0.0,
             "bought_today_kwh": 0.0,
             "sold_today_kwh": 0.0,
             "battery_soc": 0.0,
+            "self_consumed_kwh": 0.0,
+            "total_house_kwh": 0.0,
             "self_consumption_pct": 0.0,
             "autarky_pct": 0.0,
             "max_solar_w": 0.0,
             "max_consumption_w": 0.0
         }
 
-    latest_dict = dict(latest)
+    latest_dict = dict(rows[-1])
     solar_kwh = round((latest_dict.get("e_pannelli_wh") or 0.0) / 1000.0, 2)
     bought_kwh = round((latest_dict.get("e_comprata_wh") or 0.0) / 1000.0, 2)
     sold_kwh = round((latest_dict.get("e_venduta_wh") or 0.0) / 1000.0, 2)
     soc = latest_dict.get("soc") or 0.0
 
-    # Stima energia autoconsumata = Solar - Sold
+    # Integrazione numerica di P_utenze (Watt) nel tempo per calcolare il consumo totale effettivo della casa in kWh
+    integrated_wh = 0.0
+    max_solar_w = 0.0
+    max_consumption_w = 0.0
+
+    for i in range(len(rows)):
+        r = dict(rows[i])
+        p_u = float(r.get("p_utenze") or 0.0)
+        p_s = float(r.get("p_solare") or 0.0)
+        max_consumption_w = max(max_consumption_w, p_u)
+        max_solar_w = max(max_solar_w, p_s)
+
+        if i > 0:
+            r_prev = dict(rows[i - 1])
+            try:
+                t_curr = datetime.fromisoformat(str(r["timestamp"]).replace("Z", "+00:00"))
+                t_prev = datetime.fromisoformat(str(r_prev["timestamp"]).replace("Z", "+00:00"))
+                dt_hours = (t_curr - t_prev).total_seconds() / 3600.0
+                if 0.0 < dt_hours <= 0.5: # scarta gap anomali superiori a 30 min
+                    p_u_prev = float(r_prev.get("p_utenze") or 0.0)
+                    integrated_wh += ((p_u + p_u_prev) / 2.0) * dt_hours
+            except Exception:
+                pass
+
+    integrated_house_kwh = round(integrated_wh / 1000.0, 2)
+    
+    # Se abbiamo campioni sufficienti usiamo il carico integrato reale, altrimenti stima conservativa
     self_consumed_kwh = max(0.0, solar_kwh - sold_kwh)
-    
-    # % Autoconsumo (quanta parte del solare prodotto è stata consumata in loco)
+    if integrated_house_kwh >= 0.1:
+        total_house_kwh = integrated_house_kwh
+    else:
+        total_house_kwh = round(self_consumed_kwh + bought_kwh, 2)
+
+    # % Autosufficienza energetica reale: 1 - (energia prelevata dalla rete / consumo totale casa)
+    if total_house_kwh > 0.0:
+        autarky_pct = round(max(0.0, (1.0 - (bought_kwh / total_house_kwh))) * 100.0, 1)
+        autarky_pct = min(100.0, autarky_pct)
+    else:
+        autarky_pct = 0.0
+
+    # % Autoconsumo reale solare: quota di FV prodotta non immessa in rete
     self_consumption_pct = round((self_consumed_kwh / solar_kwh * 100.0), 1) if solar_kwh > 0 else 100.0
-    
-    # Fabbisogno totale casa stimato = Self_Consumed + Bought
-    total_house_kwh = round(self_consumed_kwh + bought_kwh, 2)
-    
-    # % Autosufficienza (quanta parte dei consumi totali di casa è stata coperta dal solare)
-    autarky_pct = round((self_consumed_kwh / total_house_kwh * 100.0), 1) if total_house_kwh > 0 else 0.0
+    self_consumption_pct = min(100.0, max(0.0, self_consumption_pct))
 
     return {
         "solar_today_kwh": solar_kwh,
@@ -1041,9 +1118,9 @@ def get_today_energy_summary() -> Dict[str, Any]:
         "self_consumed_kwh": round(self_consumed_kwh, 2),
         "total_house_kwh": total_house_kwh,
         "battery_soc": soc,
-        "self_consumption_pct": min(100.0, self_consumption_pct),
-        "autarky_pct": min(100.0, autarky_pct),
+        "self_consumption_pct": self_consumption_pct,
+        "autarky_pct": autarky_pct,
+        "max_solar_w": max_solar_w,
+        "max_consumption_w": max_consumption_w,
         "last_update": latest_dict.get("timestamp")
     }
-
-

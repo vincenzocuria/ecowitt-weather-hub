@@ -396,11 +396,11 @@ function startDashboardPolling() {
 
                 if (pBattEl && d.p_batteria !== undefined) {
                     if (d.p_batteria > 0) {
-                        pBattEl.innerHTML = `+${Math.round(d.p_batteria)} <span class="unit">W (In Carica)</span>`;
-                        if (battIcon) battIcon.innerText = '⚡🔋';
+                        pBattEl.innerHTML = `+${Math.round(d.p_batteria)} <span class="unit">W (In Scarica)</span>`;
+                        if (battIcon) battIcon.innerText = '🔋⚡';
                     } else if (d.p_batteria < 0) {
-                        pBattEl.innerHTML = `-${Math.round(Math.abs(d.p_batteria))} <span class="unit">W (In Scarica)</span>`;
-                        if (battIcon) battIcon.innerText = '🔋';
+                        pBattEl.innerHTML = `-${Math.round(Math.abs(d.p_batteria))} <span class="unit">W (In Carica)</span>`;
+                        if (battIcon) battIcon.innerText = '⚡🔋';
                     } else {
                         pBattEl.innerHTML = `0 <span class="unit">W (Standby)</span>`;
                         if (battIcon) battIcon.innerText = '🔋';
@@ -459,7 +459,7 @@ function startDashboardPolling() {
 
                 const hSub = document.getElementById('house_today_sub');
                 if (hSub && s.total_house_kwh !== undefined) {
-                    hSub.innerHTML = `Fabbisogno stimato: <strong>${s.total_house_kwh} kWh</strong>`;
+                    hSub.innerHTML = `Consumo integrato: <strong>${s.total_house_kwh} kWh</strong>`;
                 }
 
                 const gSub = document.getElementById('grid_status_sub');

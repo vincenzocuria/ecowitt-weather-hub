@@ -55,7 +55,7 @@
             <tbody>
                 {% for r in records %}
                 <tr>
-                    <td>{{ r.timestamp.replace('T', ' ')[:19] }}</td>
+                    <td>{{ r.timestamp | local_dt }}</td>
                     <td><strong>{{ r.temp_c if r.temp_c is not none else '--' }}</strong></td>
                     <td>{{ r.humidity if r.humidity is not none else '--' }} %</td>
                     <td style="color: #f59e0b;"><strong>{{ r.temp_in_c if r.temp_in_c is not none else '--' }}</strong></td>

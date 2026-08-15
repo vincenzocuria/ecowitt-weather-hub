@@ -28,7 +28,8 @@ from backend.database import (
     get_station_status, get_pressure_trend, calc_apparent_temp,
     get_today_extremes, get_yesterday_same_time, get_recent_rain_totals,
     save_push_subscription, delete_push_subscription, get_all_push_subscriptions,
-    save_energy_reading, get_latest_energy, get_today_energy_summary, get_energy_timeseries
+    save_energy_reading, get_latest_energy, get_today_energy_summary, get_energy_timeseries,
+    to_local_datetime_str
 )
 from backend.analytics import (
     calc_zambretti_forecast, evaluate_window_ventilation, evaluate_laundry_index,
@@ -90,6 +91,11 @@ TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+# Filtri personalizzati Jinja2 per conversione automatica UTC -> Europe/Rome
+templates.env.filters["local_dt"] = to_local_datetime_str
+templates.env.filters["local_time"] = lambda s: to_local_datetime_str(s, "%H:%M")
+templates.env.filters["local_date"] = lambda s: to_local_datetime_str(s, "%d/%m/%Y")
+
 # ----------------- BACKGROUND WORKER -----------------
 def process_weather_data(raw_data: dict):
     try:
@@ -132,7 +138,14 @@ def build_analytics_context(latest: dict) -> dict:
     window_advice = evaluate_window_ventilation(temp_c, hum, temp_in, hum_in, rain_rate)
     laundry_advice = evaluate_laundry_index(temp_c, hum, wind_spd, solar, rain_rate)
     humidex_info = calc_humidex(temp_c, dew_point)
-    outdoor_advice = evaluate_outdoor_activity(temp_c, wind_gst, rain_rate, uv)
+    outdoor_advice = evaluate_outdoor_activity(
+        temp_c=temp_c,
+        wind_gust_kmh=wind_gst,
+        rain_rate=rain_rate,
+        uv_index=uv,
+        humidex_val=humidex_info.get("value"),
+        lightning_dist=latest.get("lightning_distance_km")
+    )
     indoor_comfort = evaluate_indoor_comfort(temp_in, hum_in, temp_c)
     dew_point_in = calc_dew_point(temp_in, hum_in)
 
@@ -204,10 +217,18 @@ async def api_live():
     latest = get_latest_reading()
     if not latest:
         return {"message": "In attesa dei primi dati dalla stazione meteo", "status_info": get_station_status()}
+    
+    # Sanitizzazione: rimuove payload raw e chiavi riservate
+    clean_latest = dict(latest)
+    clean_latest.pop("raw_data_json", None)
+    clean_latest.pop("raw_payload", None)
+    clean_latest.pop("station_mac", None)
+    clean_latest.pop("PASSKEY", None)
+
     status_info = get_station_status()
-    latest["status_info"] = status_info
-    latest["analytics"] = build_analytics_context(latest)
-    return latest
+    clean_latest["status_info"] = status_info
+    clean_latest["analytics"] = build_analytics_context(latest)
+    return clean_latest
 
 @app.post("/api/daily-digest/send")
 @app.get("/api/daily-digest/send")

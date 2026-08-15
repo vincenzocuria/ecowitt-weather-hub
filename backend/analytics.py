@@ -20,37 +20,37 @@ def get_station_tz(tz_name: Optional[str] = None) -> Any:
 # ---------------------------------------------------------------------------
 
 ZAMBRETTI_TEXTS = {
-    # Pressione in aumento (A)
-    "A": {"icon": "☀️", "text": "Tempo stabile e soleggiato", "desc": "Anticiclone solido in consolidamento."},
-    "B": {"icon": "🌤️", "text": "Bello, tempo asciutto e piacevole", "desc": "Condizioni ampiamente soleggiate."},
-    "C": {"icon": "⛅", "text": "Miglioramento del tempo", "desc": "Tendenza a schiarite sempre più ampie."},
+    # Pressione in aumento (A..J) - Tendenza al miglioramento
+    "A": {"icon": "☀️", "text": "Bello stabile e soleggiato", "desc": "Anticiclone solido in consolidamento."},
+    "B": {"icon": "🌤️", "text": "Bel tempo asciutto", "desc": "Condizioni ampiamente soleggiate e stabili."},
+    "C": {"icon": "⛅", "text": "In miglioramento verso il bello", "desc": "Tendenza a schiarite sempre più ampie."},
     "D": {"icon": "🌤️", "text": "Variabile con ampie schiarite", "desc": "Tempo in rapido miglioramento."},
-    "E": {"icon": "🌦️", "text": "Instabilità passeggera in attenuazione", "desc": "Possibili isolati piovaschi in esaurimento."},
-    "F": {"icon": "⛅", "text": "Miglioramento graduale", "desc": "Nubi residue ma tempo in miglioramento."},
-    "G": {"icon": "🌦️", "text": "Variabile con brevi rovesci", "desc": "Possibili rovesci alternati a schiarite."},
-    "H": {"icon": "🌧️", "text": "Piogge sparse in attenuazione", "desc": "Miglioramento atteso nelle prossime ore."},
-    "I": {"icon": "🌧️", "text": "Pioggia intermittente in miglioramento", "desc": "Tendenza a cessazione dei fenomeni."},
-    "J": {"icon": "⛈️", "text": "Forte instabilità in lento miglioramento", "desc": "Rovesci intensi ma in progressivo allontanamento."},
+    "E": {"icon": "🌦️", "text": "Bello con possibili brevi piovaschi", "desc": "Prevalentemente asciutto con isolati rovesci passeggeri."},
+    "F": {"icon": "⛅", "text": "Discreto in miglioramento", "desc": "Nubi residue in graduale diradamento."},
+    "G": {"icon": "🌦️", "text": "Variabile, possibili rovesci all'inizio", "desc": "Miglioramento graduale nelle ore successive."},
+    "H": {"icon": "🌦️", "text": "Discreto, possibili rovesci successivi", "desc": "Inizialmente asciutto con temporanee velature."},
+    "I": {"icon": "🌧️", "text": "Instabile, piogge in attenuazione", "desc": "Tendenza a progressivo esaurimento dei fenomeni."},
+    "J": {"icon": "🌦️", "text": "Variabile in miglioramento", "desc": "Instabilità residua in progressivo allontanamento."},
 
-    # Pressione costante (B)
-    "K": {"icon": "☀️", "text": "Bello stabile e asciutto", "desc": "Condizioni anticicloniche costanti."},
-    "L": {"icon": "🌤️", "text": "Prevalentemente soleggiato", "desc": "Bel tempo persistente."},
-    "M": {"icon": "⛅", "text": "Variabile e asciutto", "desc": "Alternanza di sole e nuvole innocue."},
-    "N": {"icon": "🌦️", "text": "Variabile con possibili piovaschi", "desc": "Instabilità pomeridiana o locale."},
-    "O": {"icon": "🌧️", "text": "Tempo piovoso a tratti", "desc": "Copertura compatta con piogge a intervalli."},
-    "P": {"icon": "🌧️", "text": "Piogge persistenti", "desc": "Cielo coperto e precipitazioni diffuse."},
-    "Q": {"icon": "⛈️", "text": "Maltempo e temporali", "desc": "Bassa pressione costante con temporali."},
+    # Pressione costante (K..Q) - Condizioni stazionarie
+    "K": {"icon": "☀️", "text": "Bello stabile e asciutto", "desc": "Condizioni anticicloniche costanti e soleggiate."},
+    "L": {"icon": "🌤️", "text": "Prevalentemente soleggiato", "desc": "Bel tempo persistente con poche nubi innocue."},
+    "M": {"icon": "⛅", "text": "Variabile con ampie schiarite", "desc": "Alternanza di sole e nuvole innocue in clima asciutto."},
+    "N": {"icon": "🌦️", "text": "Variabile con possibili brevi rovesci", "desc": "Nubi sparse con possibili piovaschi pomeridiani o locali."},
+    "O": {"icon": "🌦️", "text": "Variabile a tratti instabile", "desc": "Copertura irregolare con rovesci a intervalli."},
+    "P": {"icon": "🌧️", "text": "Instabile con piogge a intervalli", "desc": "Cielo nuvoloso con precipitazioni discontinue."},
+    "Q": {"icon": "🌦️", "text": "Variabile con brevi intervalli asciutti", "desc": "Instabilità persistente intervallata da locali schiarite."},
 
-    # Pressione in calo (C)
-    "R": {"icon": "🌤️", "text": "Bello ma tendente al peggioramento", "desc": "Inizio di un calo barometrico."},
-    "S": {"icon": "⛅", "text": "Nubi in aumento, peggioramento imminente", "desc": "Aumento della copertura nuvolosa."},
-    "T": {"icon": "🌦️", "text": "Variabile con piogge in arrivo", "desc": "Peggioramento con prime precipitazioni."},
+    # Pressione in calo (R..Z) - Tendenza al peggioramento
+    "R": {"icon": "🌤️", "text": "Bello ma tendente a instabile", "desc": "Inizio di un calo barometrico con velature in aumento."},
+    "S": {"icon": "⛅", "text": "Nubi in aumento, peggioramento imminente", "desc": "Progressivo addensamento nuvoloso."},
+    "T": {"icon": "🌦️", "text": "Variabile con piogge in arrivo", "desc": "Peggioramento con prime precipitazioni sparse."},
     "U": {"icon": "🌧️", "text": "Pioggia in arrivo nelle prossime ore", "desc": "Fronte perturbato in avvicinamento."},
     "V": {"icon": "🌧️", "text": "Pioggia e vento in rinforzo", "desc": "Peggioramento marcato con venti sostenuti."},
-    "W": {"icon": "🌧️", "text": "Piogge diffuse e continue", "desc": "Forte perturbazione in transito."},
-    "X": {"icon": "⛈️", "text": "Forte maltempo con temporali", "desc": "Rischio temporali forti e nubifragi."},
-    "Y": {"icon": "🌪️", "text": "Burrasca / Vento forte e pioggia intensa", "desc": "Marcata depressione con venti tempestosi."},
-    "Z": {"icon": "⚠️", "text": "Allerta tempesta violenta", "desc": "Crollo barometrico eccezionale, forte burrasca."}
+    "W": {"icon": "🌧️", "text": "Piogge diffuse e frequenti", "desc": "Forte perturbazione in transito."},
+    "X": {"icon": "🌧️", "text": "Forte maltempo e pioggia continua", "desc": "Depressione marcata con precipitazioni intense."},
+    "Y": {"icon": "🌪️", "text": "Burrasca con vento forte e pioggia", "desc": "Marcata depressione con venti burrascosi."},
+    "Z": {"icon": "⛈️", "text": "Tempesta / Forte burrasca", "desc": "Crollo barometrico eccezionale con forte maltempo."}
 }
 
 def calc_zambretti_forecast(
@@ -60,7 +60,8 @@ def calc_zambretti_forecast(
     month: Optional[int] = None
 ) -> Dict[str, Any]:
     """
-    Calcola la previsione locale a 6-12 ore usando l'algoritmo di Zambretti.
+    Calcola la previsione locale a 6-12 ore usando l'algoritmo barometrico standard di Zambretti (Negretti & Zambra).
+    Utilizza la Pressione Relativa standardizzata a livello del mare (MSLP).
     """
     if pressure_hpa is None:
         return {
@@ -77,23 +78,21 @@ def calc_zambretti_forecast(
         month = datetime.now().month
 
     # Trend di pressione:
-    # diff > 0.8 hPa/3h -> In aumento (rising)
-    # diff < -0.8 hPa/3h -> In calo (falling)
+    # diff >= 0.8 hPa/3h -> In aumento (rising)
+    # diff <= -0.8 hPa/3h -> In calo (falling)
     # altrimenti -> Stabile (steady)
     
-    # Range normalizzato (hPa a livello del mare) tipico 950 - 1050
+    # Range normalizzato MSLP 950 - 1050 hPa
     p = max(950.0, min(1050.0, p))
 
     if diff >= 0.8:
         # Pressione in aumento: Z = 0.174 * (1050 - P) + 1 (1..10 -> A..J)
         z = 0.174 * (1050.0 - p) + 1.0
-        # Correzione vento (venti settentrionali favoriscono bel tempo nell'emisfero nord)
         if wind_deg is not None:
             if (315 <= wind_deg <= 360) or (0 <= wind_deg <= 45):
                 z -= 1.0
             elif 135 <= wind_deg <= 225:
                 z += 1.0
-        # Correzione stagionale (inverno favorisce alta pressione fredda, estate temporali termoconvettivi)
         if month in (12, 1, 2):
             z -= 1.0
         elif month in (6, 7, 8):
@@ -107,11 +106,11 @@ def calc_zambretti_forecast(
         # Pressione in calo: Z = 0.155 * (1050 - P) + 18 (18..26 -> R..Z)
         z = 0.155 * (1050.0 - p) + 18.0
         if wind_deg is not None:
-            if 135 <= wind_deg <= 225: # venti meridionali carichi di umidità
+            if 135 <= wind_deg <= 225: # venti meridionali più umidi
                 z += 1.0
             elif (315 <= wind_deg <= 360) or (0 <= wind_deg <= 45):
                 z -= 1.0
-        if month in (10, 11, 3, 4): # autunno/primavera più instabile
+        if month in (10, 11, 3, 4):
             z += 0.5
 
         z_idx = max(18, min(26, int(round(z))))
@@ -119,11 +118,38 @@ def calc_zambretti_forecast(
         letter = letters[z_idx - 18]
 
     else:
-        # Pressione costante: Z = 0.169 * (1050 - P) + 11 (11..17 -> K..Q)
-        z = 0.169 * (1050.0 - p) + 11.0
-        z_idx = max(11, min(17, int(round(z))))
-        letters = ["K", "L", "M", "N", "O", "P", "Q"]
-        letter = letters[z_idx - 11]
+        # Pressione costante: formula barometrica calibrata Negretti & Zambra
+        # A 1025+ hPa -> K (Bello stabile)
+        # A 1018-1024 hPa -> L (Prevalentemente soleggiato)
+        # A 1012-1017 hPa -> M (Variabile con ampie schiarite)
+        # A 1006-1011 hPa -> N (Variabile con possibili rovesci)
+        # A 1000-1005 hPa -> O (Variabile a tratti instabile)
+        # A 994-999 hPa -> P (Instabile con piogge a intervalli)
+        # Sotto 994 hPa -> Q (Variabile con brevi intervalli asciutti)
+        if p >= 1025.0:
+            letter = "K"
+        elif p >= 1018.0:
+            letter = "L"
+        elif p >= 1012.0:
+            letter = "M"
+        elif p >= 1006.0:
+            letter = "N"
+        elif p >= 1000.0:
+            letter = "O"
+        elif p >= 994.0:
+            letter = "P"
+        else:
+            letter = "Q"
+
+        # Correzioni vento/stagione per trend stazionario
+        letters_steady = ["K", "L", "M", "N", "O", "P", "Q"]
+        curr_idx = letters_steady.index(letter)
+        if wind_deg is not None:
+            if (315 <= wind_deg <= 360) or (0 <= wind_deg <= 45):
+                curr_idx = max(0, curr_idx - 1)
+            elif 135 <= wind_deg <= 225:
+                curr_idx = min(len(letters_steady) - 1, curr_idx + 1)
+        letter = letters_steady[curr_idx]
 
     res = ZAMBRETTI_TEXTS.get(letter, ZAMBRETTI_TEXTS["M"]).copy()
     res["letter"] = letter
@@ -274,6 +300,7 @@ def evaluate_laundry_index(
         total_score = min(total_score, 30)
 
     if total_score >= 70:
+        vent_desc = f"buona ventilazione ({w} km/h)" if w >= 6.0 else f"bava di vento / brezza debole ({w} km/h)"
         return {
             "score": total_score,
             "status": "excellent",
@@ -281,7 +308,7 @@ def evaluate_laundry_index(
             "badge_class": "badge-success",
             "title": "Asciugatura Rapida",
             "time_estimate": "~1-2 ore",
-            "desc": f"Ottimo: aria asciutta ({h}%) e buona ventilazione ({w} km/h)."
+            "desc": f"Ottimo: aria calda e asciutta ({h}%), {vent_desc}."
         }
     elif total_score >= 45:
         return {
@@ -291,7 +318,7 @@ def evaluate_laundry_index(
             "badge_class": "badge-warning",
             "title": "Asciugatura Media",
             "time_estimate": "~3-5 ore",
-            "desc": f"Discreto: asciugatura regolare (T {t}°C, UR {h}%)."
+            "desc": f"Discreto: asciugatura regolare (T {t}°C, UR {h}%, vento {w} km/h)."
         }
     else:
         return {
@@ -307,10 +334,16 @@ def evaluate_laundry_index(
 
 def calc_humidex(temp_c: Optional[float], dew_point_c: Optional[float]) -> Dict[str, Any]:
     """
-    Indice Humidex canadese / Disagio bioclimatico estivo.
+    Indice Humidex canadese standard / Disagio bioclimatico da calore e umidità.
+    Classificazione ufficiale Meteorological Service of Canada (MSC):
+    - < 20: Confortevole / Nessun disagio
+    - 20-29: Lieve disagio termico
+    - 30-39: Disagio moderato (evitare sforzi prolungati nelle ore di punta)
+    - 40-45: Forte disagio / Evitare sforzi fisici non necessari
+    - >= 46: Pericoloso / Alto rischio colpo di calore
     """
     if temp_c is None or dew_point_c is None:
-        return {"value": None, "level": "normal", "text": "Normale", "badge_class": "badge-neutral"}
+        return {"value": None, "level": "normal", "text": "Normale", "badge_class": "badge-neutral", "icon": "🌡️"}
 
     t = float(temp_c)
     dp = float(dew_point_c)
@@ -319,48 +352,102 @@ def calc_humidex(temp_c: Optional[float], dew_point_c: Optional[float]) -> Dict[
     e = 6.11 * math.exp(5417.7530 * ((1.0 / 273.16) - (1.0 / (273.15 + dp))))
     h = round(t + (5.0 / 9.0) * (e - 10.0), 1)
 
-    if h < 27.0:
+    if h < 20.0:
         return {"value": h, "level": "comfortable", "text": "Confortevole", "badge_class": "badge-success", "icon": "😊"}
-    elif h < 35.0:
-        return {"value": h, "level": "slight_discomfort", "text": "Afa leggera", "badge_class": "badge-warning", "icon": "😐"}
+    elif h < 30.0:
+        return {"value": h, "level": "slight_discomfort", "text": "Lieve disagio", "badge_class": "badge-info", "icon": "🙂"}
     elif h < 40.0:
-        return {"value": h, "level": "discomfort", "text": "Afa intensa / Disagio", "badge_class": "badge-danger", "icon": "😓"}
+        return {"value": h, "level": "moderate_discomfort", "text": "Disagio moderato", "badge_class": "badge-warning", "icon": "😐"}
     elif h < 46.0:
-        return {"value": h, "level": "severe_discomfort", "text": "Forte disagio termico", "badge_class": "badge-danger", "icon": "🥵"}
+        return {"value": h, "level": "severe_discomfort", "text": "Forte disagio / Evitare sforzi", "badge_class": "badge-danger", "icon": "🥵"}
     else:
-        return {"value": h, "level": "extreme_danger", "text": "Afa estrema / Pericolosa", "badge_class": "badge-danger", "icon": "🚨"}
+        return {"value": h, "level": "extreme_danger", "text": "Pericoloso / Rischio colpo di calore", "badge_class": "badge-danger", "icon": "🚨"}
 
 
 def evaluate_outdoor_activity(
     temp_c: Optional[float],
     wind_gust_kmh: Optional[float],
     rain_rate: Optional[float],
-    uv_index: Optional[int]
+    uv_index: Optional[int],
+    humidex_val: Optional[float] = None,
+    lightning_dist: Optional[float] = None
 ) -> Dict[str, Any]:
     """
-    Valutazione idoneità per attività all'aperto (running, bici, passeggiate).
+    Valutazione idoneità per attività all'aperto (running, bici, camminate, sport).
+    Pesa in modo integrato: temperatura, indice humidex, vento/raffiche, pioggia, fulmini e radiazione UV.
     """
+    # 1. Rischio Temporale / Fulmini
+    if lightning_dist is not None and lightning_dist <= 25.0:
+        return {
+            "level": "bad",
+            "icon": "🏃 ⚡",
+            "badge_class": "badge-danger",
+            "title": "Pericolo Temporale",
+            "desc": f"Attività elettrica a {lightning_dist} km: sconsigliato stare all'aperto."
+        }
+
+    # 2. Pioggia
     if rain_rate and rain_rate > 0.5:
-        return {"level": "bad", "icon": "🏃 🌧️", "badge_class": "badge-danger", "title": "Sconsigliato", "desc": "Pioggia in corso."}
+        return {
+            "level": "bad",
+            "icon": "🏃 🌧️",
+            "badge_class": "badge-danger",
+            "title": "Sconsigliato (Pioggia)",
+            "desc": f"Precipitazioni in corso ({rain_rate} mm/h)."
+        }
     
+    # 3. Vento Forte
     if wind_gust_kmh and wind_gust_kmh >= 45.0:
-        return {"level": "warning", "icon": "🏃 💨", "badge_class": "badge-warning", "title": "Vento Forte", "desc": f"Raffiche fino a {wind_gust_kmh} km/h."}
+        return {
+            "level": "warning",
+            "icon": "🏃 💨",
+            "badge_class": "badge-warning",
+            "title": "Vento Forte",
+            "desc": f"Raffiche sostenute fino a {wind_gust_kmh} km/h."
+        }
 
-    if temp_c is not None:
-        if temp_c >= 35.0:
-            return {"level": "bad", "icon": "🏃 🔥", "badge_class": "badge-danger", "title": "Troppo Caldo", "desc": "Rischio colpi di calore, rimandare a sera."}
-        elif temp_c <= 0.0:
-            return {"level": "warning", "icon": "🏃 ❄️", "badge_class": "badge-warning", "title": "Gelo Esterno", "desc": "Attenzione a fondo stradale scivoloso o ghiaccio."}
-
+    t = float(temp_c) if temp_c is not None else 20.0
+    h_val = float(humidex_val) if humidex_val is not None else t
     uv = uv_index or 0
-    uv_note = f" (Protezione solare UV {uv})" if uv >= 6 else ""
+    uv_note = f" • Protezione solare alta (UV {uv})" if uv >= 6 else ""
 
+    # 4. Caldo Estremo / Canicola (Humidex >= 40 o T >= 35°C)
+    if t >= 35.0 or h_val >= 40.0:
+        return {
+            "level": "bad",
+            "icon": "🏃 🔥",
+            "badge_class": "badge-danger",
+            "title": "Caldo Eccessivo / Sconsigliato",
+            "desc": f"Temperatura {t}°C (Humidex {h_val}): alto rischio colpi di calore, rimandare a tarda sera{uv_note}."
+        }
+
+    # 5. Caldo Moderato / Afa (Humidex >= 35 o T >= 30°C)
+    if t >= 30.0 or h_val >= 35.0:
+        return {
+            "level": "warning",
+            "icon": "🏃 🟡",
+            "badge_class": "badge-warning",
+            "title": "Caldo Intenso / Attività Leggera",
+            "desc": f"Clima caldo ({t}°C, Humidex {h_val}): evitare sport intenso nelle ore centrali, idratarsi spesso{uv_note}."
+        }
+
+    # 6. Freddo Intenso / Gelo (T <= 0°C)
+    if t <= 0.0:
+        return {
+            "level": "warning",
+            "icon": "🏃 ❄️",
+            "badge_class": "badge-warning",
+            "title": "Gelo Esterno",
+            "desc": f"Temperatura sottozero ({t}°C): attenzione a fondo stradale scivoloso o ghiaccio."
+        }
+
+    # 7. Condizioni Ottimali
     return {
         "level": "excellent",
         "icon": "🏃 🟢",
         "badge_class": "badge-success",
         "title": "Condizioni Favorevoli",
-        "desc": f"Tempo piacevole per sport e passeggiate{uv_note}."
+        "desc": f"Clima gradevole per sport e passeggiate ({t}°C){uv_note}."
     }
 
 

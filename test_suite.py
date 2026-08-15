@@ -142,9 +142,41 @@ class TestEcowittHub(unittest.TestCase):
     def test_forecast_cross_check_no_hardcoded_city(self):
         summary = forecast_service.build_cross_check_summary({"temp_c": 35.0, "rain_rate_mm_hr": 0.0})
         if summary.get("available"):
-            # Ensure "Corigliano" is not unconditionally hardcoded unless in LOCATION_NAME
             if not settings.LOCATION_NAME:
                 self.assertNotIn("Corigliano", summary.get("text", ""))
+
+    def test_aton_battery_direction(self):
+        from backend.aton_service import AtonService
+        svc = AtonService()
+        # pBatteria > 0 means discharging (+W to house)
+        parsed_discharging = svc._parse_telemetry({"pSolare": 782, "pUtenze": 888, "pBatteria": 105, "pRete": 0, "soc": 80})
+        self.assertTrue(parsed_discharging["battery_discharging"])
+        self.assertFalse(parsed_discharging["battery_charging"])
+        self.assertEqual(parsed_discharging["battery_status"], "discharging")
+
+        # pBatteria < 0 means charging (-W into battery)
+        parsed_charging = svc._parse_telemetry({"pSolare": 1500, "pUtenze": 500, "pBatteria": -950, "pRete": 0, "soc": 40})
+        self.assertTrue(parsed_charging["battery_charging"])
+        self.assertFalse(parsed_charging["battery_discharging"])
+        self.assertEqual(parsed_charging["battery_status"], "charging")
+
+    def test_zambretti_steady_1013(self):
+        # 1013.7 hPa with steady pressure should NOT be a thunderstorm
+        z = calc_zambretti_forecast(1013.7, 0.0, 180)
+        self.assertIn(z["letter"], ["K", "L", "M", "N", "O"])
+        self.assertNotIn("temporali", z["text"].lower())
+        self.assertNotIn("maltempo", z["text"].lower())
+
+    def test_humidex_canadian_scale(self):
+        # T=32.6, DP=16.0 -> Humidex approx 37.5 (Disagio moderato)
+        h = calc_humidex(32.6, 16.0)
+        self.assertEqual(h["level"], "moderate_discomfort")
+        self.assertEqual(h["text"], "Disagio moderato")
+
+        # High heat and humidex outdoor activity should be warned, not green
+        outdoor = evaluate_outdoor_activity(temp_c=32.6, wind_gust_kmh=4.0, rain_rate=0.0, uv_index=7, humidex_val=h["value"])
+        self.assertEqual(outdoor["level"], "warning")
+        self.assertIn("Caldo", outdoor["title"])
 
 
 if __name__ == "__main__":

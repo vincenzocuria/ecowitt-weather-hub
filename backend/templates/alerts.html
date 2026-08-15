@@ -51,7 +51,7 @@
         <span style="font-size: 0.85rem; color: var(--text-dim);">Topic: <strong>{{ ntfy_topic }}</strong></span>
     </div>
     <div style="font-size: 0.9rem; color: var(--text-dim); line-height: 1.5; display: flex; flex-direction: column; gap: 0.5rem;">
-        <p>In parallelo alle notifiche PWA, il server invia tutti gli allarmi sul canale pubblico cifrato ntfy. Utile se vuoi ricevere notifiche su smartwatch o integrarlo con automazioni esterne.</p>
+        <p>In parallelo alle notifiche PWA, il server invia gli avvisi sul topic ntfy configurato. Su ntfy.sh i topic pubblici sono ad accesso diretto: ideale per ricevere notifiche su smartwatch o webhook per domotica.</p>
         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
             <a href="https://ntfy.sh/{{ ntfy_topic }}" target="_blank" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.85rem;">🌐 Apri Canale ntfy.sh</a>
         </div>
@@ -137,7 +137,7 @@
                 <tr>
                     <td><strong>🏆 Record Storico Infranto</strong></td>
                     <td><span style="font-size: 1.2rem;">🏆</span></td>
-                    <td>Battuto un nuovo record assoluto (es. Max Temp, Raffica, Pioggia)</td>
+                    <td>Battuto un nuovo record assoluto significativo (Temp ≥0.5°C, Raffica ≥5 km/h)</td>
                     <td><span class="badge-tag urgent">Alta</span></td>
                 </tr>
                 <tr>
@@ -184,7 +184,7 @@
             <tbody>
                 {% for a in alerts %}
                 <tr>
-                    <td>{{ a.timestamp.replace('T', ' ')[:19] }}</td>
+                    <td>{{ a.timestamp | local_dt }}</td>
                     <td>
                         <span style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border-radius: 8px; background: rgba(56, 189, 248, 0.15); color: var(--accent);">
                             {{ a.alert_type }}
