@@ -171,6 +171,16 @@ class ForecastService:
                 formatted_date = d_str
 
             code = daily_codes[i] if i < len(daily_codes) else None
+            prob_pct = int(daily_prob[i]) if i < len(daily_prob) and daily_prob[i] is not None else 0
+            rain_mm = round(daily_precip[i], 1) if i < len(daily_precip) and daily_precip[i] is not None else 0.0
+
+            # FILTRO METEOROLOGICO REALISTICO:
+            # Se la probabilità di pioggia è trascurabile (< 20% e accumulo < 0.2mm) ma il modello
+            # restituisce un codice WMO di pioggia/pioviggine (es. 51-67, 80-81), correggi il codice
+            # verso parzialmente nuvoloso o sereno per evitare di mostrare nuvole di pioggia ingannevoli per l'1%.
+            if code in (51, 53, 55, 56, 57, 61, 63, 65, 80, 81) and prob_pct < 20 and rain_mm < 0.2:
+                code = 2  # Parzialmente nuvoloso
+
             w_info = self.get_wmo_info(code)
 
             days_list.append({
@@ -183,8 +193,8 @@ class ForecastService:
                 "desc": w_info["desc"],
                 "temp_max": round(daily_max_t[i], 1) if i < len(daily_max_t) and daily_max_t[i] is not None else None,
                 "temp_min": round(daily_min_t[i], 1) if i < len(daily_min_t) and daily_min_t[i] is not None else None,
-                "rain_sum_mm": round(daily_precip[i], 1) if i < len(daily_precip) and daily_precip[i] is not None else 0.0,
-                "rain_prob_pct": int(daily_prob[i]) if i < len(daily_prob) and daily_prob[i] is not None else 0,
+                "rain_sum_mm": rain_mm,
+                "rain_prob_pct": prob_pct,
                 "wind_max_kmh": round(daily_wind[i], 1) if i < len(daily_wind) and daily_wind[i] is not None else 0.0,
                 "uv_max": round(daily_uv[i], 1) if i < len(daily_uv) and daily_uv[i] is not None else 0.0,
             })
@@ -208,6 +218,12 @@ class ForecastService:
                 diff_hours = (t_dt - now_dt).total_seconds() / 3600.0
                 if -1.0 <= diff_hours <= 36.0:
                     code = hourly_codes[j] if j < len(hourly_codes) else None
+                    prob_pct = int(hourly_probs[j]) if j < len(hourly_probs) and hourly_probs[j] is not None else 0
+                    rain_mm = round(hourly_rains[j], 1) if j < len(hourly_rains) else 0.0
+
+                    if code in (51, 53, 55, 56, 57, 61, 63, 65, 80, 81) and prob_pct < 20 and rain_mm < 0.2:
+                        code = 2  # Parzialmente nuvoloso
+
                     w_info = self.get_wmo_info(code)
                     hours_list.append({
                         "iso_time": t_str,
@@ -215,8 +231,8 @@ class ForecastService:
                         "day_short": ITALIAN_DAYS.get(t_dt.weekday(), "")[:3],
                         "temp_c": round(hourly_temps[j], 1) if j < len(hourly_temps) else None,
                         "humidity": round(hourly_hums[j], 0) if j < len(hourly_hums) else None,
-                        "rain_mm": round(hourly_rains[j], 1) if j < len(hourly_rains) else 0.0,
-                        "rain_prob_pct": int(hourly_probs[j]) if j < len(hourly_probs) and hourly_probs[j] is not None else 0,
+                        "rain_mm": rain_mm,
+                        "rain_prob_pct": prob_pct,
                         "wind_kmh": round(hourly_winds[j], 1) if j < len(hourly_winds) else 0.0,
                         "weather_code": code,
                         "icon": w_info["icon"],

@@ -41,32 +41,46 @@ function startDashboardPolling() {
                 if (d.temp_c !== undefined) {
                     const el = document.getElementById('temp_c');
                     if (el) el.innerText = d.temp_c;
+                    const heroT = document.getElementById('hero_temp_val');
+                    if (heroT) heroT.innerText = d.temp_c;
                 }
                 if (d.apparent_temp_c !== undefined) {
                     const el = document.getElementById('apparent_temp_badge');
                     if (el) el.innerText = 'Percepita: ' + d.apparent_temp_c + '°C';
+                    const heroApp = document.getElementById('hero_apparent_val');
+                    if (heroApp) heroApp.innerText = d.apparent_temp_c + '°C';
                 }
                 if (d.humidity !== undefined) {
                     const el = document.getElementById('humidity');
                     if (el) el.innerText = d.humidity + ' %';
+                    const heroHum = document.getElementById('hero_hum_val');
+                    if (heroHum) heroHum.innerText = d.humidity + '%';
                 }
                 if (d.dew_point_c !== undefined) {
                     const el = document.getElementById('dew_point');
                     if (el) el.innerText = d.dew_point_c + ' °C';
+                    const heroDew = document.getElementById('hero_dew_val');
+                    if (heroDew) heroDew.innerText = d.dew_point_c;
                 }
                 if (d.pressure_rel_hpa !== undefined) {
                     const el = document.getElementById('press_rel');
                     if (el) el.innerText = d.pressure_rel_hpa + ' hPa';
+                    const heroPress = document.getElementById('hero_press_val');
+                    if (heroPress) heroPress.innerHTML = d.pressure_rel_hpa + ' <small>hPa</small>';
                 }
                 if (d.pressure_trend && d.pressure_trend.text) {
                     const el = document.getElementById('press_trend');
                     if (el) el.innerText = d.pressure_trend.text;
+                    const heroTrend = document.getElementById('hero_trend_val');
+                    if (heroTrend) heroTrend.innerText = d.pressure_trend.text;
                 }
 
                 // Vento & Bussola
                 if (d.wind_speed_kmh !== undefined) {
                     const el = document.getElementById('wind_spd');
                     if (el) el.innerText = d.wind_speed_kmh;
+                    const heroWind = document.getElementById('hero_wind_val');
+                    if (heroWind) heroWind.innerHTML = d.wind_speed_kmh + ' <small>km/h</small>';
                 }
                 if (d.wind_gust_kmh !== undefined) {
                     const el = document.getElementById('wind_gst');
@@ -75,6 +89,8 @@ function startDashboardPolling() {
                 if (d.max_daily_gust_kmh !== undefined) {
                     const el = document.getElementById('max_gust');
                     if (el) el.innerText = d.max_daily_gust_kmh + ' km/h';
+                    const heroGust = document.getElementById('hero_gust_val');
+                    if (heroGust) heroGust.innerText = d.max_daily_gust_kmh;
                 }
                 if (d.wind_dir_deg !== undefined) {
                     const el = document.getElementById('wind_dir');
@@ -89,10 +105,14 @@ function startDashboardPolling() {
                 if (d.rain_rate_mm_hr !== undefined) {
                     const el = document.getElementById('rain_rate');
                     if (el) el.innerText = d.rain_rate_mm_hr;
+                    const heroRate = document.getElementById('hero_rain_rate_val');
+                    if (heroRate) heroRate.innerText = d.rain_rate_mm_hr;
                 }
                 if (d.daily_rain_mm !== undefined) {
                     const el = document.getElementById('rain_day');
                     if (el) el.innerText = d.daily_rain_mm + ' mm';
+                    const heroRainDay = document.getElementById('hero_rain_day_val');
+                    if (heroRainDay) heroRainDay.innerHTML = d.daily_rain_mm + ' <small>mm</small>';
                 }
                 if (d.yearly_rain_mm !== undefined) {
                     const el = document.getElementById('rain_year');
@@ -144,6 +164,21 @@ function startDashboardPolling() {
                 // ANALYTICS & SMART ADVICE
                 if (d.analytics) {
                     const a = d.analytics;
+
+                    // Condizione Cielo & Sky Theme Hero Animato
+                    if (a.current_condition) {
+                        const cc = a.current_condition;
+                        const heroCard = document.getElementById('hero_weather_card');
+                        if (heroCard && cc.sky_theme) {
+                            heroCard.className = 'weather-hero-card ' + cc.sky_theme;
+                        }
+                        const heroIcon = document.getElementById('hero_sky_icon');
+                        if (heroIcon && cc.icon) heroIcon.innerText = cc.icon;
+                        const heroTitle = document.getElementById('hero_condition_title');
+                        if (heroTitle && cc.title) heroTitle.innerText = cc.title;
+                        const heroDesc = document.getElementById('hero_condition_desc');
+                        if (heroDesc && cc.desc) heroDesc.innerText = cc.desc;
+                    }
 
                     // Nowcasting Zambretti
                     if (a.zambretti) {
@@ -227,6 +262,11 @@ function startDashboardPolling() {
                         if (tMinTime && a.today_extremes.temp_min_time) tMinTime.innerText = a.today_extremes.temp_min_time;
                         if (tMax && a.today_extremes.temp_max !== null) tMax.innerText = a.today_extremes.temp_max + '°C';
                         if (tMaxTime && a.today_extremes.temp_max_time) tMaxTime.innerText = a.today_extremes.temp_max_time;
+
+                        const heroMin = document.getElementById('hero_today_min');
+                        if (heroMin && a.today_extremes.temp_min !== null) heroMin.innerText = 'Min ' + a.today_extremes.temp_min + '°';
+                        const heroMax = document.getElementById('hero_today_max');
+                        if (heroMax && a.today_extremes.temp_max !== null) heroMax.innerText = 'Max ' + a.today_extremes.temp_max + '°';
 
                         // Estremi Casa
                         const inMin = document.getElementById('today_in_min');

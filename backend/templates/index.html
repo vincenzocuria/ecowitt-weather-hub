@@ -23,6 +23,138 @@
 </div>
 {% endif %}
 
+<!-- HERO METEO LIVE IN EVIDENZA & CIELO ANIMATO -->
+<div class="weather-hero-card {{ analytics.current_condition.sky_theme if analytics and analytics.current_condition else 'theme-clear-day' }}" id="hero_weather_card">
+    <!-- SFONDO CON ANIMAZIONI DINAMICHE DEL CIELO -->
+    <div class="sky-scene" id="sky_scene">
+        <!-- Sole Animato (raggi rotanti + corpo luminoso) -->
+        <div class="sky-element sky-sun" id="sky_sun">
+            <div class="sun-glow"></div>
+            <div class="sun-body"></div>
+            <div class="sun-rays"></div>
+        </div>
+
+        <!-- Luna & Stelle per la Notte -->
+        <div class="sky-element sky-night" id="sky_night">
+            <div class="night-moon" id="sky_night_moon">{{ analytics.moon_phase.icon if analytics else '🌙' }}</div>
+            <div class="night-stars">
+                <span class="star s1">✦</span>
+                <span class="star s2">★</span>
+                <span class="star s3">✦</span>
+                <span class="star s4">★</span>
+                <span class="star s5">✦</span>
+            </div>
+        </div>
+
+        <!-- Nuvole Fluttuanti 3D -->
+        <div class="sky-element sky-clouds" id="sky_clouds">
+            <div class="cloud c1">☁️</div>
+            <div class="cloud c2">☁️</div>
+            <div class="cloud c3">☁️</div>
+        </div>
+
+        <!-- Pioggia Dinamica -->
+        <div class="sky-element sky-rain" id="sky_rain">
+            <span class="raindrop r1"></span>
+            <span class="raindrop r2"></span>
+            <span class="raindrop r3"></span>
+            <span class="raindrop r4"></span>
+            <span class="raindrop r5"></span>
+            <span class="raindrop r6"></span>
+            <span class="raindrop r7"></span>
+        </div>
+
+        <!-- Lampi Temporaleschi -->
+        <div class="sky-element sky-thunder" id="sky_thunder">
+            <div class="lightning-flash"></div>
+            <span class="lightning-bolt">⚡</span>
+        </div>
+
+        <!-- Strie Vento Dinamiche -->
+        <div class="sky-element sky-wind" id="sky_wind">
+            <div class="wind-line w1"></div>
+            <div class="wind-line w2"></div>
+            <div class="wind-line w3"></div>
+        </div>
+    </div>
+
+    <!-- CONTENUTO HERO: TEMPERATURA GIGANTE, CONDIZIONE CIELO & METRICHE RAPIDE -->
+    <div class="weather-hero-content">
+        <!-- COLONNA 1: ICONA FLUTTUANTE & CONDIZIONE ATTUALE -->
+        <div class="hero-sky-badge-group">
+            <div class="hero-icon-wrapper">
+                <span class="hero-floating-icon" id="hero_sky_icon">{{ analytics.current_condition.icon if analytics and analytics.current_condition else '☀️' }}</span>
+            </div>
+            <div class="hero-condition-texts">
+                <span class="hero-live-indicator"><span class="pulse-live-dot"></span> METEO LIVE LOCALE</span>
+                <h2 class="hero-condition-title" id="hero_condition_title">{{ analytics.current_condition.title if analytics and analytics.current_condition else 'Cielo Sereno & Soleggiato' }}</h2>
+                <p class="hero-condition-desc" id="hero_condition_desc">{{ analytics.current_condition.desc if analytics and analytics.current_condition else 'Radiazione solare ottima, cielo limpido' }}</p>
+            </div>
+        </div>
+
+        <!-- COLONNA 2: TEMPERATURA PRINCIPALE GIGANTE IN PRIMO PIANO -->
+        <div class="hero-temp-showcase">
+            <div class="hero-temp-main">
+                <span class="hero-temp-val" id="hero_temp_val">{{ latest.temp_c if latest.temp_c is not none else '--' }}</span>
+                <span class="hero-temp-unit">°C</span>
+            </div>
+            <div class="hero-temp-subrow">
+                <span class="hero-apparent-pill" id="hero_apparent_badge">
+                    Percepita: <strong id="hero_apparent_val">{{ apparent_temp if apparent_temp is not none else '--' }}°C</strong>
+                </span>
+                <span class="hero-extremes-pill" id="hero_extremes_pill">
+                    <span class="t-min" id="hero_today_min">Min {{ analytics.today_extremes.temp_min if analytics and analytics.today_extremes.temp_min is not none else '--' }}°</span>
+                    <span class="sep">•</span>
+                    <span class="t-max" id="hero_today_max">Max {{ analytics.today_extremes.temp_max if analytics and analytics.today_extremes.temp_max is not none else '--' }}°</span>
+                </span>
+            </div>
+        </div>
+
+        <!-- COLONNA 3: METRICHE AMBIENTALI IMMEDIATE (GLASS CARDS) -->
+        <div class="hero-quick-stats">
+            <!-- 1. Umidità & Rugiada -->
+            <div class="hero-stat-card">
+                <span class="hero-stat-icon">💧</span>
+                <div class="hero-stat-info">
+                    <span class="hero-stat-label">Umidità Esterna</span>
+                    <strong class="hero-stat-val" id="hero_hum_val">{{ latest.humidity if latest.humidity is not none else '--' }}%</strong>
+                    <span class="hero-stat-sub" id="hero_dew_sub">Rugiada: <span id="hero_dew_val">{{ latest.dew_point_c or '--' }}</span>°C</span>
+                </div>
+            </div>
+
+            <!-- 2. Vento & Raffica -->
+            <div class="hero-stat-card">
+                <span class="hero-stat-icon">💨</span>
+                <div class="hero-stat-info">
+                    <span class="hero-stat-label">Vento & Raffica</span>
+                    <strong class="hero-stat-val" id="hero_wind_val">{{ latest.wind_speed_kmh if latest.wind_speed_kmh is not none else '--' }} <small>km/h</small></strong>
+                    <span class="hero-stat-sub" id="hero_wind_sub"><span id="hero_dir_val">{{ wind_dir_text }}</span> • Max <span id="hero_gust_val">{{ latest.max_daily_gust_kmh or analytics.today_extremes.max_gust or '--' }}</span> km/h</span>
+                </div>
+            </div>
+
+            <!-- 3. Pioggia Odierna -->
+            <div class="hero-stat-card">
+                <span class="hero-stat-icon">🌧️</span>
+                <div class="hero-stat-info">
+                    <span class="hero-stat-label">Pioggia Oggi</span>
+                    <strong class="hero-stat-val" id="hero_rain_day_val">{{ latest.daily_rain_mm if latest.daily_rain_mm is not none else '0.0' }} <small>mm</small></strong>
+                    <span class="hero-stat-sub" id="hero_rain_rate_sub">Rateo: <span id="hero_rain_rate_val">{{ latest.rain_rate_mm_hr if latest.rain_rate_mm_hr is not none else '0.0' }}</span> mm/h</span>
+                </div>
+            </div>
+
+            <!-- 4. Pressione & Trend -->
+            <div class="hero-stat-card">
+                <span class="hero-stat-icon">⏱️</span>
+                <div class="hero-stat-info">
+                    <span class="hero-stat-label">Barometro</span>
+                    <strong class="hero-stat-val" id="hero_press_val">{{ latest.pressure_rel_hpa if latest.pressure_rel_hpa is not none else '--' }} <small>hPa</small></strong>
+                    <span class="hero-stat-sub" id="hero_trend_sub"><span id="hero_trend_val">{{ pressure_trend.text if pressure_trend else '--' }}</span></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- NOWCASTING & CONSIGLI SMART CASA / COMFORT -->
 <div class="nowcast-hero">
     <div class="nowcast-top">
@@ -85,6 +217,18 @@
                 </div>
                 <div class="comfort-status-text" id="outdoor_title">{{ analytics.comfort.outdoor.title if analytics else 'Buono' }}</div>
                 <div class="comfort-sub" id="outdoor_desc">{{ analytics.comfort.outdoor.desc if analytics else '--' }}</div>
+            </div>
+        </div>
+
+        <!-- 5. COMFORT INTERNO -->
+        <div class="comfort-pill-card" id="card_indoor">
+            <span class="comfort-icon" id="indoor_icon">{{ analytics.comfort.indoor.icon if analytics and analytics.comfort.indoor else '🏠' }}</span>
+            <div class="comfort-body">
+                <div class="comfort-body-header">
+                    <span class="comfort-name">Clima Indoor</span>
+                </div>
+                <div class="comfort-status-text" id="indoor_title">{{ analytics.comfort.indoor.title if analytics and analytics.comfort.indoor else 'In attesa' }}</div>
+                <div class="comfort-sub" id="indoor_desc">{{ analytics.comfort.indoor.desc if analytics and analytics.comfort.indoor else '--' }}</div>
             </div>
         </div>
     </div>
@@ -281,9 +425,13 @@
                 <span class="t-max">{{ day.temp_max }}°</span>
                 <span class="t-min">{{ day.temp_min }}°</span>
             </div>
-            {% if day.rain_prob_pct > 0 or day.rain_sum_mm > 0 %}
+            {% if day.rain_prob_pct >= 20 or day.rain_sum_mm >= 0.2 %}
             <span class="forecast-rain-pill">
                 💧 {{ day.rain_prob_pct }}% ({{ day.rain_sum_mm }}mm)
+            </span>
+            {% elif day.rain_prob_pct > 0 %}
+            <span class="forecast-rain-pill dry" title="Probabilità trascurabile ({{ day.rain_prob_pct }}%)">
+                💧 &lt;20% (asciutto)
             </span>
             {% else %}
             <span class="forecast-rain-pill dry">
@@ -304,7 +452,7 @@
             <span class="hourly-time">{{ h.hour_label }}</span>
             <span class="hourly-icon">{{ h.icon }}</span>
             <span class="hourly-temp">{{ h.temp_c }}°C</span>
-            {% if h.rain_prob_pct > 0 %}
+            {% if h.rain_prob_pct >= 20 or h.rain_mm >= 0.2 %}
             <span class="hourly-rain">💧 {{ h.rain_prob_pct }}%</span>
             {% else %}
             <span class="hourly-rain" style="color: var(--text-dim); font-size: 0.68rem; opacity: 0.7;">💧 0%</span>

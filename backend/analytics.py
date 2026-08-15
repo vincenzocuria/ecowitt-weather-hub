@@ -586,6 +586,178 @@ def calc_beaufort_scale(wind_speed_kmh: Optional[float]) -> Dict[str, Any]:
         return {"grade": 12, "label": "Uragano", "desc": "Devastazione e danni catastrofici.", "icon": "🚨 🌀"}
 
 
+# ---------------------------------------------------------------------------
+# 5. MOTORE STATO ATMOSFERICO & ANIMAZIONE CIELO IN TEMPO REALE
+# ---------------------------------------------------------------------------
+
+def calc_current_weather_condition(
+    temp_c: Optional[float],
+    humidity: Optional[float],
+    dew_point_c: Optional[float],
+    rain_rate: Optional[float],
+    solar_rad: Optional[float],
+    uv_index: Optional[int],
+    wind_spd: Optional[float],
+    wind_gust: Optional[float],
+    lightning_dist: Optional[float],
+    sun_ephemeris: Optional[Dict[str, Any]] = None,
+    zambretti: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Sintetizza in tempo reale le letture dei sensori e le effemeridi per determinare
+    lo stato visivo del cielo, il tema cromatico e l'animazione grafica principale.
+    """
+    is_daylight = sun_ephemeris.get("is_daylight", True) if sun_ephemeris else True
+    r_rate = float(rain_rate) if rain_rate is not None else 0.0
+    s_rad = float(solar_rad) if solar_rad is not None else 0.0
+    uv = int(uv_index) if uv_index is not None else 0
+    w_spd = float(wind_spd) if wind_spd is not None else 0.0
+    w_gst = float(wind_gust) if wind_gust is not None else 0.0
+    hum = float(humidity) if humidity is not None else 50.0
+    dp = float(dew_point_c) if dew_point_c is not None else 10.0
+    t = float(temp_c) if temp_c is not None else 20.0
+
+    z_letter = zambretti.get("letter", "M") if zambretti else "M"
+
+    # 1. Temporale con fulmini
+    if (lightning_dist is not None and lightning_dist <= 25.0) and (r_rate > 0.2 or w_gst >= 35.0):
+        return {
+            "code": "thunderstorm",
+            "title": "Temporale con Attività Elettrica",
+            "icon": "⛈️",
+            "desc": f"Scariche a {lightning_dist} km • Rovesci e forti raffiche ({w_gst} km/h)",
+            "sky_theme": "theme-thunderstorm",
+            "is_daylight": is_daylight,
+            "animation": "storm"
+        }
+
+    # 2. Pioggia Forte / Nubifragio
+    if r_rate >= 8.0:
+        return {
+            "code": "heavy_rain",
+            "title": "Pioggia Battente / Nubifragio",
+            "icon": "🌧️",
+            "desc": f"Precipitazioni intense in corso: rateo di {r_rate} mm/h",
+            "sky_theme": "theme-rain",
+            "is_daylight": is_daylight,
+            "animation": "rain-heavy"
+        }
+
+    # 3. Pioggia Moderata
+    if r_rate >= 1.0:
+        return {
+            "code": "rain",
+            "title": "Pioggia in Corso",
+            "icon": "🌧️",
+            "desc": f"Pioggia continua ({r_rate} mm/h)",
+            "sky_theme": "theme-rain",
+            "is_daylight": is_daylight,
+            "animation": "rain"
+        }
+
+    # 4. Pioviggine / Gocce
+    if r_rate > 0.0:
+        return {
+            "code": "drizzle",
+            "title": "Pioviggine Debole",
+            "icon": "🌦️",
+            "desc": f"Deboli gocce intermittenti ({r_rate} mm/h)",
+            "sky_theme": "theme-rain",
+            "is_daylight": is_daylight,
+            "animation": "rain-light"
+        }
+
+    # 5. Vento Forte / Burrasca
+    if w_gst >= 50.0 or w_spd >= 35.0:
+        return {
+            "code": "windy",
+            "title": "Vento Intenso & Burrasca",
+            "icon": "💨",
+            "desc": f"Raffiche sostenute fino a {w_gst} km/h (Vento medio: {w_spd} km/h)",
+            "sky_theme": "theme-windy",
+            "is_daylight": is_daylight,
+            "animation": "wind"
+        }
+
+    # 6. Nebbia / Visibilità ridotta
+    if hum >= 96.0 and abs(t - dp) <= 0.6 and s_rad < 80.0:
+        return {
+            "code": "fog",
+            "title": "Nebbia / Foschia Densa",
+            "icon": "🌫️",
+            "desc": "Umidità saturata con forte riduzione della visibilità",
+            "sky_theme": "theme-cloudy",
+            "is_daylight": is_daylight,
+            "animation": "fog"
+        }
+
+    # 7. Diurno
+    if is_daylight:
+        if s_rad >= 350.0 or uv >= 3:
+            return {
+                "code": "clear_day",
+                "title": "Cielo Sereno & Soleggiato",
+                "icon": "☀️",
+                "desc": f"Sole splendente • Radiazione {int(s_rad)} W/m² (UV {uv})",
+                "sky_theme": "theme-clear-day",
+                "is_daylight": True,
+                "animation": "sun"
+            }
+        elif s_rad >= 120.0 or z_letter in ("B", "C", "D", "L", "M"):
+            return {
+                "code": "partly_cloudy_day",
+                "title": "Poco Nuvoloso / Schiarite",
+                "icon": "🌤️",
+                "desc": "Alternanza di sole e nuvole sparse passeggere",
+                "sky_theme": "theme-partly-cloudy-day",
+                "is_daylight": True,
+                "animation": "sun-clouds"
+            }
+        else:
+            return {
+                "code": "cloudy",
+                "title": "Cielo Nuvoloso / Coperto",
+                "icon": "☁️",
+                "desc": "Copertura nuvolosa uniforme, assenza di precipitazioni",
+                "sky_theme": "theme-cloudy",
+                "is_daylight": True,
+                "animation": "clouds"
+            }
+
+    # 8. Notturno
+    else:
+        if z_letter in ("A", "B", "K", "L") or hum < 80.0:
+            return {
+                "code": "clear_night",
+                "title": "Notte Serena & Stellata",
+                "icon": "🌙",
+                "desc": "Cielo notturno sgombro con ottima limpidezza e visibilità",
+                "sky_theme": "theme-clear-night",
+                "is_daylight": False,
+                "animation": "stars"
+            }
+        elif z_letter in ("C", "D", "E", "F", "M", "N"):
+            return {
+                "code": "partly_cloudy_night",
+                "title": "Notte con Nubi Sparse",
+                "icon": "☁️🌙",
+                "desc": "Cielo notturno parzialmente velato da nubi alte o passeggere",
+                "sky_theme": "theme-partly-cloudy-night",
+                "is_daylight": False,
+                "animation": "stars-clouds"
+            }
+        else:
+            return {
+                "code": "cloudy_night",
+                "title": "Notte Coperta",
+                "icon": "☁️",
+                "desc": "Cielo notturno uniformemente coperto da nuvole",
+                "sky_theme": "theme-cloudy",
+                "is_daylight": False,
+                "animation": "clouds"
+            }
+
+
 def evaluate_indoor_comfort(
     temp_in_c: Optional[float],
     humidity_in: Optional[float],

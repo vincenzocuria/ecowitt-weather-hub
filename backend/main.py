@@ -33,7 +33,7 @@ from backend.database import (
 from backend.analytics import (
     calc_zambretti_forecast, evaluate_window_ventilation, evaluate_laundry_index,
     calc_humidex, evaluate_outdoor_activity, calc_sun_ephemeris, calc_moon_phase,
-    calc_beaufort_scale, evaluate_indoor_comfort
+    calc_beaufort_scale, evaluate_indoor_comfort, calc_current_weather_condition
 )
 from backend.forecast_service import forecast_service
 from backend.aton_service import aton_service
@@ -144,8 +144,23 @@ def build_analytics_context(latest: dict) -> dict:
     moon_info = calc_moon_phase()
     cross_check = forecast_service.build_cross_check_summary(latest)
     beaufort = calc_beaufort_scale(wind_spd)
+    
+    current_cond = calc_current_weather_condition(
+        temp_c=temp_c,
+        humidity=hum,
+        dew_point_c=dew_point,
+        rain_rate=rain_rate,
+        solar_rad=solar,
+        uv_index=uv,
+        wind_spd=wind_spd,
+        wind_gust=wind_gst,
+        lightning_dist=latest.get("lightning_distance_km"),
+        sun_ephemeris=sun_info,
+        zambretti=zambretti
+    )
 
     return {
+        "current_condition": current_cond,
         "zambretti": zambretti,
         "comfort": {
             "window": window_advice,
