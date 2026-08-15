@@ -31,7 +31,8 @@ from backend.database import (
 )
 from backend.analytics import (
     calc_zambretti_forecast, evaluate_window_ventilation, evaluate_laundry_index,
-    calc_humidex, evaluate_outdoor_activity, calc_sun_ephemeris, calc_moon_phase
+    calc_humidex, evaluate_outdoor_activity, calc_sun_ephemeris, calc_moon_phase,
+    calc_beaufort_scale
 )
 from backend.forecast_service import forecast_service
 
@@ -126,6 +127,7 @@ def build_analytics_context(latest: dict) -> dict:
     sun_info = calc_sun_ephemeris(settings.LATITUDE, settings.LONGITUDE)
     moon_info = calc_moon_phase()
     cross_check = forecast_service.build_cross_check_summary(latest)
+    beaufort = calc_beaufort_scale(wind_spd)
 
     return {
         "zambretti": zambretti,
@@ -141,7 +143,8 @@ def build_analytics_context(latest: dict) -> dict:
         "sun_ephemeris": sun_info,
         "moon_phase": moon_info,
         "dew_point_c": dew_point,
-        "cross_check": cross_check
+        "cross_check": cross_check,
+        "beaufort": beaufort
     }
 
 @app.get("/api/forecast")

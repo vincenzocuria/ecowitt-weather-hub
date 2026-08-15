@@ -297,7 +297,8 @@ class ForecastService:
         else:
             accuracy_status = "Microclima Specifico"
             badge_class = "badge-warning"
-            accuracy_desc = f"Marcata variazione locale a Corigliano: Stazione {station_temp}°C vs Modello {model_temp}°C ({sign}{delta_t}°C)."
+            loc_str = f" a {settings.LOCATION_NAME}" if settings.LOCATION_NAME else ""
+            accuracy_desc = f"Marcata variazione locale{loc_str}: Stazione {station_temp}°C vs Modello {model_temp}°C ({sign}{delta_t}°C)."
 
         return {
             "available": True,

@@ -230,6 +230,7 @@
     <div class="card">
         <div class="card-header">
             <span>💨 Vento & Direzione</span>
+            <span class="sub-badge" id="beaufort_badge">{{ analytics.beaufort.label if analytics and analytics.beaufort else 'Calma' }} (F{{ analytics.beaufort.grade if analytics and analytics.beaufort and analytics.beaufort.grade is not none else '0' }})</span>
         </div>
         <div class="main-stat">
             <span class="val" id="wind_spd">{{ latest.wind_speed_kmh if latest.wind_speed_kmh is not none else '--' }}</span>

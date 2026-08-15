@@ -548,3 +548,40 @@ def calc_vpd(temp_c: Optional[float], humidity: Optional[float]) -> Optional[flo
         return round(max(0.0, vpd), 2)
     except Exception:
         return None
+
+
+def calc_beaufort_scale(wind_speed_kmh: Optional[float]) -> Dict[str, Any]:
+    """
+    Calcola il grado della scala Beaufort e la relativa descrizione in lingua italiana.
+    """
+    if wind_speed_kmh is None:
+        return {"grade": None, "label": "--", "desc": "In attesa dati", "icon": "💨"}
+    
+    spd = float(wind_speed_kmh)
+    if spd < 1.0:
+        return {"grade": 0, "label": "Calma", "desc": "Fumo sale verticalmente, assenza di vento.", "icon": "🍃"}
+    elif spd <= 5.0:
+        return {"grade": 1, "label": "Bava di vento", "desc": "Il fumo indica la direzione, banderuole ferme.", "icon": "🍃"}
+    elif spd <= 11.0:
+        return {"grade": 2, "label": "Brezza leggera", "desc": "Si avverte il vento sulla pelle, foglie si muovono.", "icon": "🍃"}
+    elif spd <= 19.0:
+        return {"grade": 3, "label": "Brezza tesa", "desc": "Foglie e rami piccoli in movimento continuo.", "icon": "💨"}
+    elif spd <= 28.0:
+        return {"grade": 4, "label": "Vento moderato", "desc": "Solleva polvere e muove piccoli rami.", "icon": "💨"}
+    elif spd <= 38.0:
+        return {"grade": 5, "label": "Vento teso", "desc": "Piccoli alberi oscillano, onde con creste bianche.", "icon": "💨"}
+    elif spd <= 49.0:
+        return {"grade": 6, "label": "Vento fresco", "desc": "Grandi rami in movimento, fischi tra i cavi.", "icon": "💨"}
+    elif spd <= 61.0:
+        return {"grade": 7, "label": "Vento forte", "desc": "Interi alberi si muovono, camminare controvento è faticoso.", "icon": "⚠️ 💨"}
+    elif spd <= 74.0:
+        return {"grade": 8, "label": "Burrasca", "desc": "Rami spezzati, forte resistenza nel cammino.", "icon": "⚠️ 🌪️"}
+    elif spd <= 88.0:
+        return {"grade": 9, "label": "Burrasca forte", "desc": "Lievi danni a edifici e tetti (tegole rimosse).", "icon": "🚨 🌪️"}
+    elif spd <= 102.0:
+        return {"grade": 10, "label": "Tempesta", "desc": "Alberi sradicati, danni considerevoli a strutture.", "icon": "🚨 🌪️"}
+    elif spd <= 117.0:
+        return {"grade": 11, "label": "Fortunale", "desc": "Danni estesi e gravi.", "icon": "🚨 🌪️"}
+    else:
+        return {"grade": 12, "label": "Uragano", "desc": "Devastazione e danni catastrofici.", "icon": "🚨 🌀"}
+

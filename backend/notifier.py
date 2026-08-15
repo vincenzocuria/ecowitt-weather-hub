@@ -72,8 +72,8 @@ class NotificationService:
         payload = json.dumps({
             "title": title,
             "body": message,
-            "icon": "/static/icons/icon-192.png",
-            "badge": "/static/icons/icon-192.png",
+            "icon": "/static/icons/icon.svg",
+            "badge": "/static/icons/icon.svg",
             "tag": f"meteo-{alert_type}",
             "data": {
                 "url": "/alerts-page",
@@ -167,6 +167,7 @@ class NotificationService:
             "anomaly": "warning,exclamation",
             "wind_spike": "wind_blowing_face,warning",
             "uv_extreme": "sunglasses,fire",
+            "battery_low": "battery,warning",
             "digest": "coffee,sunrise,partly_sunny"
         }
         return mapping.get(alert_type, "loudspeaker")

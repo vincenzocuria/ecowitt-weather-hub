@@ -30,6 +30,7 @@ class AlertEngine:
         # Offline Watchdog state
         self.is_station_offline = False
         self.last_offline_alert_time = 0.0
+        self.last_battery_alert = {}
 
     def evaluate(self, current_data: Dict[str, Any]):
         now = time.time()
@@ -72,6 +73,9 @@ class AlertEngine:
         self._check_soil_moisture(current_data, now)
         self._check_temperatures(current_data, now)
         self._check_rain(current_data, now)
+
+        # 4. Controllo Batterie Sensori
+        self._check_batteries(current_data, now)
 
     def _check_anomalies(self, data: Dict[str, Any], now: float):
         # A. Crollo Barometrico Rapido (Burrasca / Tempesta imminente)
@@ -227,6 +231,48 @@ class AlertEngine:
                     priority="normal",
                     extra_data={"rain_rate_mm_hr": str(rain_rate)}
                 )
+
+    def _check_batteries(self, data: Dict[str, Any], now: float):
+        batteries = data.get("batteries", {})
+        # WH65 Sensore 7-in-1
+        wh65 = batteries.get("wh65")
+        if wh65 in ("1", 1):
+            last_time = self.last_battery_alert.get("wh65", 0.0)
+            if (now - last_time) >= (24 * 3600):
+                self.last_battery_alert["wh65"] = now
+                notifier.send_alert(
+                    alert_type="battery_low",
+                    title="🪫 Batteria Bassa: Sensore 7-in-1",
+                    message="La batteria del blocco sensori esterno 7-in-1 (WH65) è quasi scarica. Si consiglia la sostituzione delle pile.",
+                    priority="high"
+                )
+
+        # WH57 Sensore Fulmini
+        wh57 = batteries.get("wh57")
+        if wh57 in ("1", 1):
+            last_time = self.last_battery_alert.get("wh57", 0.0)
+            if (now - last_time) >= (24 * 3600):
+                self.last_battery_alert["wh57"] = now
+                notifier.send_alert(
+                    alert_type="battery_low",
+                    title="🪫 Batteria Bassa: Sensore Fulmini WH57",
+                    message="La batteria del sensore fulmini WH57 è quasi scarica.",
+                    priority="normal"
+                )
+
+        # WH51 Sensori Suolo
+        soil_batts = batteries.get("soil", {})
+        for ch, val in soil_batts.items():
+            if val in ("1", 1):
+                last_time = self.last_battery_alert.get(f"soil_{ch}", 0.0)
+                if (now - last_time) >= (24 * 3600):
+                    self.last_battery_alert[f"soil_{ch}"] = now
+                    notifier.send_alert(
+                        alert_type="battery_low",
+                        title=f"🪫 Batteria Bassa: Sensore Suolo ({ch})",
+                        message=f"La batteria del sensore di umidità suolo WH51 ({ch}) è scarica.",
+                        priority="normal"
+                    )
 
     def check_offline_watchdog(self):
         """

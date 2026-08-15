@@ -77,13 +77,34 @@ def parse_ecowitt_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
     max_daily_gust_mph = safe_float(raw_data.get("maxdailygust"))
     max_daily_gust_kmh = mph_to_kmh(max_daily_gust_mph)
 
-    # Rain
+    # Rain (Rate & Accumulations)
     rain_rate_in = safe_float(raw_data.get("rainratein"))
     rain_rate_mm = inch_to_mm(rain_rate_in)
-    daily_rain_in = safe_float(raw_data.get("dailyrainin"))
-    daily_rain_mm = inch_to_mm(daily_rain_in)
     event_rain_in = safe_float(raw_data.get("eventrainin"))
     event_rain_mm = inch_to_mm(event_rain_in)
+    hourly_rain_in = safe_float(raw_data.get("hourlyrainin"))
+    hourly_rain_mm = inch_to_mm(hourly_rain_in)
+    daily_rain_in = safe_float(raw_data.get("dailyrainin"))
+    daily_rain_mm = inch_to_mm(daily_rain_in)
+    weekly_rain_in = safe_float(raw_data.get("weeklyrainin"))
+    weekly_rain_mm = inch_to_mm(weekly_rain_in)
+    monthly_rain_in = safe_float(raw_data.get("monthlyrainin"))
+    monthly_rain_mm = inch_to_mm(monthly_rain_in)
+    yearly_rain_in = safe_float(raw_data.get("yearlyrainin") if "yearlyrainin" in raw_data else raw_data.get("totalrainin"))
+    yearly_rain_mm = inch_to_mm(yearly_rain_in)
+
+    # Batteries Status (0 = OK, 1 = Low)
+    wh65_batt = raw_data.get("wh65batt")
+    wh57_batt = raw_data.get("wh57batt")
+    soil_batt = {f"ch{i}": raw_data.get(f"wh51batt{i}") for i in range(1, 9) if f"wh51batt{i}" in raw_data}
+    temp_batt = {f"ch{i}": raw_data.get(f"wh31batt{i}") or raw_data.get(f"batt{i}") for i in range(1, 9) if (f"wh31batt{i}" in raw_data or f"batt{i}" in raw_data)}
+
+    batteries = {
+        "wh65": wh65_batt,
+        "wh57": wh57_batt,
+        "soil": soil_batt,
+        "temp_channels": temp_batt
+    }
 
     # Solar & UV & VPD
     solar_radiation = safe_float(raw_data.get("solarradiation"))  # W/m^2
@@ -138,8 +159,12 @@ def parse_ecowitt_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
         "wind_gust_kmh": wind_gust_kmh,
         "max_daily_gust_kmh": max_daily_gust_kmh,
         "rain_rate_mm_hr": rain_rate_mm,
-        "daily_rain_mm": daily_rain_mm,
         "event_rain_mm": event_rain_mm,
+        "hourly_rain_mm": hourly_rain_mm,
+        "daily_rain_mm": daily_rain_mm,
+        "weekly_rain_mm": weekly_rain_mm,
+        "monthly_rain_mm": monthly_rain_mm,
+        "yearly_rain_mm": yearly_rain_mm,
         "solar_radiation": solar_radiation,
         "uv_index": uv_index,
         "vpd": vpd,
@@ -151,5 +176,6 @@ def parse_ecowitt_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
         },
         "soil_moisture": soil_moistures,
         "extra_channels": extra_channels,
+        "batteries": batteries,
         "raw_payload": raw_data
     }

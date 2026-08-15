@@ -31,6 +31,10 @@ class Settings:
     RECORD_BROKEN_COOLDOWN_MIN: int = int(os.getenv("RECORD_BROKEN_COOLDOWN_MIN", "1"))
     ANOMALY_ALERT_COOLDOWN_MIN: int = int(os.getenv("ANOMALY_ALERT_COOLDOWN_MIN", "60"))
     
+    # Nome Stazione & Località
+    STATION_NAME: str = os.getenv("STATION_NAME", "Ecowitt Weather Hub")
+    LOCATION_NAME: str = os.getenv("LOCATION_NAME", "")
+    
     # Coordinate Geografiche (Lat/Lon decimali configurabili da .env)
     LATITUDE: float = float(os.getenv("LATITUDE", "41.9028"))
     LONGITUDE: float = float(os.getenv("LONGITUDE", "12.4964"))

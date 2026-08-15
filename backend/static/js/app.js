@@ -208,6 +208,14 @@ function startDashboardPolling() {
                         }
                     }
 
+                    // Scala Beaufort
+                    if (a.beaufort) {
+                        const bBadge = document.getElementById('beaufort_badge');
+                        if (bBadge && a.beaufort.label) {
+                            bBadge.innerText = a.beaufort.label + ' (F' + (a.beaufort.grade !== null && a.beaufort.grade !== undefined ? a.beaufort.grade : '0') + ')';
+                        }
+                    }
+
                     // Accumuli pioggia
                     if (a.rain_totals) {
                         const rWeek = document.getElementById('rain_week');

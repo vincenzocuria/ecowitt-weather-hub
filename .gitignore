@@ -1,40 +1,32 @@
-# Database e dati sensibili
-data/
-*.db
-*.sqlite3
-*.db-journal
-*.db-wal
-*.db-shm
-
-# Chiavi crittografiche e certificati
-*.pem
-*.key
-*.crt
-vapid_*.txt
-b64.txt
-
-# File di configurazione locale con credenziali
-.env
-.env.local
-.env.production
-deploy_to_qnap.ps1
-docker-compose-qnap.yml
-
 # Python
 __pycache__/
 *.py[cod]
-*.class
-*.so
-.Python
-env/
-venv/
-.venv/
+*$py.class
+*.pyc
 
-# Editor e OS
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
+# Environment & Private Keys
+.env
+data/
+*.pem
+*.key
+b64.txt
+
+# Local deployment scripts with private IPs
+deploy_to_qnap.ps1
+
+# Scratch scripts
+aton*
+dump_login.py
+fetch_js.py
+inspect_login.py
+inspect_scripts.py
+test_aton*
+test_deep_login.py
+test_more_variations.py
+test_variations.py
+
+# OS / IDE
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
