@@ -104,12 +104,18 @@ class Settings:
     CLIMATE_SOLAR_SURPLUS_THRESHOLD_W: float = float(os.getenv("CLIMATE_SOLAR_SURPLUS_THRESHOLD_W", "1500.0"))
     CLIMATE_BATTERY_MIN_SOC: float = float(os.getenv("CLIMATE_BATTERY_MIN_SOC", "60.0"))
 
+    # Configurazione Samsung SmartThings
+    SMARTTHINGS_ENABLED: bool = os.getenv("SMARTTHINGS_ENABLED", "true").lower() in ("true", "1", "yes")
+    SMARTTHINGS_PAT: str = os.getenv("SMARTTHINGS_PAT", os.getenv("SAMSUNG_PAT", ""))
+    SMARTTHINGS_POLL_INTERVAL_SEC: int = int(os.getenv("SMARTTHINGS_POLL_INTERVAL_SEC", "30"))
+
     # Notifiche push (ntfy.sh)
     ENABLE_NTFY: bool = True
     NTFY_TOPIC: str = os.getenv("NTFY_TOPIC", "")
     VAPID_CLAIM_EMAIL: str = os.getenv("VAPID_CLAIM_EMAIL", "mailto:admin@example.com")
 
 settings = Settings()
+
 
 
 

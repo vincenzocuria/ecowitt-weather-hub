@@ -203,7 +203,59 @@ class TestEcowittHub(unittest.TestCase):
         all_devs = svc.get_cached_devices()
         self.assertEqual(len(all_devs), 1)
 
+    def test_smartthings_service_parsing_and_synergy(self):
+        from backend.smartthings_service import SmartThingsService
+        st = SmartThingsService()
+
+        # Mock washer status
+        dev_info = {"deviceId": "test-w1", "label": "Lavatrice Samsung AI"}
+        mock_status = {
+            "components": {
+                "main": {
+                    "switch": {"switch": {"value": "on"}},
+                    "washerOperatingState": {"washerJobState": {"value": "wash"}, "machineState": {"value": "run"}},
+                    "custom.washerWaterTemperature": {"washerWaterTemperature": {"value": "60"}},
+                    "custom.washerSpinSpeed": {"washerSpinSpeed": {"value": "1400"}},
+                    "samsungce.washerDelayEnd": {"remainingTime": {"value": 45}}
+                }
+            }
+        }
+        parsed_w = st.parse_washer_data(mock_status, dev_info)
+        self.assertTrue(parsed_w["is_on"])
+        self.assertTrue(parsed_w["is_running"])
+        self.assertEqual(parsed_w["water_temp"], "60°C")
+        self.assertEqual(parsed_w["spin_speed"], "1400 rpm")
+        self.assertEqual(parsed_w["remaining_min"], 45)
+
+        # Mock presence
+        p_info = {"deviceId": "test-p1", "label": "S25 Ultra di Vincenzo"}
+        p_status = {
+            "components": {
+                "main": {
+                    "presenceSensor": {"presence": {"value": "present"}}
+                }
+            }
+        }
+        parsed_p = st.parse_presence_data(p_status, p_info)
+        self.assertTrue(parsed_p["is_present"])
+        self.assertIn("A Casa", parsed_p["presence_label"])
+
+        # Test Solar Synergy calculation
+        st.devices = [dev_info, p_info]
+        st.device_statuses["test-w1"] = mock_status
+        st.device_statuses["test-p1"] = p_status
+
+        summary = st.get_summary(
+            energy_latest={"p_solare": 2500.0, "soc": 85.0, "p_batteria": 200.0},
+            drying_index={"score": 85, "status": "good", "desc": "Ottimo: sole e vento favorevoli"}
+        )
+        self.assertTrue(summary["solar_synergy"]["solar_optimal"])
+        self.assertIn("Surplus Solare", summary["solar_synergy"]["solar_message"])
+        self.assertIsNotNone(summary["laundry_drying_synergy"])
+        self.assertTrue(summary["laundry_drying_synergy"]["optimal"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

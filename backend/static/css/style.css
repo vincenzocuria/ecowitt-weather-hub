@@ -2759,6 +2759,268 @@ body {
     .ephemeris-stat-card .stat-num { font-size: 1.1rem; }
 }
 
+/* ==========================================================================
+   SMART APPLIANCES & SAMSUNG SMARTTHINGS INTEGRATION
+   ========================================================================== */
+.smart-appliances-hero {
+    background: linear-gradient(135deg, rgba(17, 24, 39, 0.92) 0%, rgba(15, 23, 42, 0.97) 100%);
+    border: 1px solid rgba(168, 85, 247, 0.35);
+    border-radius: var(--radius-lg);
+    padding: 1.35rem 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 0 20px rgba(168, 85, 247, 0.12);
+    backdrop-filter: blur(12px);
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+}
+
+.smart-appliances-hero::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #a855f7, #6366f1, #38bdf8, #10b981);
+}
+
+.appliances-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.appliances-title-group {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.appliances-header-icon {
+    font-size: 1.8rem;
+    background: rgba(168, 85, 247, 0.15);
+    border: 1px solid rgba(168, 85, 247, 0.35);
+    width: 46px;
+    height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    box-shadow: 0 0 12px rgba(168, 85, 247, 0.2);
+}
+
+.appliances-title-group h2 {
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: #f8fafc;
+    margin: 0;
+}
+
+.appliances-sub-header {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin-top: 3px;
+}
+
+.appliances-header-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.presence-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    transition: all 0.2s ease;
+}
+
+.presence-badge.badge-present {
+    background: rgba(16, 185, 129, 0.18);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    color: #34d399;
+}
+
+.presence-badge.badge-away {
+    background: rgba(100, 116, 139, 0.2);
+    border: 1px solid rgba(100, 116, 139, 0.35);
+    color: #94a3b8;
+}
+
+.appliance-solar-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    color: #fde047;
+    font-size: 0.82rem;
+}
+
+.solar-banner-icon {
+    font-size: 1.3rem;
+    flex-shrink: 0;
+}
+
+.solar-banner-content {
+    line-height: 1.4;
+}
+
+.appliances-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.25rem;
+    width: 100%;
+}
+
+.appliance-card {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    transition: all 0.25s ease;
+    position: relative;
+}
+
+.appliance-card.is-running {
+    border-color: rgba(168, 85, 247, 0.5);
+    box-shadow: 0 4px 20px rgba(168, 85, 247, 0.2);
+}
+
+.appliance-card.is-on {
+    border-color: rgba(56, 189, 248, 0.4);
+}
+
+.appliance-card.is-standby {
+    opacity: 0.9;
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+.appliance-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.appliance-info {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+
+.appliance-icon {
+    font-size: 1.5rem;
+}
+
+.appliance-name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.appliance-model-tag {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.appliance-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.appliance-status-pill.pill-active {
+    background: rgba(168, 85, 247, 0.2);
+    border: 1px solid rgba(168, 85, 247, 0.5);
+    color: #c084fc;
+    animation: pulse-dot-anim 2s infinite ease-in-out;
+}
+
+.appliance-status-pill.pill-on {
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    color: #38bdf8;
+}
+
+.appliance-status-pill.pill-standby {
+    background: rgba(100, 116, 139, 0.15);
+    border: 1px solid rgba(100, 116, 139, 0.25);
+    color: var(--text-dim);
+}
+
+.appliance-cycle-showcase {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+    background: rgba(30, 41, 59, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 0.75rem 0.85rem;
+}
+
+.appliance-metric-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.app-metric-label {
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.app-metric-val {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #fff;
+    margin-top: 3px;
+}
+
+.laundry-weather-synergy-banner {
+    padding: 0.55rem 0.8rem;
+    border-radius: 10px;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: #34d399;
+    font-size: 0.78rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+@media (max-width: 640px) {
+    .appliance-cycle-showcase {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.6rem;
+    }
+}
+
+
 
 
 

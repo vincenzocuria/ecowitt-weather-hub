@@ -39,6 +39,7 @@ from backend.analytics import (
 from backend.forecast_service import forecast_service
 from backend.aton_service import aton_service
 from backend.thinq_service import thinq_service
+from backend.smartthings_service import smartthings_service
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -62,17 +63,21 @@ async def lifespan(app: FastAPI):
     watchdog_task = asyncio.create_task(watchdog_worker())
     aton_task = asyncio.create_task(aton_service.worker_loop())
     thinq_task = asyncio.create_task(thinq_service.worker_loop())
+    smartthings_task = asyncio.create_task(smartthings_service.worker_loop())
     yield
     watchdog_task.cancel()
     aton_service.stop()
     aton_task.cancel()
     thinq_service.stop()
     thinq_task.cancel()
+    smartthings_task.cancel()
+    await smartthings_service.close()
 
 
 
 # FastAPI App
 app = FastAPI(title="Ecowitt & Sainlogic Weather Station Hub", lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -232,11 +237,17 @@ async def api_live():
 
     status_info = get_station_status()
     clean_latest["status_info"] = status_info
-    clean_latest["analytics"] = build_analytics_context(latest)
+    analytics_ctx = build_analytics_context(latest)
+    clean_latest["analytics"] = analytics_ctx
     clean_latest["climate_devices"] = thinq_service.get_cached_devices()
     clean_latest["thinq_enabled"] = settings.LG_THINQ_ENABLED
     clean_latest["thinq_connected"] = thinq_service.is_connected
+    clean_latest["smartthings"] = smartthings_service.get_summary(
+        aton_service.latest_data or get_latest_energy() or {},
+        analytics_ctx.get("drying_index") if analytics_ctx else None
+    )
     return clean_latest
+
 
 
 @app.post("/api/daily-digest/send")
@@ -458,6 +469,38 @@ async def api_thinq_sync():
     devices = await thinq_service.fetch_all_devices()
     return {"status": "synced", "connected": thinq_service.is_connected, "devices": devices}
 
+# --- Samsung SmartThings Endpoints ---
+@app.get("/api/smartthings/summary")
+async def api_smartthings_summary():
+    """Restituisce il riepilogo in tempo reale di lavatrice, lavastoviglie, presenza e sinergia solare."""
+    latest = get_latest_reading() or {}
+    analytics = build_analytics_context(latest)
+    energy_latest = aton_service.latest_data or get_latest_energy() or {}
+    return smartthings_service.get_summary(energy_latest, analytics.get("drying_index") if analytics else None)
+
+@app.post("/api/smartthings/sync")
+@app.get("/api/smartthings/sync")
+async def api_smartthings_sync():
+    """Forza la risincronizzazione con il cloud Samsung SmartThings."""
+    await smartthings_service.sync_all()
+    latest = get_latest_reading() or {}
+    analytics = build_analytics_context(latest)
+    energy_latest = aton_service.latest_data or get_latest_energy() or {}
+    return smartthings_service.get_summary(energy_latest, analytics.get("drying_index") if analytics else None)
+
+@app.post("/api/smartthings/device/{device_id}/command")
+async def api_smartthings_command(device_id: str, request: Request):
+    """Invia un comando REST (accensione, spegnimento, switch) a un dispositivo SmartThings."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    cap = payload.get("capability", "switch")
+    cmd = payload.get("command", "off")
+    args = payload.get("arguments", [])
+    res = await smartthings_service.execute_command(device_id, cap, cmd, args)
+    return {"success": res}
+
 # ----------------- UI HTML ROUTES -----------------
 @app.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
@@ -491,6 +534,9 @@ async def dashboard_page(request: Request):
     energy_latest = aton_service.latest_data or get_latest_energy() or {}
     energy_summary = get_today_energy_summary()
 
+    # Dati SmartThings
+    smartthings_summary = smartthings_service.get_summary(energy_latest, analytics.get("drying_index") if analytics else None)
+
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -516,9 +562,12 @@ async def dashboard_page(request: Request):
             "thinq_enabled": settings.LG_THINQ_ENABLED,
             "thinq_connected": thinq_service.is_connected,
             "climate_devices": thinq_service.get_cached_devices(),
+            "smartthings": smartthings_summary,
+            "smartthings_enabled": settings.SMARTTHINGS_ENABLED,
             "ntfy_topic": settings.NTFY_TOPIC
         }
     )
+
 
 
 

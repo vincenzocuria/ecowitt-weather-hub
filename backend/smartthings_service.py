@@ -1,0 +1,398 @@
+"""
+Modulo di integrazione per Samsung SmartThings Cloud API.
+Gestisce il monitoraggio e il controllo degli elettrodomestici smart (Lavatrice, Lavastoviglie)
+e sensori di presenza (S25 Ultra), calcolando sinergie energetiche in tempo reale
+con l'impianto fotovoltaico / accumulo Aton e la stazione meteo Ecowitt.
+"""
+
+import asyncio
+import logging
+import ssl
+import time
+from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional
+import aiohttp
+
+from backend.config import settings
+
+logger = logging.getLogger("SmartThingsService")
+
+SMARTTHINGS_API_BASE = "https://api.smartthings.com/v1"
+
+
+# Mappe etichette in italiano
+WASHER_STATE_MAP = {
+    "none": "In Standby / Pronto",
+    "weightSensing": "Pesatura Carico & Bilanciamento",
+    "wash": "Lavaggio in Corso 🫧",
+    "rinse": "Risciacquo in Corso 💧",
+    "spin": "Centrifuga in Corso 🌀",
+    "drying": "Asciugatura in Corso ♨️",
+    "finish": "Ciclo Lavaggio Completato ✅",
+    "delayEnd": "Partenza Ritardata Programmata ⏱️",
+    "freezePrevent": "Protezione Antigelo",
+}
+
+DISHWASHER_STATE_MAP = {
+    "none": "In Standby / Pronto",
+    "prewash": "Prelavaggio 🫧",
+    "wash": "Lavaggio in Corso 🍽️",
+    "rinse": "Risciacquo 💧",
+    "dry": "Asciugatura Piatti ♨️",
+    "finish": "Ciclo Lavastoviglie Terminato ✅",
+    "delayStart": "Partenza Ritardata ⏱️",
+}
+
+
+class SmartThingsService:
+    def __init__(self):
+        self.token = settings.SMARTTHINGS_PAT
+        self.enabled = settings.SMARTTHINGS_ENABLED and bool(self.token)
+        self.poll_interval = settings.SMARTTHINGS_POLL_INTERVAL_SEC
+        self.devices: List[Dict[str, Any]] = []
+
+        self.device_statuses: Dict[str, Dict[str, Any]] = {}
+        self.last_sync_time: Optional[float] = None
+        self.sync_error: Optional[str] = None
+        self.is_connected = False
+        self._session: Optional[aiohttp.ClientSession] = None
+
+    async def get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            connector = aiohttp.TCPConnector(
+                resolver=aiohttp.ThreadedResolver(),
+                ssl=True
+            )
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Accept": "application/json",
+                "Content-Type": "application/json"
+            }
+            self._session = aiohttp.ClientSession(
+                connector=connector,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=15)
+            )
+        return self._session
+
+    async def close(self):
+        if self._session and not self._session.closed:
+            await self._session.close()
+
+    async def fetch_devices_list(self) -> List[Dict[str, Any]]:
+        """Recupera l'elenco completo dei dispositivi associati all'account."""
+        if not self.enabled:
+            return []
+
+        session = await self.get_session()
+        try:
+            url = f"{SMARTTHINGS_API_BASE}/devices"
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    self.devices = data.get("items", [])
+                    self.is_connected = True
+                    self.sync_error = None
+                    return self.devices
+                else:
+                    err_txt = await resp.text()
+                    self.sync_error = f"HTTP {resp.status}: {err_txt[:150]}"
+                    logger.error(f"Errore recupero lista dispositivi SmartThings: {self.sync_error}")
+                    return []
+        except Exception as e:
+            self.sync_error = str(e)
+            logger.error(f"Eccezione durante fetch_devices_list SmartThings: {e}")
+            return []
+
+    async def fetch_device_status(self, device_id: str) -> Optional[Dict[str, Any]]:
+        """Recupera lo stato attuale delle capability di un singolo dispositivo."""
+        session = await self.get_session()
+        try:
+            url = f"{SMARTTHINGS_API_BASE}/devices/{device_id}/status"
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    self.device_statuses[device_id] = data
+                    return data
+                else:
+                    logger.warning(f"Status per dispositivo {device_id} ha risposto HTTP {resp.status}")
+                    return None
+        except Exception as e:
+            logger.warning(f"Errore recupero status dispositivo {device_id}: {e}")
+            return None
+
+    async def sync_all(self):
+        """Sincronizza tutti i dispositivi SmartThings monitorati."""
+        if not self.enabled:
+            return
+
+        devs = await self.fetch_devices_list()
+        if not devs:
+            return
+
+        tasks = []
+        for d in devs:
+            dev_id = d.get("deviceId")
+            if dev_id:
+                tasks.append(self.fetch_device_status(dev_id))
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        self.last_sync_time = time.time()
+        logger.info(f"Sincronizzazione SmartThings completata: {len(self.device_statuses)} stati aggiornati.")
+
+    def parse_washer_data(self, status: Dict[str, Any], dev_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Estrae e normalizza i dati della Lavatrice Samsung."""
+        main_comp = status.get("components", {}).get("main", {})
+        
+        switch_val = main_comp.get("switch", {}).get("switch", {}).get("value", "off")
+        is_on = switch_val == "on"
+
+        # Stato operativo
+        op_comp = main_comp.get("washerOperatingState", {})
+        job_state = op_comp.get("washerJobState", {}).get("value", "none") or "none"
+        machine_state = op_comp.get("machineState", {}).get("value", "stop") or "stop"
+        
+        job_state_label = WASHER_STATE_MAP.get(job_state, job_state.capitalize())
+
+        # Temperatura acqua
+        water_temp = main_comp.get("custom.washerWaterTemperature", {}).get("washerWaterTemperature", {}).get("value")
+        water_temp_label = f"{water_temp}°C" if water_temp and water_temp != "none" and water_temp != "cold" else ("Fredda" if water_temp == "cold" else "Auto")
+
+        # Centrifuga e risciacqui
+        spin_speed = main_comp.get("custom.washerSpinSpeed", {}).get("washerSpinSpeed", {}).get("value")
+        spin_label = f"{spin_speed} rpm" if spin_speed and spin_speed not in ["none", "noSpin"] else ("Senza centrifuga" if spin_speed == "noSpin" else "Auto")
+        
+        rinse_cycles = main_comp.get("custom.washerRinseCycles", {}).get("washerRinseCycles", {}).get("value")
+
+        # Tempo rimanente
+        delay_end = main_comp.get("samsungce.washerDelayEnd", {}).get("remainingTime", {}).get("value")
+        comp_remaining = op_comp.get("completionTime", {}).get("value")
+        
+        remaining_min = delay_end if delay_end is not None else None
+        
+        finish_estimate = None
+        if remaining_min and remaining_min > 0:
+            finish_dt = datetime.now() + timedelta(minutes=remaining_min)
+            finish_estimate = finish_dt.strftime("%H:%M")
+
+        # Detersivo & Ammorbidente
+        softener_amount = main_comp.get("samsungce.autoDispenseSoftener", {}).get("remainingAmount", {}).get("value", "standard")
+        detergent_amount = main_comp.get("samsungce.flexibleAutoDispenseDetergent", {}).get("remainingAmount", {}).get("value", "standard")
+
+        is_running = is_on and machine_state in ["run", "running"] and job_state not in ["none", "finish", "delayEnd"]
+
+        return {
+            "device_id": dev_info.get("deviceId"),
+            "name": dev_info.get("label") or dev_info.get("name") or "Lavatrice",
+            "is_on": is_on,
+            "is_running": is_running,
+            "machine_state": machine_state,
+            "job_state": job_state,
+            "job_state_label": job_state_label,
+            "water_temp": water_temp_label,
+            "spin_speed": spin_label,
+            "rinse_cycles": rinse_cycles,
+            "remaining_min": remaining_min,
+            "finish_estimate": finish_estimate,
+            "softener_level": softener_amount,
+            "detergent_level": detergent_amount
+        }
+
+    def parse_dishwasher_data(self, status: Dict[str, Any], dev_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Estrae e normalizza i dati della Lavastoviglie."""
+        main_comp = status.get("components", {}).get("main", {})
+        
+        switch_val = main_comp.get("switch", {}).get("switch", {}).get("value", "off")
+        is_on = switch_val == "on"
+
+        op_comp = main_comp.get("dishwasherOperatingState", {})
+        job_state = op_comp.get("dishwasherJobState", {}).get("value", "none") or "none"
+        machine_state = op_comp.get("machineState", {}).get("value", "stop") or "stop"
+        
+        job_state_label = DISHWASHER_STATE_MAP.get(job_state, job_state.capitalize())
+
+        cycle_info = main_comp.get("samsungce.dishwasherCycle", {}).get("dishwasherCycle", {}).get("value")
+        remaining_min = op_comp.get("remainingTime", {}).get("value")
+
+        finish_estimate = None
+        if remaining_min and remaining_min > 0:
+            finish_dt = datetime.now() + timedelta(minutes=remaining_min)
+            finish_estimate = finish_dt.strftime("%H:%M")
+
+        is_running = is_on and machine_state in ["run", "running"] and job_state not in ["none", "finish"]
+
+        return {
+            "device_id": dev_info.get("deviceId"),
+            "name": dev_info.get("label") or dev_info.get("name") or "Lavastoviglie",
+            "is_on": is_on,
+            "is_running": is_running,
+            "machine_state": machine_state,
+            "job_state": job_state,
+            "job_state_label": job_state_label,
+            "cycle_name": cycle_info or "Auto",
+            "remaining_min": remaining_min,
+            "finish_estimate": finish_estimate
+        }
+
+    def parse_presence_data(self, status: Dict[str, Any], dev_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Estrae lo stato di presenza dello smartphone (S25 Ultra)."""
+        main_comp = status.get("components", {}).get("main", {})
+        presence_val = main_comp.get("presenceSensor", {}).get("presence", {}).get("value", "not present")
+        is_present = presence_val == "present"
+
+        return {
+            "device_id": dev_info.get("deviceId"),
+            "name": dev_info.get("label") or dev_info.get("name") or "S25 Ultra",
+            "is_present": is_present,
+            "presence_label": "A Casa 🏠" if is_present else "Fuori Casa 🚗"
+        }
+
+    def get_summary(
+        self,
+        energy_latest: Optional[Dict[str, Any]] = None,
+        drying_index: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Produce un riepilogo completo e strutturato degli elettrodomestici,
+        presenza e sinergia energetica/solare per la dashboard.
+        """
+        washer_data: Optional[Dict[str, Any]] = None
+        dishwasher_data: Optional[Dict[str, Any]] = None
+        presence_data: Optional[Dict[str, Any]] = None
+        other_devices: List[Dict[str, Any]] = []
+
+        for dev in self.devices:
+            dev_id = dev.get("deviceId")
+            lbl = (dev.get("label") or dev.get("name") or "").lower()
+            status = self.device_statuses.get(dev_id)
+            if not status:
+                continue
+
+            if "lavatrice" in lbl or "washer" in lbl:
+                washer_data = self.parse_washer_data(status, dev)
+            elif "lavastoviglie" in lbl or "dishwasher" in lbl:
+                dishwasher_data = self.parse_dishwasher_data(status, dev)
+            elif "s25" in lbl and "presence" in str(dev.get("components", [])):
+                presence_data = self.parse_presence_data(status, dev)
+            elif "s25" in lbl:
+                presence_data = self.parse_presence_data(status, dev)
+            else:
+                other_devices.append({
+                    "device_id": dev_id,
+                    "name": dev.get("label") or dev.get("name"),
+                    "type": dev.get("deviceTypeName") or dev.get("type")
+                })
+
+        # Calcolo Sinergia Solare Aton per Elettrodomestici
+        p_solare = 0.0
+        soc = 0.0
+        p_batteria = 0.0
+        if energy_latest:
+            p_solare = float(energy_latest.get("p_solare") or 0.0)
+            soc = float(energy_latest.get("soc") or 0.0)
+            p_batteria = float(energy_latest.get("p_batteria") or 0.0)
+
+        # Valutazione momento ottimale per avvio lavaggi
+        # Elettrodomestici tipici assorbono ~1.5 - 2.2 kW durante il riscaldamento acqua
+        solar_optimal = False
+        solar_message = "Produzione solare assente o insufficiente per avvio elettrodomestici a costo zero."
+        solar_badge_class = "badge-neutral"
+
+        if p_solare >= 1500 or (p_solare >= 800 and soc >= 60) or soc >= 85:
+            solar_optimal = True
+            solar_badge_class = "badge-success"
+            if p_solare >= 1800:
+                solar_message = f"Momento Ideale: Surplus Solare Fotovoltaico ({int(p_solare)} W) sufficiente per lavaggi a Costo Zero!"
+            elif soc >= 70:
+                solar_message = f"Momento Favorevole: Batteria Aton carica ({int(soc)}%) e {int(p_solare)} W solari disponibili."
+            else:
+                solar_message = f"Energia Solare disponibile ({int(p_solare)} W)."
+
+        # Sinergia Lavatrice + Meteo Asciugatura Bucato
+        laundry_drying_synergy = None
+        if washer_data and drying_index:
+            dry_score = drying_index.get("score", 0)
+            dry_status = drying_index.get("status", "neutral")
+            dry_desc = drying_index.get("desc", "")
+            
+            if washer_data.get("is_running"):
+                if dry_score >= 60:
+                    laundry_drying_synergy = {
+                        "optimal": True,
+                        "badge": "🟢 Stendi all'aperto",
+                        "text": f"Il lavaggio terminerà a breve e le condizioni meteo esterne sono ottime per asciugare il bucato all'aperto ({dry_desc})."
+                    }
+                else:
+                    laundry_drying_synergy = {
+                        "optimal": False,
+                        "badge": "🟡 Asciugatura lenta / sconsigliata",
+                        "text": f"Attenzione: clima esterno poco favorevole per stendere ({dry_desc})."
+                    }
+
+        return {
+            "enabled": self.enabled,
+            "is_connected": self.is_connected,
+            "last_sync": self.last_sync_time,
+            "error": self.sync_error,
+            "washer": washer_data,
+            "dishwasher": dishwasher_data,
+            "presence": presence_data,
+            "solar_synergy": {
+                "solar_optimal": solar_optimal,
+                "solar_message": solar_message,
+                "solar_badge_class": solar_badge_class,
+                "p_solare": p_solare,
+                "soc": soc
+            },
+            "laundry_drying_synergy": laundry_drying_synergy
+        }
+
+    async def execute_command(self, device_id: str, capability: str, command: str, args: Optional[List[Any]] = None) -> bool:
+        """Invia un comando REST a un dispositivo SmartThings."""
+        if not self.enabled:
+            return False
+
+        session = await self.get_session()
+        payload = {
+            "commands": [
+                {
+                    "component": "main",
+                    "capability": capability,
+                    "command": command,
+                    "arguments": args or []
+                }
+            ]
+        }
+
+        try:
+            url = f"{SMARTTHINGS_API_BASE}/devices/{device_id}/commands"
+            async with session.post(url, json=payload) as resp:
+                if resp.status in [200, 202]:
+                    logger.info(f"Comando SmartThings {capability}.{command} inviato con successo a {device_id}")
+                    await asyncio.sleep(1.0)
+                    await self.fetch_device_status(device_id)
+                    return True
+                else:
+                    err_txt = await resp.text()
+                    logger.error(f"Errore invio comando a {device_id}: HTTP {resp.status} - {err_txt}")
+                    return False
+        except Exception as e:
+            logger.error(f"Eccezione invio comando SmartThings a {device_id}: {e}")
+            return False
+
+    async def worker_loop(self):
+        """Loop di polling in background per sincronizzare costantemente gli elettrodomestici."""
+        logger.info("Avvio worker loop SmartThings Service...")
+        while True:
+            try:
+                if self.enabled:
+                    await self.sync_all()
+            except Exception as e:
+                logger.error(f"Errore nel ciclo di polling SmartThings: {e}")
+            await asyncio.sleep(self.poll_interval)
+
+
+# Istanza singleton globale
+smartthings_service = SmartThingsService()

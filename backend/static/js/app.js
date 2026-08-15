@@ -355,10 +355,16 @@ function startDashboardPolling() {
                             ccBadge.className = 'cross-check-badge ' + a.cross_check.badge_class;
                         }
                     }
+
+                    // Elettrodomestici SmartThings
+                    if (data.smartthings) {
+                        updateSmartThingsUI(data.smartthings);
+                    }
                 }
             })
             .catch(() => {});
     }
+
 
     // Polling energetico Aton Green Storage
     function updateEnergyLive() {
@@ -894,3 +900,93 @@ document.addEventListener('DOMContentLoaded', () => {
         checkPushSubscriptionStatus();
     }
 });
+
+/* ==========================================================================
+   SAMSUNG SMARTTHINGS CLIENT CONTROLLERS & LIVE POLLING
+   ========================================================================== */
+function updateSmartThingsUI(st) {
+    if (!st || !st.enabled) return;
+
+    // Presenza
+    if (st.presence) {
+        const presBadge = document.getElementById('presence_status_badge');
+        const presText = document.getElementById('presence_status_text');
+        if (presText) presText.innerText = 'Vincenzo: ' + st.presence.presence_label;
+        if (presBadge) {
+            presBadge.className = 'presence-badge ' + (st.presence.is_present ? 'badge-present' : 'badge-away');
+        }
+    }
+
+    // Banner Sinergia Solare
+    if (st.solar_synergy) {
+        const solMsg = document.getElementById('st_solar_message');
+        if (solMsg && st.solar_synergy.solar_message) {
+            solMsg.innerText = st.solar_synergy.solar_message;
+        }
+    }
+
+    // Lavatrice
+    if (st.washer) {
+        const w = st.washer;
+        const wCard = document.getElementById('washer_card');
+        const wPill = document.getElementById('washer_status_pill');
+        const wJob = document.getElementById('washer_job_state');
+        const wTemp = document.getElementById('washer_water_temp');
+        const wSpin = document.getElementById('washer_spin_speed');
+        const wRem = document.getElementById('washer_remaining_time');
+
+        if (wPill) {
+            wPill.innerText = w.job_state_label || 'In Standby';
+            wPill.className = 'appliance-status-pill ' + (w.is_running ? 'pill-active' : (w.is_on ? 'pill-on' : 'pill-standby'));
+        }
+        if (wCard) {
+            wCard.className = 'appliance-card ' + (w.is_running ? 'is-running' : (w.is_on ? 'is-on' : 'is-standby'));
+        }
+        if (wJob) wJob.innerText = w.job_state_label || 'Pronto';
+        if (wTemp) wTemp.innerText = w.water_temp || 'Auto';
+        if (wSpin) wSpin.innerText = w.spin_speed || 'Auto';
+        if (wRem) wRem.innerText = w.remaining_min ? (w.remaining_min + ' min') : '--';
+    }
+
+    // Lavastoviglie
+    if (st.dishwasher) {
+        const dw = st.dishwasher;
+        const dwCard = document.getElementById('dishwasher_card');
+        const dwPill = document.getElementById('dishwasher_status_pill');
+        const dwJob = document.getElementById('dishwasher_job_state');
+        const dwCycle = document.getElementById('dishwasher_cycle_name');
+        const dwRem = document.getElementById('dishwasher_remaining_time');
+        const dwEst = document.getElementById('dishwasher_finish_est');
+
+        if (dwPill) {
+            dwPill.innerText = dw.job_state_label || 'In Standby';
+            dwPill.className = 'appliance-status-pill ' + (dw.is_running ? 'pill-active' : (dw.is_on ? 'pill-on' : 'pill-standby'));
+        }
+        if (dwCard) {
+            dwCard.className = 'appliance-card ' + (dw.is_running ? 'is-running' : (dw.is_on ? 'is-on' : 'is-standby'));
+        }
+        if (dwJob) dwJob.innerText = dw.job_state_label || 'Pronto';
+        if (dwCycle) dwCycle.innerText = dw.cycle_name || 'Auto / Eco';
+        if (dwRem) dwRem.innerText = dw.remaining_min ? (dw.remaining_min + ' min') : '--';
+        if (dwEst) dwEst.innerText = dw.finish_estimate || '--:--';
+    }
+}
+
+function syncSmartThingsDevices() {
+    const btn = document.getElementById('st_sync_btn');
+    if (btn) {
+        btn.innerHTML = `<span class="pulse-dot"></span> <span>⏳ Sincronizzazione...</span>`;
+    }
+    fetch('/api/smartthings/sync', { method: 'POST' })
+        .then(r => r.json())
+        .then(res => {
+            if (res) updateSmartThingsUI(res);
+        })
+        .finally(() => {
+            const btn2 = document.getElementById('st_sync_btn');
+            if (btn2) {
+                btn2.innerHTML = `<span class="pulse-dot"></span> <span id="st_status_text">🟢 SmartThings Connesso</span>`;
+            }
+        });
+}
+

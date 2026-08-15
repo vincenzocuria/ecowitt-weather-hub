@@ -625,6 +625,134 @@
     </div>
 </div>
 
+<!-- SEZIONE ELETTRODOMESTICI SMART SAMSUNG SMARTTHINGS & SINERGIA SOLARE -->
+<div class="smart-appliances-hero" id="smartthings_section">
+    <div class="appliances-header">
+        <div class="appliances-title-group">
+            <span class="appliances-header-icon">🧺</span>
+            <div>
+                <h2>Elettrodomestici Smart & Sinergia Solare</h2>
+                <div class="appliances-sub-header">
+                    Integrazione Cloud <strong>Samsung SmartThings</strong> • Monitoraggio Lavatrice, Lavastoviglie e Presenza
+                </div>
+            </div>
+        </div>
+        <div class="appliances-header-badges">
+            {% if smartthings and smartthings.presence %}
+            <span class="presence-badge {% if smartthings.presence.is_present %}badge-present{% else %}badge-away{% endif %}" id="presence_status_badge">
+                <span class="presence-icon">📍</span>
+                <span id="presence_status_text">Vincenzo: {{ smartthings.presence.presence_label }}</span>
+            </span>
+            {% endif %}
+            <div class="climate-status-badge" id="st_sync_btn" onclick="syncSmartThingsDevices()" title="Clicca per forzare la risincronizzazione con il cloud SmartThings">
+                <span class="pulse-dot"></span> <span id="st_status_text">🟢 SmartThings Connesso</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- BANNER SINERGIA SOLARE & CONSIGLI ENERGETICI ATON -->
+    <div class="appliance-solar-banner" id="st_solar_synergy_banner">
+        <span class="solar-banner-icon">☀️</span>
+        <div class="solar-banner-content">
+            <strong>Sinergia Solare Aton:</strong>
+            <span id="st_solar_message">{{ smartthings.solar_synergy.solar_message if smartthings and smartthings.solar_synergy else 'Verifica produzione solare in corso...' }}</span>
+        </div>
+    </div>
+
+    <!-- GRID ELETTRODOMESTICI SMART (LAVATRICE & LAVASTOVIGLIE) -->
+    <div class="appliances-grid" id="appliances_grid">
+        <!-- 1. LAVATRICE SAMSUNG -->
+        <div class="appliance-card {% if smartthings and smartthings.washer and smartthings.washer.is_running %}is-running{% elif smartthings and smartthings.washer and smartthings.washer.is_on %}is-on{% else %}is-standby{% endif %}" id="washer_card">
+            <div class="appliance-card-top">
+                <div class="appliance-info">
+                    <span class="appliance-icon">🫧</span>
+                    <div>
+                        <div class="appliance-name">Lavatrice Samsung AI</div>
+                        <span class="appliance-model-tag">Samsung OCF AI Control • QuickDrive</span>
+                    </div>
+                </div>
+                <span class="appliance-status-pill {% if smartthings and smartthings.washer and smartthings.washer.is_running %}pill-active{% elif smartthings and smartthings.washer and smartthings.washer.is_on %}pill-on{% else %}pill-standby{% endif %}" id="washer_status_pill">
+                    {{ smartthings.washer.job_state_label if smartthings and smartthings.washer else 'In Standby' }}
+                </span>
+            </div>
+
+            <!-- DETTAGLI CICLO LAVATRICE -->
+            <div class="appliance-cycle-showcase">
+                <div class="appliance-metric-item">
+                    <span class="app-metric-label">Stato Ciclo</span>
+                    <strong class="app-metric-val" id="washer_job_state">{{ smartthings.washer.job_state_label if smartthings and smartthings.washer else 'Pronto' }}</strong>
+                </div>
+                <div class="appliance-metric-item">
+                    <span class="app-metric-label">Temp. Acqua</span>
+                    <strong class="app-metric-val" id="washer_water_temp">{{ smartthings.washer.water_temp if smartthings and smartthings.washer else 'Auto' }}</strong>
+                </div>
+                <div class="appliance-metric-item">
+                    <span class="app-metric-label">Centrifuga</span>
+                    <strong class="app-metric-val" id="washer_spin_speed">{{ smartthings.washer.spin_speed if smartthings and smartthings.washer else 'Auto' }}</strong>
+                </div>
+                <div class="appliance-metric-item">
+                    <span class="app-metric-label">Tempo Residuo</span>
+                    <strong class="app-metric-val" id="washer_remaining_time">{{ smartthings.washer.remaining_min ~ ' min' if smartthings and smartthings.washer and smartthings.washer.remaining_min else '--' }}</strong>
+                </div>
+            </div>
+
+            <!-- SINERGIA METEO ASCIUGATURA BUCATO (ECOWITT) -->
+            {% if smartthings and smartthings.laundry_drying_synergy %}
+            <div class="laundry-weather-synergy-banner" id="laundry_weather_banner">
+                <span>🧺</span>
+                <span>{{ smartthings.laundry_drying_synergy.text }}</span>
+            </div>
+            {% else %}
+            <div class="laundry-weather-synergy-banner" id="laundry_weather_banner" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.2); color: #38bdf8;">
+                <span>👕</span>
+                <span>Indice Bucato Stazione: <strong>{{ analytics.drying_index.title if analytics and analytics.drying_index else 'Condizioni regolari' }}</strong></span>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- 2. LAVASTOVIGLIE SMART -->
+        <div class="appliance-card {% if smartthings and smartthings.dishwasher and smartthings.dishwasher.is_running %}is-running{% elif smartthings and smartthings.dishwasher and smartthings.dishwasher.is_on %}is-on{% else %}is-standby{% endif %}" id="dishwasher_card">
+            <div class="appliance-card-top">
+                <div class="appliance-info">
+                    <span class="appliance-icon">🍽️</span>
+                    <div>
+                        <div class="appliance-name">Lavastoviglie Smart</div>
+                        <span class="appliance-model-tag">SmartThings Integrated Dishwasher</span>
+                    </div>
+                </div>
+                <span class="appliance-status-pill {% if smartthings and smartthings.dishwasher and smartthings.dishwasher.is_running %}pill-active{% elif smartthings and smartthings.dishwasher and smartthings.dishwasher.is_on %}pill-on{% else %}pill-standby{% endif %}" id="dishwasher_status_pill">
+                    {{ smartthings.dishwasher.job_state_label if smartthings and smartthings.dishwasher else 'In Standby' }}
+                </span>
+            </div>
+
+            <!-- DETTAGLI CICLO LAVASTOVIGLIE -->
+            <div class="appliance-cycle-showcase">
+                <div class="appliance-metric-item">
+                    <span class="app-metric-label">Stato Ciclo</span>
+                    <strong class="app-metric-val" id="dishwasher_job_state">{{ smartthings.dishwasher.job_state_label if smartthings and smartthings.dishwasher else 'Pronto' }}</strong>
+                </div>
+                <div class="appliance-metric-item">
+                    <span class="app-metric-label">Programma</span>
+                    <strong class="app-metric-val" id="dishwasher_cycle_name">{{ smartthings.dishwasher.cycle_name if smartthings and smartthings.dishwasher else 'Auto / Eco' }}</strong>
+                </div>
+                <div class="appliance-metric-item">
+                    <span class="app-metric-label">Tempo Residuo</span>
+                    <strong class="app-metric-val" id="dishwasher_remaining_time">{{ smartthings.dishwasher.remaining_min ~ ' min' if smartthings and smartthings.dishwasher and smartthings.dishwasher.remaining_min else '--' }}</strong>
+                </div>
+                <div class="appliance-metric-item">
+                    <span class="app-metric-label">Stima Fine</span>
+                    <strong class="app-metric-val" id="dishwasher_finish_est">{{ smartthings.dishwasher.finish_estimate or '--:--' }}</strong>
+                </div>
+            </div>
+
+            <div class="laundry-weather-synergy-banner" style="background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.2); color: #34d399;">
+                <span>⚡</span>
+                <span>Alimentazione ottimizzata con accumulo e fotovoltaico Aton.</span>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- PREVISIONI IBRIDE 7 GIORNI (OPEN-METEO + CROSS-CHECK LOCALE) -->
 <div class="forecast-section">
     <div class="forecast-header">
