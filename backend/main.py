@@ -38,6 +38,7 @@ from backend.analytics import (
 )
 from backend.forecast_service import forecast_service
 from backend.aton_service import aton_service
+from backend.thinq_service import thinq_service
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -60,10 +61,14 @@ async def watchdog_worker():
 async def lifespan(app: FastAPI):
     watchdog_task = asyncio.create_task(watchdog_worker())
     aton_task = asyncio.create_task(aton_service.worker_loop())
+    thinq_task = asyncio.create_task(thinq_service.worker_loop())
     yield
     watchdog_task.cancel()
     aton_service.stop()
     aton_task.cancel()
+    thinq_service.stop()
+    thinq_task.cancel()
+
 
 
 # FastAPI App
@@ -228,7 +233,11 @@ async def api_live():
     status_info = get_station_status()
     clean_latest["status_info"] = status_info
     clean_latest["analytics"] = build_analytics_context(latest)
+    clean_latest["climate_devices"] = thinq_service.get_cached_devices()
+    clean_latest["thinq_enabled"] = settings.LG_THINQ_ENABLED
+    clean_latest["thinq_connected"] = thinq_service.is_connected
     return clean_latest
+
 
 @app.post("/api/daily-digest/send")
 @app.get("/api/daily-digest/send")
@@ -420,6 +429,35 @@ async def api_energy_history(hours: int = 24):
     """Restituisce la serie storica energetica per i grafici."""
     return {"history": get_energy_timeseries(hours=hours)}
 
+# --- LG ThinQ Climatizzazione Endpoints ---
+@app.get("/api/thinq/devices")
+async def api_thinq_devices():
+    """Restituisce la lista e lo stato in tempo reale dei dispositivi LG ThinQ."""
+    devices = thinq_service.get_cached_devices()
+    if not devices and settings.LG_THINQ_ENABLED and settings.LG_THINQ_PAT:
+        devices = await thinq_service.fetch_all_devices()
+    return {
+        "enabled": settings.LG_THINQ_ENABLED,
+        "connected": thinq_service.is_connected,
+        "devices": devices
+    }
+
+@app.post("/api/thinq/device/{device_id}/control")
+async def api_thinq_control(device_id: str, request: Request):
+    """Invia comandi (Power, Temp, Mode, Fan Speed, Swing) a un condizionatore LG."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    return await thinq_service.control_device(device_id, payload)
+
+@app.post("/api/thinq/sync")
+@app.get("/api/thinq/sync")
+async def api_thinq_sync():
+    """Forza la risincronizzazione con il cloud LG ThinQ."""
+    devices = await thinq_service.fetch_all_devices()
+    return {"status": "synced", "connected": thinq_service.is_connected, "devices": devices}
+
 # ----------------- UI HTML ROUTES -----------------
 @app.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
@@ -475,9 +513,13 @@ async def dashboard_page(request: Request):
             "energy_summary": energy_summary,
             "aton_enabled": settings.ATON_ENABLED,
             "aton_sn": settings.ATON_SN,
+            "thinq_enabled": settings.LG_THINQ_ENABLED,
+            "thinq_connected": thinq_service.is_connected,
+            "climate_devices": thinq_service.get_cached_devices(),
             "ntfy_topic": settings.NTFY_TOPIC
         }
     )
+
 
 
 

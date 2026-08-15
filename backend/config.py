@@ -1,6 +1,21 @@
 import os
+from pathlib import Path
+
+# Carica automaticamente il file .env dalla radice del progetto se presente
+_env_file = Path(__file__).resolve().parent.parent / ".env"
+if _env_file.exists():
+    with open(_env_file, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip().strip("'\"")
+                if k not in os.environ:
+                    os.environ[k] = v
 
 class Settings:
+
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8080"))
     DATA_DIR: str = os.getenv("DATA_DIR", "./data")
@@ -78,11 +93,23 @@ class Settings:
     ENERGY_REPORT_HOUR: int = int(os.getenv("ENERGY_REPORT_HOUR", "21")) # Ore 21:00 report serale
     ENERGY_REPORT_ENABLED: bool = os.getenv("ENERGY_REPORT_ENABLED", "true").lower() in ("true", "1", "yes")
 
+    # Configurazione LG ThinQ Climatizzazione Smart
+    LG_THINQ_ENABLED: bool = os.getenv("LG_THINQ_ENABLED", "true").lower() in ("true", "1", "yes")
+    LG_THINQ_PAT: str = os.getenv("LG_THINQ_PAT", os.getenv("THINQ_PAT", ""))
+    LG_THINQ_COUNTRY: str = os.getenv("LG_THINQ_COUNTRY", "IT")
+    LG_THINQ_POLL_INTERVAL_SEC: int = int(os.getenv("LG_THINQ_POLL_INTERVAL_SEC", "30"))
+    
+    # Automazione Clima & Solare Eco
+    CLIMATE_SOLAR_ECO_ENABLED: bool = os.getenv("CLIMATE_SOLAR_ECO_ENABLED", "true").lower() in ("true", "1", "yes")
+    CLIMATE_SOLAR_SURPLUS_THRESHOLD_W: float = float(os.getenv("CLIMATE_SOLAR_SURPLUS_THRESHOLD_W", "1500.0"))
+    CLIMATE_BATTERY_MIN_SOC: float = float(os.getenv("CLIMATE_BATTERY_MIN_SOC", "60.0"))
+
     # Notifiche push (ntfy.sh)
     ENABLE_NTFY: bool = True
     NTFY_TOPIC: str = os.getenv("NTFY_TOPIC", "")
     VAPID_CLAIM_EMAIL: str = os.getenv("VAPID_CLAIM_EMAIL", "mailto:admin@example.com")
 
 settings = Settings()
+
 
 

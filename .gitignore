@@ -21,6 +21,7 @@ fetch_js.py
 inspect_login.py
 inspect_scripts.py
 test_aton*
+test_thinq*
 test_deep_login.py
 test_more_variations.py
 test_variations.py

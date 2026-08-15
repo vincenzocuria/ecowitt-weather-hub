@@ -178,6 +178,32 @@ class TestEcowittHub(unittest.TestCase):
         self.assertEqual(outdoor["level"], "warning")
         self.assertIn("Caldo", outdoor["title"])
 
+    def test_thinq_service_state_management(self):
+        from backend.thinq_service import LGThinQService
+        svc = LGThinQService()
+        # Mock device cache
+        svc.devices_cache["test-ac-1"] = {
+            "device_id": "test-ac-1",
+            "alias": "Camera da letto",
+            "model_name": "RAC_056905_WW",
+            "device_type": "DEVICE_AIR_CONDITIONER",
+            "power": "POWER_ON",
+            "is_on": True,
+            "current_temp": 28.5,
+            "target_temp": 26.0,
+            "mode": "COOL",
+            "fan_speed": "LOW"
+        }
+        dev = svc.get_cached_device("test-ac-1")
+        self.assertIsNotNone(dev)
+        self.assertEqual(dev["alias"], "Camera da letto")
+        self.assertTrue(dev["is_on"])
+        self.assertEqual(dev["target_temp"], 26.0)
+
+        all_devs = svc.get_cached_devices()
+        self.assertEqual(len(all_devs), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
+

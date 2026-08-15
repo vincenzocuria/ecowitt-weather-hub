@@ -464,6 +464,105 @@
     </div>
 </div>
 
+<!-- SEZIONE CLIMATIZZAZIONE SMART LG THINQ -->
+<div class="climate-hero" id="climate_section">
+    <div class="climate-header">
+        <div class="climate-title-group">
+            <span class="climate-header-icon">❄️</span>
+            <div>
+                <h2>Climatizzazione Smart & Comfort Termico</h2>
+                <div class="climate-sub-header">
+                    Integrazione Cloud <strong>LG ThinQ Connect</strong> • Sinergia con Solare Aton Storage
+                </div>
+            </div>
+        </div>
+        <div class="climate-status-badge" id="climate_sync_btn" onclick="syncThinQDevices()" title="Clicca per forzare la risincronizzazione con il cloud LG">
+            <span class="pulse-dot"></span> <span id="climate_status_text">🟢 LG ThinQ Connesso</span>
+        </div>
+    </div>
+
+    <!-- GRID CONDIZIONATORI / SPLIT CASA -->
+    <div class="climate-grid" id="climate_devices_grid">
+        {% if climate_devices %}
+            {% for dev in climate_devices %}
+                {% if dev.device_type == 'DEVICE_AIR_CONDITIONER' %}
+                <div class="climate-card {% if dev.is_on %}is-on{% else %}is-off{% endif %}" id="climate_card_{{ dev.device_id }}" data-id="{{ dev.device_id }}">
+                    <!-- INTESTAZIONE SPLIT & ON/OFF -->
+                    <div class="climate-card-top">
+                        <div class="climate-room-info">
+                            <span class="climate-room-icon">❄️</span>
+                            <div>
+                                <div class="climate-room-name">{{ dev.alias }}</div>
+                                <span class="climate-model-tag">{{ dev.model_name or 'LG Dual Inverter' }}</span>
+                            </div>
+                        </div>
+                        <button type="button" class="climate-power-btn {% if dev.is_on %}btn-on{% else %}btn-off{% endif %}" id="pwr_btn_{{ dev.device_id }}" onclick="toggleThinQPower('{{ dev.device_id }}', {{ 'false' if dev.is_on else 'true' }})">
+                            <span class="pwr-icon">⏻</span> <span class="pwr-text">{{ 'ACCESO' if dev.is_on else 'SPENTO' }}</span>
+                        </button>
+                    </div>
+
+                    <!-- SHOWCASE TEMPERATURA ATTUALE & TARGET REGOLABILE -->
+                    <div class="climate-temp-showcase">
+                        <div class="climate-temp-current">
+                            <span class="climate-temp-label">Temp Rilevata</span>
+                            <div class="climate-temp-val-curr" id="curr_temp_{{ dev.device_id }}">{{ dev.current_temp or '--' }}°C</div>
+                        </div>
+                        <div class="climate-temp-target-ctrl">
+                            <button type="button" class="temp-ctrl-btn" onclick="changeThinQTemp('{{ dev.device_id }}', -0.5)" title="Diminuisci 0.5°C">−</button>
+                            <div class="climate-target-display">
+                                <span class="climate-temp-label">Setpoint</span>
+                                <div class="climate-target-val" id="target_temp_{{ dev.device_id }}">{{ dev.target_temp or 26 }}°C</div>
+                            </div>
+                            <button type="button" class="temp-ctrl-btn" onclick="changeThinQTemp('{{ dev.device_id }}', 0.5)" title="Aumenta 0.5°C">+</button>
+                        </div>
+                    </div>
+
+                    <!-- MODALITA OPERATIVA (COOL, HEAT, DRY, FAN, AUTO) -->
+                    <div class="climate-mode-chips">
+                        <button type="button" class="mode-chip {% if dev.mode == 'COOL' %}active-cool{% endif %}" onclick="setThinQMode('{{ dev.device_id }}', 'COOL')" title="Raffrescamento">❄️ Cool</button>
+                        <button type="button" class="mode-chip {% if dev.mode == 'HEAT' %}active-heat{% endif %}" onclick="setThinQMode('{{ dev.device_id }}', 'HEAT')" title="Riscaldamento">☀️ Heat</button>
+                        <button type="button" class="mode-chip {% if dev.mode == 'DRY' %}active-dry{% endif %}" onclick="setThinQMode('{{ dev.device_id }}', 'DRY')" title="Deumidificatore">💧 Dry</button>
+                        <button type="button" class="mode-chip {% if dev.mode == 'FAN' %}active-fan{% endif %}" onclick="setThinQMode('{{ dev.device_id }}', 'FAN')" title="Sola Ventilazione">💨 Fan</button>
+                        <button type="button" class="mode-chip {% if dev.mode == 'AUTO' %}active-auto{% endif %}" onclick="setThinQMode('{{ dev.device_id }}', 'AUTO')" title="Automatico">🔄 Auto</button>
+                    </div>
+
+                    <!-- VELOCITA VENTOLA & CONTROLLI SECONDARI -->
+                    <div class="climate-secondary-ctrls">
+                        <div class="climate-fan-group">
+                            <span style="font-size: 0.75rem; color: var(--text-dim); margin-right: 2px;">Ventola:</span>
+                            <button type="button" class="climate-ctrl-pill {% if dev.fan_speed == 'AUTO' %}active{% endif %}" onclick="setThinQFan('{{ dev.device_id }}', 'AUTO')">Auto</button>
+                            <button type="button" class="climate-ctrl-pill {% if dev.fan_speed == 'LOW' %}active{% endif %}" onclick="setThinQFan('{{ dev.device_id }}', 'LOW')">Min</button>
+                            <button type="button" class="climate-ctrl-pill {% if dev.fan_speed == 'MID' %}active{% endif %}" onclick="setThinQFan('{{ dev.device_id }}', 'MID')">Med</button>
+                            <button type="button" class="climate-ctrl-pill {% if dev.fan_speed == 'HIGH' %}active{% endif %}" onclick="setThinQFan('{{ dev.device_id }}', 'HIGH')">Max</button>
+                        </div>
+                        <div class="climate-switches">
+                            <button type="button" class="climate-ctrl-pill {% if dev.rotate_up_down %}active{% endif %}" onclick="toggleThinQSwing('{{ dev.device_id }}', {{ 'false' if dev.rotate_up_down else 'true' }})" title="Oscillazione alette verticali">↕️ Swing</button>
+                        </div>
+                    </div>
+
+                    <!-- BANNER SINERGIA SOLARE ATON -->
+                    {% if energy_latest and energy_latest.p_solare is defined and energy_latest.p_solare > 400 %}
+                    <div class="climate-solar-synergy-banner">
+                        <span>☀️</span>
+                        <span>Alimentato a <strong>Costo Zero</strong> da Fotovoltaico Aton ({{ energy_latest.p_solare | int }} W disponibili)</span>
+                    </div>
+                    {% elif energy_latest and energy_latest.soc is defined and energy_latest.soc >= 50 %}
+                    <div class="climate-solar-synergy-banner" style="background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.25); color: #34d399;">
+                        <span>🔋</span>
+                        <span>Alimentato da <strong>Batteria Aton</strong> (Carica: {{ energy_latest.soc | int }}%)</span>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+            {% endfor %}
+        {% else %}
+        <div style="padding: 1.5rem; text-align: center; color: var(--text-dim); background: rgba(0,0,0,0.2); border-radius: 12px; grid-column: 1 / -1;">
+            <p>🔄 Ricerca climatizzatori LG ThinQ in corso... Se hai appena configurato il token, attendi qualche secondo o tocca il pulsante di sincronizzazione.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
 <!-- PREVISIONI IBRIDE 7 GIORNI (OPEN-METEO + CROSS-CHECK LOCALE) -->
 <div class="forecast-section">
     <div class="forecast-header">

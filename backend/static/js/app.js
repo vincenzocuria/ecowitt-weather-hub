@@ -473,8 +473,178 @@ function startDashboardPolling() {
     // Avvia aggiornamenti periodici
     setInterval(update, 5000);
     setInterval(updateEnergyLive, 8000);
+    setInterval(updateClimateLive, 10000);
     updateEnergyLive();
+    updateClimateLive();
 }
+
+// ==========================================
+// Gestione Climatizzazione Smart LG ThinQ
+// ==========================================
+
+function updateClimateLive() {
+    fetch('/api/thinq/devices')
+        .then(r => r.json())
+        .then(res => {
+            if (!res) return;
+            const statusText = document.getElementById('climate_status_text');
+            if (statusText) {
+                statusText.innerText = res.connected ? '🟢 LG ThinQ Connesso' : '🟡 In attesa LG ThinQ';
+            }
+            if (res.devices && Array.isArray(res.devices)) {
+                res.devices.forEach(dev => {
+                    if (dev.device_type === 'DEVICE_AIR_CONDITIONER') {
+                        updateSingleACUI(dev);
+                    }
+                });
+            }
+        })
+        .catch(() => {});
+}
+
+function updateSingleACUI(dev) {
+    const id = dev.device_id;
+    const card = document.getElementById(`climate_card_${id}`);
+    if (card) {
+        if (dev.is_on) {
+            card.classList.add('is-on');
+            card.classList.remove('is-off');
+        } else {
+            card.classList.add('is-off');
+            card.classList.remove('is-on');
+        }
+    }
+
+    // Power button
+    const pwrBtn = document.getElementById(`pwr_btn_${id}`);
+    if (pwrBtn) {
+        if (dev.is_on) {
+            pwrBtn.className = 'climate-power-btn btn-on';
+            pwrBtn.innerHTML = `<span class="pwr-icon">⏻</span> <span class="pwr-text">ACCESO</span>`;
+            pwrBtn.setAttribute('onclick', `toggleThinQPower('${id}', false)`);
+        } else {
+            pwrBtn.className = 'climate-power-btn btn-off';
+            pwrBtn.innerHTML = `<span class="pwr-icon">⏻</span> <span class="pwr-text">SPENTO</span>`;
+            pwrBtn.setAttribute('onclick', `toggleThinQPower('${id}', true)`);
+        }
+    }
+
+    // Current Temp
+    const currEl = document.getElementById(`curr_temp_${id}`);
+    if (currEl && dev.current_temp !== undefined && dev.current_temp !== null) {
+        currEl.innerText = `${dev.current_temp}°C`;
+    }
+
+    // Target Temp
+    const targetEl = document.getElementById(`target_temp_${id}`);
+    if (targetEl && dev.target_temp !== undefined && dev.target_temp !== null) {
+        targetEl.innerText = `${dev.target_temp}°C`;
+    }
+
+    // Mode chips
+    if (card && dev.mode) {
+        const chips = card.querySelectorAll('.mode-chip');
+        chips.forEach(chip => {
+            chip.className = 'mode-chip';
+            const txt = chip.innerText.toLowerCase();
+            if (dev.mode === 'COOL' && txt.includes('cool')) chip.classList.add('active-cool');
+            if (dev.mode === 'HEAT' && txt.includes('heat')) chip.classList.add('active-heat');
+            if (dev.mode === 'DRY' && txt.includes('dry')) chip.classList.add('active-dry');
+            if (dev.mode === 'FAN' && txt.includes('fan')) chip.classList.add('active-fan');
+            if (dev.mode === 'AUTO' && txt.includes('auto')) chip.classList.add('active-auto');
+        });
+    }
+
+    // Fan pills
+    if (card && dev.fan_speed) {
+        const pills = card.querySelectorAll('.climate-fan-group .climate-ctrl-pill');
+        pills.forEach(pill => {
+            pill.classList.remove('active');
+            const txt = pill.innerText.toUpperCase();
+            if (dev.fan_speed === 'AUTO' && txt === 'AUTO') pill.classList.add('active');
+            if (dev.fan_speed === 'LOW' && (txt === 'MIN' || txt === 'LOW')) pill.classList.add('active');
+            if (dev.fan_speed === 'MID' && (txt === 'MED' || txt === 'MID')) pill.classList.add('active');
+            if (dev.fan_speed === 'HIGH' && (txt === 'MAX' || txt === 'HIGH')) pill.classList.add('active');
+        });
+    }
+
+    // Swing switch
+    if (card) {
+        const swingBtn = card.querySelector('.climate-switches .climate-ctrl-pill');
+        if (swingBtn) {
+            if (dev.rotate_up_down) {
+                swingBtn.classList.add('active');
+                swingBtn.setAttribute('onclick', `toggleThinQSwing('${id}', false)`);
+            } else {
+                swingBtn.classList.remove('active');
+                swingBtn.setAttribute('onclick', `toggleThinQSwing('${id}', true)`);
+            }
+        }
+    }
+}
+
+async function sendThinQCommand(deviceId, command) {
+    try {
+        const res = await fetch(`/api/thinq/device/${deviceId}/control`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(command)
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            setTimeout(updateClimateLive, 1000);
+        }
+        return data;
+    } catch (e) {
+        console.error('Errore invio comando LG ThinQ:', e);
+    }
+}
+
+function toggleThinQPower(deviceId, targetPower) {
+    const btn = document.getElementById(`pwr_btn_${deviceId}`);
+    if (btn) {
+        btn.innerHTML = `<span class="pwr-icon">⏳</span> <span class="pwr-text">INVIO...</span>`;
+    }
+    sendThinQCommand(deviceId, { power: targetPower });
+}
+
+function changeThinQTemp(deviceId, delta) {
+    const targetEl = document.getElementById(`target_temp_${deviceId}`);
+    if (!targetEl) return;
+    let curr = parseFloat(targetEl.innerText);
+    if (isNaN(curr)) curr = 26.0;
+    let newTemp = Math.min(30.0, Math.max(18.0, curr + delta));
+    targetEl.innerText = newTemp.toFixed(1) + '°C';
+    sendThinQCommand(deviceId, { target_temp: newTemp });
+}
+
+function setThinQMode(deviceId, mode) {
+    sendThinQCommand(deviceId, { mode: mode });
+}
+
+function setThinQFan(deviceId, speed) {
+    sendThinQCommand(deviceId, { fan_speed: speed });
+}
+
+function toggleThinQSwing(deviceId, swingState) {
+    sendThinQCommand(deviceId, { rotate_up_down: swingState });
+}
+
+function syncThinQDevices() {
+    const btn = document.getElementById('climate_sync_btn');
+    if (btn) {
+        btn.innerHTML = `<span class="pulse-dot"></span> <span>⏳ Sincronizzazione...</span>`;
+    }
+    fetch('/api/thinq/sync', { method: 'POST' })
+        .then(r => r.json())
+        .then(() => {
+            updateClimateLive();
+        })
+        .finally(() => {
+            setTimeout(updateClimateLive, 1000);
+        });
+}
+
 
 // ==========================================
 // Gestione Notifiche Push PWA (Web Push VAPID)

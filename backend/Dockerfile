@@ -2,9 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir fastapi uvicorn requests python-multipart jinja2 aiofiles pywebpush tzdata
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
 COPY backend /app/backend
+
 
 ENV TZ=Europe/Rome
 ENV TIMEZONE=Europe/Rome

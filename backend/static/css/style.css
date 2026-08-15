@@ -1982,5 +1982,372 @@ body {
     }
 }
 
+/* ==========================================================================
+   SMART CLIMATE & LG THINQ INTEGRATION STYLES
+   ========================================================================== */
+.climate-hero {
+    background: linear-gradient(135deg, rgba(14, 28, 54, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: var(--radius-lg);
+    padding: 1.35rem 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 0 20px rgba(56, 189, 248, 0.12);
+    backdrop-filter: blur(12px);
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.climate-hero::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #38bdf8, #0ea5e9, #6366f1, #10b981);
+}
+
+.climate-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.climate-title-group {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.climate-header-icon {
+    font-size: 1.8rem;
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    width: 46px;
+    height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+}
+
+.climate-title-group h2 {
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: #f8fafc;
+    margin: 0;
+}
+
+.climate-sub-header {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin-top: 3px;
+}
+
+.climate-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    color: #38bdf8;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.climate-status-badge:hover {
+    background: rgba(56, 189, 248, 0.25);
+    transform: translateY(-1px);
+}
+
+.climate-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.25rem;
+}
+
+.climate-card {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    transition: all 0.25s ease;
+    position: relative;
+}
+
+.climate-card.is-on {
+    border-color: rgba(56, 189, 248, 0.45);
+    box-shadow: 0 4px 20px rgba(56, 189, 248, 0.15);
+}
+
+.climate-card.is-off {
+    opacity: 0.85;
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+.climate-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.climate-room-info {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.climate-room-icon {
+    font-size: 1.4rem;
+}
+
+.climate-room-name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.climate-model-tag {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.climate-power-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.climate-power-btn.btn-on {
+    background: rgba(16, 185, 129, 0.2);
+    border-color: rgba(16, 185, 129, 0.45);
+    color: #34d399;
+}
+
+.climate-power-btn.btn-off {
+    background: rgba(100, 116, 139, 0.2);
+    border-color: rgba(100, 116, 139, 0.35);
+    color: var(--text-dim);
+}
+
+.climate-power-btn:hover {
+    transform: scale(1.03);
+}
+
+.climate-temp-showcase {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(30, 41, 59, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 0.85rem 1rem;
+    gap: 1rem;
+}
+
+.climate-temp-current {
+    display: flex;
+    flex-direction: column;
+}
+
+.climate-temp-label {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.climate-temp-val-curr {
+    font-size: 1.7rem;
+    font-weight: 800;
+    color: #fff;
+}
+
+.climate-temp-target-ctrl {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.temp-ctrl-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    color: var(--accent);
+    font-size: 1.25rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.temp-ctrl-btn:hover:not(:disabled) {
+    background: rgba(56, 189, 248, 0.3);
+    transform: scale(1.08);
+}
+
+.temp-ctrl-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.climate-target-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 65px;
+}
+
+.climate-target-val {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #38bdf8;
+}
+
+.climate-mode-chips {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.mode-chip {
+    flex: 1 1 auto;
+    min-width: 55px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-align: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.mode-chip:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.mode-chip.active-cool {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: rgba(56, 189, 248, 0.5);
+    color: #38bdf8;
+    font-weight: 700;
+}
+
+.mode-chip.active-heat {
+    background: rgba(249, 115, 22, 0.2);
+    border-color: rgba(249, 115, 22, 0.5);
+    color: #fb923c;
+    font-weight: 700;
+}
+
+.mode-chip.active-dry {
+    background: rgba(14, 165, 233, 0.2);
+    border-color: rgba(14, 165, 233, 0.5);
+    color: #38bdf8;
+    font-weight: 700;
+}
+
+.mode-chip.active-fan {
+    background: rgba(168, 85, 247, 0.2);
+    border-color: rgba(168, 85, 247, 0.5);
+    color: #c084fc;
+    font-weight: 700;
+}
+
+.mode-chip.active-auto {
+    background: rgba(34, 197, 94, 0.2);
+    border-color: rgba(34, 197, 94, 0.5);
+    color: #4ade80;
+    font-weight: 700;
+}
+
+.climate-secondary-ctrls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.climate-fan-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.climate-ctrl-pill {
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.climate-ctrl-pill.active {
+    background: rgba(56, 189, 248, 0.25);
+    border-color: rgba(56, 189, 248, 0.5);
+    color: #fff;
+}
+
+.climate-ctrl-pill:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.climate-solar-synergy-banner {
+    margin-top: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 10px;
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.25);
+    color: #fde047;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+}
+
+
 
 

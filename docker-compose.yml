@@ -24,8 +24,9 @@ services:
       - ecowitt-data:/data
     working_dir: /app
     command: >
-      sh -c "pip install --no-cache-dir fastapi uvicorn requests python-multipart jinja2 aiofiles pywebpush tzdata &&
+      sh -c "pip install --no-cache-dir -r /app/backend/requirements.txt &&
              python -m uvicorn backend.main:app --host 0.0.0.0 --port 8080"
+
 
   cloudflared:
     image: cloudflare/cloudflared:latest
