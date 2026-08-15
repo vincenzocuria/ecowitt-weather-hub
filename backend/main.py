@@ -33,7 +33,7 @@ from backend.database import (
 from backend.analytics import (
     calc_zambretti_forecast, evaluate_window_ventilation, evaluate_laundry_index,
     calc_humidex, evaluate_outdoor_activity, calc_sun_ephemeris, calc_moon_phase,
-    calc_beaufort_scale
+    calc_beaufort_scale, evaluate_indoor_comfort
 )
 from backend.forecast_service import forecast_service
 from backend.aton_service import aton_service
@@ -133,6 +133,8 @@ def build_analytics_context(latest: dict) -> dict:
     laundry_advice = evaluate_laundry_index(temp_c, hum, wind_spd, solar, rain_rate)
     humidex_info = calc_humidex(temp_c, dew_point)
     outdoor_advice = evaluate_outdoor_activity(temp_c, wind_gst, rain_rate, uv)
+    indoor_comfort = evaluate_indoor_comfort(temp_in, hum_in, temp_c)
+    dew_point_in = calc_dew_point(temp_in, hum_in)
 
     today_ext = get_today_extremes()
     yesterday_cmp = get_yesterday_same_time(temp_c)
@@ -149,7 +151,8 @@ def build_analytics_context(latest: dict) -> dict:
             "window": window_advice,
             "laundry": laundry_advice,
             "humidex": humidex_info,
-            "outdoor": outdoor_advice
+            "outdoor": outdoor_advice,
+            "indoor": indoor_comfort
         },
         "today_extremes": today_ext,
         "yesterday_comparison": yesterday_cmp,
@@ -157,6 +160,7 @@ def build_analytics_context(latest: dict) -> dict:
         "sun_ephemeris": sun_info,
         "moon_phase": moon_info,
         "dew_point_c": dew_point,
+        "dew_point_in_c": dew_point_in,
         "cross_check": cross_check,
         "beaufort": beaufort
     }
@@ -224,8 +228,8 @@ async def api_export_csv(start_date: Optional[str] = None, end_date: Optional[st
     output.write('\ufeff')
     writer = csv.writer(output, delimiter=';')
     writer.writerow([
-        "ID", "Data e Ora (UTC)", "Temperatura (°C)", "Umidità (%)", "Punto di Rugiada (°C)",
-        "Temp Percepita (°C)", "Pressione Relativa (hPa)", "Pressione Assoluta (hPa)",
+        "ID", "Data e Ora (UTC)", "Temperatura Esterna (°C)", "Umidità Esterna (%)", "Punto di Rugiada (°C)",
+        "Temp Percepita (°C)", "Temperatura Interna (°C)", "Umidità Interna (%)", "Pressione Relativa (hPa)", "Pressione Assoluta (hPa)",
         "Vento Medio (km/h)", "Raffica (km/h)", "Direzione Vento (°)", "Pioggia Oraria (mm/h)",
         "Pioggia Giorno (mm)", "Pioggia Totale Anno (mm)", "Radiazione Solare (W/m²)", "Indice UV"
     ])
@@ -233,6 +237,7 @@ async def api_export_csv(start_date: Optional[str] = None, end_date: Optional[st
         writer.writerow([
             r.get("id"), r.get("timestamp"), r.get("temp_c"), r.get("humidity"),
             r.get("dew_point_c"), calc_apparent_temp(r.get("temp_c"), r.get("humidity"), r.get("wind_speed_kmh")),
+            r.get("temp_in_c"), r.get("humidity_in"),
             r.get("pressure_rel_hpa"), r.get("pressure_abs_hpa"), r.get("wind_speed_kmh"),
             r.get("wind_gust_kmh"), r.get("wind_dir_deg"), r.get("rain_rate_mm_hr"),
             r.get("daily_rain_mm"), r.get("yearly_rain_mm"), r.get("solar_radiation"),

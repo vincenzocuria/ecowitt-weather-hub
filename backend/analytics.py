@@ -585,3 +585,99 @@ def calc_beaufort_scale(wind_speed_kmh: Optional[float]) -> Dict[str, Any]:
     else:
         return {"grade": 12, "label": "Uragano", "desc": "Devastazione e danni catastrofici.", "icon": "🚨 🌀"}
 
+
+def evaluate_indoor_comfort(
+    temp_in_c: Optional[float],
+    humidity_in: Optional[float],
+    temp_out_c: Optional[float] = None
+) -> Dict[str, Any]:
+    """
+    Valuta il microclima interno di casa (temperatura, umidità, delta vs esterno, benessere igrometrico).
+    """
+    if temp_in_c is None or humidity_in is None:
+        return {
+            "status": "unknown",
+            "icon": "🏠",
+            "badge_class": "badge-neutral",
+            "title": "In attesa dati",
+            "desc": "Nessuna lettura interna disponibile.",
+            "delta_text": "--"
+        }
+    
+    t = float(temp_in_c)
+    h = float(humidity_in)
+    
+    delta_str = ""
+    diff_val = None
+    if temp_out_c is not None:
+        diff_val = round(t - float(temp_out_c), 1)
+        if diff_val > 0:
+            delta_str = f"Casa più calda dell'esterno (+{diff_val}°C)"
+        elif diff_val < 0:
+            delta_str = f"Casa più fresca dell'esterno ({diff_val}°C)"
+        else:
+            delta_str = "Temperatura interna uguale all'esterno (Δ 0.0°C)"
+            
+    # Benessere termico e igrometrico (comfort standard ISO 7730 / ASHRAE 55)
+    if 20.0 <= t <= 26.0 and 40.0 <= h <= 60.0:
+        return {
+            "status": "optimal",
+            "icon": "🟢",
+            "badge_class": "badge-success",
+            "title": "Comfort Ottimale",
+            "desc": f"Microclima interno ideale ({t}°C, {h}% UR). {delta_str}",
+            "delta_text": delta_str,
+            "diff_c": diff_val
+        }
+    elif t > 27.5:
+        return {
+            "status": "warm",
+            "icon": "🔴",
+            "badge_class": "badge-danger",
+            "title": "Ambiente Caldo",
+            "desc": f"Temperatura interna alta ({t}°C). {delta_str}",
+            "delta_text": delta_str,
+            "diff_c": diff_val
+        }
+    elif t < 18.0:
+        return {
+            "status": "cold",
+            "icon": "🔵",
+            "badge_class": "badge-info",
+            "title": "Ambiente Fresco/Freddo",
+            "desc": f"Temperatura interna bassa ({t}°C). {delta_str}",
+            "delta_text": delta_str,
+            "diff_c": diff_val
+        }
+    elif h > 65.0:
+        return {
+            "status": "humid",
+            "icon": "🟡",
+            "badge_class": "badge-warning",
+            "title": "Umidità Elevata",
+            "desc": f"Umidità interna al {h}%: arieggiare o deumidificare.",
+            "delta_text": delta_str,
+            "diff_c": diff_val
+        }
+    elif h < 35.0:
+        return {
+            "status": "dry",
+            "icon": "🟡",
+            "badge_class": "badge-warning",
+            "title": "Aria Secca",
+            "desc": f"Umidità bassa ({h}%): consigliato umidificare.",
+            "delta_text": delta_str,
+            "diff_c": diff_val
+        }
+    else:
+        return {
+            "status": "good",
+            "icon": "🟢",
+            "badge_class": "badge-success",
+            "title": "Condizioni Buone",
+            "desc": f"Clima interno gradevole ({t}°C, {h}%). {delta_str}",
+            "delta_text": delta_str,
+            "diff_c": diff_val
+        }
+
+

@@ -121,20 +121,24 @@ function startDashboardPolling() {
                     if (el) el.innerText = '-- kPa';
                 }
 
-                // Interno
+                // Clima Interno (Casa)
                 if (d.temp_in_c !== undefined) {
-                    const el = document.getElementById('temp_in');
-                    if (el) el.innerText = d.temp_in_c + ' °C';
+                    const el = document.getElementById('temp_in_c');
+                    if (el) el.innerText = d.temp_in_c;
                 }
                 if (d.humidity_in !== undefined) {
-                    const el = document.getElementById('hum_in');
+                    const el = document.getElementById('humidity_in');
                     if (el) el.innerText = d.humidity_in + ' %';
                 }
 
                 // Fulmini
                 if (d.lightning_distance_km !== undefined && d.lightning_distance_km !== null) {
                     const el = document.getElementById('lightning');
-                    if (el) el.innerText = '⚡ ' + d.lightning_distance_km + ' km';
+                    if (el) el.innerText = '⚡ ' + d.lightning_distance_km + ' km' + (d.lightning_count ? ' (' + d.lightning_count + ' totali)' : '');
+                }
+                if (d.lightning_last_time) {
+                    const lt = document.getElementById('lightning_time');
+                    if (lt) lt.innerText = d.lightning_last_time;
                 }
 
                 // ANALYTICS & SMART ADVICE
@@ -187,6 +191,30 @@ function startDashboardPolling() {
                             if (oTitle) oTitle.innerText = a.comfort.outdoor.title;
                             if (oDesc) oDesc.innerText = a.comfort.outdoor.desc;
                         }
+                        // Indoor Comfort
+                        if (a.comfort.indoor) {
+                            const ind = a.comfort.indoor;
+                            const badge = document.getElementById('indoor_comfort_badge');
+                            const dText = document.getElementById('indoor_delta_text');
+                            const sDesc = document.getElementById('indoor_status_desc');
+                            const dBadge = document.getElementById('indoor_delta_badge');
+                            if (badge) {
+                                badge.className = 'sub-badge ' + (ind.badge_class || '');
+                                badge.innerText = `${ind.icon || '🏠'} ${ind.title || 'Ambiente Casa'}`;
+                            }
+                            if (dText) dText.innerText = ind.delta_text || '--';
+                            if (sDesc) sDesc.innerText = ind.desc || '--';
+                            if (dBadge) {
+                                dBadge.className = 'delta-badge ' + (ind.diff_c > 0 ? 'warmer' : (ind.diff_c < 0 ? 'cooler' : 'neutral'));
+                                dBadge.innerText = (ind.diff_c !== null && ind.diff_c !== undefined) ? (ind.diff_c > 0 ? `+${ind.diff_c}°C` : `${ind.diff_c}°C`) : '--';
+                            }
+                        }
+                    }
+
+                    // Punto rugiada interno
+                    if (a.dew_point_in_c !== undefined) {
+                        const dpIn = document.getElementById('dew_point_in');
+                        if (dpIn) dpIn.innerText = a.dew_point_in_c !== null ? a.dew_point_in_c + ' °C' : '-- °C';
                     }
 
                     // Estremi di Oggi & vs Ieri
@@ -199,6 +227,16 @@ function startDashboardPolling() {
                         if (tMinTime && a.today_extremes.temp_min_time) tMinTime.innerText = a.today_extremes.temp_min_time;
                         if (tMax && a.today_extremes.temp_max !== null) tMax.innerText = a.today_extremes.temp_max + '°C';
                         if (tMaxTime && a.today_extremes.temp_max_time) tMaxTime.innerText = a.today_extremes.temp_max_time;
+
+                        // Estremi Casa
+                        const inMin = document.getElementById('today_in_min');
+                        const inMinTime = document.getElementById('today_in_min_time');
+                        const inMax = document.getElementById('today_in_max');
+                        const inMaxTime = document.getElementById('today_in_max_time');
+                        if (inMin && a.today_extremes.temp_in_min !== null && a.today_extremes.temp_in_min !== undefined) inMin.innerText = a.today_extremes.temp_in_min + '°C';
+                        if (inMinTime && a.today_extremes.temp_in_min_time) inMinTime.innerText = a.today_extremes.temp_in_min_time;
+                        if (inMax && a.today_extremes.temp_in_max !== null && a.today_extremes.temp_in_max !== undefined) inMax.innerText = a.today_extremes.temp_in_max + '°C';
+                        if (inMaxTime && a.today_extremes.temp_in_max_time) inMaxTime.innerText = a.today_extremes.temp_in_max_time;
                     }
                     if (a.yesterday_comparison) {
                         const yBadge = document.getElementById('yesterday_badge');

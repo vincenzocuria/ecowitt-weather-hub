@@ -573,6 +573,8 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
                 ROUND(AVG(temp_c), 1) AS temp_avg,
                 ROUND(MIN(temp_c), 1) AS temp_min,
                 ROUND(MAX(temp_c), 1) AS temp_max,
+                ROUND(AVG(temp_in_c), 1) AS temp_in_avg,
+                ROUND(AVG(humidity_in), 1) AS humidity_in_avg,
                 ROUND(AVG(humidity), 1) AS humidity_avg,
                 ROUND(AVG(dew_point_c), 1) AS dew_point_avg,
                 ROUND(AVG(pressure_rel_hpa), 1) AS pressure_avg,
@@ -596,6 +598,8 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
             "temp_c": [r["temp_avg"] for r in rows],
             "temp_min": [r["temp_min"] for r in rows],
             "temp_max": [r["temp_max"] for r in rows],
+            "temp_in_c": [r["temp_in_avg"] for r in rows],
+            "humidity_in": [r["humidity_in_avg"] for r in rows],
             "humidity": [r["humidity_avg"] for r in rows],
             "dew_point": [r["dew_point_avg"] for r in rows],
             "pressure": [r["pressure_avg"] for r in rows],
@@ -607,7 +611,7 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
         }
     else:
         cursor.execute("""
-            SELECT timestamp, temp_c, humidity, dew_point_c, pressure_rel_hpa,
+            SELECT timestamp, temp_c, temp_in_c, humidity, humidity_in, dew_point_c, pressure_rel_hpa,
                    wind_speed_kmh, wind_gust_kmh, rain_rate_mm_hr, daily_rain_mm,
                    solar_radiation, uv_index
             FROM weather_records
@@ -622,7 +626,9 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
             "period": "24h",
             "labels": [r["timestamp"] for r in rows],
             "temp_c": [r["temp_c"] for r in rows],
+            "temp_in_c": [r["temp_in_c"] for r in rows],
             "humidity": [r["humidity"] for r in rows],
+            "humidity_in": [r["humidity_in"] for r in rows],
             "dew_point": [r["dew_point_c"] for r in rows],
             "pressure": [r["pressure_rel_hpa"] for r in rows],
             "wind_speed": [r["wind_speed_kmh"] for r in rows],
@@ -721,6 +727,22 @@ def get_today_extremes() -> Dict[str, Any]:
     """, (today_start_utc,))
     min_t_row = cursor.fetchone()
 
+    # Max Temp Interna
+    cursor.execute("""
+        SELECT temp_in_c, timestamp FROM weather_records
+        WHERE timestamp >= ? AND temp_in_c IS NOT NULL
+        ORDER BY temp_in_c DESC, timestamp ASC LIMIT 1
+    """, (today_start_utc,))
+    max_t_in_row = cursor.fetchone()
+
+    # Min Temp Interna
+    cursor.execute("""
+        SELECT temp_in_c, timestamp FROM weather_records
+        WHERE timestamp >= ? AND temp_in_c IS NOT NULL
+        ORDER BY temp_in_c ASC, timestamp ASC LIMIT 1
+    """, (today_start_utc,))
+    min_t_in_row = cursor.fetchone()
+
     # Max Raffica Vento Oggi
     cursor.execute("""
         SELECT wind_gust_kmh, timestamp FROM weather_records
@@ -755,6 +777,11 @@ def get_today_extremes() -> Dict[str, Any]:
     max_t_time = _fmt_time(max_t_row["timestamp"]) if max_t_row else None
     min_t_time = _fmt_time(min_t_row["timestamp"]) if min_t_row else None
 
+    max_t_in = float(max_t_in_row["temp_in_c"]) if max_t_in_row and max_t_in_row["temp_in_c"] is not None else None
+    min_t_in = float(min_t_in_row["temp_in_c"]) if min_t_in_row and min_t_in_row["temp_in_c"] is not None else None
+    max_t_in_time = _fmt_time(max_t_in_row["timestamp"]) if max_t_in_row else None
+    min_t_in_time = _fmt_time(min_t_in_row["timestamp"]) if min_t_in_row else None
+
     range_t = round(max_t - min_t, 1) if (max_t is not None and min_t is not None) else None
     max_gust = float(gust_row["wind_gust_kmh"]) if gust_row and gust_row["wind_gust_kmh"] is not None else None
     today_rain = float(rain_row["daily_rain_mm"]) if rain_row and rain_row["daily_rain_mm"] is not None else 0.0
@@ -765,6 +792,10 @@ def get_today_extremes() -> Dict[str, Any]:
         "temp_min": min_t,
         "temp_min_time": min_t_time,
         "temp_range": range_t,
+        "temp_in_max": max_t_in,
+        "temp_in_max_time": max_t_in_time,
+        "temp_in_min": min_t_in,
+        "temp_in_min_time": min_t_in_time,
         "max_gust": max_gust,
         "today_rain": today_rain
     }

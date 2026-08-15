@@ -471,37 +471,90 @@
         </div>
     </div>
 
-    <!-- 5. CLIMA INTERNO & FULMINI / TERRENO -->
+    <!-- 5. CLIMA INTERNO CASA (CONSOLE / GATEWAY) -->
     <div class="card">
         <div class="card-header">
-            <span>🏠 Casa, Fulmini & Terreno</span>
+            <span>🏠 Clima Interno (Casa)</span>
+            <span class="sub-badge {{ analytics.comfort.indoor.badge_class if analytics and analytics.comfort.indoor else 'badge-neutral' }}" id="indoor_comfort_badge">
+                {{ analytics.comfort.indoor.icon if analytics and analytics.comfort.indoor else '🏠' }} {{ analytics.comfort.indoor.title if analytics and analytics.comfort.indoor else 'Ambiente Casa' }}
+            </span>
+        </div>
+        <div class="main-stat">
+            <span class="val" id="temp_in_c">{{ latest.temp_in_c if latest.temp_in_c is not none else '--' }}</span>
+            <span class="unit">°C</span>
+        </div>
+
+        <!-- DIFFERENZIALE MIN/MAX INTERNA OGGI & DELTA VS FUORI -->
+        <div class="today-extremes-box">
+            <div class="extreme-item">
+                <span class="extreme-label">Min Casa</span>
+                <span class="extreme-val min-t" id="today_in_min">{{ analytics.today_extremes.temp_in_min if analytics and analytics.today_extremes.temp_in_min is not none else '--' }}°C</span>
+                <span class="extreme-time" id="today_in_min_time">{{ analytics.today_extremes.temp_in_min_time or '--:--' }}</span>
+            </div>
+            <div class="extreme-item">
+                <span class="extreme-label">Max Casa</span>
+                <span class="extreme-val max-t" id="today_in_max">{{ analytics.today_extremes.temp_in_max if analytics and analytics.today_extremes.temp_in_max is not none else '--' }}°C</span>
+                <span class="extreme-time" id="today_in_max_time">{{ analytics.today_extremes.temp_in_max_time or '--:--' }}</span>
+            </div>
+            <div class="extreme-item">
+                <span class="extreme-label">vs Fuori</span>
+                <span class="delta-badge {% if analytics and analytics.comfort.indoor and analytics.comfort.indoor.diff_c is not none and analytics.comfort.indoor.diff_c > 0 %}warmer{% elif analytics and analytics.comfort.indoor and analytics.comfort.indoor.diff_c is not none and analytics.comfort.indoor.diff_c < 0 %}cooler{% else %}neutral{% endif %}" id="indoor_delta_badge">
+                    {% if analytics and analytics.comfort.indoor and analytics.comfort.indoor.diff_c is not none %}
+                        {{ "%+0.1f"|format(analytics.comfort.indoor.diff_c) }}°C
+                    {% else %}
+                        --
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+
+        <div class="item-list">
+            <div class="item"><span>Umidità Interna:</span> <strong id="humidity_in">{{ latest.humidity_in if latest.humidity_in is not none else '--' }} %</strong></div>
+            <div class="item"><span>Punto di Rugiada Interno:</span> <strong id="dew_point_in">{{ analytics.dew_point_in_c if analytics and analytics.dew_point_in_c is not none else '--' }} °C</strong></div>
+            <div class="item"><span>Isolamento / Delta:</span> <strong id="indoor_delta_text">{{ analytics.comfort.indoor.delta_text if analytics and analytics.comfort.indoor else '--' }}</strong></div>
+            <div class="item"><span>Stato Microclima:</span> <strong id="indoor_status_desc">{{ analytics.comfort.indoor.desc if analytics and analytics.comfort.indoor else 'Regolare' }}</strong></div>
+        </div>
+    </div>
+
+    <!-- 6. SENSORI MULTICANALE, FULMINI & TERRENO -->
+    <div class="card">
+        <div class="card-header">
+            <span>⚡ Fulmini & Sensori Suolo</span>
+            <span class="sub-badge" id="lightning_badge">
+                {% if latest.lightning_distance_km is not none %}
+                    ⚡ In Rilevamento
+                {% else %}
+                    WH57 / WH51
+                {% endif %}
+            </span>
         </div>
         <div class="item-list">
-            <div class="item"><span>Temperatura Interna:</span> <strong id="temp_in">{{ latest.temp_in_c if latest.temp_in_c is not none else '--' }} °C</strong></div>
-            <div class="item"><span>Umidità Interna:</span> <strong id="hum_in">{{ latest.humidity_in if latest.humidity_in is not none else '--' }} %</strong></div>
-            <div class="divider"></div>
             <div class="item">
-                <span>Sensore Fulmini (WH57):</span>
+                <span>Rilevatore Fulmini (WH57):</span>
                 <strong id="lightning">
                     {% if latest.lightning_distance_km is not none %}
-                        ⚡ {{ latest.lightning_distance_km }} km
+                        ⚡ {{ latest.lightning_distance_km }} km ({{ latest.lightning_count or 0 }} totali)
                     {% else %}
-                        <span style="color: var(--text-muted); font-size: 0.85rem;">In attesa di GW3000</span>
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">In attesa di fulmini / GW3000</span>
                     {% endif %}
                 </strong>
+            </div>
+            <div class="item">
+                <span>Ultima Scarica Rilevata:</span>
+                <strong id="lightning_time">{{ latest.lightning_last_time or 'Nessuna recente' }}</strong>
             </div>
             <div class="divider"></div>
             {% if soil_moisture %}
                 {% for ch, val in soil_moisture.items() %}
-                <div class="item"><span>Umidità {{ ch }}:</span> <strong>{{ val }}%</strong></div>
+                <div class="item"><span>Umidità Suolo {{ ch }}:</span> <strong>{{ val }}%</strong></div>
                 {% endfor %}
             {% else %}
-                <div class="item"><span>Sensori Umidità Terreno:</span> <span style="color: var(--text-muted); font-size: 0.85rem;">In attesa di GW3000 / sensori</span></div>
+                <div class="item"><span>Sensori Umidità Terreno:</span> <span style="color: var(--text-muted); font-size: 0.85rem;">In attesa di WH51</span></div>
             {% endif %}
         </div>
     </div>
 
-    <!-- 6. STATO, DIGEST & TEST -->
+    <!-- 7. STATO, DIGEST & TEST -->
     <div class="card">
         <div class="card-header">
             <span>🔔 Notifiche & Digest</span>

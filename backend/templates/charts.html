@@ -109,7 +109,7 @@
                 // 1. Chart Temp
                 const datasetsTemp = [
                     {
-                        label: 'Temperatura (°C)',
+                        label: 'Temperatura Esterna (°C)',
                         data: d.temp_c,
                         borderColor: '#38bdf8',
                         backgroundColor: 'rgba(56, 189, 248, 0.1)',
@@ -118,17 +118,26 @@
                         fill: true
                     },
                     {
+                        label: 'Temperatura Casa (°C)',
+                        data: d.temp_in_c,
+                        borderColor: '#f59e0b',
+                        borderWidth: 2,
+                        borderDash: [6, 3],
+                        tension: 0.3,
+                        fill: false
+                    },
+                    {
                         label: 'Punto di Rugiada (°C)',
                         data: d.dew_point,
                         borderColor: '#10b981',
                         borderWidth: 1.5,
-                        borderDash: [4, 4],
+                        borderDash: [3, 3],
                         tension: 0.3
                     }
                 ];
                 if (d.temp_max && d.temp_min) {
-                    datasetsTemp.push({ label: 'Max (°C)', data: d.temp_max, borderColor: '#ef4444', borderWidth: 1, pointRadius: 0 });
-                    datasetsTemp.push({ label: 'Min (°C)', data: d.temp_min, borderColor: '#60a5fa', borderWidth: 1, pointRadius: 0 });
+                    datasetsTemp.push({ label: 'Max Esterna (°C)', data: d.temp_max, borderColor: '#ef4444', borderWidth: 1, pointRadius: 0 });
+                    datasetsTemp.push({ label: 'Min Esterna (°C)', data: d.temp_min, borderColor: '#60a5fa', borderWidth: 1, pointRadius: 0 });
                 }
 
                 chartTemp = new Chart(document.getElementById('chartTemp').getContext('2d'), {

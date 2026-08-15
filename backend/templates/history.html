@@ -39,8 +39,10 @@
             <thead>
                 <tr>
                     <th>Data & Ora</th>
-                    <th>Temp (°C)</th>
-                    <th>Umidità</th>
+                    <th>Temp Out (°C)</th>
+                    <th>Umidità Out</th>
+                    <th>Temp Casa (°C)</th>
+                    <th>Umidità Casa</th>
                     <th>Rug. (°C)</th>
                     <th>Pressione</th>
                     <th>Vento (km/h)</th>
@@ -56,6 +58,8 @@
                     <td>{{ r.timestamp.replace('T', ' ')[:19] }}</td>
                     <td><strong>{{ r.temp_c if r.temp_c is not none else '--' }}</strong></td>
                     <td>{{ r.humidity if r.humidity is not none else '--' }} %</td>
+                    <td style="color: #f59e0b;"><strong>{{ r.temp_in_c if r.temp_in_c is not none else '--' }}</strong></td>
+                    <td>{{ r.humidity_in if r.humidity_in is not none else '--' }} %</td>
                     <td>{{ r.dew_point_c if r.dew_point_c is not none else '--' }}</td>
                     <td>{{ r.pressure_rel_hpa if r.pressure_rel_hpa is not none else '--' }}</td>
                     <td>{{ r.wind_speed_kmh if r.wind_speed_kmh is not none else '--' }}</td>
