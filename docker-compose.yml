@@ -4,7 +4,9 @@ services:
     container_name: ecowitt-hub
     restart: unless-stopped
     ports:
-      - "${PORT:-8090}:8080"
+      - "${HOST_PORT:-8090}:8080"
+    env_file:
+      - .env
     environment:
       - TZ=${TZ:-Europe/Rome}
       - TIMEZONE=${TIMEZONE:-Europe/Rome}
@@ -29,7 +31,9 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared-meteo
     restart: unless-stopped
-    command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    env_file:
+      - .env
+    command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARE_TUNNEL_TOKEN}
 
 volumes:
   ecowitt-data:
