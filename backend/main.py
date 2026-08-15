@@ -27,7 +27,8 @@ from backend.database import (
     get_timeseries, search_history, get_alert_logs, deg_to_compass, calc_dew_point,
     get_station_status, get_pressure_trend, calc_apparent_temp,
     get_today_extremes, get_yesterday_same_time, get_recent_rain_totals,
-    save_push_subscription, delete_push_subscription, get_all_push_subscriptions
+    save_push_subscription, delete_push_subscription, get_all_push_subscriptions,
+    save_energy_reading, get_latest_energy, get_today_energy_summary, get_energy_timeseries
 )
 from backend.analytics import (
     calc_zambretti_forecast, evaluate_window_ventilation, evaluate_laundry_index,
@@ -35,18 +36,20 @@ from backend.analytics import (
     calc_beaufort_scale
 )
 from backend.forecast_service import forecast_service
+from backend.aton_service import aton_service
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("weather_hub")
 
-# Background Watchdog & Daily Digest Loop
+# Background Watchdog, Daily Digest & Evening Energy Digest Loop
 async def watchdog_worker():
-    logger.info("[WATCHDOG] Station Offline Watchdog & Daily Digest loop attivato")
+    logger.info("[WATCHDOG] Station Offline Watchdog, Daily Digest & Energy Report loop attivato")
     while True:
         try:
             engine.check_offline_watchdog()
             engine.check_daily_digest()
+            engine.check_evening_energy_digest()
         except Exception as e:
             logger.error(f"Errore nel watchdog worker: {e}")
         await asyncio.sleep(60)
@@ -54,9 +57,13 @@ async def watchdog_worker():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = asyncio.create_task(watchdog_worker())
+    watchdog_task = asyncio.create_task(watchdog_worker())
+    aton_task = asyncio.create_task(aton_service.worker_loop())
     yield
-    task.cancel()
+    watchdog_task.cancel()
+    aton_service.stop()
+    aton_task.cancel()
+
 
 # FastAPI App
 app = FastAPI(title="Ecowitt & Sainlogic Weather Station Hub", lifespan=lifespan)
@@ -344,6 +351,27 @@ async def api_test_alert(alert_type: str = "record"):
         "ntfy_topic": settings.NTFY_TOPIC
     }
 
+@app.get("/api/energy/latest")
+async def api_energy_latest():
+    """Restituisce l'ultima lettura energetica live da Aton Storage."""
+    data = aton_service.latest_data or get_latest_energy()
+    return {
+        "enabled": settings.ATON_ENABLED,
+        "connected": aton_service.is_connected,
+        "serial_number": settings.ATON_SN,
+        "data": data
+    }
+
+@app.get("/api/energy/summary")
+async def api_energy_summary():
+    """Restituisce il riassunto energetico odierno (produzione, autoconsumo, autosufficienza)."""
+    return get_today_energy_summary()
+
+@app.get("/api/energy/history")
+async def api_energy_history(hours: int = 24):
+    """Restituisce la serie storica energetica per i grafici."""
+    return {"history": get_energy_timeseries(hours=hours)}
+
 # ----------------- UI HTML ROUTES -----------------
 @app.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
@@ -373,6 +401,10 @@ async def dashboard_page(request: Request):
     forecast_data = forecast_service.fetch_open_meteo()
     cross_check = forecast_service.build_cross_check_summary(latest)
 
+    # Dati Energetici Aton Storage
+    energy_latest = aton_service.latest_data or get_latest_energy() or {}
+    energy_summary = get_today_energy_summary()
+
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -391,9 +423,14 @@ async def dashboard_page(request: Request):
             "analytics": analytics,
             "forecast": forecast_data,
             "cross_check": cross_check,
+            "energy_latest": energy_latest,
+            "energy_summary": energy_summary,
+            "aton_enabled": settings.ATON_ENABLED,
+            "aton_sn": settings.ATON_SN,
             "ntfy_topic": settings.NTFY_TOPIC
         }
     )
+
 
 
 @app.get("/records", response_class=HTMLResponse)

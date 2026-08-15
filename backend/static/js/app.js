@@ -259,7 +259,143 @@ function startDashboardPolling() {
             .catch(() => {});
     }
 
+    // Polling energetico Aton Green Storage
+    function updateEnergyLive() {
+        fetch('/api/energy/latest')
+            .then(r => r.json())
+            .then(res => {
+                if (!res || !res.enabled) return;
+                const d = res.data;
+                if (!d) return;
+
+                // Aggiorna badge stato impianto
+                const statusText = document.getElementById('energy_status_text');
+                if (statusText) {
+                    statusText.innerText = res.connected ? '🟢 Impianto Attivo' : '🟡 In attesa dati Aton';
+                }
+
+                const tsEl = document.getElementById('energy_ts');
+                if (tsEl && d.data_aton) {
+                    tsEl.innerText = d.data_aton;
+                }
+
+                // 1. Solare
+                const pSolareEl = document.getElementById('p_solare_val');
+                if (pSolareEl && d.p_solare !== undefined) {
+                    pSolareEl.innerHTML = `${Math.round(d.p_solare)} <span class="unit">W</span>`;
+                }
+
+                const solSub = document.getElementById('solar_today_sub');
+                if (solSub && d.solar_today_kwh !== undefined) {
+                    solSub.innerHTML = `Oggi: <strong>${d.solar_today_kwh} kWh</strong>`;
+                }
+
+                // 2. Batteria
+                const pBattEl = document.getElementById('p_batteria_val');
+                const pctBadge = document.getElementById('battery_pct_badge');
+                const barFill = document.getElementById('battery_bar_fill');
+                const battIcon = document.getElementById('battery_icon');
+                const battSub = document.getElementById('battery_temp_sub');
+
+                if (pctBadge && d.soc !== undefined) {
+                    pctBadge.innerText = Math.round(d.soc) + '%';
+                    if (barFill) barFill.style.width = Math.min(100, Math.max(0, d.soc)) + '%';
+                    
+                    if (d.soc < 20) {
+                        pctBadge.style.color = '#f87171';
+                        pctBadge.style.borderColor = 'rgba(248, 113, 113, 0.4)';
+                        if (barFill) barFill.style.background = '#f87171';
+                    } else if (d.soc < 50) {
+                        pctBadge.style.color = '#fbbf24';
+                        pctBadge.style.borderColor = 'rgba(251, 191, 36, 0.4)';
+                        if (barFill) barFill.style.background = '#fbbf24';
+                    } else {
+                        pctBadge.style.color = '#4ade80';
+                        pctBadge.style.borderColor = 'rgba(34, 197, 94, 0.4)';
+                        if (barFill) barFill.style.background = 'linear-gradient(90deg, #22c55e, #4ade80)';
+                    }
+                }
+
+                if (pBattEl && d.p_batteria !== undefined) {
+                    if (d.p_batteria < 0) {
+                        pBattEl.innerHTML = `+${Math.round(Math.abs(d.p_batteria))} <span class="unit">W (In Carica)</span>`;
+                        if (battIcon) battIcon.innerText = '⚡🔋';
+                    } else if (d.p_batteria > 0) {
+                        pBattEl.innerHTML = `-${Math.round(d.p_batteria)} <span class="unit">W (In Scarica)</span>`;
+                        if (battIcon) battIcon.innerText = '🔋';
+                    } else {
+                        pBattEl.innerHTML = `0 <span class="unit">W (Standby)</span>`;
+                        if (battIcon) battIcon.innerText = '🔋';
+                    }
+                }
+
+                if (battSub && (d.vb !== undefined || d.temp_battery !== undefined)) {
+                    battSub.innerText = `Tensione: ${d.vb || '--'}V • Temp: ${d.temp_battery || '--'}°C`;
+                }
+
+                // 3. Consumo Casa
+                const pUtenzeEl = document.getElementById('p_utenze_val');
+                if (pUtenzeEl && d.p_utenze !== undefined) {
+                    pUtenzeEl.innerHTML = `${Math.round(d.p_utenze)} <span class="unit">W</span>`;
+                }
+
+                // 4. Rete Elettrica
+                const pReteEl = document.getElementById('p_rete_val');
+                if (pReteEl && d.p_rete !== undefined) {
+                    if (d.p_rete_in > 0 || d.p_rete > 0) {
+                        const w = Math.round(d.p_rete_in || d.p_rete);
+                        pReteEl.innerHTML = `Prelevati: ${w} <span class="unit">W</span>`;
+                    } else if (d.p_rete_out > 0) {
+                        pReteEl.innerHTML = `Immessa: ${Math.round(d.p_rete_out)} <span class="unit">W</span>`;
+                    } else {
+                        pReteEl.innerHTML = `0 <span class="unit">W (Autosufficiente)</span>`;
+                    }
+                }
+
+                // 5. Stringhe e AC
+                const s1El = document.getElementById('string1_val');
+                if (s1El && (d.string1_v !== undefined || d.string1_i !== undefined)) {
+                    s1El.innerText = `${d.string1_v || '--'}V / ${d.string1_i || '--'}A`;
+                }
+                const s2El = document.getElementById('string2_val');
+                if (s2El && (d.string2_v !== undefined || d.string2_i !== undefined)) {
+                    s2El.innerText = `${d.string2_v || '--'}V / ${d.string2_i || '--'}A`;
+                }
+                const gridAcEl = document.getElementById('grid_ac_val');
+                if (gridAcEl && (d.grid_v !== undefined || d.grid_hz !== undefined)) {
+                    gridAcEl.innerText = `${d.grid_v || '240'}V • ${d.grid_hz || '50.0'}Hz`;
+                }
+            })
+            .catch(() => {});
+
+        // Summary stats
+        fetch('/api/energy/summary')
+            .then(r => r.json())
+            .then(s => {
+                if (!s) return;
+                const autEl = document.getElementById('autarky_val');
+                if (autEl && s.autarky_pct !== undefined) autEl.innerText = s.autarky_pct + '%';
+
+                const selfEl = document.getElementById('self_cons_val');
+                if (selfEl && s.self_consumption_pct !== undefined) selfEl.innerText = s.self_consumption_pct + '%';
+
+                const hSub = document.getElementById('house_today_sub');
+                if (hSub && s.total_house_kwh !== undefined) {
+                    hSub.innerHTML = `Fabbisogno stimato: <strong>${s.total_house_kwh} kWh</strong>`;
+                }
+
+                const gSub = document.getElementById('grid_status_sub');
+                if (gSub && s.bought_today_kwh !== undefined) {
+                    gSub.innerHTML = `Acquistata oggi: <strong>${s.bought_today_kwh} kWh</strong>`;
+                }
+            })
+            .catch(() => {});
+    }
+
+    // Avvia aggiornamenti periodici
     setInterval(update, 5000);
+    setInterval(updateEnergyLive, 8000);
+    updateEnergyLive();
 }
 
 // ==========================================

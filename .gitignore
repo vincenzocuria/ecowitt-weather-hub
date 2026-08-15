@@ -15,7 +15,7 @@ b64.txt
 deploy_to_qnap.ps1
 
 # Scratch scripts
-aton*
+aton_*.html
 dump_login.py
 fetch_js.py
 inspect_login.py
@@ -24,6 +24,8 @@ test_aton*
 test_deep_login.py
 test_more_variations.py
 test_variations.py
+test_system_integration.py
+
 
 # OS / IDE
 .DS_Store

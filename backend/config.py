@@ -62,10 +62,27 @@ class Settings:
     DAILY_DIGEST_HOUR: int = int(os.getenv("DAILY_DIGEST_HOUR", "8"))
     DAILY_DIGEST_MINUTE: int = int(os.getenv("DAILY_DIGEST_MINUTE", "0"))
 
+    # Configurazione Accumulatore Aton Green Storage
+    ATON_ENABLED: bool = os.getenv("ATON_ENABLED", "true").lower() in ("true", "1", "yes")
+    ATON_USERNAME: str = os.getenv("ATON_USERNAME", "Curia")
+    ATON_PASSWORD: str = os.getenv("ATON_PASSWORD", "calabro")
+    ATON_SN: str = os.getenv("ATON_SN", "R21MY00735F")
+    ATON_POLL_INTERVAL_SEC: int = int(os.getenv("ATON_POLL_INTERVAL_SEC", "20"))
+
+    # Soglie Allarmi Energetici
+    ENERGY_HIGH_CONSUMPTION_W: float = float(os.getenv("ENERGY_HIGH_CONSUMPTION_W", "3500.0"))
+    ENERGY_BATTERY_LOW_PCT: float = float(os.getenv("ENERGY_BATTERY_LOW_PCT", "15.0"))
+    ENERGY_BATTERY_FULL_PCT: float = float(os.getenv("ENERGY_BATTERY_FULL_PCT", "98.0"))
+    ENERGY_HIGH_CONSUMPTION_COOLDOWN_MIN: int = int(os.getenv("ENERGY_HIGH_CONSUMPTION_COOLDOWN_MIN", "30"))
+    ENERGY_BATTERY_COOLDOWN_MIN: int = int(os.getenv("ENERGY_BATTERY_COOLDOWN_MIN", "120"))
+    ENERGY_REPORT_HOUR: int = int(os.getenv("ENERGY_REPORT_HOUR", "21")) # Ore 21:00 report serale
+    ENERGY_REPORT_ENABLED: bool = os.getenv("ENERGY_REPORT_ENABLED", "true").lower() in ("true", "1", "yes")
+
     # Notifiche push (ntfy.sh)
     ENABLE_NTFY: bool = True
     NTFY_TOPIC: str = os.getenv("NTFY_TOPIC", "")
     VAPID_CLAIM_EMAIL: str = os.getenv("VAPID_CLAIM_EMAIL", "mailto:admin@example.com")
 
 settings = Settings()
+
 

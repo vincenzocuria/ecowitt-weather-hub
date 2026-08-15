@@ -32,6 +32,14 @@ class AlertEngine:
         self.last_offline_alert_time = 0.0
         self.last_battery_alert = {}
 
+        # Energy Alert state (Aton Storage)
+        self.last_high_consumption_alert = 0.0
+        self.last_battery_low_alert = 0.0
+        self.last_battery_full_alert = 0.0
+        self.last_evening_energy_date = None
+        self._was_battery_full = False
+
+
     def evaluate(self, current_data: Dict[str, Any]):
         now = time.time()
         
@@ -372,5 +380,100 @@ class AlertEngine:
         )
         return {"status": "sent", "title": title, "message": msg}
 
+    # ----------------- ALLARMI & REPORT ENERGETICI ATON -----------------
+
+    def evaluate_energy(self, energy_data: Dict[str, Any]):
+        """Valuta le condizioni energetiche per invio allarmi istantanei."""
+        now = time.time()
+        
+        # 1. Allarme Consumo Elettrico Elevato (Prevenzione distacco contatore)
+        p_utenze = energy_data.get("p_utenze") or 0.0
+        if p_utenze >= settings.ENERGY_HIGH_CONSUMPTION_W:
+            if (now - self.last_high_consumption_alert) >= (settings.ENERGY_HIGH_CONSUMPTION_COOLDOWN_MIN * 60):
+                self.last_high_consumption_alert = now
+                kw = round(p_utenze / 1000.0, 2)
+                notifier.send_alert(
+                    alert_type="energy_high",
+                    title="⚡ Consumo Elettrico Elevato!",
+                    message=f"La casa sta assorbendo {kw} kW ({int(p_utenze)} W). Verifica i carichi per evitare distacchi.",
+                    priority="urgent",
+                    extra_data={"p_utenze": str(p_utenze)}
+                )
+
+        # 2. Allarme Batteria di Accumulo Scarica
+        soc = energy_data.get("soc")
+        if soc is not None:
+            if soc <= settings.ENERGY_BATTERY_LOW_PCT:
+                if (now - self.last_battery_low_alert) >= (settings.ENERGY_BATTERY_COOLDOWN_MIN * 60):
+                    self.last_battery_low_alert = now
+                    notifier.send_alert(
+                        alert_type="battery_low",
+                        title="🪫 Batteria Aton Quasi Scarica!",
+                        message=f"Il livello di carica della batteria è al {int(soc)}%. La casa preleverà dalla rete.",
+                        priority="normal",
+                        extra_data={"soc": str(soc)}
+                    )
+
+            # 3. Notifica Batteria Carica al 100%
+            if soc >= settings.ENERGY_BATTERY_FULL_PCT:
+                if not self._was_battery_full and (now - self.last_battery_full_alert) >= (settings.ENERGY_BATTERY_COOLDOWN_MIN * 60):
+                    self.last_battery_full_alert = now
+                    self._was_battery_full = True
+                    notifier.send_alert(
+                        alert_type="battery_full",
+                        title="🔋 Batteria Aton Completamente Carica!",
+                        message=f"Accumulatore al {int(soc)}%. Tutta l'energia solare eccedente è pronta per l'autoconsumo!",
+                        priority="normal",
+                        extra_data={"soc": str(soc)}
+                    )
+            elif soc < 90:
+                self._was_battery_full = False
+
+    def check_evening_energy_digest(self):
+        """Controlla se è l'ora di inviare il bilancio energetico serale."""
+        if not settings.ENERGY_REPORT_ENABLED or not settings.ATON_ENABLED:
+            return
+
+        now_dt = settings.now_local()
+        today_str = now_dt.strftime("%Y-%m-%d")
+
+        if getattr(self, "last_evening_energy_date", None) != today_str:
+            if now_dt.hour == settings.ENERGY_REPORT_HOUR and now_dt.minute >= 0:
+                self.last_evening_energy_date = today_str
+                self.send_evening_energy_digest()
+
+    def send_evening_energy_digest(self) -> Dict[str, Any]:
+        """Genera e invia la notifica con il bilancio energetico giornaliero."""
+        from backend.database import get_today_energy_summary
+        summary = get_today_energy_summary()
+
+        solar_kwh = summary.get("solar_today_kwh", 0.0)
+        self_consumed_kwh = summary.get("self_consumed_kwh", 0.0)
+        autarky_pct = summary.get("autarky_pct", 0.0)
+        self_cons_pct = summary.get("self_consumption_pct", 0.0)
+        bought_kwh = summary.get("bought_today_kwh", 0.0)
+        soc = summary.get("battery_soc", 0.0)
+
+        lines = [
+            f"☀️ Solare prodotto oggi: {solar_kwh} kWh",
+            f"🏠 Autoconsumati: {self_consumed_kwh} kWh ({self_cons_pct}%)",
+            f"🔋 Batteria attuale: {int(soc)}% SoC",
+            f"🔌 Rete elettrica prelevata: {bought_kwh} kWh",
+            f"🏆 Indice Autosufficienza: {autarky_pct}%"
+        ]
+
+        title = "📊 Bilancio Energetico di Oggi"
+        msg = "\n".join(lines)
+
+        logger.info(f"[ENERGY DIGEST] Invio bilancio energetico serale: {title}\n{msg}")
+        notifier.send_alert(
+            alert_type="energy_digest",
+            title=title,
+            message=msg,
+            priority="normal"
+        )
+        return {"status": "sent", "title": title, "message": msg}
+
 engine = AlertEngine()
+
 

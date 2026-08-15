@@ -90,6 +90,159 @@
     </div>
 </div>
 
+<!-- SEZIONE ENERGIA & ACCUMULATORE ATON GREEN STORAGE -->
+<div class="energy-hero" id="energy_section">
+    <div class="energy-header">
+        <div class="energy-title-group">
+            <span class="energy-header-icon">⚡</span>
+            <div>
+                <h2>Flusso Energetico & Batteria Aton Storage</h2>
+                <div class="energy-sub-header">
+                    SN: <strong id="energy_sn">{{ aton_sn }}</strong> • Aggiornato: <span id="energy_ts">{{ energy_latest.data_aton or 'Live' }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="energy-status-badge" id="energy_status_badge">
+            <span class="pulse-dot"></span> <span id="energy_status_text">🟢 Impianto Attivo</span>
+        </div>
+    </div>
+
+    <!-- DIAGRAMMA FLUSSO ENERGETICO LIVE -->
+    <div class="energy-flow-grid">
+        <!-- 1. SOLARE (FOTOVOLTAICO) -->
+        <div class="energy-node solar-node">
+            <div class="node-icon-wrapper">
+                <span class="node-icon">☀️</span>
+            </div>
+            <div class="node-content">
+                <span class="node-label">Produzione Solare</span>
+                <div class="node-value" id="p_solare_val">
+                    {{ energy_latest.p_solare | int if energy_latest.p_solare is defined else '--' }} <span class="unit">W</span>
+                </div>
+                <div class="node-sub" id="solar_today_sub">
+                    Oggi: <strong>{{ energy_summary.solar_today_kwh or '0.0' }} kWh</strong>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. BATTERIA DI ACCUMULO -->
+        <div class="energy-node battery-node">
+            <div class="node-icon-wrapper">
+                <span class="node-icon" id="battery_icon">🔋</span>
+            </div>
+            <div class="node-content">
+                <div class="node-top-flex">
+                    <span class="node-label">Batteria Aton</span>
+                    <span class="battery-pct-badge" id="battery_pct_badge">{{ energy_latest.soc | int if energy_latest.soc is defined else '--' }}%</span>
+                </div>
+                
+                <!-- Barra di Carica Grafica -->
+                <div class="battery-bar-container">
+                    <div class="battery-bar-fill" id="battery_bar_fill" style="width: {{ energy_latest.soc or 0 }}%;"></div>
+                </div>
+
+                <div class="node-value" id="p_batteria_val">
+                    {% if energy_latest.p_batteria is defined %}
+                        {% if energy_latest.p_batteria < 0 %}
+                            +{{ (energy_latest.p_batteria | abs) | int }} <span class="unit">W (In Carica)</span>
+                        {% elif energy_latest.p_batteria > 0 %}
+                            -{{ energy_latest.p_batteria | int }} <span class="unit">W (In Scarica)</span>
+                        {% else %}
+                            0 <span class="unit">W (Standby)</span>
+                        {% endif %}
+                    {% else %}
+                        -- <span class="unit">W</span>
+                    {% endif %}
+                </div>
+                <div class="node-sub" id="battery_temp_sub">
+                    Tensione: {{ energy_latest.vb or '--' }}V • Temp: {{ energy_latest.temp_battery or '--' }}°C
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. CONSUMO DOMESTICO (CASA) -->
+        <div class="energy-node house-node">
+            <div class="node-icon-wrapper">
+                <span class="node-icon">🏠</span>
+            </div>
+            <div class="node-content">
+                <span class="node-label">Consumo Casa</span>
+                <div class="node-value" id="p_utenze_val">
+                    {{ energy_latest.p_utenze | int if energy_latest.p_utenze is defined else '--' }} <span class="unit">W</span>
+                </div>
+                <div class="node-sub" id="house_today_sub">
+                    Fabbisogno stimato: <strong>{{ energy_summary.total_house_kwh or '0.0' }} kWh</strong>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. RETE ELETTRICA -->
+        <div class="energy-node grid-node">
+            <div class="node-icon-wrapper">
+                <span class="node-icon">🔌</span>
+            </div>
+            <div class="node-content">
+                <span class="node-label">Rete Elettrica</span>
+                <div class="node-value" id="p_rete_val">
+                    {% if energy_latest.p_rete is defined %}
+                        {% if energy_latest.p_rete_in > 0 or energy_latest.p_rete > 0 %}
+                            Prelevati: {{ (energy_latest.p_rete_in or energy_latest.p_rete) | int }} <span class="unit">W</span>
+                        {% elif energy_latest.p_rete_out > 0 %}
+                            Immessa: {{ energy_latest.p_rete_out | int }} <span class="unit">W</span>
+                        {% else %}
+                            0 <span class="unit">W (Autosufficiente)</span>
+                        {% endif %}
+                    {% else %}
+                        -- <span class="unit">W</span>
+                    {% endif %}
+                </div>
+                <div class="node-sub" id="grid_status_sub">
+                    Acquistata oggi: <strong>{{ energy_summary.bought_today_kwh or '0.0' }} kWh</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- BILANCIO & DETTAGLIO STRINGHE -->
+    <div class="energy-details-strip">
+        <div class="energy-stat-pill">
+            <span class="stat-icon">🏆</span>
+            <div class="stat-text">
+                <span class="stat-label">Autosufficienza</span>
+                <strong id="autarky_val">{{ energy_summary.autarky_pct or '0.0' }}%</strong>
+            </div>
+        </div>
+        <div class="energy-stat-pill">
+            <span class="stat-icon">♻️</span>
+            <div class="stat-text">
+                <span class="stat-label">Autoconsumo Solare</span>
+                <strong id="self_cons_val">{{ energy_summary.self_consumption_pct or '100.0' }}%</strong>
+            </div>
+        </div>
+        <div class="energy-stat-pill">
+            <span class="stat-icon">⚡</span>
+            <div class="stat-text">
+                <span class="stat-label">Stringa 1 FV</span>
+                <span id="string1_val">{{ energy_latest.string1_v or '--' }}V / {{ energy_latest.string1_i or '--' }}A</span>
+            </div>
+        </div>
+        <div class="energy-stat-pill">
+            <span class="stat-icon">⚡</span>
+            <div class="stat-text">
+                <span class="stat-label">Stringa 2 FV</span>
+                <span id="string2_val">{{ energy_latest.string2_v or '--' }}V / {{ energy_latest.string2_i or '--' }}A</span>
+            </div>
+        </div>
+        <div class="energy-stat-pill">
+            <span class="stat-icon">📡</span>
+            <div class="stat-text">
+                <span class="stat-label">Rete AC</span>
+                <span id="grid_ac_val">{{ energy_latest.grid_v or '240' }}V • {{ energy_latest.grid_hz or '50.0' }}Hz</span>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- PREVISIONI IBRIDE 7 GIORNI (OPEN-METEO + CROSS-CHECK LOCALE) -->
 <div class="forecast-section">
     <div class="forecast-header">

@@ -125,6 +125,36 @@ def init_db():
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_push_endpoint ON push_subscriptions (endpoint)")
+
+    # 6. Telemetria Energetica Aton Green Storage & Fotovoltaico
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS energy_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            p_solare REAL,
+            p_utenze REAL,
+            p_batteria REAL,
+            p_rete REAL,
+            p_rete_in REAL,
+            p_rete_out REAL,
+            soc REAL,
+            vb REAL,
+            ib REAL,
+            temp_battery REAL,
+            string1_v REAL,
+            string1_i REAL,
+            string2_v REAL,
+            string2_i REAL,
+            grid_v REAL,
+            grid_hz REAL,
+            e_pannelli_wh REAL,
+            e_comprata_wh REAL,
+            e_venduta_wh REAL,
+            e_batteria_wh REAL,
+            raw_json TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_energy_timestamp ON energy_records (timestamp)")
     
     conn.commit()
     conn.close()
@@ -845,4 +875,144 @@ def get_all_push_subscriptions() -> List[Dict[str, Any]]:
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+# ----------------- TELEMETRIA ENERGETICA ATON GREEN STORAGE -----------------
+
+def save_energy_reading(data: Dict[str, Any]) -> int:
+    """Salva una lettura telemetrica istantanea da Aton Storage."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    timestamp = data.get("timestamp") or datetime.now(timezone.utc).isoformat()
+    raw_json = json.dumps(data.get("raw_data") or data)
+    
+    cursor.execute("""
+        INSERT INTO energy_records (
+            timestamp, p_solare, p_utenze, p_batteria, p_rete, p_rete_in, p_rete_out,
+            soc, vb, ib, temp_battery, string1_v, string1_i, string2_v, string2_i,
+            grid_v, grid_hz, e_pannelli_wh, e_comprata_wh, e_venduta_wh, e_batteria_wh, raw_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        timestamp,
+        data.get("p_solare"),
+        data.get("p_utenze"),
+        data.get("p_batteria"),
+        data.get("p_rete"),
+        data.get("p_rete_in"),
+        data.get("p_rete_out"),
+        data.get("soc"),
+        data.get("vb"),
+        data.get("ib"),
+        data.get("temp_battery"),
+        data.get("string1_v"),
+        data.get("string1_i"),
+        data.get("string2_v"),
+        data.get("string2_i"),
+        data.get("grid_v"),
+        data.get("grid_hz"),
+        data.get("e_pannelli_wh"),
+        data.get("e_comprata_wh"),
+        data.get("e_venduta_wh"),
+        data.get("e_batteria_wh"),
+        raw_json
+    ))
+    
+    record_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return record_id
+
+def get_latest_energy() -> Optional[Dict[str, Any]]:
+    """Restituisce l'ultima lettura energetica disponibile."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM energy_records ORDER BY id DESC LIMIT 1")
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return dict(row)
+
+def get_energy_timeseries(hours: int = 24) -> List[Dict[str, Any]]:
+    """Restituisce la serie temporale energetica per i grafici."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    since_dt = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    cursor.execute("""
+        SELECT timestamp, p_solare, p_utenze, p_batteria, p_rete, soc
+        FROM energy_records
+        WHERE timestamp >= ?
+        ORDER BY id ASC
+    """, (since_dt,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_today_energy_summary() -> Dict[str, Any]:
+    """Calcola il bilancio energetico odierno (produzione, consumi, autosufficienza)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now_local = settings.now_local()
+    today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_start_local.astimezone(timezone.utc).isoformat()
+    
+    # Prendi l'ultimo record di oggi
+    cursor.execute("""
+        SELECT * FROM energy_records 
+        WHERE timestamp >= ? 
+        ORDER BY id DESC LIMIT 1
+    """, (today_start_utc,))
+    latest = cursor.fetchone()
+    
+    if not latest:
+        # Fallback all'ultimo record assoluto
+        cursor.execute("SELECT * FROM energy_records ORDER BY id DESC LIMIT 1")
+        latest = cursor.fetchone()
+
+    conn.close()
+
+    if not latest:
+        return {
+            "solar_today_kwh": 0.0,
+            "bought_today_kwh": 0.0,
+            "sold_today_kwh": 0.0,
+            "battery_soc": 0.0,
+            "self_consumption_pct": 0.0,
+            "autarky_pct": 0.0,
+            "max_solar_w": 0.0,
+            "max_consumption_w": 0.0
+        }
+
+    latest_dict = dict(latest)
+    solar_kwh = round((latest_dict.get("e_pannelli_wh") or 0.0) / 1000.0, 2)
+    bought_kwh = round((latest_dict.get("e_comprata_wh") or 0.0) / 1000.0, 2)
+    sold_kwh = round((latest_dict.get("e_venduta_wh") or 0.0) / 1000.0, 2)
+    soc = latest_dict.get("soc") or 0.0
+
+    # Stima energia autoconsumata = Solar - Sold
+    self_consumed_kwh = max(0.0, solar_kwh - sold_kwh)
+    
+    # % Autoconsumo (quanta parte del solare prodotto è stata consumata in loco)
+    self_consumption_pct = round((self_consumed_kwh / solar_kwh * 100.0), 1) if solar_kwh > 0 else 100.0
+    
+    # Fabbisogno totale casa stimato = Self_Consumed + Bought
+    total_house_kwh = round(self_consumed_kwh + bought_kwh, 2)
+    
+    # % Autosufficienza (quanta parte dei consumi totali di casa è stata coperta dal solare)
+    autarky_pct = round((self_consumed_kwh / total_house_kwh * 100.0), 1) if total_house_kwh > 0 else 0.0
+
+    return {
+        "solar_today_kwh": solar_kwh,
+        "bought_today_kwh": bought_kwh,
+        "sold_today_kwh": sold_kwh,
+        "self_consumed_kwh": round(self_consumed_kwh, 2),
+        "total_house_kwh": total_house_kwh,
+        "battery_soc": soc,
+        "self_consumption_pct": min(100.0, self_consumption_pct),
+        "autarky_pct": min(100.0, autarky_pct),
+        "last_update": latest_dict.get("timestamp")
+    }
+
 
