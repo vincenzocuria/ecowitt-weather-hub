@@ -12,10 +12,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from typing import Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, BackgroundTasks, Query
-from fastapi.responses import JSONResponse, HTMLResponse, Response
+from fastapi.responses import JSONResponse, HTMLResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from urllib.parse import urlencode
 import uvicorn
 
 from backend.config import settings
@@ -93,6 +94,98 @@ async def add_no_cache_headers(request: Request, call_next):
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
     return response
 
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    # Se AUTH_TOKEN non è configurato nel .env, l'autenticazione è aperta
+    if not settings.AUTH_TOKEN:
+        return await call_next(request)
+
+    path = request.url.path
+
+    # Percorsi esenti dall'autenticazione (ingestione meteo, PWA, asset statici, login)
+    if (
+        path == "/api/ecowitt" or
+        path.startswith("/api/ecowitt") or
+        path.startswith("/static/") or
+        path in ("/manifest.json", "/sw.js", "/favicon.ico", "/login", "/logout")
+    ):
+        return await call_next(request)
+
+    # 1. Query parameter (?token=..., ?key=..., ?auth=...)
+    token_param = (
+        request.query_params.get("token") or
+        request.query_params.get("key") or
+        request.query_params.get("auth")
+    )
+
+    # 2. Cookie permanente su questo dispositivo
+    cookie_token = request.cookies.get(settings.AUTH_COOKIE_NAME)
+
+    # 3. Header API (X-Auth-Token o Authorization: Bearer ...)
+    header_token = request.headers.get("X-Auth-Token")
+    if not header_token and "authorization" in request.headers:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            header_token = auth_header[7:].strip()
+
+    is_authenticated = False
+    set_cookie_needed = False
+
+    if token_param and token_param == settings.AUTH_TOKEN:
+        is_authenticated = True
+        set_cookie_needed = True
+    elif cookie_token and cookie_token == settings.AUTH_TOKEN:
+        is_authenticated = True
+    elif header_token and header_token == settings.AUTH_TOKEN:
+        is_authenticated = True
+
+    if not is_authenticated:
+        if path.startswith("/api/"):
+            return JSONResponse(
+                {"error": "Accesso non autorizzato. Token di sicurezza mancante o errato."},
+                status_code=401
+            )
+        # Se è una pagina HTML, reindirizza alla schermata di sblocco
+        next_url = path
+        if request.url.query:
+            next_url += f"?{request.url.query}"
+        return RedirectResponse(url=f"/login?next={next_url}", status_code=303)
+
+    # Se autenticato tramite parametro URL su una pagina web (non API),
+    # impostiamo il cookie permanente a 10 anni e ripuliamo l'URL visibile nel browser
+    if set_cookie_needed and not path.startswith("/api/"):
+        clean_params = [
+            (k, v) for k, v in request.query_params.multi_items()
+            if k not in ("token", "key", "auth")
+        ]
+        clean_url = path
+        if clean_params:
+            clean_url += f"?{urlencode(clean_params)}"
+        response = RedirectResponse(url=clean_url, status_code=303)
+        response.set_cookie(
+            key=settings.AUTH_COOKIE_NAME,
+            value=settings.AUTH_TOKEN,
+            max_age=315360000,  # 10 anni
+            path="/",
+            httponly=True,
+            samesite="lax"
+        )
+        return response
+
+    response = await call_next(request)
+
+    if set_cookie_needed:
+        response.set_cookie(
+            key=settings.AUTH_COOKIE_NAME,
+            value=settings.AUTH_TOKEN,
+            max_age=315360000,
+            path="/",
+            httponly=True,
+            samesite="lax"
+        )
+
+    return response
+
 # Static & Templates setup
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
@@ -105,6 +198,46 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 templates.env.filters["local_dt"] = to_local_datetime_str
 templates.env.filters["local_time"] = lambda s: to_local_datetime_str(s, "%H:%M")
 templates.env.filters["local_date"] = lambda s: to_local_datetime_str(s, "%d/%m/%Y")
+
+# ----------------- AUTHENTICATION ROUTES -----------------
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, next: Optional[str] = "/"):
+    cookie_token = request.cookies.get(settings.AUTH_COOKIE_NAME)
+    if not settings.AUTH_TOKEN or cookie_token == settings.AUTH_TOKEN:
+        return RedirectResponse(url=next or "/", status_code=303)
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={"next_url": next or "/", "error": None}
+    )
+
+@app.post("/login", response_class=HTMLResponse)
+async def login_submit(request: Request):
+    form = await request.form()
+    token = (form.get("token") or "").strip()
+    next_url = form.get("next", "/") or "/"
+    if token == settings.AUTH_TOKEN:
+        response = RedirectResponse(url=next_url, status_code=303)
+        response.set_cookie(
+            key=settings.AUTH_COOKIE_NAME,
+            value=settings.AUTH_TOKEN,
+            max_age=315360000,  # 10 anni
+            path="/",
+            httponly=True,
+            samesite="lax"
+        )
+        return response
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={"next_url": next_url, "error": "Chiave di sicurezza non valida. Riprova."}
+    )
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie(key=settings.AUTH_COOKIE_NAME, path="/")
+    return response
 
 # ----------------- BACKGROUND WORKER -----------------
 def process_weather_data(raw_data: dict):

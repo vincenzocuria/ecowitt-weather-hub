@@ -11,7 +11,7 @@ if _env_file.exists():
                 k, v = line.split("=", 1)
                 k = k.strip()
                 v = v.strip().strip("'\"")
-                if k not in os.environ:
+                if k not in os.environ or os.environ[k] == "":
                     os.environ[k] = v
 
 class Settings:
@@ -109,12 +109,17 @@ class Settings:
     SMARTTHINGS_PAT: str = os.getenv("SMARTTHINGS_PAT", os.getenv("SAMSUNG_PAT", ""))
     SMARTTHINGS_POLL_INTERVAL_SEC: int = int(os.getenv("SMARTTHINGS_POLL_INTERVAL_SEC", "30"))
 
-    # Notifiche push (ntfy.sh)
+    # Notifiche push (ntfy.sh) & Web Push
     ENABLE_NTFY: bool = True
     NTFY_TOPIC: str = os.getenv("NTFY_TOPIC", "")
     VAPID_CLAIM_EMAIL: str = os.getenv("VAPID_CLAIM_EMAIL", "mailto:admin@example.com")
 
+    # Sicurezza & Accesso Riservato (Persistent Device Token)
+    AUTH_TOKEN: str = os.getenv("AUTH_TOKEN", "")
+    AUTH_COOKIE_NAME: str = "hub_auth_token"
+
 settings = Settings()
+
 
 
 
