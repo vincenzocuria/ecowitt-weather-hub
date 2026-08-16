@@ -641,7 +641,7 @@
             {% if smartthings and smartthings.presence %}
             <span class="presence-badge {% if smartthings.presence.is_present %}badge-present{% else %}badge-away{% endif %}" id="presence_status_badge">
                 <span class="presence-icon">📍</span>
-                <span id="presence_status_text">Vincenzo: {{ smartthings.presence.presence_label }}</span>
+                <span id="presence_status_text">Vincenzo ({{ smartthings.presence.device_name }}): {{ smartthings.presence.presence_label }}</span>
             </span>
             {% endif %}
             <div class="climate-status-badge" id="st_sync_btn" onclick="syncSmartThingsDevices()" title="Clicca per forzare la risincronizzazione con il cloud SmartThings">

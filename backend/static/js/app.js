@@ -911,11 +911,13 @@ function updateSmartThingsUI(st) {
     if (st.presence) {
         const presBadge = document.getElementById('presence_status_badge');
         const presText = document.getElementById('presence_status_text');
-        if (presText) presText.innerText = 'Vincenzo: ' + st.presence.presence_label;
+        const devName = st.presence.device_name || 'S26 Ultra';
+        if (presText) presText.innerText = `Vincenzo (${devName}): ` + st.presence.presence_label;
         if (presBadge) {
             presBadge.className = 'presence-badge ' + (st.presence.is_present ? 'badge-present' : 'badge-away');
         }
     }
+
 
     // Banner Sinergia Solare
     if (st.solar_synergy) {

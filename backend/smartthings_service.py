@@ -237,14 +237,17 @@ class SmartThingsService:
         }
 
     def parse_presence_data(self, status: Dict[str, Any], dev_info: Dict[str, Any]) -> Dict[str, Any]:
-        """Estrae lo stato di presenza dello smartphone (S25 Ultra)."""
+        """Estrae lo stato di presenza dello smartphone (S26 Ultra / S25 Ultra / Mobile)."""
         main_comp = status.get("components", {}).get("main", {})
         presence_val = main_comp.get("presenceSensor", {}).get("presence", {}).get("value", "not present")
         is_present = presence_val == "present"
+        raw_name = dev_info.get("label") or dev_info.get("name") or "S26 Ultra"
+        clean_name = raw_name.replace("di Vincenzo", "").strip()
 
         return {
             "device_id": dev_info.get("deviceId"),
-            "name": dev_info.get("label") or dev_info.get("name") or "S25 Ultra",
+            "name": raw_name,
+            "device_name": clean_name or "S26 Ultra",
             "is_present": is_present,
             "presence_label": "A Casa 🏠" if is_present else "Fuori Casa 🚗"
         }
@@ -261,6 +264,7 @@ class SmartThingsService:
         washer_data: Optional[Dict[str, Any]] = None
         dishwasher_data: Optional[Dict[str, Any]] = None
         presence_data: Optional[Dict[str, Any]] = None
+        presence_candidates: List[Any] = []
         other_devices: List[Dict[str, Any]] = []
 
         for dev in self.devices:
@@ -274,16 +278,30 @@ class SmartThingsService:
                 washer_data = self.parse_washer_data(status, dev)
             elif "lavastoviglie" in lbl or "dishwasher" in lbl:
                 dishwasher_data = self.parse_dishwasher_data(status, dev)
-            elif "s25" in lbl and "presence" in str(dev.get("components", [])):
-                presence_data = self.parse_presence_data(status, dev)
-            elif "s25" in lbl:
-                presence_data = self.parse_presence_data(status, dev)
             else:
-                other_devices.append({
-                    "device_id": dev_id,
-                    "name": dev.get("label") or dev.get("name"),
-                    "type": dev.get("deviceTypeName") or dev.get("type")
-                })
+                # Rilevamento presenza smartphone (S26 Ultra / S25 Ultra / Mobile)
+                main_comp = status.get("components", {}).get("main", {})
+                if "presenceSensor" in main_comp or dev.get("deviceTypeName") == "MOBILE" or "ultra" in lbl or "s26" in lbl or "s25" in lbl or "s24" in lbl:
+                    p_parsed = self.parse_presence_data(status, dev)
+                    priority = 40
+                    if "s26" in lbl:
+                        priority = 100
+                    elif "s25" in lbl:
+                        priority = 80
+                    elif "s24" in lbl:
+                        priority = 60
+                    presence_candidates.append((priority, p_parsed))
+                else:
+                    other_devices.append({
+                        "device_id": dev_id,
+                        "name": dev.get("label") or dev.get("name"),
+                        "type": dev.get("deviceTypeName") or dev.get("type")
+                    })
+
+        if presence_candidates:
+            presence_candidates.sort(key=lambda x: x[0], reverse=True)
+            presence_data = presence_candidates[0][1]
+
 
         # Calcolo Sinergia Solare Aton per Elettrodomestici
         p_solare = 0.0

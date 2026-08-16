@@ -227,8 +227,9 @@ class TestEcowittHub(unittest.TestCase):
         self.assertEqual(parsed_w["spin_speed"], "1400 rpm")
         self.assertEqual(parsed_w["remaining_min"], 45)
 
-        # Mock presence
-        p_info = {"deviceId": "test-p1", "label": "S25 Ultra di Vincenzo"}
+        # Mock presence S26 Ultra & S25 Ultra
+        p_info_s25 = {"deviceId": "test-p1", "label": "S25 Ultra di Vincenzo"}
+        p_info_s26 = {"deviceId": "test-p2", "label": "S26 Ultra di Vincenzo"}
         p_status = {
             "components": {
                 "main": {
@@ -236,19 +237,23 @@ class TestEcowittHub(unittest.TestCase):
                 }
             }
         }
-        parsed_p = st.parse_presence_data(p_status, p_info)
+        parsed_p = st.parse_presence_data(p_status, p_info_s26)
         self.assertTrue(parsed_p["is_present"])
+        self.assertEqual(parsed_p["device_name"], "S26 Ultra")
         self.assertIn("A Casa", parsed_p["presence_label"])
 
-        # Test Solar Synergy calculation
-        st.devices = [dev_info, p_info]
+        # Test Solar Synergy calculation with S26 prioritized over S25
+        st.devices = [dev_info, p_info_s25, p_info_s26]
         st.device_statuses["test-w1"] = mock_status
         st.device_statuses["test-p1"] = p_status
+        st.device_statuses["test-p2"] = p_status
 
         summary = st.get_summary(
             energy_latest={"p_solare": 2500.0, "soc": 85.0, "p_batteria": 200.0},
             drying_index={"score": 85, "status": "good", "desc": "Ottimo: sole e vento favorevoli"}
         )
+        self.assertEqual(summary["presence"]["device_name"], "S26 Ultra")
+
         self.assertTrue(summary["solar_synergy"]["solar_optimal"])
         self.assertIn("Surplus Solare", summary["solar_synergy"]["solar_message"])
         self.assertIsNotNone(summary["laundry_drying_synergy"])
