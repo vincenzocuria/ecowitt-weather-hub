@@ -81,9 +81,25 @@ class AlertEngine:
         self._check_soil_moisture(current_data, now)
         self._check_temperatures(current_data, now)
         self._check_rain(current_data, now)
+        self._check_water_leaks(current_data, now)
 
         # 4. Controllo Batterie Sensori
         self._check_batteries(current_data, now)
+
+    def _check_water_leaks(self, data: Dict[str, Any], now: float):
+        leaks = data.get("leak_sensors", {})
+        for ch, status in leaks.items():
+            if status in (1, "1"):
+                last_time = getattr(self, f"_last_leak_alert_{ch}", 0.0)
+                if (now - last_time) >= 1800:  # allarme ogni 30 min se persiste
+                    setattr(self, f"_last_leak_alert_{ch}", now)
+                    notifier.send_alert(
+                        alert_type="leak",
+                        title=f"🚨 ALLARME ALLAGAMENTO ({ch.upper()})!",
+                        message=f"Rilevata presenza d'acqua dal sensore perdite {ch.upper()}! Verificare immediatamente.",
+                        priority="urgent",
+                        extra_data={"leak_channel": ch}
+                    )
 
     def _check_anomalies(self, data: Dict[str, Any], now: float):
         # A. Crollo Barometrico Rapido (Burrasca / Tempesta imminente)
@@ -329,6 +345,20 @@ class AlertEngine:
             if now_dt.hour == settings.DAILY_DIGEST_HOUR and now_dt.minute >= settings.DAILY_DIGEST_MINUTE:
                 self.last_digest_date = today_str
                 self.send_daily_digest()
+
+    def check_nightly_maintenance(self):
+        """Esegue automaticamente ogni notte alle 03:30 la compattazione e l'ottimizzazione di SQLite."""
+        now_dt = settings.now_local()
+        today_str = now_dt.strftime("%Y-%m-%d")
+        if getattr(self, "last_maintenance_date", None) != today_str:
+            if now_dt.hour == 3 and now_dt.minute >= 30:
+                self.last_maintenance_date = today_str
+                try:
+                    from backend.database import perform_database_maintenance
+                    res = perform_database_maintenance(retention_days=60)
+                    logger.info(f"[DB-MAINTENANCE] Manutenzione notturna eseguita: {res}")
+                except Exception as e:
+                    logger.error(f"[DB-MAINTENANCE] Errore durante manutenzione: {e}")
 
     def send_daily_digest(self) -> Dict[str, Any]:
         """

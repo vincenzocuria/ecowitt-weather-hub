@@ -98,12 +98,22 @@ def parse_ecowitt_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
     wh57_batt = raw_data.get("wh57batt")
     soil_batt = {f"ch{i}": raw_data.get(f"wh51batt{i}") for i in range(1, 9) if f"wh51batt{i}" in raw_data}
     temp_batt = {f"ch{i}": raw_data.get(f"wh31batt{i}") or raw_data.get(f"batt{i}") for i in range(1, 9) if (f"wh31batt{i}" in raw_data or f"batt{i}" in raw_data)}
+    leak_batt = {f"ch{i}": raw_data.get(f"leakbatt{i}") for i in range(1, 5) if f"leakbatt{i}" in raw_data}
+    pm25_batt = {f"ch{i}": raw_data.get(f"pm25batt{i}") for i in range(1, 5) if f"pm25batt{i}" in raw_data}
+    pm10_batt = {f"ch{i}": raw_data.get(f"pm10batt{i}") for i in range(1, 5) if f"pm10batt{i}" in raw_data}
+    co2_batt = raw_data.get("co2_batt")
+    wn34_batt = {f"ch{i}": raw_data.get(f"tf_batt{i}") for i in range(1, 9) if f"tf_batt{i}" in raw_data}
 
     batteries = {
         "wh65": wh65_batt,
         "wh57": wh57_batt,
         "soil": soil_batt,
-        "temp_channels": temp_batt
+        "temp_channels": temp_batt,
+        "leak": leak_batt,
+        "pm25": pm25_batt,
+        "pm10": pm10_batt,
+        "co2": co2_batt,
+        "wn34": wn34_batt
     }
 
     # Solar & UV & VPD
@@ -144,6 +154,57 @@ def parse_ecowitt_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
                 "humidity": safe_float(raw_data.get(h_key))
             }
 
+    # Water / Probe Temperature Sensors (WN34, tf_ch1..tf_ch8)
+    water_probes = {}
+    for i in range(1, 9):
+        tf_key = f"tf_ch{i}"
+        if tf_key in raw_data and raw_data[tf_key] != "":
+            water_probes[f"ch{i}"] = {
+                "temp_c": f_to_c(safe_float(raw_data[tf_key]))
+            }
+
+    # Water Leak Detectors (WH55, leak_ch1..leak_ch4: 0 = No leak, 1 = Leak alert)
+    leak_sensors = {}
+    for i in range(1, 5):
+        leak_key = f"leak_ch{i}"
+        if leak_key in raw_data and raw_data[leak_key] != "":
+            leak_sensors[f"ch{i}"] = safe_int(raw_data[leak_key])
+
+    # Air Quality Sensors (WH41/WH43 PM2.5, WH45 PM10 & CO2)
+    air_quality = {}
+    # PM2.5 (ug/m3)
+    pm25_data = {}
+    for i in range(1, 5):
+        k = f"pm25_ch{i}"
+        k_24 = f"pm25_avg_24h_ch{i}"
+        if k in raw_data and raw_data[k] != "":
+            pm25_data[f"ch{i}"] = {
+                "current": safe_float(raw_data[k]),
+                "avg_24h": safe_float(raw_data.get(k_24))
+            }
+    if pm25_data:
+        air_quality["pm25"] = pm25_data
+
+    # PM10 (ug/m3)
+    pm10_data = {}
+    for i in range(1, 5):
+        k = f"pm10_ch{i}"
+        k_24 = f"pm10_avg_24h_ch{i}"
+        if k in raw_data and raw_data[k] != "":
+            pm10_data[f"ch{i}"] = {
+                "current": safe_float(raw_data[k]),
+                "avg_24h": safe_float(raw_data.get(k_24))
+            }
+    if pm10_data:
+        air_quality["pm10"] = pm10_data
+
+    # CO2 (ppm)
+    if "co2" in raw_data and raw_data["co2"] != "":
+        air_quality["co2"] = {
+            "current_ppm": safe_int(raw_data["co2"]),
+            "avg_24h_ppm": safe_int(raw_data.get("co2_24h"))
+        }
+
     return {
         "timestamp": timestamp,
         "station_mac": raw_data.get("PASSKEY"),
@@ -176,6 +237,9 @@ def parse_ecowitt_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
         },
         "soil_moisture": soil_moistures,
         "extra_channels": extra_channels,
+        "water_probes": water_probes,
+        "leak_sensors": leak_sensors,
+        "air_quality": air_quality,
         "batteries": batteries,
         "raw_payload": raw_data
     }

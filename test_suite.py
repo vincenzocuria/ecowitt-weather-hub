@@ -285,6 +285,116 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIn("pane_energy_home", res_idx.text)
         self.assertIn("pane_astro_comfort", res_idx.text)
         self.assertIn("pane_system", res_idx.text)
+        self.assertIn("Database & Manutenzione", res_idx.text)
+        self.assertIn("Personalizzazione Nomi Sensori", res_idx.text)
+
+    def test_sqlite_wal_mode_and_stats(self):
+        from backend.database import get_connection, get_database_stats
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA journal_mode;")
+        row = cursor.fetchone()
+        journal_mode = row[0].lower()
+        self.assertEqual(journal_mode, "wal")
+        conn.close()
+
+        stats = get_database_stats()
+        self.assertTrue(stats["wal_mode_enabled"])
+        self.assertIn("weather_records_count", stats)
+        self.assertIn("db_size_mb", stats)
+
+    def test_extended_sensors_parser(self):
+        raw = {
+            "PASSKEY": "EXTENDED_TEST",
+            "stationtype": "GW2000A_V3.0.0",
+            "dateutc": "2026-08-15 15:00:00",
+            "tempf": "86.0",
+            "humidity": "40",
+            "pm25_ch1": "12.5",
+            "pm25_avg_24h_ch1": "10.2",
+            "pm25batt1": "0",
+            "pm10_ch1": "25.0",
+            "pm10_avg_24h_ch1": "22.1",
+            "pm10batt1": "0",
+            "co2": "650",
+            "co2_24h": "580",
+            "co2_batt": "0",
+            "leak_ch1": "0",
+            "leak_ch2": "1", # Allarme perdita
+            "leakbatt1": "0",
+            "tf_ch1": "75.2", # WN34 sonda
+            "tf_batt1": "0"
+        }
+        parsed = parse_ecowitt_payload(raw)
+        self.assertIn("air_quality", parsed)
+        self.assertEqual(parsed["air_quality"]["pm25"]["ch1"]["current"], 12.5)
+        self.assertEqual(parsed["air_quality"]["pm10"]["ch1"]["current"], 25.0)
+        self.assertEqual(parsed["air_quality"]["co2"]["current_ppm"], 650)
+        self.assertEqual(parsed["leak_sensors"]["ch1"], 0)
+        self.assertEqual(parsed["leak_sensors"]["ch2"], 1)
+        self.assertAlmostEqual(parsed["water_probes"]["ch1"]["temp_c"], 24.0, delta=0.5)
+        self.assertEqual(parsed["batteries"]["leak"]["ch1"], "0")
+        self.assertEqual(parsed["batteries"]["wn34"]["ch1"], "0")
+
+    def test_sensor_aliases_and_maintenance(self):
+        from backend.database import save_sensor_alias, get_sensor_aliases, perform_database_maintenance, get_connection
+        from datetime import timedelta
+
+        # 1. Test Sensor Alias
+        save_sensor_alias("soil_ch1", "Prato Giardino")
+        save_sensor_alias("temp_ch1", "Soggiorno")
+        aliases = get_sensor_aliases()
+        self.assertEqual(aliases.get("soil_ch1"), "Prato Giardino")
+        self.assertEqual(aliases.get("temp_ch1"), "Soggiorno")
+
+        # 2. Test Downsampling Maintenance
+        conn = get_connection()
+        cursor = conn.cursor()
+        old_ts_1 = "2025-01-01 10:05:00"
+        old_ts_2 = "2025-01-01 10:20:00"
+        old_ts_3 = "2025-01-01 10:40:00"
+        for ts, t_c in [(old_ts_1, 10.0), (old_ts_2, 12.0), (old_ts_3, 14.0)]:
+            cursor.execute("""
+                INSERT INTO weather_records (timestamp, temp_c, humidity, pressure_rel_hpa, rain_rate_mm_hr)
+                VALUES (?, ?, ?, ?, ?)
+            """, (ts, t_c, 50, 1015.0, 0.0))
+        conn.commit()
+        conn.close()
+
+        res = perform_database_maintenance(retention_days=60)
+        self.assertEqual(res["status"], "success")
+
+        # Check that the hour 2025-01-01 10:00:00 now has 1 consolidated record with average temp 12.0
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM weather_records WHERE timestamp = '2025-01-01 10:00:00'")
+        row = cursor.fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["temp_c"], 12.0)
+        conn.close()
+
+    def test_system_api_endpoints(self):
+        from backend.main import app
+        from fastapi.testclient import TestClient
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+
+        # DB Stats
+        stats_resp = client.get("/api/system/db-stats")
+        self.assertEqual(stats_resp.status_code, 200)
+        data = stats_resp.json()
+        self.assertTrue(data["wal_mode_enabled"])
+
+        # Backup DB
+        backup_resp = client.get("/api/system/backup")
+        self.assertEqual(backup_resp.status_code, 200)
+        self.assertGreater(len(backup_resp.content), 100)
+
+        # Aliases API
+        alias_resp = client.post("/api/sensors/aliases", json={"sensor_id": "soil_ch2", "alias": "Piante Balcone"})
+        self.assertEqual(alias_resp.status_code, 200)
+        get_al = client.get("/api/sensors/aliases")
+        self.assertEqual(get_al.status_code, 200)
+        self.assertEqual(get_al.json()["aliases"].get("soil_ch2"), "Piante Balcone")
 
 
 if __name__ == "__main__":

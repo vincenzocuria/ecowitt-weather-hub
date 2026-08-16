@@ -1086,8 +1086,78 @@ function initDashboardTabs() {
     });
 }
 
+// ----------------- GESTIONE DATABASE & SENSOR ALIASES -----------------
+
+async function triggerDbMaintenance() {
+    const resEl = document.getElementById('db_maintenance_result');
+    if (resEl) {
+        resEl.style.display = 'block';
+        resEl.style.color = '#38bdf8';
+        resEl.innerText = '⏳ Compattazione e ottimizzazione in corso...';
+    }
+    try {
+        const resp = await fetch('/api/system/maintenance?retention_days=60', { method: 'POST' });
+        const data = await resp.json();
+        if (data.status === 'success') {
+            if (resEl) {
+                resEl.style.color = '#10b981';
+                resEl.innerText = `✅ Manutenzione completata con successo! Ore compattate: ${data.compressed_hours}, record purificati: ${data.weather_records_purged}.`;
+            }
+            if (data.stats_after) {
+                const s = data.stats_after;
+                const sizeEl = document.getElementById('db_size_val');
+                const wCntEl = document.getElementById('db_weather_cnt');
+                const eCntEl = document.getElementById('db_energy_cnt');
+                if (sizeEl) sizeEl.innerText = s.db_size_mb + ' MB';
+                if (wCntEl) wCntEl.innerText = s.weather_records_count;
+                if (eCntEl) eCntEl.innerText = s.energy_records_count;
+            }
+        } else {
+            if (resEl) {
+                resEl.style.color = '#ef4444';
+                resEl.innerText = '❌ Errore durante la manutenzione.';
+            }
+        }
+    } catch (e) {
+        if (resEl) {
+            resEl.style.color = '#ef4444';
+            resEl.innerText = '❌ Errore di connessione: ' + e.message;
+        }
+    }
+}
+
+async function saveSensorAlias(sensorId, aliasVal) {
+    const statusEl = document.getElementById('sensor_alias_status');
+    if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#38bdf8';
+        statusEl.innerText = 'Salvataggio...';
+    }
+    try {
+        const resp = await fetch('/api/sensors/aliases', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sensor_id: sensorId, alias: aliasVal })
+        });
+        const d = await resp.json();
+        if (d.status === 'saved') {
+            if (statusEl) {
+                statusEl.style.color = '#10b981';
+                statusEl.innerText = `✅ Alias per ${sensorId} salvato con successo: "${aliasVal || '(predefinito)'}"`;
+                setTimeout(() => { statusEl.style.display = 'none'; }, 4000);
+            }
+        }
+    } catch (e) {
+        if (statusEl) {
+            statusEl.style.color = '#ef4444';
+            statusEl.innerText = '❌ Errore durante il salvataggio: ' + e.message;
+        }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     initDashboardTabs();
 });
+
 
 

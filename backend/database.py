@@ -11,7 +11,9 @@ os.makedirs(DB_DIR, exist_ok=True)
 DB_PATH = os.path.join(DB_DIR, "weather_history.db")
 
 def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=20.0)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -168,6 +170,15 @@ def init_db():
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_energy_timestamp ON energy_records (timestamp)")
+
+    # 7. Alias e Nomi Personalizzati dei Sensori
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sensor_aliases (
+            sensor_id TEXT PRIMARY KEY,
+            alias TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
     
     conn.commit()
     conn.close()
@@ -1124,3 +1135,231 @@ def get_today_energy_summary() -> Dict[str, Any]:
         "max_consumption_w": max_consumption_w,
         "last_update": latest_dict.get("timestamp")
     }
+
+# ----------------- GESTIONE ALIAS SENSORI -----------------
+
+def get_sensor_aliases() -> Dict[str, str]:
+    """Restituisce la mappa di tutti gli alias personalizzati dei sensori (es: {'soil_ch1': 'Piante Salotto'})."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT sensor_id, alias FROM sensor_aliases")
+    rows = cursor.fetchall()
+    conn.close()
+    return {r["sensor_id"]: r["alias"] for r in rows}
+
+def save_sensor_alias(sensor_id: str, alias: str) -> None:
+    """Salva o aggiorna il nome personalizzato di un sensore."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    if not alias or not alias.strip():
+        cursor.execute("DELETE FROM sensor_aliases WHERE sensor_id = ?", (sensor_id,))
+    else:
+        cursor.execute("""
+            INSERT INTO sensor_aliases (sensor_id, alias, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(sensor_id) DO UPDATE SET alias=excluded.alias, updated_at=excluded.updated_at
+        """, (sensor_id.strip(), alias.strip(), now_iso))
+    conn.commit()
+    conn.close()
+
+# ----------------- STATISTICHE & MANUTENZIONE DATABASE -----------------
+
+def get_database_stats() -> Dict[str, Any]:
+    """Restituisce statistiche approfondite sull'utilizzo e le dimensioni del database SQLite."""
+    db_size_bytes = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+    wal_path = f"{DB_PATH}-wal"
+    wal_size_bytes = os.path.getsize(wal_path) if os.path.exists(wal_path) else 0
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT COUNT(*) FROM weather_records")
+    weather_count = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT MIN(timestamp), MAX(timestamp) FROM weather_records")
+    w_min, w_max = cursor.fetchone()
+    
+    cursor.execute("SELECT COUNT(*) FROM energy_records")
+    energy_count = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM records_history")
+    records_broken_count = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM alert_logs")
+    alerts_count = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM push_subscriptions")
+    push_count = cursor.fetchone()[0]
+    
+    conn.close()
+    
+    return {
+        "db_path": DB_PATH,
+        "db_size_mb": round((db_size_bytes + wal_size_bytes) / (1024 * 1024), 2),
+        "db_size_bytes": db_size_bytes + wal_size_bytes,
+        "wal_size_kb": round(wal_size_bytes / 1024, 1),
+        "weather_records_count": weather_count,
+        "energy_records_count": energy_count,
+        "records_broken_count": records_broken_count,
+        "alerts_count": alerts_count,
+        "push_devices_count": push_count,
+        "first_reading_utc": w_min,
+        "last_reading_utc": w_max,
+        "wal_mode_enabled": True
+    }
+
+def perform_database_maintenance(retention_days: int = 60) -> Dict[str, Any]:
+    """
+    Esegue la compattazione e il downsampling intelligente dello storico:
+    - Conserva tutte le letture ad alta frequenza (16s) degli ultimi 'retention_days' giorni (default 60).
+    - Per i dati più vecchi di 60 giorni, condensa le registrazioni a 1 lettura per ora con medie,
+      minime, massime, piogge e raffiche aggregate intatte (nessuna perdita di trend storici).
+    - I record estremi (Albo dei Record e storico record infranti) NON vengono mai cancellati né alterati.
+    - Esegue il checkpoint del file WAL e PRAGMA optimize.
+    """
+    cutoff_utc = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # 1. Recupera i bucket orari da condensare
+    cursor.execute("""
+        SELECT strftime('%Y-%m-%d %H:00:00', timestamp) AS hour_bucket, COUNT(*) AS cnt
+        FROM weather_records
+        WHERE timestamp < ?
+        GROUP BY hour_bucket
+        HAVING cnt > 1
+    """, (cutoff_utc,))
+    buckets_to_downsample = cursor.fetchall()
+    
+    compressed_buckets = 0
+    purged_records = 0
+    
+    for row in buckets_to_downsample:
+        h_bucket = row["hour_bucket"]
+        # Calcola le aggregazioni scientifiche per l'ora
+        cursor.execute("""
+            SELECT 
+                ROUND(AVG(temp_c), 1) as avg_temp,
+                ROUND(MIN(temp_c), 1) as min_temp,
+                ROUND(MAX(temp_c), 1) as max_temp,
+                ROUND(AVG(humidity), 1) as avg_hum,
+                ROUND(AVG(dew_point_c), 1) as avg_dew,
+                ROUND(AVG(temp_in_c), 1) as avg_temp_in,
+                ROUND(AVG(humidity_in), 1) as avg_hum_in,
+                ROUND(AVG(pressure_rel_hpa), 1) as avg_press,
+                ROUND(AVG(pressure_abs_hpa), 1) as avg_press_abs,
+                ROUND(AVG(wind_speed_kmh), 1) as avg_wind_spd,
+                ROUND(MAX(wind_gust_kmh), 1) as max_wind_gust,
+                ROUND(AVG(wind_dir_deg), 0) as avg_wind_dir,
+                ROUND(MAX(max_daily_gust_kmh), 1) as max_day_gust,
+                ROUND(MAX(rain_rate_mm_hr), 1) as max_rain_rate,
+                ROUND(MAX(daily_rain_mm), 1) as max_daily_rain,
+                ROUND(MAX(event_rain_mm), 1) as max_event_rain,
+                ROUND(MAX(yearly_rain_mm), 1) as max_yearly_rain,
+                ROUND(AVG(solar_radiation), 1) as avg_solar,
+                MAX(uv_index) as max_uv,
+                ROUND(AVG(vpd), 2) as avg_vpd,
+                MAX(lightning_count) as max_l_count,
+                MIN(lightning_distance_km) as min_l_dist,
+                COUNT(*) as bucket_count
+            FROM weather_records
+            WHERE timestamp >= ? AND timestamp < datetime(?, '+1 hour')
+        """, (h_bucket, h_bucket))
+        agg = cursor.fetchone()
+        
+        if agg and agg["bucket_count"] > 1:
+            # Elimina i record singoli ad alta frequenza del bucket
+            cursor.execute("""
+                DELETE FROM weather_records
+                WHERE timestamp >= ? AND timestamp < datetime(?, '+1 hour')
+            """, (h_bucket, h_bucket))
+            purged_records += (agg["bucket_count"] - 1)
+            
+            # Inserisce la singola lettura oraria consolidata
+            cursor.execute("""
+                INSERT INTO weather_records (
+                    timestamp, temp_c, humidity, dew_point_c, temp_in_c, humidity_in,
+                    pressure_rel_hpa, pressure_abs_hpa, wind_speed_kmh, wind_gust_kmh,
+                    wind_dir_deg, max_daily_gust_kmh, rain_rate_mm_hr, daily_rain_mm,
+                    event_rain_mm, yearly_rain_mm, solar_radiation, uv_index, vpd,
+                    lightning_count, lightning_distance_km
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                h_bucket, agg["avg_temp"], agg["avg_hum"], agg["avg_dew"], agg["avg_temp_in"], agg["avg_hum_in"],
+                agg["avg_press"], agg["avg_press_abs"], agg["avg_wind_spd"], agg["max_wind_gust"],
+                agg["avg_wind_dir"], agg["max_day_gust"], agg["max_rain_rate"], agg["max_daily_rain"],
+                agg["max_event_rain"], agg["max_yearly_rain"], agg["avg_solar"], agg["max_uv"], agg["avg_vpd"],
+                agg["max_l_count"], agg["min_l_dist"]
+            ))
+            compressed_buckets += 1
+
+    # 2. Downsampling analogo per telemetria energetica Aton > retention_days
+    cursor.execute("""
+        SELECT strftime('%Y-%m-%d %H:00:00', timestamp) AS hour_bucket, COUNT(*) AS cnt
+        FROM energy_records
+        WHERE timestamp < ?
+        GROUP BY hour_bucket
+        HAVING cnt > 1
+    """, (cutoff_utc,))
+    energy_buckets = cursor.fetchall()
+    
+    purged_energy = 0
+    for erow in energy_buckets:
+        eh_bucket = erow["hour_bucket"]
+        cursor.execute("""
+            SELECT 
+                ROUND(AVG(p_solare), 1) as avg_p_solare,
+                ROUND(AVG(p_utenze), 1) as avg_p_utenze,
+                ROUND(AVG(p_batteria), 1) as avg_p_batteria,
+                ROUND(AVG(p_rete), 1) as avg_p_rete,
+                ROUND(AVG(soc), 1) as avg_soc,
+                ROUND(AVG(temp_battery), 1) as avg_temp_batt,
+                MAX(e_pannelli_wh) as max_e_pan,
+                MAX(e_comprata_wh) as max_e_comp,
+                MAX(e_venduta_wh) as max_e_vend,
+                MAX(e_batteria_wh) as max_e_batt,
+                COUNT(*) as b_cnt
+            FROM energy_records
+            WHERE timestamp >= ? AND timestamp < datetime(?, '+1 hour')
+        """, (eh_bucket, eh_bucket))
+        eagg = cursor.fetchone()
+        if eagg and eagg["b_cnt"] > 1:
+            cursor.execute("""
+                DELETE FROM energy_records
+                WHERE timestamp >= ? AND timestamp < datetime(?, '+1 hour')
+            """, (eh_bucket, eh_bucket))
+            purged_energy += (eagg["b_cnt"] - 1)
+            
+            cursor.execute("""
+                INSERT INTO energy_records (
+                    timestamp, p_solare, p_utenze, p_batteria, p_rete, soc,
+                    temp_battery, e_pannelli_wh, e_comprata_wh, e_venduta_wh, e_batteria_wh
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                eh_bucket, eagg["avg_p_solare"], eagg["avg_p_utenze"], eagg["avg_p_batteria"],
+                eagg["avg_p_rete"], eagg["avg_soc"], eagg["avg_temp_batt"],
+                eagg["max_e_pan"], eagg["max_e_comp"], eagg["max_e_vend"], eagg["max_e_batt"]
+            ))
+
+    conn.commit()
+    
+    # 3. Checkpoint WAL & Ottimizzazione indici SQLite
+    try:
+        cursor.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        cursor.execute("PRAGMA optimize;")
+    except Exception:
+        pass
+        
+    conn.close()
+    
+    return {
+        "status": "success",
+        "retention_days_raw": retention_days,
+        "compressed_hours": compressed_buckets,
+        "weather_records_purged": purged_records,
+        "energy_records_purged": purged_energy,
+        "stats_after": get_database_stats()
+    }
+

@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from typing import Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, BackgroundTasks, Query
-from fastapi.responses import JSONResponse, HTMLResponse, Response, RedirectResponse
+from fastapi.responses import JSONResponse, HTMLResponse, Response, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,7 +30,8 @@ from backend.database import (
     get_today_extremes, get_yesterday_same_time, get_recent_rain_totals,
     save_push_subscription, delete_push_subscription, get_all_push_subscriptions,
     save_energy_reading, get_latest_energy, get_today_energy_summary, get_energy_timeseries,
-    to_local_datetime_str
+    get_sensor_aliases, save_sensor_alias, get_database_stats, perform_database_maintenance,
+    to_local_datetime_str, DB_PATH
 )
 from backend.analytics import (
     calc_zambretti_forecast, evaluate_window_ventilation, evaluate_laundry_index,
@@ -46,7 +47,7 @@ from backend.smartthings_service import smartthings_service
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("weather_hub")
 
-# Background Watchdog, Daily Digest & Evening Energy Digest Loop
+# Background Watchdog, Daily Digest, Evening Energy Digest & Nightly DB Maintenance Loop
 async def watchdog_worker():
     logger.info("[WATCHDOG] Station Offline Watchdog, Daily Digest, Energy Report & Smart Automations loop attivato")
     while True:
@@ -54,6 +55,7 @@ async def watchdog_worker():
             engine.check_offline_watchdog()
             engine.check_daily_digest()
             engine.check_evening_energy_digest()
+            engine.check_nightly_maintenance()
 
             # Automazioni intelligenti Presenza S26 Ultra, Elettrodomestici, Clima & Solare
             latest_w = get_latest_reading() or {}
@@ -381,6 +383,7 @@ async def api_live():
     clean_latest["status_info"] = status_info
     analytics_ctx = build_analytics_context(latest)
     clean_latest["analytics"] = analytics_ctx
+    clean_latest["sensor_aliases"] = get_sensor_aliases()
     clean_latest["climate_devices"] = thinq_service.get_cached_devices()
     clean_latest["thinq_enabled"] = settings.LG_THINQ_ENABLED
     clean_latest["thinq_connected"] = thinq_service.is_connected
@@ -561,6 +564,57 @@ async def api_test_alert(alert_type: str = "record"):
         "ntfy_topic": settings.NTFY_TOPIC
     }
 
+# --- STATISTICHE, BACKUP & MANUTENZIONE DATABASE ---
+@app.get("/api/system/db-stats")
+async def api_system_db_stats():
+    """Restituisce le statistiche su dimensioni del database, totale campioni e stato WAL."""
+    return get_database_stats()
+
+@app.get("/api/system/backup")
+async def api_system_backup():
+    """Scarica il file completo del database SQLite come backup sicuro."""
+    if not os.path.exists(DB_PATH):
+        return JSONResponse({"error": "Database non trovato"}, status_code=404)
+    # Esegue un checkpoint prima del download per sincronizzare il file WAL nel DB principale
+    try:
+        from backend.database import get_connection
+        c = get_connection()
+        c.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        c.close()
+    except Exception:
+        pass
+    return FileResponse(
+        path=DB_PATH,
+        filename="weather_history_backup.db",
+        media_type="application/octet-stream"
+    )
+
+@app.post("/api/system/maintenance")
+async def api_system_maintenance(retention_days: int = Query(60, ge=7, le=365)):
+    """Esegue manualmente la compattazione e il downsampling dello storico > retention_days."""
+    res = perform_database_maintenance(retention_days=retention_days)
+    return res
+
+# --- GESTIONE ALIAS SENSORI PERSONALIZZATI ---
+@app.get("/api/sensors/aliases")
+async def api_get_sensor_aliases():
+    """Restituisce i nomi personalizzati assegnati ai canali dei sensori."""
+    return {"aliases": get_sensor_aliases()}
+
+@app.post("/api/sensors/aliases")
+async def api_save_sensor_alias(request: Request):
+    """Salva o aggiorna il nome di un canale sensore (es: soil_ch1 -> 'Giardino')."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    sensor_id = data.get("sensor_id")
+    alias = data.get("alias", "")
+    if not sensor_id:
+        return JSONResponse({"error": "ID sensore mancante"}, status_code=400)
+    save_sensor_alias(sensor_id, alias)
+    return {"status": "saved", "sensor_id": sensor_id, "alias": alias, "aliases": get_sensor_aliases()}
+
 @app.get("/api/energy/latest")
 async def api_energy_latest():
     """Restituisce l'ultima lettura energetica live da Aton Storage."""
@@ -706,6 +760,8 @@ async def dashboard_page(request: Request):
             "climate_devices": thinq_service.get_cached_devices(),
             "smartthings": smartthings_summary,
             "smartthings_enabled": settings.SMARTTHINGS_ENABLED,
+            "sensor_aliases": get_sensor_aliases(),
+            "db_stats": get_database_stats(),
             "ntfy_topic": settings.NTFY_TOPIC
         }
     )
