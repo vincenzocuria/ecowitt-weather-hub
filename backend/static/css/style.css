@@ -1087,62 +1087,378 @@ body {
     letter-spacing: 0.5px;
 }
 
-/* SMART COMFORT PILLS GRID */
-.comfort-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+/* SMART COMFORT & ADVICE HERO */
+.smart-advice-hero {
+    background: linear-gradient(135deg, rgba(20, 29, 49, 0.95) 0%, rgba(11, 16, 28, 0.98) 100%);
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    border-radius: 20px;
+    padding: 1.35rem 1.5rem;
+    box-shadow: 0 14px 35px -8px rgba(0, 0, 0, 0.5), 0 0 25px -5px rgba(56, 189, 248, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.smart-advice-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+.smart-advice-title-wrap {
+    display: flex;
+    align-items: center;
     gap: 0.85rem;
 }
 
-.comfort-pill-card {
-    background: rgba(15, 23, 42, 0.65);
-    border: 1px solid var(--card-border);
-    border-radius: 12px;
-    padding: 0.85rem 1rem;
+.smart-ai-badge-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 13px;
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.22), rgba(14, 165, 233, 0.08));
+    border: 1px solid rgba(56, 189, 248, 0.35);
     display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    transition: transform 0.15s ease, border-color 0.15s ease;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    animation: aiGlow 4s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+.smart-advice-title {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #f8fafc;
+    letter-spacing: -0.01em;
+    margin: 0;
+    line-height: 1.2;
+}
+
+.smart-advice-subtitle {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-top: 3px;
+}
+
+.smart-live-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: #34d399;
+    padding: 0.35rem 0.85rem;
+    border-radius: 20px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.smart-pulse-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #10b981;
+    display: inline-block;
+    animation: livePulse 2s infinite;
+}
+
+/* SMART COMFORT PILLS GRID */
+.comfort-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: 1.1rem;
+    align-items: stretch;
+}
+
+.comfort-pill-card {
+    background: linear-gradient(145deg, rgba(22, 32, 54, 0.8) 0%, rgba(13, 19, 33, 0.9) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.15rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.5rem;
+    backdrop-filter: blur(12px);
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.comfort-pill-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.04), transparent);
+    transition: left 0.6s ease;
+    pointer-events: none;
+}
+
+.comfort-pill-card:hover::before {
+    left: 100%;
 }
 
 .comfort-pill-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 32px -8px rgba(0, 0, 0, 0.55), 0 0 22px rgba(56, 189, 248, 0.15);
     border-color: rgba(56, 189, 248, 0.4);
-    transform: translateY(-2px);
+}
+
+/* Card State Tints */
+.comfort-pill-card.card-state-danger {
+    border-color: rgba(239, 68, 68, 0.28);
+    background: linear-gradient(145deg, rgba(38, 22, 32, 0.7) 0%, rgba(17, 22, 36, 0.88) 100%);
+}
+.comfort-pill-card.card-state-danger:hover {
+    border-color: rgba(239, 68, 68, 0.55);
+    box-shadow: 0 16px 32px -8px rgba(0, 0, 0, 0.55), 0 0 25px rgba(239, 68, 68, 0.18);
+}
+.comfort-pill-card.card-state-danger .comfort-category {
+    color: #f87171;
+}
+.comfort-pill-card.card-state-danger .comfort-advice-box {
+    border-left-color: #ef4444;
+}
+
+.comfort-pill-card.card-state-success {
+    border-color: rgba(16, 185, 129, 0.28);
+    background: linear-gradient(145deg, rgba(16, 36, 30, 0.7) 0%, rgba(17, 22, 36, 0.88) 100%);
+}
+.comfort-pill-card.card-state-success:hover {
+    border-color: rgba(16, 185, 129, 0.55);
+    box-shadow: 0 16px 32px -8px rgba(0, 0, 0, 0.55), 0 0 25px rgba(16, 185, 129, 0.18);
+}
+.comfort-pill-card.card-state-success .comfort-category {
+    color: #34d399;
+}
+.comfort-pill-card.card-state-success .comfort-advice-box {
+    border-left-color: #10b981;
+}
+
+.comfort-pill-card.card-state-warning {
+    border-color: rgba(245, 158, 11, 0.28);
+    background: linear-gradient(145deg, rgba(38, 30, 18, 0.7) 0%, rgba(17, 22, 36, 0.88) 100%);
+}
+.comfort-pill-card.card-state-warning:hover {
+    border-color: rgba(245, 158, 11, 0.55);
+    box-shadow: 0 16px 32px -8px rgba(0, 0, 0, 0.55), 0 0 25px rgba(245, 158, 11, 0.18);
+}
+.comfort-pill-card.card-state-warning .comfort-category {
+    color: #fbbf24;
+}
+.comfort-pill-card.card-state-warning .comfort-advice-box {
+    border-left-color: #f59e0b;
+}
+
+.comfort-pill-card.card-state-info {
+    border-color: rgba(56, 189, 248, 0.28);
+    background: linear-gradient(145deg, rgba(18, 32, 52, 0.7) 0%, rgba(17, 22, 36, 0.88) 100%);
+}
+.comfort-pill-card.card-state-info:hover {
+    border-color: rgba(56, 189, 248, 0.55);
+    box-shadow: 0 16px 32px -8px rgba(0, 0, 0, 0.55), 0 0 25px rgba(56, 189, 248, 0.18);
+}
+.comfort-pill-card.card-state-info .comfort-category {
+    color: #38bdf8;
+}
+.comfort-pill-card.card-state-info .comfort-advice-box {
+    border-left-color: #38bdf8;
+}
+
+/* Card Top Row */
+.comfort-card-top {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.comfort-icon-box {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.45rem;
+    flex-shrink: 0;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 3px 8px rgba(0, 0, 0, 0.3);
+    transition: transform 0.3s ease;
+    animation: gentleFloat 4s ease-in-out infinite;
+}
+
+.comfort-pill-card:hover .comfort-icon-box {
+    transform: scale(1.08) rotate(3deg);
 }
 
 .comfort-icon {
-    font-size: 1.5rem;
     line-height: 1;
 }
 
-.comfort-body {
+.comfort-meta {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    min-width: 0;
 }
 
-.comfort-body-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
+.comfort-category {
+    font-size: 0.68rem;
+    font-weight: 800;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
 }
 
 .comfort-name {
-    font-size: 0.82rem;
+    font-size: 1.02rem;
     font-weight: 700;
-    color: #e2e8f0;
+    color: #f8fafc;
+    margin: 0;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.comfort-status-text {
-    font-size: 0.88rem;
+/* Action & Badges Wrap */
+.comfort-action-wrap {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
+    margin-bottom: 0.3rem;
+}
+
+.comfort-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.4rem 0.8rem;
+    border-radius: 10px;
+    font-size: 0.82rem;
     font-weight: 700;
+    letter-spacing: 0.01em;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    background: rgba(148, 163, 184, 0.15);
+    color: #cbd5e1;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.comfort-status-badge.badge-danger {
+    background: rgba(239, 68, 68, 0.18);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.comfort-status-badge.badge-success {
+    background: rgba(16, 185, 129, 0.18);
+    color: #6ee7b7;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.comfort-status-badge.badge-warning {
+    background: rgba(245, 158, 11, 0.18);
+    color: #fcd34d;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.comfort-status-badge.badge-info {
+    background: rgba(56, 189, 248, 0.18);
+    color: #7dd3fc;
+    border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.status-indicator-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 6px currentColor;
+    display: inline-block;
+}
+
+.comfort-time-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #e2e8f0;
+    padding: 0.35rem 0.65rem;
+    border-radius: 8px;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.comfort-divider {
+    height: 1px;
+    width: 100%;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02));
+    margin: 0.2rem 0;
+}
+
+/* Distinct Advice Box */
+.comfort-advice-box {
+    background: rgba(8, 12, 22, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-left: 3.5px solid var(--accent);
+    border-radius: 10px;
+    padding: 0.75rem 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex-grow: 1;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.comfort-advice-label {
+    font-size: 0.68rem;
+    font-weight: 800;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: 5px;
 }
 
 .comfort-sub {
-    font-size: 0.76rem;
-    color: var(--text-muted);
-    line-height: 1.3;
+    font-size: 0.82rem;
+    color: #e2e8f0;
+    line-height: 1.45;
+    margin: 0;
+    font-weight: 500;
+}
+
+@keyframes gentleFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+}
+
+@keyframes aiGlow {
+    0%, 100% { box-shadow: 0 0 12px rgba(56, 189, 248, 0.25); }
+    50% { box-shadow: 0 0 24px rgba(56, 189, 248, 0.55); }
+}
+
+@keyframes livePulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
 }
 
 /* TODAY EXTREMES & COMPARISON */

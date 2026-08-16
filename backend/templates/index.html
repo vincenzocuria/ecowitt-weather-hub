@@ -1038,70 +1038,156 @@
 
     <!-- SEZIONE SMART ADVICE & MICROCLIMA CASA (INDICI INTELLIGENTI) -->
     <div class="card smart-advice-hero">
-        <div class="card-header">
-            <span>🧠 Consigli Smart per la Casa & Benessere</span>
-            <span style="font-size: 0.85rem; color: var(--text-dim);">Analisi in tempo reale</span>
+        <div class="card-header smart-advice-header">
+            <div class="smart-advice-title-wrap">
+                <div class="smart-ai-badge-icon">🧠</div>
+                <div>
+                    <h3 class="smart-advice-title">Consigli Smart per la Casa & Benessere</h3>
+                    <p class="smart-advice-subtitle">Analisi predittiva microclima, benessere termico e ventilazione</p>
+                </div>
+            </div>
+            <div class="smart-live-pill">
+                <span class="smart-pulse-dot"></span>
+                <span>Analisi in Tempo Reale</span>
+            </div>
         </div>
 
         <div class="comfort-grid">
             <!-- 1. AERAZIONE E FINESTRE -->
-            <div class="comfort-pill-card" id="card_window">
-                <span class="comfort-icon" id="window_icon">{{ analytics.comfort.window.icon if analytics else '🪟' }}</span>
-                <div class="comfort-body">
-                    <div class="comfort-body-header">
-                        <span class="comfort-name">Gestione Finestre</span>
-                        <span class="badge-tag {{ analytics.comfort.window.badge_class if analytics else 'badge-neutral' }}" id="window_badge">{{ analytics.comfort.window.title if analytics else 'Normale' }}</span>
+            <div class="comfort-pill-card {{ analytics.comfort.window.badge_class | replace('badge-', 'card-state-') if analytics and analytics.comfort.window else 'card-state-neutral' }}" id="card_window">
+                <div class="comfort-card-top">
+                    <div class="comfort-icon-box" id="window_icon_box">
+                        <span class="comfort-icon" id="window_icon">{{ analytics.comfort.window.icon if analytics else '🪟' }}</span>
                     </div>
-                    <div class="comfort-sub" id="window_desc">{{ analytics.comfort.window.desc if analytics else 'Verifica clima in corso...' }}</div>
+                    <div class="comfort-meta">
+                        <span class="comfort-category">Aerazione Casa</span>
+                        <h4 class="comfort-name">Gestione Finestre</h4>
+                    </div>
+                </div>
+                <div class="comfort-action-wrap">
+                    <span class="comfort-status-badge {{ analytics.comfort.window.badge_class if analytics else 'badge-neutral' }}" id="window_badge">
+                        <span class="status-indicator-dot"></span>
+                        <span id="window_badge_text">{{ analytics.comfort.window.title if analytics else 'Aerazione Normale' }}</span>
+                    </span>
+                </div>
+                <div class="comfort-divider"></div>
+                <div class="comfort-advice-box">
+                    <div class="comfort-advice-label"><span class="advice-icon">💡</span> Suggerimento</div>
+                    <p class="comfort-sub" id="window_desc">{{ analytics.comfort.window.desc if analytics else 'Verifica clima in corso...' }}</p>
                 </div>
             </div>
 
             <!-- 2. ASCIUGATURA BUCATO -->
-            <div class="comfort-pill-card" id="card_laundry">
-                <span class="comfort-icon" id="laundry_icon">{{ analytics.comfort.laundry.icon if analytics else '🧺' }}</span>
-                <div class="comfort-body">
-                    <div class="comfort-body-header">
-                        <span class="comfort-name">Indice Bucato</span>
-                        <span class="badge-tag {{ analytics.comfort.laundry.badge_class if analytics else 'badge-neutral' }}" id="laundry_badge">{{ analytics.comfort.laundry.title if analytics else 'In attesa' }}</span>
+            <div class="comfort-pill-card {{ analytics.comfort.laundry.badge_class | replace('badge-', 'card-state-') if analytics and analytics.comfort.laundry else 'card-state-neutral' }}" id="card_laundry">
+                <div class="comfort-card-top">
+                    <div class="comfort-icon-box" id="laundry_icon_box">
+                        <span class="comfort-icon" id="laundry_icon">{{ analytics.comfort.laundry.icon if analytics else '🧺' }}</span>
                     </div>
-                    <div class="comfort-status-text" id="laundry_time">{{ analytics.comfort.laundry.time_estimate if analytics else '--' }}</div>
-                    <div class="comfort-sub" id="laundry_desc">{{ analytics.comfort.laundry.desc if analytics else 'Calcolo evaporazione...' }}</div>
+                    <div class="comfort-meta">
+                        <span class="comfort-category">Bucato & Stendino</span>
+                        <h4 class="comfort-name">Indice Bucato</h4>
+                    </div>
+                </div>
+                <div class="comfort-action-wrap">
+                    <span class="comfort-status-badge {{ analytics.comfort.laundry.badge_class if analytics else 'badge-neutral' }}" id="laundry_badge">
+                        <span class="status-indicator-dot"></span>
+                        <span id="laundry_badge_text">{{ analytics.comfort.laundry.title if analytics else 'In attesa' }}</span>
+                    </span>
+                    <span class="comfort-time-chip" id="laundry_time">
+                        <span class="time-icon">⏱️</span>
+                        <span id="laundry_time_val">{{ analytics.comfort.laundry.time_estimate if analytics else '--' }}</span>
+                    </span>
+                </div>
+                <div class="comfort-divider"></div>
+                <div class="comfort-advice-box">
+                    <div class="comfort-advice-label"><span class="advice-icon">👕</span> Condizioni Asciugatura</div>
+                    <p class="comfort-sub" id="laundry_desc">{{ analytics.comfort.laundry.desc if analytics else 'Calcolo evaporazione...' }}</p>
                 </div>
             </div>
 
             <!-- 3. INDICE AFA / HUMIDEX -->
-            <div class="comfort-pill-card" id="card_humidex">
-                <span class="comfort-icon" id="humidex_icon">{{ analytics.comfort.humidex.icon if analytics else '😊' }}</span>
-                <div class="comfort-body">
-                    <div class="comfort-body-header">
-                        <span class="comfort-name">Indice Afa & Comfort</span>
-                        <span class="badge-tag {{ analytics.comfort.humidex.badge_class if analytics else 'badge-neutral' }}" id="humidex_badge">{{ analytics.comfort.humidex.text if analytics else 'Normale' }}</span>
+            <div class="comfort-pill-card {{ analytics.comfort.humidex.badge_class | replace('badge-', 'card-state-') if analytics and analytics.comfort.humidex else 'card-state-neutral' }}" id="card_humidex">
+                <div class="comfort-card-top">
+                    <div class="comfort-icon-box" id="humidex_icon_box">
+                        <span class="comfort-icon" id="humidex_icon">{{ analytics.comfort.humidex.icon if analytics else '😊' }}</span>
                     </div>
-                    <div class="comfort-sub" id="humidex_desc">Punto di rugiada: {{ analytics.dew_point_c if analytics else '--' }}°C</div>
+                    <div class="comfort-meta">
+                        <span class="comfort-category">Comfort Termico</span>
+                        <h4 class="comfort-name">Indice Afa & Comfort</h4>
+                    </div>
+                </div>
+                <div class="comfort-action-wrap">
+                    <span class="comfort-status-badge {{ analytics.comfort.humidex.badge_class if analytics else 'badge-neutral' }}" id="humidex_badge">
+                        <span class="status-indicator-dot"></span>
+                        <span id="humidex_badge_text">{{ analytics.comfort.humidex.text if analytics else 'Normale' }}</span>
+                    </span>
+                    <span class="comfort-time-chip" id="humidex_dew_chip">
+                        <span class="time-icon">💧</span>
+                        <span id="humidex_dew_val">Rugiada {{ analytics.dew_point_c if analytics else '--' }}°C</span>
+                    </span>
+                </div>
+                <div class="comfort-divider"></div>
+                <div class="comfort-advice-box">
+                    <div class="comfort-advice-label"><span class="advice-icon">🌡️</span> Impatto Percepito</div>
+                    <p class="comfort-sub" id="humidex_desc">
+                        {% if analytics and analytics.comfort.humidex.value is defined and analytics.comfort.humidex.value is not none %}
+                            Humidex a {{ analytics.comfort.humidex.value }}. Punto di rugiada: {{ analytics.dew_point_c }}°C.
+                        {% else %}
+                            Punto di rugiada: {{ analytics.dew_point_c if analytics else '--' }}°C.
+                        {% endif %}
+                    </p>
                 </div>
             </div>
 
             <!-- 4. ATTIVITA ALL'APERTO / SPORT -->
-            <div class="comfort-pill-card" id="card_outdoor">
-                <span class="comfort-icon" id="outdoor_icon">{{ analytics.comfort.outdoor.icon if analytics else '🏃' }}</span>
-                <div class="comfort-body">
-                    <div class="comfort-body-header">
-                        <span class="comfort-name">Attività Outdoor</span>
-                        <span class="badge-tag {{ analytics.comfort.outdoor.badge_class if analytics else 'badge-neutral' }}" id="outdoor_badge">{{ analytics.comfort.outdoor.title if analytics else 'Buono' }}</span>
+            <div class="comfort-pill-card {{ analytics.comfort.outdoor.badge_class | replace('badge-', 'card-state-') if analytics and analytics.comfort.outdoor else 'card-state-neutral' }}" id="card_outdoor">
+                <div class="comfort-card-top">
+                    <div class="comfort-icon-box" id="outdoor_icon_box">
+                        <span class="comfort-icon" id="outdoor_icon">{{ analytics.comfort.outdoor.icon if analytics else '🏃' }}</span>
                     </div>
-                    <div class="comfort-sub" id="outdoor_desc">{{ analytics.comfort.outdoor.desc if analytics else 'Analisi attività...' }}</div>
+                    <div class="comfort-meta">
+                        <span class="comfort-category">Sport & Lifestyle</span>
+                        <h4 class="comfort-name">Attività Outdoor</h4>
+                    </div>
+                </div>
+                <div class="comfort-action-wrap">
+                    <span class="comfort-status-badge {{ analytics.comfort.outdoor.badge_class if analytics else 'badge-neutral' }}" id="outdoor_badge">
+                        <span class="status-indicator-dot"></span>
+                        <span id="outdoor_badge_text">{{ analytics.comfort.outdoor.title if analytics else 'Buono' }}</span>
+                    </span>
+                </div>
+                <div class="comfort-divider"></div>
+                <div class="comfort-advice-box">
+                    <div class="comfort-advice-label"><span class="advice-icon">🏃‍♂️</span> Guida Attività</div>
+                    <p class="comfort-sub" id="outdoor_desc">{{ analytics.comfort.outdoor.desc if analytics else 'Analisi attività...' }}</p>
                 </div>
             </div>
 
             <!-- 5. COMFORT INTERNO -->
-            <div class="comfort-pill-card" id="card_indoor">
-                <span class="comfort-icon" id="indoor_icon">{{ analytics.comfort.indoor.icon if analytics and analytics.comfort.indoor else '🏠' }}</span>
-                <div class="comfort-body">
-                    <div class="comfort-body-header">
-                        <span class="comfort-name">Clima Indoor</span>
-                        <span class="badge-tag {{ analytics.comfort.indoor.badge_class if analytics and analytics.comfort.indoor else 'badge-neutral' }}" id="indoor_badge">{{ analytics.comfort.indoor.title if analytics and analytics.comfort.indoor else 'In attesa' }}</span>
+            <div class="comfort-pill-card {{ analytics.comfort.indoor.badge_class | replace('badge-', 'card-state-') if analytics and analytics.comfort.indoor else 'card-state-neutral' }}" id="card_indoor">
+                <div class="comfort-card-top">
+                    <div class="comfort-icon-box" id="indoor_icon_box">
+                        <span class="comfort-icon" id="indoor_icon">{{ analytics.comfort.indoor.icon if analytics and analytics.comfort.indoor else '🏠' }}</span>
                     </div>
-                    <div class="comfort-sub" id="indoor_desc">{{ analytics.comfort.indoor.desc if analytics and analytics.comfort.indoor else 'Dati in attesa...' }}</div>
+                    <div class="comfort-meta">
+                        <span class="comfort-category">Microclima Casa</span>
+                        <h4 class="comfort-name">Clima Indoor</h4>
+                    </div>
+                </div>
+                <div class="comfort-action-wrap">
+                    <span class="comfort-status-badge {{ analytics.comfort.indoor.badge_class if analytics and analytics.comfort.indoor else 'badge-neutral' }}" id="indoor_badge">
+                        <span class="status-indicator-dot"></span>
+                        <span id="indoor_badge_text">{{ analytics.comfort.indoor.title if analytics and analytics.comfort.indoor else 'In attesa' }}</span>
+                    </span>
+                    <span class="comfort-time-chip" id="indoor_delta_chip" style="{% if not (analytics and analytics.comfort.indoor and analytics.comfort.indoor.diff_c is not none) %}display: none;{% endif %}">
+                        <span class="time-icon">📊</span>
+                        <span id="indoor_delta_val">{% if analytics and analytics.comfort.indoor and analytics.comfort.indoor.diff_c is not none %}Δ {{ "%+.1f"|format(analytics.comfort.indoor.diff_c) }}°C{% else %}Δ --°C{% endif %}</span>
+                    </span>
+                </div>
+                <div class="comfort-divider"></div>
+                <div class="comfort-advice-box">
+                    <div class="comfort-advice-label"><span class="advice-icon">🏡</span> Dettaglio Casa</div>
+                    <p class="comfort-sub" id="indoor_desc">{{ analytics.comfort.indoor.desc if analytics and analytics.comfort.indoor else 'Dati in attesa...' }}</p>
                 </div>
             </div>
         </div>

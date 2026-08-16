@@ -190,45 +190,133 @@ function startDashboardPolling() {
                         if (nDesc) nDesc.innerText = a.zambretti.desc;
                     }
 
-                    // Consigli Comfort
+                    // Consigli Comfort & Smart Advice
                     if (a.comfort) {
-                        // Finestre
+                        // 1. Finestre
                         if (a.comfort.window) {
+                            const w = a.comfort.window;
+                            const wCard = document.getElementById('card_window');
                             const wIcon = document.getElementById('window_icon');
-                            const wTitle = document.getElementById('window_title');
+                            const wBadge = document.getElementById('window_badge');
+                            const wBadgeTxt = document.getElementById('window_badge_text');
                             const wDesc = document.getElementById('window_desc');
-                            if (wIcon) wIcon.innerText = a.comfort.window.icon;
-                            if (wTitle) wTitle.innerText = a.comfort.window.title;
-                            if (wDesc) wDesc.innerText = a.comfort.window.desc;
+                            if (wIcon) wIcon.innerText = w.icon || '🪟';
+                            if (wBadgeTxt) wBadgeTxt.innerText = w.title || 'Aerazione Normale';
+                            else if (wBadge) wBadge.innerText = w.title || 'Aerazione Normale';
+                            if (wBadge && w.badge_class) {
+                                wBadge.className = 'comfort-status-badge ' + w.badge_class;
+                            }
+                            if (wCard && w.badge_class) {
+                                const st = w.badge_class.replace('badge-', 'card-state-');
+                                wCard.className = 'comfort-pill-card ' + st;
+                            }
+                            if (wDesc) wDesc.innerText = w.desc || '';
                         }
-                        // Bucato
+                        // 2. Bucato
                         if (a.comfort.laundry) {
+                            const l = a.comfort.laundry;
+                            const lCard = document.getElementById('card_laundry');
                             const lIcon = document.getElementById('laundry_icon');
-                            const lTitle = document.getElementById('laundry_title');
+                            const lBadge = document.getElementById('laundry_badge');
+                            const lBadgeTxt = document.getElementById('laundry_badge_text');
+                            const lTimeChip = document.getElementById('laundry_time');
+                            const lTimeVal = document.getElementById('laundry_time_val');
                             const lDesc = document.getElementById('laundry_desc');
-                            if (lIcon) lIcon.innerText = a.comfort.laundry.icon;
-                            if (lTitle) lTitle.innerText = a.comfort.laundry.title + ' (' + a.comfort.laundry.time_estimate + ')';
-                            if (lDesc) lDesc.innerText = a.comfort.laundry.desc;
+                            if (lIcon) lIcon.innerText = l.icon || '🧺';
+                            if (lBadgeTxt) lBadgeTxt.innerText = l.title || 'Indice Bucato';
+                            else if (lBadge) lBadge.innerText = l.title || 'Indice Bucato';
+                            if (lBadge && l.badge_class) {
+                                lBadge.className = 'comfort-status-badge ' + l.badge_class;
+                            }
+                            if (lCard && l.badge_class) {
+                                const st = l.badge_class.replace('badge-', 'card-state-');
+                                lCard.className = 'comfort-pill-card ' + st;
+                            }
+                            if (lTimeVal) lTimeVal.innerText = l.time_estimate || '--';
+                            if (lDesc) lDesc.innerText = l.desc || '';
                         }
-                        // Humidex
+                        // 3. Humidex
                         if (a.comfort.humidex) {
+                            const h = a.comfort.humidex;
+                            const hCard = document.getElementById('card_humidex');
                             const hIcon = document.getElementById('humidex_icon');
-                            const hText = document.getElementById('humidex_text');
-                            if (hIcon) hIcon.innerText = a.comfort.humidex.icon;
-                            if (hText) hText.innerText = a.comfort.humidex.text;
+                            const hBadge = document.getElementById('humidex_badge');
+                            const hBadgeTxt = document.getElementById('humidex_badge_text');
+                            const hDewVal = document.getElementById('humidex_dew_val');
+                            const hDesc = document.getElementById('humidex_desc');
+                            if (hIcon) hIcon.innerText = h.icon || '😊';
+                            if (hBadgeTxt) hBadgeTxt.innerText = h.text || 'Normale';
+                            else if (hBadge) hBadge.innerText = h.text || 'Normale';
+                            if (hBadge && h.badge_class) {
+                                hBadge.className = 'comfort-status-badge ' + h.badge_class;
+                            }
+                            if (hCard && h.badge_class) {
+                                const st = h.badge_class.replace('badge-', 'card-state-');
+                                hCard.className = 'comfort-pill-card ' + st;
+                            }
+                            if (hDewVal && a.dew_point_c !== undefined) {
+                                hDewVal.innerText = 'Rugiada ' + a.dew_point_c + '°C';
+                            }
+                            if (hDesc) {
+                                if (h.value !== undefined && h.value !== null) {
+                                    hDesc.innerText = `Humidex a ${h.value}. Punto di rugiada: ${a.dew_point_c !== undefined ? a.dew_point_c + '°C' : '--'}.`;
+                                } else {
+                                    hDesc.innerText = `Punto di rugiada: ${a.dew_point_c !== undefined ? a.dew_point_c + '°C' : '--'}.`;
+                                }
+                            }
                         }
-                        // Outdoor
+                        // 4. Outdoor
                         if (a.comfort.outdoor) {
+                            const o = a.comfort.outdoor;
+                            const oCard = document.getElementById('card_outdoor');
                             const oIcon = document.getElementById('outdoor_icon');
-                            const oTitle = document.getElementById('outdoor_title');
+                            const oBadge = document.getElementById('outdoor_badge');
+                            const oBadgeTxt = document.getElementById('outdoor_badge_text');
                             const oDesc = document.getElementById('outdoor_desc');
-                            if (oIcon) oIcon.innerText = a.comfort.outdoor.icon;
-                            if (oTitle) oTitle.innerText = a.comfort.outdoor.title;
-                            if (oDesc) oDesc.innerText = a.comfort.outdoor.desc;
+                            if (oIcon) oIcon.innerText = o.icon || '🏃';
+                            if (oBadgeTxt) oBadgeTxt.innerText = o.title || 'Buono';
+                            else if (oBadge) oBadge.innerText = o.title || 'Buono';
+                            if (oBadge && o.badge_class) {
+                                oBadge.className = 'comfort-status-badge ' + o.badge_class;
+                            }
+                            if (oCard && o.badge_class) {
+                                const st = o.badge_class.replace('badge-', 'card-state-');
+                                oCard.className = 'comfort-pill-card ' + st;
+                            }
+                            if (oDesc) oDesc.innerText = o.desc || '';
                         }
-                        // Indoor Comfort
+                        // 5. Indoor Comfort
                         if (a.comfort.indoor) {
                             const ind = a.comfort.indoor;
+                            // Tab 3 Smart advice
+                            const iCard = document.getElementById('card_indoor');
+                            const iIcon = document.getElementById('indoor_icon');
+                            const iBadge = document.getElementById('indoor_badge');
+                            const iBadgeTxt = document.getElementById('indoor_badge_text');
+                            const iDeltaChip = document.getElementById('indoor_delta_chip');
+                            const iDeltaVal = document.getElementById('indoor_delta_val');
+                            const iDesc = document.getElementById('indoor_desc');
+                            if (iIcon) iIcon.innerText = ind.icon || '🏠';
+                            if (iBadgeTxt) iBadgeTxt.innerText = ind.title || 'In attesa';
+                            else if (iBadge) iBadge.innerText = ind.title || 'In attesa';
+                            if (iBadge && ind.badge_class) {
+                                iBadge.className = 'comfort-status-badge ' + ind.badge_class;
+                            }
+                            if (iCard && ind.badge_class) {
+                                const st = ind.badge_class.replace('badge-', 'card-state-');
+                                iCard.className = 'comfort-pill-card ' + st;
+                            }
+                            if (iDeltaChip && iDeltaVal) {
+                                if (ind.diff_c !== null && ind.diff_c !== undefined) {
+                                    iDeltaVal.innerText = `Δ ${(ind.diff_c > 0 ? '+' : '') + ind.diff_c}°C`;
+                                    iDeltaChip.style.display = 'inline-flex';
+                                } else {
+                                    iDeltaChip.style.display = 'none';
+                                }
+                            }
+                            if (iDesc) iDesc.innerText = ind.desc || '--';
+
+                            // Tab 1 Weather Overview Card
                             const badge = document.getElementById('indoor_comfort_badge');
                             const dText = document.getElementById('indoor_delta_text');
                             const sDesc = document.getElementById('indoor_status_desc');
