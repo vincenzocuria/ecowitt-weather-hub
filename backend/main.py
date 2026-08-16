@@ -48,15 +48,23 @@ logger = logging.getLogger("weather_hub")
 
 # Background Watchdog, Daily Digest & Evening Energy Digest Loop
 async def watchdog_worker():
-    logger.info("[WATCHDOG] Station Offline Watchdog, Daily Digest & Energy Report loop attivato")
+    logger.info("[WATCHDOG] Station Offline Watchdog, Daily Digest, Energy Report & Smart Automations loop attivato")
     while True:
         try:
             engine.check_offline_watchdog()
             engine.check_daily_digest()
             engine.check_evening_energy_digest()
+
+            # Automazioni intelligenti Presenza S26 Ultra, Elettrodomestici, Clima & Solare
+            latest_w = get_latest_reading() or {}
+            latest_e = aton_service.latest_data or get_latest_energy() or {}
+            an_ctx = build_analytics_context(latest_w)
+            st_sum = smartthings_service.get_summary(latest_e, an_ctx.get("drying_index") if an_ctx else None)
+            engine.evaluate_smartthings_automations(st_sum, latest_w, latest_e)
         except Exception as e:
             logger.error(f"Errore nel watchdog worker: {e}")
         await asyncio.sleep(60)
+
 
 
 @asynccontextmanager

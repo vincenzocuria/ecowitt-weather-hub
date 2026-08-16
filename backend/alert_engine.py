@@ -474,6 +474,105 @@ class AlertEngine:
         )
         return {"status": "sent", "title": title, "message": msg}
 
+    def evaluate_smartthings_automations(
+        self,
+        smartthings_data: Dict[str, Any],
+        weather_data: Dict[str, Any],
+        energy_data: Dict[str, Any]
+    ):
+        """
+        Esegue automazioni intelligenti incrociando:
+        - Presenza S26 Ultra di Vincenzo
+        - Elettrodomestici (Lavatrice & Lavastoviglie)
+        - Dati meteo Ecowitt (Indice bucato / temperatura)
+        - Fotovoltaico & Batteria Aton Storage
+        """
+        if not smartthings_data or not smartthings_data.get("enabled"):
+            return
+
+        now = time.time()
+
+        # 1. Automazione Rilevamento Presenza S26 Ultra (Transizioni A Casa / Fuori Casa)
+        presence = smartthings_data.get("presence")
+        if presence:
+            is_present = presence.get("is_present")
+            dev_name = presence.get("device_name", "S26 Ultra")
+
+            if hasattr(self, "_last_presence_is_present") and self._last_presence_is_present is not None:
+                # Transizione Fuori Casa -> A Casa (Rientro)
+                if not self._last_presence_is_present and is_present:
+                    logger.info(f"[SMART-AUTOMATION] Rientro a casa rilevato per {dev_name}")
+                    p_solare = float(energy_data.get("p_solare") or 0.0)
+                    soc = float(energy_data.get("soc") or 0.0)
+                    temp_c = float(weather_data.get("temp_c") or 25.0)
+
+                    climate_note = ""
+                    if temp_c >= 28.0 and (p_solare >= 600 or soc >= 50):
+                        climate_note = f"\n☀️ Clima estivo ({temp_c}°C): energia solare disponibile ({int(p_solare)} W, Batteria {int(soc)}%) per il raffrescamento a costo zero."
+                    
+                    notifier.send_alert(
+                        alert_type="presence_home",
+                        title=f"🏠 Bentornato a Casa, Vincenzo!",
+                        message=f"Rilevata presenza di {dev_name} a casa.{climate_note}",
+                        priority="normal",
+                        extra_data={"device": dev_name, "presence": "present"}
+                    )
+
+                # Transizione A Casa -> Fuori Casa (Uscita)
+                elif self._last_presence_is_present and not is_present:
+                    logger.info(f"[SMART-AUTOMATION] Uscita da casa rilevata per {dev_name}")
+                    notifier.send_alert(
+                        alert_type="presence_away",
+                        title=f"🚗 Uscita di Casa Rilevata",
+                        message=f"{dev_name} è fuori casa. Monitoraggio consumi ed energia attivo.",
+                        priority="low",
+                        extra_data={"device": dev_name, "presence": "away"}
+                    )
+
+            self._last_presence_is_present = is_present
+
+        # 2. Notifica Lavatrice Terminata + Asciugatura Bucato al Sole
+        washer = smartthings_data.get("washer")
+        if washer:
+            current_job = washer.get("job_state")
+            was_running = getattr(self, "_last_washer_was_running", False)
+            
+            if was_running and current_job == "finish":
+                logger.info("[SMART-AUTOMATION] Lavatrice ha completato il ciclo di lavaggio!")
+                drying_synergy = smartthings_data.get("laundry_drying_synergy")
+                if drying_synergy and drying_synergy.get("optimal"):
+                    msg = "🫧 Ciclo di lavaggio completato! Il meteo all'esterno è ideale per stendere il bucato al sole ☀️"
+                else:
+                    msg = "🫧 Ciclo di lavaggio completato! Ricordati di ritirare o stendere il bucato."
+
+                notifier.send_alert(
+                    alert_type="washer_finish",
+                    title="🫧 Lavatrice: Ciclo Terminato!",
+                    message=msg,
+                    priority="normal",
+                    extra_data={"device": "Lavatrice Samsung AI"}
+                )
+
+            self._last_washer_was_running = washer.get("is_running", False)
+
+        # 3. Suggerimento Avvio Elettrodomestici con Surplus Solare Aton (quando Vincenzo è a casa)
+        solar_syn = smartthings_data.get("solar_synergy", {})
+        if solar_syn.get("solar_optimal") and (presence and presence.get("is_present")):
+            last_solar_alert = getattr(self, "_last_solar_appliance_alert", 0.0)
+            # Notifica al massimo una volta ogni 3 ore (180 min) per non spammare
+            if (now - last_solar_alert) >= (180 * 60):
+                self._last_solar_appliance_alert = now
+                p_sol = int(solar_syn.get("p_solare", 0))
+                soc_val = int(solar_syn.get("soc", 0))
+                notifier.send_alert(
+                    alert_type="solar_synergy_appliances",
+                    title="☀️ Momento Ideale: Elettrodomestici a Costo Zero!",
+                    message=f"Produzione solare a {p_sol} W e batteria al {soc_val}%: momento ideale per avviare Lavatrice o Lavastoviglie!",
+                    priority="normal",
+                    extra_data={"p_solare": str(p_sol), "soc": str(soc_val)}
+                )
+
 engine = AlertEngine()
+
 
 
