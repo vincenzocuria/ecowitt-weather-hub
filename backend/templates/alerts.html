@@ -12,6 +12,31 @@
     </div>
 </div>
 
+<!-- BANNER RECORD IN EVIDENZA -->
+{% if top_records %}
+<div class="records-banner" style="margin-bottom: 1.25rem;">
+    <div class="records-banner-header">
+        <div class="records-banner-title">
+            🏆 Record Storici Assoluti
+        </div>
+        <a href="/records" class="btn btn-gold" style="padding: 0.4rem 0.9rem; font-size: 0.82rem;">Vedi Albo dei Record Completo →</a>
+    </div>
+    <div class="records-mini-grid">
+        {% for r in top_records %}
+        <div class="rec-mini-card">
+            <span class="rec-mini-label">{{ r.title }}</span>
+            <span class="rec-mini-val">
+                {% if r.value is not none %}{{ r.value }} {{ r.unit }}{% else %}--{% endif %}
+            </span>
+            <span class="rec-mini-date">
+                {% if r.timestamp %}{{ r.timestamp | local_dt_short }}{% else %}In attesa{% endif %}
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <!-- SEZIONE NOTIFICHE PUSH NATIVE PWA -->
 <div class="card" style="border: 1px solid var(--accent); background: linear-gradient(145deg, rgba(56, 189, 248, 0.05), var(--card-bg));">
     <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2);">

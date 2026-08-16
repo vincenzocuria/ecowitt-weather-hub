@@ -203,7 +203,8 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 # Filtri personalizzati Jinja2 per conversione automatica UTC -> Europe/Rome
-templates.env.filters["local_dt"] = to_local_datetime_str
+templates.env.filters["local_dt"] = lambda s: to_local_datetime_str(s, "%d/%m/%Y %H:%M:%S")
+templates.env.filters["local_dt_short"] = lambda s: to_local_datetime_str(s, "%d/%m/%Y %H:%M")
 templates.env.filters["local_time"] = lambda s: to_local_datetime_str(s, "%H:%M")
 templates.env.filters["local_date"] = lambda s: to_local_datetime_str(s, "%d/%m/%Y")
 
@@ -764,6 +765,8 @@ async def history_page(request: Request, start_date: Optional[str] = None, end_d
 @app.get("/alerts-page", response_class=HTMLResponse)
 async def alerts_page(request: Request):
     alerts = get_alert_logs(limit=50)
+    all_records = get_all_records()
+    top_records = [r for r in all_records if r["record_key"] in ("temp_max", "temp_min", "wind_gust_max", "rain_daily_max", "pressure_min")][:4]
     return templates.TemplateResponse(
         request=request,
         name="alerts.html",
@@ -771,6 +774,7 @@ async def alerts_page(request: Request):
             "active_page": "alerts",
             "title": "Registro Notifiche • Weather Hub",
             "alerts": alerts,
+            "top_records": top_records,
             "ntfy_topic": settings.NTFY_TOPIC
         }
     )

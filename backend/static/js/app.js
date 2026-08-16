@@ -332,7 +332,12 @@ function startDashboardPolling() {
                             sStatTag.className = 'sun-status-pill ' + (ep.is_daylight ? 'pill-daylight' : 'pill-night');
                         }
                         if (orb && ep.sun_progress_pct !== undefined) {
-                            orb.style.left = ep.sun_progress_pct + '%';
+                            const p = Math.max(0, Math.min(100, Number(ep.sun_progress_pct)));
+                            const t = p / 100;
+                            const xPct = 5 + 90 * t;
+                            const yBottomPct = 10 + 290 * t * (1 - t);
+                            orb.style.left = xPct.toFixed(2) + '%';
+                            orb.style.bottom = yBottomPct.toFixed(2) + '%';
                         }
                     }
                     if (a.moon_phase) {
@@ -390,6 +395,18 @@ function startDashboardPolling() {
                 const pSolareEl = document.getElementById('p_solare_val');
                 if (pSolareEl && d.p_solare !== undefined) {
                     pSolareEl.innerHTML = `${Math.round(d.p_solare)} <span class="unit">W</span>`;
+                }
+
+                // Aggiorna badge sul Tab Energia
+                const tabBadgeEnergy = document.getElementById('tab_badge_energy');
+                if (tabBadgeEnergy) {
+                    if (d.p_solare !== undefined && d.p_solare > 50) {
+                        tabBadgeEnergy.innerText = `${Math.round(d.p_solare)} W`;
+                        tabBadgeEnergy.classList.add('badge-highlight');
+                    } else if (d.soc !== undefined) {
+                        tabBadgeEnergy.innerText = `🔋 ${Math.round(d.soc)}%`;
+                        tabBadgeEnergy.classList.remove('badge-highlight');
+                    }
                 }
 
                 const solSub = document.getElementById('solar_today_sub');
@@ -991,4 +1008,86 @@ function syncSmartThingsDevices() {
             }
         });
 }
+
+/* ==========================================================================
+   DASHBOARD TAB NAVIGATION & HASH ROUTING
+   ========================================================================== */
+function switchDashboardTab(tabId) {
+    if (!tabId) return;
+
+    // Seleziona tutti i bottoni e i panelli
+    const tabButtons = document.querySelectorAll('.dash-tab-btn');
+    const tabPanes = document.querySelectorAll('.dashboard-tab-pane');
+
+    if (!tabButtons.length || !tabPanes.length) return;
+
+    // Disattiva tutti i tab
+    tabButtons.forEach(btn => btn.classList.remove('active'));
+    tabPanes.forEach(pane => pane.classList.remove('active'));
+
+    // Normalizza ID
+    const cleanId = tabId.replace(/^#/, '').toLowerCase();
+    const btnId = 'tab_btn_' + cleanId.replace(/-/g, '_');
+    const paneId = 'pane_' + cleanId.replace(/-/g, '_');
+
+    // Attiva bottone e pannello corrispondente
+    const targetBtn = document.getElementById(btnId);
+    const targetPane = document.getElementById(paneId);
+
+    if (targetBtn && targetPane) {
+        targetBtn.classList.add('active');
+        targetPane.classList.add('active');
+
+        // Salva preferenza in localStorage
+        try {
+            localStorage.setItem('ecowitt_dashboard_active_tab', cleanId);
+        } catch (e) {
+            console.warn('LocalStorage error:', e);
+        }
+
+        // Aggiorna URL Hash senza causare jump
+        if (history.replaceState) {
+            history.replaceState(null, null, '#' + cleanId);
+        }
+
+        // Se passiamo al tab meteo, ridimensiona grafici Chart.js se presenti
+        if (cleanId === 'weather' && window.quickChartInstance) {
+            try {
+                window.quickChartInstance.resize();
+            } catch (e) {}
+        }
+    }
+}
+
+function initDashboardTabs() {
+    const tabsNav = document.getElementById('dashboard_tabs');
+    if (!tabsNav) return;
+
+    // 1. Controlla se c'è un hash nell'URL
+    const hash = window.location.hash ? window.location.hash.replace(/^#/, '') : null;
+
+    // 2. Controlla se c'è un tab salvato in localStorage
+    let savedTab = null;
+    try {
+        savedTab = localStorage.getItem('ecowitt_dashboard_active_tab');
+    } catch (e) {}
+
+    const validTabs = ['weather', 'energy-home', 'astro-comfort', 'system'];
+    const initialTab = (hash && validTabs.includes(hash)) ? hash : ((savedTab && validTabs.includes(savedTab)) ? savedTab : 'weather');
+
+    switchDashboardTab(initialTab);
+
+    // Ascolta cambi hash manuali (es. back button del browser)
+    window.addEventListener('hashchange', () => {
+        const currentHash = window.location.hash ? window.location.hash.replace(/^#/, '') : 'weather';
+        if (validTabs.includes(currentHash)) {
+            switchDashboardTab(currentHash);
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initDashboardTabs();
+});
+
 

@@ -535,10 +535,14 @@ def calc_sun_ephemeris(lat: float, lon: float, current_dt: Optional[datetime] = 
     if now_min < sunrise_local_min:
         mins_to_sunrise = int(sunrise_local_min - now_min)
         status_text = f"Alba tra {mins_to_sunrise // 60}h {mins_to_sunrise % 60}m"
-        sun_progress_pct = 0
+        night_duration = max(1, 1440 - daylight_minutes)
+        mins_since_sunset = int(1440 - sunset_local_min + now_min)
+        sun_progress_pct = round((mins_since_sunset / night_duration) * 100)
     elif now_min > sunset_local_min:
+        mins_since_sunset = int(now_min - sunset_local_min)
+        night_duration = max(1, 1440 - daylight_minutes)
         status_text = "Sole tramontato"
-        sun_progress_pct = 100
+        sun_progress_pct = round((mins_since_sunset / night_duration) * 100)
     else:
         mins_to_sunset = int(sunset_local_min - now_min)
         status_text = f"Tramonto tra {mins_to_sunset // 60}h {mins_to_sunset % 60}m"
@@ -866,7 +870,8 @@ def evaluate_indoor_comfort(
             "badge_class": "badge-neutral",
             "title": "In attesa dati",
             "desc": "Nessuna lettura interna disponibile.",
-            "delta_text": "--"
+            "delta_text": "--",
+            "diff_c": None
         }
     
     t = float(temp_in_c)

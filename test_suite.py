@@ -259,8 +259,36 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIsNotNone(summary["laundry_drying_synergy"])
         self.assertTrue(summary["laundry_drying_synergy"]["optimal"])
 
+    def test_datetime_filters_and_alerts_page(self):
+        from backend.main import templates, app
+        from fastapi.testclient import TestClient
+
+        # Test filter formatting
+        dt_str = "2026-08-15T14:32:00Z"
+        formatted_short = templates.env.filters["local_dt_short"](dt_str)
+        self.assertIn("15/08/2026", formatted_short)
+        self.assertIn(":", formatted_short)
+
+        formatted_date = templates.env.filters["local_date"](dt_str)
+        self.assertEqual(formatted_date, "15/08/2026")
+
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+        res = client.get("/alerts-page")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("Centro Notifiche", res.text)
+        self.assertIn("Record Storici Assoluti", res.text)
+
+        res_idx = client.get("/")
+        self.assertEqual(res_idx.status_code, 200)
+        self.assertIn("dashboard-tabs-nav", res_idx.text)
+        self.assertIn("pane_weather", res_idx.text)
+        self.assertIn("pane_energy_home", res_idx.text)
+        self.assertIn("pane_astro_comfort", res_idx.text)
+        self.assertIn("pane_system", res_idx.text)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
