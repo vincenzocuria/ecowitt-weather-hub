@@ -1160,7 +1160,7 @@ function initDashboardTabs() {
         savedTab = localStorage.getItem('ecowitt_dashboard_active_tab');
     } catch (e) {}
 
-    const validTabs = ['weather', 'energy-home', 'astro-comfort', 'system'];
+    const validTabs = ['weather', 'energy-home', 'astro-comfort'];
     const initialTab = (hash && validTabs.includes(hash)) ? hash : ((savedTab && validTabs.includes(savedTab)) ? savedTab : 'weather');
 
     switchDashboardTab(initialTab);

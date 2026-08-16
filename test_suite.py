@@ -284,9 +284,13 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIn("pane_weather", res_idx.text)
         self.assertIn("pane_energy_home", res_idx.text)
         self.assertIn("pane_astro_comfort", res_idx.text)
-        self.assertIn("pane_system", res_idx.text)
-        self.assertIn("Database & Manutenzione", res_idx.text)
-        self.assertIn("Personalizzazione Nomi Sensori", res_idx.text)
+
+        res_set = client.get("/settings")
+        self.assertEqual(res_set.status_code, 200)
+        self.assertIn("Impostazioni & Centro di Controllo", res_set.text)
+        self.assertIn("Database SQLite & Manutenzione", res_set.text)
+        self.assertIn("Personalizzazione Nomi Sensori", res_set.text)
+        self.assertIn("Notifiche Push", res_set.text)
 
     def test_sqlite_wal_mode_and_stats(self):
         from backend.database import get_connection, get_database_stats

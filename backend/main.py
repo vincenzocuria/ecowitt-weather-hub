@@ -835,5 +835,34 @@ async def alerts_page(request: Request):
         }
     )
 
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    latest = get_latest_reading() or {}
+    raw = {}
+    if latest.get("raw_data_json"):
+        try:
+            raw = json.loads(latest["raw_data_json"])
+        except Exception:
+            raw = {}
+    station_model = raw.get("model", raw.get("stationtype", "Sainlogic / Ecowitt"))
+    batt_wh65 = "🟢 Buona / OK" if raw.get("wh65batt") == "0" else ("🔴 Bassa" if raw.get("wh65batt") else "N/D")
+    return templates.TemplateResponse(
+        request=request,
+        name="settings.html",
+        context={
+            "active_page": "settings",
+            "title": "Impostazioni & Sistema • Weather Hub",
+            "station_model": station_model,
+            "batt_wh65": batt_wh65,
+            "aton_sn": settings.ATON_SN,
+            "aton_enabled": settings.ATON_ENABLED,
+            "thinq_enabled": settings.LG_THINQ_ENABLED,
+            "smartthings_enabled": settings.SMARTTHINGS_ENABLED,
+            "sensor_aliases": get_sensor_aliases(),
+            "db_stats": get_database_stats(),
+            "ntfy_topic": settings.NTFY_TOPIC
+        }
+    )
+
 if __name__ == "__main__":
     uvicorn.run(app, host=settings.HOST, port=settings.PORT)

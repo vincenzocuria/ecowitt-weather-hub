@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header-card">
+    <div class="header-title">
+        <h1>⚙️ Impostazioni & Centro di Controllo</h1>
+        <p>Configura notifiche push, diagnostica hardware, manutenzione database SQLite, personalizzazione sensori e allarmi.</p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <a href="/api/system/backup" class="btn btn-gold" style="padding: 0.6rem 1.2rem; text-decoration: none;" download>💾 Scarica Backup DB</a>
+        <button id="btn-test-alert" class="btn" style="padding: 0.6rem 1.2rem;" onclick="testPushNotification()">🚀 Prova Notifica Push</button>
+    </div>
+</div>
+
+<div class="grid">
+    <!-- 1. NOTIFICHE PUSH NATIVE PWA & AUTOMAZIONI -->
+    <div class="card" style="border: 1px solid var(--accent); background: linear-gradient(145deg, rgba(56, 189, 248, 0.05), var(--card-bg));">
+        <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2);">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span>📱 Notifiche Push Native Web App (PWA)</span>
+            </div>
+            <span id="push-status-badge" class="status-pill badge-waiting">Verifica in corso...</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0;">
+            <p id="push-status-text" style="color: var(--text); font-size: 0.92rem; line-height: 1.5;">
+                Ricevi avvisi meteo istantanei direttamente sul tuo smartphone o PC, anche ad applicazione chiusa, senza bisogno di installare app esterne.
+            </p>
+
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
+                <button id="btn-push-toggle" class="btn btn-primary" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
+                    🔔 Attiva Notifiche Push PWA
+                </button>
+                <button class="btn btn-outline" style="padding: 0.75rem 1.2rem; font-size: 0.9rem;" onclick="testPushNotification()">
+                    🧪 Prova Notifica Istantanea
+                </button>
+                <a href="/api/daily-digest/send" class="btn btn-gold" style="padding: 0.75rem 1.2rem; font-size: 0.9rem; text-decoration: none;" target="_blank">
+                    ☕ Invia Buongiorno Ora
+                </a>
+            </div>
+
+            <div style="background: rgba(0,0,0,0.25); border-radius: 12px; padding: 1rem; margin-top: 0.5rem; font-size: 0.83rem; color: var(--text-dim); display: flex; flex-direction: column; gap: 0.4rem;">
+                <strong style="color: var(--accent);">💡 Come abilitare le notifiche sui tuoi dispositivi:</strong>
+                <div>🍏 <strong>iPhone / iPad (iOS 16.4+):</strong> Apri il sito in Safari, tocca il tasto Condividi (quadrato con freccia in su) e scegli <em>"Aggiungi alla schermata Home"</em>. Apri l'app e tocca <strong>Attiva Notifiche</strong>.</div>
+                <div>🤖 <strong>Android:</strong> Clicca semplicemente su <em>"Attiva Notifiche Push"</em> (funziona sia da browser che da WebApp installata).</div>
+                <div>💻 <strong>PC / Mac:</strong> Clicca su <em>"Attiva Notifiche"</em> e consenti i permessi del browser Chrome, Edge, Safari o Firefox.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. CANALE PUSH PARALLELO NTFY & CANALE PUBBLICO -->
+    <div class="card">
+        <div class="card-header">
+            <span>📡 Canale Push ntfy.sh & Automazioni</span>
+            <span class="sub-badge">Topic: {{ ntfy_topic }}</span>
+        </div>
+        <div class="item-list">
+            <div class="item"><span>Canale Push Primario:</span> <strong>{{ ntfy_topic }}</strong></div>
+            <div class="item"><span>Batteria Sensore 7 in 1:</span> <strong>{{ batt_wh65 }}</strong></div>
+            <div class="item"><span>Digest 'Buongiorno':</span> <strong>Attivo ogni giorno (08:00)</strong></div>
+            <div class="item"><span>Watchdog Offline:</span> <strong>Attivo (controllo 10 min)</strong></div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
+            <a href="https://ntfy.sh/{{ ntfy_topic }}" target="_blank" class="btn btn-outline" style="flex: 1; text-align: center; text-decoration: none;">🌐 Apri Canale ntfy.sh</a>
+            <a href="/api/test-alert" class="btn" style="flex: 1; text-align: center; text-decoration: none;" target="_blank">🚀 Test Notifica ntfy</a>
+        </div>
+    </div>
+
+    <!-- 3. PERSONALIZZAZIONE NOMI SENSORI (ALIAS UTENTE) -->
+    <div class="card">
+        <div class="card-header">
+            <span>🏷️ Personalizzazione Nomi Sensori</span>
+            <span class="sub-badge">Alias Utente</span>
+        </div>
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.85rem;">
+            Assegna un'etichetta personalizzata e riconoscibile ai tuoi sensori (es: <em>"Piante Soggiorno"</em>, <em>"Orto Pomodori"</em>, <em>"Giardino"</em>).
+        </p>
+        <div class="item-list" id="sensor_alias_form_list">
+            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
+                <span style="font-size: 0.85rem; width: 120px; color: var(--text-muted);">🌱 Suolo CH1:</span>
+                <input type="text" id="alias_soil_ch1" value="{{ sensor_aliases.get('soil_ch1', '') if sensor_aliases else '' }}" placeholder="Es: Giardino Prato" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
+                <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('soil_ch1', document.getElementById('alias_soil_ch1').value)">Salva</button>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
+                <span style="font-size: 0.85rem; width: 120px; color: var(--text-muted);">🌱 Suolo CH2:</span>
+                <input type="text" id="alias_soil_ch2" value="{{ sensor_aliases.get('soil_ch2', '') if sensor_aliases else '' }}" placeholder="Es: Piante Balcone" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
+                <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('soil_ch2', document.getElementById('alias_soil_ch2').value)">Salva</button>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
+                <span style="font-size: 0.85rem; width: 120px; color: var(--text-muted);">🌱 Suolo CH3:</span>
+                <input type="text" id="alias_soil_ch3" value="{{ sensor_aliases.get('soil_ch3', '') if sensor_aliases else '' }}" placeholder="Es: Vasi Terrazzo" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
+                <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('soil_ch3', document.getElementById('alias_soil_ch3').value)">Salva</button>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
+                <span style="font-size: 0.85rem; width: 120px; color: var(--text-muted);">🌡️ Temp Extra 1:</span>
+                <input type="text" id="alias_temp_ch1" value="{{ sensor_aliases.get('temp_ch1', '') if sensor_aliases else '' }}" placeholder="Es: Cantina / Garage" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
+                <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('temp_ch1', document.getElementById('alias_temp_ch1').value)">Salva</button>
+            </div>
+        </div>
+        <div id="sensor_alias_status" style="font-size: 0.8rem; color: #10b981; margin-top: 0.5rem; display: none;"></div>
+    </div>
+
+    <!-- 4. DATABASE SQLITE & MANUTENZIONE STORICO -->
+    <div class="card">
+        <div class="card-header">
+            <span>🗄️ Database SQLite & Manutenzione</span>
+            <span class="sub-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">WAL Mode Attivo</span>
+        </div>
+        <div class="item-list">
+            <div class="item"><span>Dimensione Database:</span> <strong id="db_size_val">{{ db_stats.db_size_mb if db_stats else '--' }} MB</strong></div>
+            <div class="item"><span>Letture Meteo Salvate:</span> <strong id="db_weather_cnt">{{ db_stats.weather_records_count if db_stats else '--' }}</strong></div>
+            <div class="item"><span>Letture Energetiche Aton:</span> <strong id="db_energy_cnt">{{ db_stats.energy_records_count if db_stats else '--' }}</strong></div>
+            <div class="item"><span>Politica Retention:</span> <strong>Raw 60gg + Downsampling Orario/Giorno</strong></div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
+            <a href="/api/system/backup" class="btn btn-gold" style="flex: 1; text-align: center; text-decoration: none;" download>💾 Scarica Backup DB (.db)</a>
+            <button type="button" class="btn" style="flex: 1;" onclick="triggerDbMaintenance()">🧹 Compattazione & Ottimizza</button>
+        </div>
+        <div id="db_maintenance_result" style="font-size: 0.8rem; color: #38bdf8; margin-top: 0.5rem; display: none;"></div>
+    </div>
+
+    <!-- 5. DIAGNOSTICA HARDWARE & RETE -->
+    <div class="card">
+        <div class="card-header">
+            <span>📡 Diagnostica Hardware, Rete & Integrazioni</span>
+            <span class="sub-badge badge-live">Connesso</span>
+        </div>
+        <div class="item-list">
+            <div class="item"><span>Modello Stazione:</span> <strong>{{ station_model }}</strong></div>
+            <div class="item"><span>Inverter / Batteria:</span> <strong>Aton Green Storage ({{ aton_sn }})</strong></div>
+            <div class="item"><span>Climatizzazione Smart:</span> <strong>LG ThinQ Connect</strong></div>
+            <div class="item"><span>Domotica Elettrodomestici:</span> <strong>Samsung SmartThings</strong></div>
+            <div class="item"><span>Modelli Previsionali:</span> <strong>ECMWF IFS 9km / ICON-EU</strong></div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
+            <a href="/alerts-page" class="btn" style="flex: 1; text-align: center; text-decoration: none;">⚙️ Catalogo Notifiche & Log</a>
+            <a href="/history" class="btn" style="flex: 1; text-align: center; text-decoration: none;">🔍 Archivio Storico</a>
+        </div>
+    </div>
+
+    <!-- 6. SICUREZZA & SESSIONE -->
+    <div class="card">
+        <div class="card-header">
+            <span>🔒 Sicurezza & Disconnessione</span>
+            <span class="sub-badge">Accesso Protetto</span>
+        </div>
+        <p style="font-size: 0.84rem; color: var(--text-muted); margin-bottom: 0.75rem; line-height: 1.45;">
+            La tua sessione corrente su questo browser è autenticata e protetta tramite cookie di sicurezza HTTP-Only.
+        </p>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <a href="/logout" class="btn btn-outline" style="color: #ef4444; border-color: rgba(239,68,68,0.4); text-decoration: none;">
+                🚪 Disconnetti questo dispositivo (Logout)
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- CATALOGO COMPLETO DELLE NOTIFICHE ATTIVE -->
+<div class="card" style="margin-top: 1.25rem;">
+    <div class="card-header">
+        <span>📋 Catalogo Allarmi & Soglie di Monitoraggio Attive</span>
+        <a href="/api/export/alerts-csv" class="btn btn-gold" style="font-size: 0.8rem; padding: 0.35rem 0.8rem; text-decoration: none;">📥 Esporta CSV</a>
+    </div>
+    <div class="table-responsive">
+        <table class="weather-table">
+            <thead>
+                <tr>
+                    <th>Evento</th>
+                    <th>Icona</th>
+                    <th>Condizione di Scatto</th>
+                    <th>Priorità</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Vento Forte</strong></td>
+                    <td>💨</td>
+                    <td>Velocità media &ge; 40 km/h</td>
+                    <td><span class="badge-tag badge-warning">Media</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Raffica Estrema</strong></td>
+                    <td>🌪️</td>
+                    <td>Raffica istantanea &ge; 60 km/h</td>
+                    <td><span class="badge-tag badge-danger">Alta</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Pioggia Intensa</strong></td>
+                    <td>🌧️</td>
+                    <td>Rateo &ge; 20 mm/h</td>
+                    <td><span class="badge-tag badge-warning">Media</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Alluvione Lampo / Nubifragio</strong></td>
+                    <td>🌊</td>
+                    <td>Rateo &ge; 50 mm/h</td>
+                    <td><span class="badge-tag badge-danger">Critica</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Crollo Barometrico Rapido</strong></td>
+                    <td>📉</td>
+                    <td>Calo pressione &gt; 2.5 hPa in 3 ore (Possibile tempesta)</td>
+                    <td><span class="badge-tag badge-warning">Media</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Gelo & Ghiaccio</strong></td>
+                    <td>❄️</td>
+                    <td>Temperatura esterna &le; 0.0 °C</td>
+                    <td><span class="badge-tag badge-info">Informativa</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Ondata di Calore Estrema</strong></td>
+                    <td>🔥</td>
+                    <td>Temperatura &ge; 38.0 °C oppure Indice Afa (Humidex) &ge; 45</td>
+                    <td><span class="badge-tag badge-danger">Alta</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Temporale / Fulmini Vicini</strong></td>
+                    <td>⚡</td>
+                    <td>Scarica rilevata entro 15 km</td>
+                    <td><span class="badge-tag badge-danger">Alta</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Batteria Sensore Scarica</strong></td>
+                    <td>🪫</td>
+                    <td>Sensore WH65 segnala batteria scarica</td>
+                    <td><span class="badge-tag badge-warning">Media</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Stazione Offline (Watchdog)</strong></td>
+                    <td>🔌</td>
+                    <td>Nessun dato ricevuto da oltre 10 minuti</td>
+                    <td><span class="badge-tag badge-danger">Alta</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Inizializza stato push PWA se presente
+    if (typeof checkPushSubscription === 'function') {
+        checkPushSubscription();
+    }
+</script>
+{% endblock %}

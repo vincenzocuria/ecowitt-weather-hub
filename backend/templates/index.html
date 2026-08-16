@@ -48,10 +48,6 @@
             <span>Sole & Benessere</span>
             <span class="dash-tab-badge" id="tab_badge_sun">{{ analytics.sun_ephemeris.status_text if analytics and analytics.sun_ephemeris else 'NOAA' }}</span>
         </button>
-        <button type="button" class="dash-tab-btn" id="tab_btn_system" onclick="switchDashboardTab('system')">
-            <span class="tab-icon">🛠️</span>
-            <span>Sistema & Push</span>
-        </button>
     </div>
 </div>
 
@@ -1190,103 +1186,6 @@
                     <p class="comfort-sub" id="indoor_desc">{{ analytics.comfort.indoor.desc if analytics and analytics.comfort.indoor else 'Dati in attesa...' }}</p>
                 </div>
             </div>
-        </div>
-    </div>
-</div>
-
-<!-- ==========================================================================
-     TAB 4: SISTEMA & PUSH NOTIFICHE
-     ========================================================================== -->
-<div class="dashboard-tab-pane" id="pane_system">
-    <div class="grid">
-        <!-- 1. NOTIFICHE & DIGEST -->
-        <div class="card">
-            <div class="card-header">
-                <span>🔔 Notifiche Push & Automazioni</span>
-                <span class="sub-badge">ntfy Channel</span>
-            </div>
-            <div class="item-list">
-                <div class="item"><span>Batteria Sensore 7 in 1:</span> <strong>{{ batt_wh65 }}</strong></div>
-                <div class="item"><span>Canale Push Primario:</span> <strong>{{ ntfy_topic }}</strong></div>
-                <div class="item"><span>Digest 'Buongiorno':</span> <strong>Attivo (08:00)</strong></div>
-                <div class="item"><span>Watchdog Offline:</span> <strong>Attivo (10 min)</strong></div>
-            </div>
-            <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
-                <a href="/api/daily-digest/send" class="btn btn-gold" style="flex: 1; text-align: center; text-decoration: none;" target="_blank">☕ Invia Buongiorno Ora</a>
-                <a href="/api/test-alert" class="btn" style="flex: 1; text-align: center; text-decoration: none;" target="_blank">🚀 Test Notifica Push</a>
-            </div>
-        </div>
-
-        <!-- 2. DIAGNOSTICA STAZIONE & HARDWARE -->
-        <div class="card">
-            <div class="card-header">
-                <span>📡 Diagnostica Hardware & Rete</span>
-                <span class="sub-badge badge-live">Connesso</span>
-            </div>
-            <div class="item-list">
-                <div class="item"><span>Modello Stazione:</span> <strong>{{ station_model }}</strong></div>
-                <div class="item"><span>Inverter / Batteria:</span> <strong>Aton Green Storage ({{ aton_sn }})</strong></div>
-                <div class="item"><span>Climatizzazione:</span> <strong>LG ThinQ Connect</strong></div>
-                <div class="item"><span>Domotica Elettrodomestici:</span> <strong>Samsung SmartThings</strong></div>
-                <div class="item"><span>Modelli Previsionali:</span> <strong>ECMWF IFS 9km / ICON-EU</strong></div>
-            </div>
-            <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
-                <a href="/alerts-page" class="btn" style="flex: 1; text-align: center; text-decoration: none;">⚙️ Configura Allarmi</a>
-                <a href="/history" class="btn" style="flex: 1; text-align: center; text-decoration: none;">🔍 Archivio Storico</a>
-            </div>
-        </div>
-
-        <!-- 3. DATABASE SQLITE & BACKUP -->
-        <div class="card">
-            <div class="card-header">
-                <span>🗄️ Database & Manutenzione Storico</span>
-                <span class="sub-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">WAL Mode Attivo</span>
-            </div>
-            <div class="item-list">
-                <div class="item"><span>Dimensione Database:</span> <strong id="db_size_val">{{ db_stats.db_size_mb if db_stats else '--' }} MB</strong></div>
-                <div class="item"><span>Letture Meteo Salvate:</span> <strong id="db_weather_cnt">{{ db_stats.weather_records_count if db_stats else '--' }}</strong></div>
-                <div class="item"><span>Letture Energetiche Aton:</span> <strong id="db_energy_cnt">{{ db_stats.energy_records_count if db_stats else '--' }}</strong></div>
-                <div class="item"><span>Politica Retention:</span> <strong>Raw 60gg + Downsampling Orario/Giorno</strong></div>
-            </div>
-            <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
-                <a href="/api/system/backup" class="btn btn-gold" style="flex: 1; text-align: center; text-decoration: none;" download>💾 Scarica Backup DB (.db)</a>
-                <button type="button" class="btn" style="flex: 1;" onclick="triggerDbMaintenance()">🧹 Compattazione & Ottimizza</button>
-            </div>
-            <div id="db_maintenance_result" style="font-size: 0.8rem; color: #38bdf8; margin-top: 0.5rem; display: none;"></div>
-        </div>
-
-        <!-- 4. PERSONALIZZAZIONE NOMI SENSORI -->
-        <div class="card">
-            <div class="card-header">
-                <span>🏷️ Personalizzazione Nomi Sensori</span>
-                <span class="sub-badge">Alias Utente</span>
-            </div>
-            <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.75rem;">
-                Assegna un'etichetta personalizzata ai tuoi sensori (es: <em>"Piante Soggiorno"</em>, <em>"Orto Pomodori"</em>, <em>"Giardino"</em>).
-            </p>
-            <div class="item-list" id="sensor_alias_form_list">
-                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
-                    <span style="font-size: 0.85rem; width: 110px; color: var(--text-muted);">🌱 Suolo CH1:</span>
-                    <input type="text" id="alias_soil_ch1" value="{{ sensor_aliases.get('soil_ch1', '') if sensor_aliases else '' }}" placeholder="Es: Giardino Prato" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
-                    <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('soil_ch1', document.getElementById('alias_soil_ch1').value)">Salva</button>
-                </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
-                    <span style="font-size: 0.85rem; width: 110px; color: var(--text-muted);">🌱 Suolo CH2:</span>
-                    <input type="text" id="alias_soil_ch2" value="{{ sensor_aliases.get('soil_ch2', '') if sensor_aliases else '' }}" placeholder="Es: Piante Balcone" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
-                    <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('soil_ch2', document.getElementById('alias_soil_ch2').value)">Salva</button>
-                </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
-                    <span style="font-size: 0.85rem; width: 110px; color: var(--text-muted);">🌱 Suolo CH3:</span>
-                    <input type="text" id="alias_soil_ch3" value="{{ sensor_aliases.get('soil_ch3', '') if sensor_aliases else '' }}" placeholder="Es: Vasi Terrazzo" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
-                    <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('soil_ch3', document.getElementById('alias_soil_ch3').value)">Salva</button>
-                </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
-                    <span style="font-size: 0.85rem; width: 110px; color: var(--text-muted);">🌡️ Temp Extra 1:</span>
-                    <input type="text" id="alias_temp_ch1" value="{{ sensor_aliases.get('temp_ch1', '') if sensor_aliases else '' }}" placeholder="Es: Cantina / Garage" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
-                    <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('temp_ch1', document.getElementById('alias_temp_ch1').value)">Salva</button>
-                </div>
-            </div>
-            <div id="sensor_alias_status" style="font-size: 0.8rem; color: #10b981; margin-top: 0.5rem; display: none;"></div>
         </div>
     </div>
 </div>
