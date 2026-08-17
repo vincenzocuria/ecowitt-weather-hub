@@ -72,8 +72,8 @@ class NotificationService:
         payload = json.dumps({
             "title": title,
             "body": message,
-            "icon": "/static/icons/icon.svg",
-            "badge": "/static/icons/icon.svg",
+            "icon": "/static/icons/icon-192.png",
+            "badge": "/static/icons/badge-96.png",
             "tag": f"meteo-{alert_type}",
             "data": {
                 "url": "/alerts-page",
@@ -147,6 +147,24 @@ class NotificationService:
                     "priority": prio_val,
                     "tags": tags
                 }
+                # Icona personalizzata per ntfy
+                icon_url = settings.NTFY_ICON_URL
+                if not icon_url and settings.NTFY_CLICK_URL:
+                    icon_url = settings.NTFY_CLICK_URL.rstrip('/') + '/static/icons/ntfy-icon.png'
+                if not icon_url:
+                    icon_url = "https://raw.githubusercontent.com/walkxcode/dashboard-icons/main/png/weather.png"
+
+                ntfy_payload["icon"] = icon_url
+
+                if settings.NTFY_CLICK_URL:
+                    ntfy_payload["click"] = settings.NTFY_CLICK_URL
+                    ntfy_payload["actions"] = [
+                        {
+                            "action": "view",
+                            "label": "Apri Hub Meteo",
+                            "url": settings.NTFY_CLICK_URL
+                        }
+                    ]
                 res = requests.post(
                     "https://ntfy.sh",
                     json=ntfy_payload,

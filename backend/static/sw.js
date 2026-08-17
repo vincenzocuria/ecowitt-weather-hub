@@ -1,5 +1,5 @@
 // Service Worker con supporto PWA e Web Push Nativo (iOS 16.4+, Android, Desktop)
-const CACHE_NAME = 'meteo-hub-v10';
+const CACHE_NAME = 'meteo-hub-v11';
 
 
 
@@ -49,12 +49,17 @@ self.addEventListener('push', (event) => {
 
     const options = {
         body: payload.body,
-        icon: '/static/icons/icon.svg',
-        badge: '/static/icons/icon.svg',
+        icon: '/static/icons/icon-192.png',
+        badge: '/static/icons/badge-96.png',
         tag: payload.tag,
         renotify: true,
         data: payload.data
     };
+
+    // App Badging API se supportata
+    if ('setAppBadge' in navigator) {
+        navigator.setAppBadge().catch(() => {});
+    }
 
     // Su browser che supportano la vibrazione (es. Android Chrome)
     if ('vibrate' in navigator) {

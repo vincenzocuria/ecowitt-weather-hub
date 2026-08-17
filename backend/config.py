@@ -118,6 +118,8 @@ class Settings:
     # Notifiche push (ntfy.sh) & Web Push
     ENABLE_NTFY: bool = True
     NTFY_TOPIC: str = os.getenv("NTFY_TOPIC", "")
+    NTFY_ICON_URL: str = os.getenv("NTFY_ICON_URL", "")
+    NTFY_CLICK_URL: str = os.getenv("NTFY_CLICK_URL", "")
     VAPID_CLAIM_EMAIL: str = os.getenv("VAPID_CLAIM_EMAIL", "mailto:admin@example.com")
 
     # Sicurezza & Accesso Riservato (Persistent Device Token)
