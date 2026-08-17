@@ -259,7 +259,103 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIsNotNone(summary["laundry_drying_synergy"])
         self.assertTrue(summary["laundry_drying_synergy"]["optimal"])
 
-    def test_datetime_filters_and_alerts_page(self):
+    def test_smartthings_dishwasher_parsing(self):
+        from backend.smartthings_service import SmartThingsService
+        st = SmartThingsService()
+
+        # 1. Caso reale Samsung: Nessun switch "on", ma machineState "run" e jobState "wash"
+        dw_info = {"deviceId": "test-dw1", "label": "Lavastoviglie Samsung Series 7"}
+        mock_dw_status_running = {
+            "components": {
+                "main": {
+                    "switch": {"switch": {"value": "off"}},  # switch spento o non gestito
+                    "dishwasherOperatingState": {
+                        "dishwasherJobState": {"value": "wash"},
+                        "machineState": {"value": "run"},
+                        "remainingTime": {"value": 65}
+                    },
+                    "samsungce.dishwasherCycle": {
+                        "dishwasherCycle": {"value": "eco"}
+                    }
+                }
+            }
+        }
+        parsed = st.parse_dishwasher_data(mock_dw_status_running, dw_info)
+        self.assertTrue(parsed["is_on"], "La lavastoviglie deve risultare accesa se in stato run/wash")
+        self.assertTrue(parsed["is_running"], "La lavastoviglie deve risultare in esecuzione")
+        self.assertEqual(parsed["job_state_label"], "Lavaggio in Corso 🍽️")
+        self.assertEqual(parsed["cycle_name"], "Eco")
+        self.assertEqual(parsed["remaining_min"], 65)
+        self.assertIsNotNone(parsed["finish_estimate"])
+
+        # 2. Caso con remainingTime espresso in secondi (es. 4800 s = 80 min)
+        mock_dw_seconds = {
+            "components": {
+                "main": {
+                    "dishwasherOperatingState": {
+                        "dishwasherJobState": {"value": "rinse"},
+                        "machineState": {"value": "run"},
+                        "remainingTime": {"value": 4800}
+                    },
+                    "samsungce.dishwasherCycle": {
+                        "dishwasherCycle": {"value": "intensive"}
+                    }
+                }
+            }
+        }
+        parsed_sec = st.parse_dishwasher_data(mock_dw_seconds, dw_info)
+        self.assertTrue(parsed_sec["is_running"])
+        self.assertEqual(parsed_sec["job_state_label"], "Risciacquo 💧")
+        self.assertEqual(parsed_sec["cycle_name"], "Intensivo / Pentole")
+        self.assertEqual(parsed_sec["remaining_min"], 80)
+
+        # 3. Caso con completionTime ISO timestamp
+        from datetime import datetime, timedelta, timezone
+        target_time = datetime.now(timezone.utc) + timedelta(minutes=40)
+        target_iso = target_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        mock_dw_iso = {
+            "components": {
+                "main": {
+                    "dishwasherOperatingState": {
+                        "dishwasherJobState": {"value": "dry"},
+                        "machineState": {"value": "run"},
+                        "completionTime": {"value": target_iso}
+                    },
+                    "samsungce.dishwasherCycle": {
+                        "dishwasherCycle": {"value": "auto"}
+                    }
+                }
+            }
+        }
+        parsed_iso = st.parse_dishwasher_data(mock_dw_iso, dw_info)
+        self.assertTrue(parsed_iso["is_running"])
+        self.assertEqual(parsed_iso["job_state_label"], "Asciugatura Piatti ♨️")
+        self.assertEqual(parsed_iso["cycle_name"], "Auto")
+        self.assertAlmostEqual(parsed_iso["remaining_min"], 40, delta=1)
+
+        # 4. Caso in standby / spenta
+        mock_dw_standby = {
+            "components": {
+                "main": {
+                    "switch": {"switch": {"value": "off"}},
+                    "dishwasherOperatingState": {
+                        "dishwasherJobState": {"value": "none"},
+                        "machineState": {"value": "stop"}
+                    }
+                }
+            }
+        }
+        parsed_standby = st.parse_dishwasher_data(mock_dw_standby, dw_info)
+        self.assertFalse(parsed_standby["is_running"])
+        self.assertEqual(parsed_standby["job_state_label"], "In Standby / Pronto")
+
+        # 5. Riconoscimento automatico in get_summary tramite capability anche con nome generico
+        generic_dev = {"deviceId": "test-generic-dw", "label": "Cucina Samsung Smart"}
+        st.devices = [generic_dev]
+        st.device_statuses["test-generic-dw"] = mock_dw_status_running
+        summary = st.get_summary()
+        self.assertIsNotNone(summary["dishwasher"], "Deve identificare la lavastoviglie tramite capability dishwasherOperatingState")
+        self.assertTrue(summary["dishwasher"]["is_running"])
         from backend.main import templates, app
         from fastapi.testclient import TestClient
 

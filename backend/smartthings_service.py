@@ -9,7 +9,7 @@ import asyncio
 import logging
 import ssl
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
 import aiohttp
 
@@ -35,12 +35,35 @@ WASHER_STATE_MAP = {
 
 DISHWASHER_STATE_MAP = {
     "none": "In Standby / Pronto",
+    "ready": "Pronto",
     "prewash": "Prelavaggio 🫧",
     "wash": "Lavaggio in Corso 🍽️",
     "rinse": "Risciacquo 💧",
     "dry": "Asciugatura Piatti ♨️",
+    "cooling": "Raffreddamento Piatti 🌬️",
+    "drain": "Scarico Acqua 💧",
+    "sanitize": "Igienizzazione / Sanitize 🧼",
     "finish": "Ciclo Lavastoviglie Terminato ✅",
     "delayStart": "Partenza Ritardata ⏱️",
+    "paused": "In Pausa ⏸️",
+    "pause": "In Pausa ⏸️",
+    "running": "Lavaggio in Corso 🍽️",
+    "run": "Lavaggio in Corso 🍽️",
+}
+
+DISHWASHER_CYCLE_MAP = {
+    "auto": "Auto",
+    "eco": "Eco",
+    "standard": "Standard / Normale",
+    "normal": "Normale",
+    "intensive": "Intensivo / Pentole",
+    "quick": "Rapido / Express",
+    "delicate": "Delicato / Cristalli",
+    "sanitize": "Igienizzante",
+    "rinseAndDry": "Risciacquo & Asciugatura",
+    "selfClean": "Autopulizia Macchina",
+    "rinsePlus": "Risciacquo Plus",
+    "babyCare": "Baby Care",
 }
 
 
@@ -201,37 +224,106 @@ class SmartThingsService:
         }
 
     def parse_dishwasher_data(self, status: Dict[str, Any], dev_info: Dict[str, Any]) -> Dict[str, Any]:
-        """Estrae e normalizza i dati della Lavastoviglie."""
-        main_comp = status.get("components", {}).get("main", {})
+        """Estrae e normalizza i dati della Lavastoviglie Samsung SmartThings."""
+        components = status.get("components", {})
+        main_comp = components.get("main", {}) if "main" in components else (status if "dishwasherOperatingState" in status else {})
         
-        switch_val = main_comp.get("switch", {}).get("switch", {}).get("value", "off")
-        is_on = switch_val == "on"
-
-        op_comp = main_comp.get("dishwasherOperatingState", {})
-        job_state = op_comp.get("dishwasherJobState", {}).get("value", "none") or "none"
-        machine_state = op_comp.get("machineState", {}).get("value", "stop") or "stop"
+        # 1. Stato switch (se presente)
+        switch_val = main_comp.get("switch", {}).get("switch", {}).get("value", "")
         
-        job_state_label = DISHWASHER_STATE_MAP.get(job_state, job_state.capitalize())
+        # 2. Stato operativo
+        op_comp = main_comp.get("dishwasherOperatingState", {}) or main_comp.get("samsungce.dishwasherOperatingState", {})
+        job_state = (
+            op_comp.get("dishwasherJobState", {}).get("value")
+            or main_comp.get("custom.dishwasherJobState", {}).get("dishwasherJobState", {}).get("value")
+            or "none"
+        )
+        machine_state = (
+            op_comp.get("machineState", {}).get("value")
+            or main_comp.get("custom.dishwasherMachineState", {}).get("dishwasherMachineState", {}).get("value")
+            or "stop"
+        )
+        
+        job_state_str = str(job_state).lower() if job_state else "none"
+        machine_state_str = str(machine_state).lower() if machine_state else "stop"
 
-        cycle_info = main_comp.get("samsungce.dishwasherCycle", {}).get("dishwasherCycle", {}).get("value")
-        remaining_min = op_comp.get("remainingTime", {}).get("value")
+        # 3. Determinazione di is_running, is_paused, is_on
+        is_running = machine_state_str in ["run", "running"] or job_state_str in ["prewash", "wash", "rinse", "dry", "cooling", "drain", "sanitize"]
+        is_paused = machine_state_str in ["pause", "paused"] or job_state_str in ["pause", "paused"]
+        is_on = switch_val == "on" or is_running or is_paused or machine_state_str in ["delaystart", "ready"] or job_state_str in ["ready", "delaystart"]
 
+        if is_running and job_state_str in ["none", "ready"]:
+            job_state_label = "Lavaggio in Corso 🍽️"
+        elif is_paused:
+            job_state_label = "In Pausa ⏸️"
+        else:
+            job_state_label = DISHWASHER_STATE_MAP.get(job_state, DISHWASHER_STATE_MAP.get(job_state_str, job_state.capitalize() if job_state else "In Standby / Pronto"))
+
+        # 4. Programma / Ciclo
+        cycle_raw = (
+            main_comp.get("samsungce.dishwasherCycle", {}).get("dishwasherCycle", {}).get("value")
+            or main_comp.get("custom.dishwasherCycle", {}).get("dishwasherCycle", {}).get("value")
+            or main_comp.get("dishwasherCycle", {}).get("dishwasherCycle", {}).get("value")
+        )
+        cycle_name = "Auto / Eco"
+        if cycle_raw:
+            cycle_key = str(cycle_raw).lower()
+            cycle_name = DISHWASHER_CYCLE_MAP.get(cycle_key, str(cycle_raw).capitalize())
+
+        # 5. Tempo residuo e stima di fine
+        remaining_raw = (
+            op_comp.get("remainingTime", {}).get("value")
+            or main_comp.get("samsungce.dishwasherDelayStart", {}).get("remainingTime", {}).get("value")
+            or main_comp.get("samsungce.dishwasherCycle", {}).get("remainingTime", {}).get("value")
+        )
+        completion_raw = (
+            op_comp.get("completionTime", {}).get("value")
+            or main_comp.get("samsungce.dishwasherCycle", {}).get("completionTime", {}).get("value")
+        )
+
+        remaining_min = None
         finish_estimate = None
+
+        if remaining_raw is not None:
+            try:
+                val_num = float(remaining_raw)
+                # Se è espresso in secondi (> 300), converti in minuti
+                if val_num > 300:
+                    remaining_min = int(round(val_num / 60.0))
+                else:
+                    remaining_min = int(round(val_num))
+            except (ValueError, TypeError):
+                remaining_min = None
+
+        # Se remaining_min non c'è ancora o è 0 ma c'è completionTime ISO timestamp
+        if (remaining_min is None or remaining_min <= 0) and completion_raw:
+            try:
+                clean_ts = str(completion_raw).replace("Z", "+00:00")
+                comp_dt = datetime.fromisoformat(clean_ts)
+                if comp_dt.tzinfo is not None:
+                    now_dt = datetime.now(timezone.utc)
+                else:
+                    now_dt = datetime.now()
+                diff_sec = (comp_dt - now_dt).total_seconds()
+                if diff_sec > 0:
+                    remaining_min = int(round(diff_sec / 60.0))
+            except Exception:
+                pass
+
         if remaining_min and remaining_min > 0:
             finish_dt = datetime.now() + timedelta(minutes=remaining_min)
             finish_estimate = finish_dt.strftime("%H:%M")
-
-        is_running = is_on and machine_state in ["run", "running"] and job_state not in ["none", "finish"]
 
         return {
             "device_id": dev_info.get("deviceId"),
             "name": dev_info.get("label") or dev_info.get("name") or "Lavastoviglie",
             "is_on": is_on,
             "is_running": is_running,
+            "is_paused": is_paused,
             "machine_state": machine_state,
             "job_state": job_state,
             "job_state_label": job_state_label,
-            "cycle_name": cycle_info or "Auto",
+            "cycle_name": cycle_name,
             "remaining_min": remaining_min,
             "finish_estimate": finish_estimate
         }
@@ -270,13 +362,16 @@ class SmartThingsService:
         for dev in self.devices:
             dev_id = dev.get("deviceId")
             lbl = (dev.get("label") or dev.get("name") or "").lower()
+            dev_type = (dev.get("deviceTypeName") or dev.get("type") or "").lower()
             status = self.device_statuses.get(dev_id)
             if not status:
                 continue
 
-            if "lavatrice" in lbl or "washer" in lbl:
+            main_comp = status.get("components", {}).get("main", {})
+
+            if "lavatrice" in lbl or "washer" in lbl or "dryer" in lbl or "washerOperatingState" in main_comp or "dryerOperatingState" in main_comp:
                 washer_data = self.parse_washer_data(status, dev)
-            elif "lavastoviglie" in lbl or "dishwasher" in lbl:
+            elif "lavastoviglie" in lbl or "dishwasher" in lbl or "dishwasherOperatingState" in main_comp or "samsungce.dishwasherCycle" in main_comp or "dishwasher" in dev_type:
                 dishwasher_data = self.parse_dishwasher_data(status, dev)
             else:
                 # Rilevamento presenza smartphone (S26 Ultra / S25 Ultra / Mobile)
