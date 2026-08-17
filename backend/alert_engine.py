@@ -18,6 +18,10 @@ class AlertEngine:
         self.last_freeze_alert = 0.0
         self.last_heat_alert = 0.0
         self.last_rain_alert = 0.0
+        self.last_rain_start_alert = 0.0
+        self.is_raining = False
+        self.last_rain_time = 0.0
+        self.last_rain_forecast_alert = 0.0
         self.last_record_alert = 0.0
         
         # Anomaly cooldowns
@@ -245,6 +249,31 @@ class AlertEngine:
 
     def _check_rain(self, data: Dict[str, Any], now: float):
         rain_rate = data.get("rain_rate_mm_hr")
+        event_rain = data.get("event_rain_mm")
+
+        is_current_rain = (rain_rate is not None and rain_rate > 0.0) or (event_rain is not None and event_rain > 0.0)
+
+        # 1. Inizio Pioggia Istantaneo (Rilevamento prime gocce / transizione da asciutto a pioggia)
+        if is_current_rain:
+            self.last_rain_time = now
+            if not self.is_raining:
+                self.is_raining = True
+                if settings.RAIN_START_ALERT_ENABLED and (now - self.last_rain_start_alert) >= (settings.RAIN_START_COOLDOWN_MIN * 60):
+                    self.last_rain_start_alert = now
+                    rate_str = f" (intensità: {rain_rate} mm/h)" if (rain_rate and rain_rate > 0) else ""
+                    notifier.send_alert(
+                        alert_type="rain_start",
+                        title="🌧️ Ha Iniziato a Piovere!",
+                        message=f"Rilevate precipitazioni dalla stazione meteo{rate_str}. Ricordati di chiudere le finestre o ritirare il bucato!",
+                        priority="high",
+                        extra_data={"rain_rate": str(rain_rate or 0.0), "event_rain": str(event_rain or 0.0)}
+                    )
+        else:
+            # Se per oltre 15 minuti non si registrano precipitazioni, reimposta lo stato asciutto
+            if self.is_raining and (now - self.last_rain_time) >= 900:
+                self.is_raining = False
+
+        # 2. Pioggia Intensa (Standard)
         if rain_rate is not None and rain_rate >= settings.RAIN_RATE_ALERT_MM_HR and rain_rate < settings.RAIN_BURST_THRESHOLD_MM_HR:
             if (now - self.last_rain_alert) >= (settings.RAIN_ALERT_COOLDOWN_MIN * 60):
                 self.last_rain_alert = now
@@ -329,6 +358,61 @@ class AlertEngine:
                     message=f"La stazione meteo è ancora disconnessa (da {mins} minuti).",
                     priority="normal"
                 )
+
+    def check_rain_forecast(self):
+        """
+        Controlla periodicamente le previsioni Open-Meteo per rilevare pioggia imminente
+        nelle prossime 1-2 ore (se non sta già piovendo).
+        """
+        if not settings.RAIN_FORECAST_ALERT_ENABLED:
+            return
+
+        now = time.time()
+        if (now - self.last_rain_forecast_alert) < (settings.RAIN_FORECAST_COOLDOWN_MIN * 60):
+            return
+
+        # Se sta già piovendo, non inviare il preavviso
+        if self.is_raining:
+            return
+
+        try:
+            from backend.forecast_service import forecast_service
+            forecast = forecast_service.fetch_open_meteo()
+            if not forecast:
+                return
+
+            hourly = forecast.get("hourly_next_36h", [])
+            if not hourly:
+                return
+
+            now_dt = settings.now_local().replace(tzinfo=None)
+
+            # Cerca nelle prossime 2.5 ore
+            for h in hourly:
+                try:
+                    h_dt = datetime.strptime(h["iso_time"], "%Y-%m-%dT%H:%M")
+                    diff_hours = (h_dt - now_dt).total_seconds() / 3600.0
+                    if 0 <= diff_hours <= 2.5:
+                        prob = h.get("rain_prob_pct", 0)
+                        mm = h.get("rain_mm", 0.0)
+
+                        if prob >= settings.RAIN_FORECAST_PROB_THRESHOLD or (mm >= 0.5 and prob >= 40):
+                            self.last_rain_forecast_alert = now
+                            hour_label = h.get("hour_label", f"{h_dt.hour:02d}:00")
+                            cond_text = h.get("condition", "Pioggia")
+                            notifier.send_alert(
+                                alert_type="rain_forecast",
+                                title="☔ Pioggia Prevista a Breve!",
+                                message=f"I modelli meteo indicano {cond_text.lower()} in arrivo verso le {hour_label} (probabilità {prob}%, stima {mm} mm). Attenzione a finestre e bucato!",
+                                priority="normal",
+                                extra_data={"prob": str(prob), "rain_mm": str(mm), "time": hour_label}
+                            )
+                            logger.info(f"[RAIN-FORECAST] Notifica pioggia imminente inviata per le {hour_label} (prob: {prob}%, mm: {mm})")
+                            break
+                except Exception as ex:
+                    logger.debug(f"Errore parsing ora previsione: {ex}")
+        except Exception as e:
+            logger.error(f"Errore controllo previsioni pioggia: {e}")
 
     def check_daily_digest(self):
         """

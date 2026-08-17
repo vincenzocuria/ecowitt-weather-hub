@@ -171,6 +171,8 @@ class NotificationService:
             "freeze": "snowflake,cold_face",
             "heatwave": "hot_face,sunny",
             "rain": "cloud_with_rain",
+            "rain_start": "cloud_with_rain,droplet",
+            "rain_forecast": "umbrella,cloud_with_rain",
             "storm": "cyclone,thunder_cloud_and_rain",
             "anomaly": "warning,exclamation",
             "wind_spike": "wind_blowing_face,warning",

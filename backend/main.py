@@ -53,6 +53,7 @@ async def watchdog_worker():
     while True:
         try:
             engine.check_offline_watchdog()
+            engine.check_rain_forecast()
             engine.check_daily_digest()
             engine.check_evening_energy_digest()
             engine.check_nightly_maintenance()

@@ -400,6 +400,50 @@ class TestEcowittHub(unittest.TestCase):
         self.assertEqual(get_al.status_code, 200)
         self.assertEqual(get_al.json()["aliases"].get("soil_ch2"), "Piante Balcone")
 
+    def test_rain_start_and_forecast_alerts(self):
+        from backend.alert_engine import AlertEngine
+        import time
+
+        test_engine = AlertEngine()
+        sent_alerts = []
+
+        # Monkeypatch notifier for testing
+        def mock_send(alert_type, title, message, priority="normal", extra_data=None):
+            sent_alerts.append({"type": alert_type, "title": title, "msg": message, "prio": priority})
+
+        from backend import alert_engine
+        original_send = alert_engine.notifier.send_alert
+        alert_engine.notifier.send_alert = mock_send
+
+        try:
+            now = time.time()
+
+            # 1. First rain reading (rain start)
+            self.assertFalse(test_engine.is_raining)
+            test_engine._check_rain({"rain_rate_mm_hr": 0.8, "event_rain_mm": 0.2}, now)
+            self.assertTrue(test_engine.is_raining)
+            self.assertEqual(len(sent_alerts), 1)
+            self.assertEqual(sent_alerts[0]["type"], "rain_start")
+            self.assertIn("Ha Iniziato a Piovere", sent_alerts[0]["title"])
+
+            # 2. Second rain reading during the same rain event (should not re-trigger rain_start)
+            sent_alerts.clear()
+            test_engine._check_rain({"rain_rate_mm_hr": 1.2, "event_rain_mm": 0.4}, now + 10)
+            self.assertEqual(len(sent_alerts), 0)
+
+            # 3. Heavy rain (rain rate >= 5.0 mm/h) triggers rain_heavy alert
+            test_engine._check_rain({"rain_rate_mm_hr": 8.5, "event_rain_mm": 2.0}, now + 20)
+            self.assertEqual(len(sent_alerts), 1)
+            self.assertEqual(sent_alerts[0]["type"], "rain")
+            self.assertIn("Pioggia Intensa", sent_alerts[0]["title"])
+
+            # 4. Rain stops (after 900+ seconds of 0 rain, is_raining resets)
+            test_engine._check_rain({"rain_rate_mm_hr": 0.0, "event_rain_mm": 0.0}, now + 1000)
+            self.assertFalse(test_engine.is_raining)
+
+        finally:
+            alert_engine.notifier.send_alert = original_send
+
 
 if __name__ == "__main__":
     unittest.main()
