@@ -106,10 +106,11 @@ class ForecastService:
 
         lat = settings.LATITUDE
         lon = settings.LONGITUDE
+        elev = settings.ELEVATION
 
         url = (
             f"https://api.open-meteo.com/v1/forecast"
-            f"?latitude={lat}&longitude={lon}"
+            f"?latitude={lat}&longitude={lon}&elevation={elev}"
             f"&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,"
             f"precipitation_probability_max,windspeed_10m_max,uv_index_max"
             f"&hourly=temperature_2m,relativehumidity_2m,precipitation,precipitation_probability,"
@@ -118,7 +119,7 @@ class ForecastService:
         )
 
         try:
-            logger.info(f"Scaricamento previsioni Open-Meteo per lat={lat}, lon={lon}...")
+            logger.info(f"Scaricamento previsioni Open-Meteo per lat={lat}, lon={lon}, elev={elev}m...")
             resp = requests.get(url, timeout=8, headers={"User-Agent": "WeatherHub/1.0"})
             if resp.status_code == 200:
                 raw_json = resp.json()

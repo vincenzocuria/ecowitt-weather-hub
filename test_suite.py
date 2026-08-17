@@ -440,9 +440,25 @@ class TestEcowittHub(unittest.TestCase):
             # 4. Rain stops (after 900+ seconds of 0 rain, is_raining resets)
             test_engine._check_rain({"rain_rate_mm_hr": 0.0, "event_rain_mm": 0.0}, now + 1000)
             self.assertFalse(test_engine.is_raining)
-
         finally:
             alert_engine.notifier.send_alert = original_send
+
+    def test_elevation_and_pressure_conversion(self):
+        from backend.analytics import abs_to_rel_pressure, calc_zambretti_forecast
+        from backend.config import settings
+
+        self.assertEqual(settings.ELEVATION, 68.0)
+        self.assertEqual(settings.LOCATION_NAME, "Corigliano-Rossano")
+
+        # Test absolute to relative pressure conversion at 68m
+        # At 1008.0 hPa abs and 68m, rel should be approx 1016.1 hPa (+8.1 hPa)
+        p_rel = abs_to_rel_pressure(1008.0, elevation_m=68.0, temp_c=20.0)
+        self.assertAlmostEqual(p_rel, 1016.1, delta=0.2)
+
+        # Test Zambretti with calculated MSLP
+        z_res = calc_zambretti_forecast(p_rel, pressure_diff_3h=-1.2, wind_deg=180)
+        self.assertIn("letter", z_res)
+        self.assertIn("text", z_res)
 
 
 if __name__ == "__main__":

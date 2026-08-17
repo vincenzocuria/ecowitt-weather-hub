@@ -449,14 +449,14 @@ class AlertEngine:
         Genera e invia il report del mattino 'Buongiorno Meteo'.
         """
         from backend.database import get_latest_reading, get_today_extremes, get_yesterday_same_time, get_pressure_trend
-        from backend.analytics import calc_zambretti_forecast, evaluate_window_ventilation, evaluate_laundry_index, calc_sun_ephemeris
+        from backend.analytics import calc_zambretti_forecast, abs_to_rel_pressure, evaluate_window_ventilation, evaluate_laundry_index, calc_sun_ephemeris
 
         latest = get_latest_reading() or {}
         today_ext = get_today_extremes()
         temp_c = latest.get("temp_c")
         yesterday_cmp = get_yesterday_same_time(temp_c)
 
-        press = latest.get("pressure_rel_hpa")
+        press = latest.get("pressure_rel_hpa") or abs_to_rel_pressure(latest.get("pressure_abs_hpa"), settings.ELEVATION, temp_c)
         press_trend = get_pressure_trend(press)
         forecast = calc_zambretti_forecast(press, press_trend.get("diff"), latest.get("wind_dir_deg"))
 

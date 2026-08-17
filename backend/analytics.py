@@ -53,6 +53,23 @@ ZAMBRETTI_TEXTS = {
     "Z": {"icon": "⛈️", "text": "Tempesta / Forte burrasca", "desc": "Crollo barometrico eccezionale con forte maltempo."}
 }
 
+def abs_to_rel_pressure(abs_pressure_hpa: Optional[float], elevation_m: Optional[float] = None, temp_c: Optional[float] = 15.0) -> Optional[float]:
+    """
+    Converte la pressione assoluta della stazione in pressione relativa a livello del mare (MSLP)
+    usando la formula ipsometrica standard internazionale ICAO/WMO.
+    """
+    if abs_pressure_hpa is None:
+        return None
+    if elevation_m is None:
+        from backend.config import settings
+        elevation_m = settings.ELEVATION
+    try:
+        t_k = (temp_c if temp_c is not None else 15.0) + 273.15
+        p_rel = float(abs_pressure_hpa) * math.pow(1.0 + (0.0065 * float(elevation_m)) / t_k, 5.255)
+        return round(p_rel, 1)
+    except Exception:
+        return abs_pressure_hpa
+
 def calc_zambretti_forecast(
     pressure_hpa: Optional[float],
     pressure_diff_3h: Optional[float],

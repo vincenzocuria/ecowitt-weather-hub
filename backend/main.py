@@ -34,7 +34,7 @@ from backend.database import (
     to_local_datetime_str, DB_PATH
 )
 from backend.analytics import (
-    calc_zambretti_forecast, evaluate_window_ventilation, evaluate_laundry_index,
+    calc_zambretti_forecast, abs_to_rel_pressure, evaluate_window_ventilation, evaluate_laundry_index,
     calc_humidex, evaluate_outdoor_activity, calc_sun_ephemeris, calc_moon_phase,
     calc_beaufort_scale, evaluate_indoor_comfort, calc_current_weather_condition
 )
@@ -278,7 +278,7 @@ def build_analytics_context(latest: dict) -> dict:
     wind_spd = latest.get("wind_speed_kmh")
     wind_gst = latest.get("wind_gust_kmh")
     wind_deg = latest.get("wind_dir_deg")
-    press = latest.get("pressure_rel_hpa")
+    press = latest.get("pressure_rel_hpa") or abs_to_rel_pressure(latest.get("pressure_abs_hpa"), settings.ELEVATION, temp_c)
     rain_rate = latest.get("rain_rate_mm_hr")
     solar = latest.get("solar_radiation")
     uv = latest.get("uv_index")

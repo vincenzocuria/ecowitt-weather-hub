@@ -53,11 +53,12 @@ class Settings:
     
     # Nome Stazione & Località
     STATION_NAME: str = os.getenv("STATION_NAME", "Ecowitt Weather Hub")
-    LOCATION_NAME: str = os.getenv("LOCATION_NAME", "")
+    LOCATION_NAME: str = os.getenv("LOCATION_NAME", "Corigliano-Rossano")
     
-    # Coordinate Geografiche (Lat/Lon decimali configurabili da .env)
-    LATITUDE: float = float(os.getenv("LATITUDE", "41.9028"))
-    LONGITUDE: float = float(os.getenv("LONGITUDE", "12.4964"))
+    # Coordinate Geografiche e Altitudine (Lat/Lon decimali ed Elevazione in metri s.l.m.)
+    LATITUDE: float = float(os.getenv("LATITUDE", "39.623928"))
+    LONGITUDE: float = float(os.getenv("LONGITUDE", "16.504933"))
+    ELEVATION: float = float(os.getenv("ELEVATION", "68.0"))
     TIMEZONE: str = os.getenv("TIMEZONE", os.getenv("TZ", "Europe/Rome"))
 
     def get_tz(self):

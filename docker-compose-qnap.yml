@@ -13,8 +13,10 @@ services:
       - LIGHTNING_MAX_DISTANCE_KM=30.0
       - TEMP_FREEZE_THRESHOLD_C=1.0
       - TEMP_HEAT_THRESHOLD_C=38.0
+      - LOCATION_NAME=Corigliano-Rossano
       - LATITUDE=39.623928
       - LONGITUDE=16.504933
+      - ELEVATION=68.0
       - NTFY_TOPIC=ecowitt_weather_alerts_curia
     volumes:
       - ecowitt-data:/data
