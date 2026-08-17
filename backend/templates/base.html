@@ -2,55 +2,113 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
     <title>{{ title or "Ecowitt & Sainlogic Weather Hub" }}</title>
     
     <!-- PWA Settings -->
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#0b0f19">
     <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Meteo Hub">
     
-    <link rel="stylesheet" href="/static/css/style.css?v=3.5">
+    <link rel="stylesheet" href="/static/css/style.css?v=4.0">
     <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
     <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
-<body>
-    <nav class="navbar">
+<body class="app-body">
+    <!-- TOP BAR PER MOBILE APP -->
+    <header class="mobile-top-bar">
+        <a href="/" class="mobile-top-brand">
+            <img src="/static/icons/icon-192.png" alt="Logo" class="mobile-app-icon" width="28" height="28">
+            <span class="mobile-app-name">{{ station_name or "Weather Hub" }}</span>
+        </a>
+        <div class="mobile-top-actions">
+            <span class="mobile-live-dot" title="Live Data Stream"></span>
+            <span class="mobile-live-text" id="mobile-live-indicator">LIVE</span>
+        </div>
+    </header>
+
+    <!-- NAVBAR TRADIZIONALE PER DESKTOP -->
+    <nav class="navbar desktop-only">
         <div class="nav-container">
-            <a href="/" class="nav-brand">🌤️ Weather Hub</a>
+            <a href="/" class="nav-brand">
+                <img src="/static/icons/icon-192.png" alt="Logo" width="26" height="26" style="border-radius: 6px;">
+                <span>Weather Hub</span>
+            </a>
             <div class="nav-links">
                 <a href="/" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">🏠 Dashboard</a>
                 <a href="/records" class="nav-link {% if active_page == 'records' %}active{% endif %}">🏆 Record</a>
                 <a href="/charts" class="nav-link {% if active_page == 'charts' %}active{% endif %}">📈 Grafici</a>
                 <a href="/history" class="nav-link {% if active_page == 'history' %}active{% endif %}">🔍 Archivio</a>
-                <a href="/alerts-page" class="nav-link {% if active_page == 'alerts' %}active{% endif %}">🔔 Notifiche</a>
+                <a href="/alerts-page" class="nav-link {% if active_page == 'alerts' %}active{% endif %}">
+                    🔔 Notifiche <span id="desktop-alert-badge" class="badge-counter" style="display:none;">0</span>
+                </a>
                 <a href="/settings" class="nav-link {% if active_page == 'settings' %}active{% endif %}">⚙️ Impostazioni</a>
             </div>
         </div>
     </nav>
 
+    <!-- CONTENUTO PRINCIPALE -->
     <main class="container">
         {% block content %}{% endblock %}
     </main>
 
-    <footer class="footer">
+    <!-- FOOTER PER DESKTOP -->
+    <footer class="footer desktop-only">
         <p>Ecowitt & Sainlogic Weather Station Hub • Esecuzione Locale & QNAP Ready • <a href="/api/live" style="color: var(--accent); text-decoration: none;">API Live</a> • <a href="/logout" style="color: var(--text-dim); text-decoration: none;" title="Disconnetti questo dispositivo">🔒 Esci</a></p>
     </footer>
 
-    <script src="/static/js/app.js?v=3.5"></script>
+    <!-- BOTTOM TAB NAVIGATION BAR PER SMARTPHONE (NATIVE APP FEEL) -->
+    <nav class="mobile-bottom-nav">
+        <a href="/" class="mobile-tab {% if active_page == 'dashboard' %}active{% endif %}">
+            <div class="tab-icon-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tab-svg"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            </div>
+            <span class="tab-label">Meteo</span>
+        </a>
+        <a href="/records" class="mobile-tab {% if active_page == 'records' %}active{% endif %}">
+            <div class="tab-icon-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tab-svg"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+            </div>
+            <span class="tab-label">Record</span>
+        </a>
+        <a href="/charts" class="mobile-tab {% if active_page == 'charts' %}active{% endif %}">
+            <div class="tab-icon-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tab-svg"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <span class="tab-label">Grafici</span>
+        </a>
+        <a href="/history" class="mobile-tab {% if active_page == 'history' %}active{% endif %}">
+            <div class="tab-icon-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tab-svg"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            </div>
+            <span class="tab-label">Archivio</span>
+        </a>
+        <a href="/alerts-page" class="mobile-tab {% if active_page == 'alerts' %}active{% endif %}">
+            <div class="tab-icon-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tab-svg"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                <span id="mobile-alert-badge" class="mob-badge" style="display:none;">0</span>
+            </div>
+            <span class="tab-label">Allerte</span>
+        </a>
+        <a href="/settings" class="mobile-tab {% if active_page == 'settings' %}active{% endif %}">
+            <div class="tab-icon-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tab-svg"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            </div>
+            <span class="tab-label">Setup</span>
+        </a>
+    </nav>
+
+    <script src="/static/js/app.js?v=4.0"></script>
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/static/sw.js?v=3.5').catch((e) => console.warn('SW error:', e));
+            navigator.serviceWorker.register('/static/sw.js?v=4.0').catch((e) => console.warn('SW error:', e));
         }
     </script>
-
-
-
 
     {% block scripts %}{% endblock %}
 </body>
 </html>
-

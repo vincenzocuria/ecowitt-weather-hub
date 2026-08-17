@@ -31,6 +31,11 @@ function startDashboardPolling() {
                     badgeEl.innerText = d.status_info.text;
                 }
 
+                const mobLiveInd = document.getElementById('mobile-live-indicator');
+                if (mobLiveInd && d.status_info) {
+                    mobLiveInd.innerText = d.status_info.text.toUpperCase();
+                }
+
                 if (d.message) return;
                 
                 // Aggiorna timestamp
@@ -999,11 +1004,54 @@ if ('serviceWorker' in navigator) {
     });
 }
 
-// Inizializza automaticamente lo stato Push al caricamento
+// Sincronizzazione Badge Allerte (Mobile Tab & Desktop Navbar & PWA Icon Badge)
+async function refreshAlertBadges() {
+    try {
+        const res = await fetch('/api/alerts?limit=10');
+        if (!res.ok) return;
+        const data = await res.json();
+        const alerts = data.alerts || [];
+        const count = Array.isArray(alerts) ? alerts.length : 0;
+
+        const mobBadge = document.getElementById('mobile-alert-badge');
+        const deskBadge = document.getElementById('desktop-alert-badge');
+
+        if (mobBadge) {
+            if (count > 0) {
+                mobBadge.innerText = count > 99 ? '99+' : count;
+                mobBadge.style.display = 'block';
+            } else {
+                mobBadge.style.display = 'none';
+            }
+        }
+        if (deskBadge) {
+            if (count > 0) {
+                deskBadge.innerText = count > 99 ? '99+' : count;
+                deskBadge.style.display = 'inline-block';
+            } else {
+                deskBadge.style.display = 'none';
+            }
+        }
+
+        // App Badging API su PWA installata
+        if ('setAppBadge' in navigator) {
+            if (count > 0) {
+                navigator.setAppBadge(count).catch(() => {});
+            } else if ('clearAppBadge' in navigator) {
+                navigator.clearAppBadge().catch(() => {});
+            }
+        }
+    } catch (e) {
+        // fail silently
+    }
+}
+
+// Inizializza automaticamente lo stato Push e Badge al caricamento
 document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('btn-push-toggle')) {
         checkPushSubscriptionStatus();
     }
+    refreshAlertBadges();
 });
 
 /* ==========================================================================
