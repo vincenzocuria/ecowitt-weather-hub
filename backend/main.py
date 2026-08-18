@@ -791,6 +791,262 @@ async def api_tuya_config(device_id: str, request: Request):
     await tuya_service.set_device_enabled(device_id, enabled, custom_name)
     return {"status": "ok", "device_id": device_id, "enabled": enabled, "custom_name": custom_name}
 
+# --- Unified Devices Hub Endpoints ---
+def build_devices_catalog() -> Dict[str, Any]:
+    """Genera l'elenco normalizzato e aggregato di tutti i dispositivi smart (Tuya, LG ThinQ, SmartThings, Aton Solar)."""
+    devices = []
+    
+    # 1. Tuya / Smart Life
+    tuya_summary = tuya_service.get_summary() if settings.TUYA_ENABLED else {}
+    for dev in tuya_summary.get("devices", []):
+        c_type = dev.get("category_meta", {}).get("type", "generic")
+        
+        ui_category = "plugs"
+        if c_type in ("thermostat",):
+            ui_category = "climate"
+        elif c_type in ("irrigation",):
+            ui_category = "irrigation"
+        elif c_type in ("curtain",):
+            ui_category = "curtains"
+        elif c_type in ("plug", "light"):
+            ui_category = "plugs"
+        else:
+            ui_category = "other"
+            
+        status_parts = []
+        if dev.get("is_on") is True:
+            p_w = dev.get("power_w", 0.0) or 0.0
+            if p_w > 0:
+                status_parts.append(f"Acceso ({p_w:.1f} W)")
+            else:
+                status_parts.append("Acceso")
+        elif dev.get("is_on") is False:
+            status_parts.append("Spento")
+        else:
+            status_parts.append("Online" if dev.get("online") else "Offline")
+
+        if dev.get("temp_current") is not None:
+            status_parts.append(f"{dev.get('temp_current')}°C")
+
+        devices.append({
+            "id": f"tuya_{dev.get('id')}",
+            "raw_id": dev.get("id"),
+            "ecosystem": "tuya",
+            "name": dev.get("name", "Dispositivo Tuya"),
+            "icon": dev.get("category_meta", {}).get("icon", "🔌"),
+            "category": ui_category,
+            "category_label": dev.get("category_meta", {}).get("label", "Smart Life"),
+            "is_on": dev.get("is_on"),
+            "can_toggle": (c_type != "curtain") and (dev.get("is_on") is not None or c_type in ("plug", "light", "irrigation")),
+            "is_online": dev.get("online", True),
+            "status_text": " • ".join(status_parts) if status_parts else "Stato Sconosciuto",
+            "power_w": dev.get("power_w", 0.0) or 0.0,
+            "voltage_v": dev.get("voltage_v"),
+            "current_a": dev.get("current_a"),
+            "temp_current": dev.get("temp_current"),
+            "temp_set": dev.get("temp_set"),
+            "battery_pct": dev.get("battery_pct"),
+            "work_state": dev.get("work_state"),
+            "curtain_state": dev.get("curtain_state"),
+            "raw": dev
+        })
+
+    # 2. LG ThinQ Climatizzatori
+    thinq_devices = thinq_service.get_cached_devices() if settings.LG_THINQ_ENABLED else []
+    for d in thinq_devices:
+        is_on = d.get("is_on", False)
+        t_curr = d.get("current_temp")
+        t_target = d.get("target_temp")
+        mode = d.get("job_mode", "COOL")
+        
+        status_txt = "Acceso" if is_on else "Spento"
+        if is_on and t_curr is not None:
+            status_txt += f" • {t_curr}°C (Set: {t_target}°C)"
+        elif t_curr is not None:
+            status_txt += f" • {t_curr}°C"
+
+        devices.append({
+            "id": f"thinq_{d.get('deviceId')}",
+            "raw_id": d.get("deviceId"),
+            "ecosystem": "thinq",
+            "name": d.get("alias", "Climatizzatore LG"),
+            "icon": "❄️" if mode == "COOL" else ("🔥" if mode == "HEAT" else "🌬️"),
+            "category": "climate",
+            "category_label": "Climatizzatore LG ThinQ",
+            "is_on": is_on,
+            "can_toggle": True,
+            "is_online": d.get("connected", True),
+            "status_text": status_txt,
+            "power_w": 0.0,
+            "temp_current": t_curr,
+            "temp_set": t_target,
+            "job_mode": mode,
+            "fan_speed": d.get("fan_speed", "LOW"),
+            "swing_vertical": d.get("swing_vertical", False),
+            "swing_horizontal": d.get("swing_horizontal", False),
+            "raw": d
+        })
+
+    # 3. Samsung SmartThings
+    if settings.SMARTTHINGS_ENABLED:
+        energy_latest = aton_service.latest_data or get_latest_energy() or {}
+        st_summary = smartthings_service.get_summary(energy_latest)
+        
+        # Lavatrice
+        washer = st_summary.get("washer", {})
+        if washer and washer.get("is_connected") is not False and washer.get("device_id"):
+            is_running = washer.get("is_running", False)
+            p_w = washer.get("power_w", 0.0) or 0.0
+            devices.append({
+                "id": f"st_{washer.get('device_id')}",
+                "raw_id": washer.get("device_id"),
+                "ecosystem": "smartthings",
+                "name": washer.get("name", "Lavatrice Smart"),
+                "icon": "🫧",
+                "category": "appliances",
+                "category_label": "Lavatrice Samsung",
+                "is_on": is_running or (washer.get("switch_state") == "on"),
+                "can_toggle": bool(washer.get("switch_state")),
+                "is_online": True,
+                "status_text": washer.get("state_text", "In Standby"),
+                "power_w": p_w,
+                "completion_time": washer.get("completion_time"),
+                "cycle_name": washer.get("cycle_name"),
+                "raw": washer
+            })
+            
+        # Lavastoviglie
+        dish = st_summary.get("dishwasher", {})
+        if dish and dish.get("is_connected") is not False and dish.get("device_id"):
+            is_running = dish.get("is_running", False)
+            p_w = dish.get("power_w", 0.0) or 0.0
+            devices.append({
+                "id": f"st_{dish.get('device_id')}",
+                "raw_id": dish.get("device_id"),
+                "ecosystem": "smartthings",
+                "name": dish.get("name", "Lavastoviglie Smart"),
+                "icon": "🍽️",
+                "category": "appliances",
+                "category_label": "Lavastoviglie Samsung",
+                "is_on": is_running or (dish.get("switch_state") == "on"),
+                "can_toggle": bool(dish.get("switch_state")),
+                "is_online": True,
+                "status_text": dish.get("state_text", "In Standby"),
+                "power_w": p_w,
+                "completion_time": dish.get("completion_time"),
+                "cycle_name": dish.get("cycle_name"),
+                "raw": dish
+            })
+
+        # Presenza / Smartphone
+        presence = st_summary.get("presence", {})
+        if presence and presence.get("device_id"):
+            is_present = presence.get("is_present", True)
+            batt = presence.get("battery_percent")
+            stat = "A Casa 🟢" if is_present else "Fuori Casa 📍"
+            if batt is not None:
+                stat += f" • {batt}%"
+            devices.append({
+                "id": f"st_{presence.get('device_id')}",
+                "raw_id": presence.get("device_id"),
+                "ecosystem": "smartthings",
+                "name": presence.get("name", "Smartphone Galaxy"),
+                "icon": "📱",
+                "category": "presence",
+                "category_label": "Sensore Presenza & Posizione",
+                "is_on": is_present,
+                "can_toggle": False,
+                "is_online": True,
+                "status_text": stat,
+                "power_w": 0.0,
+                "battery_pct": batt,
+                "is_present": is_present,
+                "raw": presence
+            })
+
+    # 4. Aton Storage Fotovoltaico & Batteria
+    if settings.ATON_ENABLED:
+        e_latest = aton_service.latest_data or get_latest_energy() or {}
+        p_solar = float(e_latest.get("solar_power_w", 0) or 0)
+        p_batt = float(e_latest.get("battery_power_w", 0) or 0)
+        soc = float(e_latest.get("battery_soc_pct", 0) or 0)
+        load = float(e_latest.get("house_load_w", 0) or 0)
+        grid = float(e_latest.get("grid_power_w", 0) or 0)
+        
+        stat = f"Solare: {int(p_solar)} W • Batteria: {int(soc)}%"
+        devices.append({
+            "id": "aton_storage_hub",
+            "raw_id": "aton_storage_hub",
+            "ecosystem": "aton",
+            "name": "Impianto Solare & Accumulo Aton",
+            "icon": "☀️",
+            "category": "energy",
+            "category_label": "Fotovoltaico & Batteria",
+            "is_on": p_solar > 20 or soc > 10,
+            "can_toggle": False,
+            "is_online": True,
+            "status_text": stat,
+            "power_w": load,
+            "solar_power_w": p_solar,
+            "battery_soc_pct": soc,
+            "battery_power_w": p_batt,
+            "house_load_w": load,
+            "grid_power_w": grid,
+            "raw": e_latest
+        })
+
+    # Statistiche di sintesi
+    total_count = len(devices)
+    active_count = sum(1 for d in devices if d.get("is_on") is True)
+    total_power = sum(d.get("power_w", 0.0) for d in devices if d.get("is_on") is True)
+    online_count = sum(1 for d in devices if d.get("is_online", True))
+
+    return {
+        "devices": devices,
+        "stats": {
+            "total": total_count,
+            "active": active_count,
+            "total_power_w": round(total_power, 1),
+            "online": online_count
+        }
+    }
+
+@app.get("/api/devices/all")
+async def api_devices_all():
+    """Restituisce la lista aggregata e normalizzata di tutti i dispositivi smart."""
+    return build_devices_catalog()
+
+@app.post("/api/devices/turn-all")
+async def api_devices_turn_all(request: Request):
+    """Accende o spegne in blocco tutti i dispositivi commutabili (Prese, Luci, Clima)."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    
+    target_state = payload.get("state", False)
+    category = payload.get("category", "all")
+    results = []
+
+    # 1. Tuya
+    if settings.TUYA_ENABLED:
+        tuya_summary = tuya_service.get_summary()
+        for dev in tuya_summary.get("devices", []):
+            c_type = dev.get("category_meta", {}).get("type", "generic")
+            if c_type in ("plug", "light", "irrigation") and (category in ("all", "plugs")):
+                if dev.get("is_on") != target_state:
+                    res = await tuya_service.toggle_device(dev.get("id"), target_state)
+                    results.append({"name": dev.get("name"), "res": res})
+
+    # 2. LG ThinQ
+    if settings.LG_THINQ_ENABLED and (category in ("all", "climate")):
+        for d in thinq_service.get_cached_devices():
+            if d.get("is_on") != target_state:
+                res = await thinq_service.control_device(d.get("deviceId"), {"power": target_state})
+                results.append({"name": d.get("alias"), "res": res})
+
+    return {"status": "ok", "target_state": target_state, "updated_count": len(results), "details": results}
+
 # ----------------- UI HTML ROUTES -----------------
 @app.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
@@ -863,9 +1119,23 @@ async def dashboard_page(request: Request):
         }
     )
 
-
-
-
+@app.get("/devices", response_class=HTMLResponse)
+async def devices_page(request: Request):
+    catalog = build_devices_catalog()
+    return templates.TemplateResponse(
+        request=request,
+        name="devices.html",
+        context={
+            "active_page": "devices",
+            "title": "Dispositivi & Smart Home • Weather Hub",
+            "devices": catalog.get("devices", []),
+            "stats": catalog.get("stats", {}),
+            "tuya_enabled": settings.TUYA_ENABLED,
+            "thinq_enabled": settings.LG_THINQ_ENABLED,
+            "smartthings_enabled": settings.SMARTTHINGS_ENABLED,
+            "aton_enabled": settings.ATON_ENABLED
+        }
+    )
 
 @app.get("/records", response_class=HTMLResponse)
 async def records_page(request: Request):
