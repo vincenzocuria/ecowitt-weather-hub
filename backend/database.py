@@ -756,7 +756,7 @@ def get_alert_logs(limit: int = 50, unread_only: bool = False) -> List[Dict[str,
     conn = get_connection()
     cursor = conn.cursor()
     if unread_only:
-        cursor.execute("SELECT * FROM alert_logs WHERE is_read = 0 ORDER BY id DESC LIMIT ?", (limit,))
+        cursor.execute("SELECT * FROM alert_logs WHERE COALESCE(is_read, 0) = 0 ORDER BY id DESC LIMIT ?", (limit,))
     else:
         cursor.execute("SELECT * FROM alert_logs ORDER BY id DESC LIMIT ?", (limit,))
     rows = cursor.fetchall()
@@ -766,7 +766,7 @@ def get_alert_logs(limit: int = 50, unread_only: bool = False) -> List[Dict[str,
 def get_unread_alerts_count() -> int:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM alert_logs WHERE is_read = 0")
+    cursor.execute("SELECT COUNT(*) FROM alert_logs WHERE COALESCE(is_read, 0) = 0")
     row = cursor.fetchone()
     conn.close()
     return int(row[0]) if row else 0
@@ -783,7 +783,7 @@ def mark_alert_as_read(alert_id: int) -> bool:
 def mark_all_alerts_as_read() -> int:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE alert_logs SET is_read = 1 WHERE is_read = 0")
+    cursor.execute("UPDATE alert_logs SET is_read = 1 WHERE COALESCE(is_read, 0) = 0")
     conn.commit()
     affected = cursor.rowcount
     conn.close()

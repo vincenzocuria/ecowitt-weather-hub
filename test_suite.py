@@ -598,6 +598,33 @@ class TestEcowittHub(unittest.TestCase):
         self.assertEqual(formatted["voltage_v"], 230.5)
         self.assertEqual(formatted["current_a"], 0.65)
 
+    def test_alert_badges_and_read_status(self):
+        from backend.database import log_alert_db, get_unread_alerts_count, mark_all_alerts_as_read, get_alert_logs, mark_alert_as_read
+        from fastapi.testclient import TestClient
+        from backend.main import app
+
+        # Inserisci notifiche di test
+        log_alert_db("lightning", "Fulmine Vicino", "Fulmine a 5km", {"distance_km": "5"})
+        log_alert_db("freeze", "Allerta Gelo", "Temperatura a 0°C", {"temp_c": "0"})
+        
+        unread = get_unread_alerts_count()
+        self.assertGreaterEqual(unread, 2)
+
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+        res = client.get("/api/alerts/unread-count")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["unread_count"], unread)
+
+        # Segna tutte come lette
+        res_mark = client.post("/api/alerts/mark-all-read")
+        self.assertEqual(res_mark.status_code, 200)
+        self.assertEqual(res_mark.json()["unread_count"], 0)
+        self.assertEqual(get_unread_alerts_count(), 0)
+
+        # Verifica conteggio a zero
+        res_zero = client.get("/api/alerts/unread-count")
+        self.assertEqual(res_zero.json()["unread_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

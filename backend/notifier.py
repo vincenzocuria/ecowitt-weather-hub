@@ -5,7 +5,7 @@ import logging
 import requests
 from typing import Dict, Any, Optional
 from backend.config import settings
-from backend.database import log_alert_db, get_all_push_subscriptions, delete_push_subscription
+from backend.database import log_alert_db, get_all_push_subscriptions, delete_push_subscription, get_unread_alerts_count
 
 try:
     from py_vapid import Vapid
@@ -69,15 +69,18 @@ class NotificationService:
         if not subs:
             return
 
+        unread_count = get_unread_alerts_count()
         payload = json.dumps({
             "title": title,
             "body": message,
             "icon": "/static/icons/icon-192.png",
             "badge": "/static/icons/badge-96.png",
             "tag": f"meteo-{alert_type}",
+            "unread_count": unread_count,
             "data": {
                 "url": "/alerts-page",
                 "alert_type": alert_type,
+                "unread_count": unread_count,
                 "extra": extra_data or {}
             }
         })
@@ -148,12 +151,7 @@ class NotificationService:
                     "tags": tags
                 }
                 # Icona personalizzata per ntfy
-                icon_url = settings.NTFY_ICON_URL
-                if not icon_url and settings.NTFY_CLICK_URL:
-                    icon_url = settings.NTFY_CLICK_URL.rstrip('/') + '/static/icons/ntfy-icon.png'
-                if not icon_url:
-                    icon_url = "https://raw.githubusercontent.com/walkxcode/dashboard-icons/main/png/weather.png"
-
+                icon_url = self.get_icon_url_for_alert(alert_type)
                 ntfy_payload["icon"] = icon_url
 
                 if settings.NTFY_CLICK_URL:
@@ -177,6 +175,41 @@ class NotificationService:
                     logger.warning(f"[NTFY] Risposta server ntfy HTTP {res.status_code}: {res.text}")
             except Exception as e:
                 logger.error(f"[NTFY] Errore invio notifica ntfy: {e}")
+
+    @staticmethod
+    def get_icon_url_for_alert(alert_type: str) -> str:
+        """Restituisce l'URL pubblico dell'icona 3D ad alta definizione per l'allerta ntfy."""
+        if settings.NTFY_ICON_URL:
+            return settings.NTFY_ICON_URL
+
+        # Se NTFY_CLICK_URL è un dominio pubblico HTTPS (non localhost/IP privato), usa l'icona locale
+        if settings.NTFY_CLICK_URL and settings.NTFY_CLICK_URL.startswith("https://"):
+            domain_lower = settings.NTFY_CLICK_URL.lower()
+            if not any(private in domain_lower for private in ("localhost", "127.0.0.1", "192.168.", "10.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.")):
+                return f"{settings.NTFY_CLICK_URL.rstrip('/')}/static/icons/ntfy-icon.png"
+
+        # Icone 3D ad alta definizione dedicate per ogni tipologia di allerta meteo (Microsoft Fluent 3D via jsDelivr CDN)
+        cdn_base = "https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets"
+        icons_map = {
+            "lightning": f"{cdn_base}/High%20voltage/3D/high_voltage_3d.png",
+            "storm": f"{cdn_base}/Cloud%20with%20lightning%20and%20rain/3D/cloud_with_lightning_and_rain_3d.png",
+            "rain": f"{cdn_base}/Cloud%20with%20rain/3D/cloud_with_rain_3d.png",
+            "rain_start": f"{cdn_base}/Sun%20behind%20rain%20cloud/3D/sun_behind_rain_cloud_3d.png",
+            "rain_forecast": f"{cdn_base}/Umbrella%20with%20rain%20drops/3D/umbrella_with_rain_drops_3d.png",
+            "freeze": f"{cdn_base}/Snowflake/3D/snowflake_3d.png",
+            "heatwave": f"{cdn_base}/Fire/3D/fire_3d.png",
+            "wind_spike": f"{cdn_base}/Dashing%20away/3D/dashing_away_3d.png",
+            "soil_dry": f"{cdn_base}/Seedling/3D/seedling_3d.png",
+            "record": f"{cdn_base}/Trophy/3D/trophy_3d.png",
+            "digest": f"{cdn_base}/Hot%20beverage/3D/hot_beverage_3d.png",
+            "offline": f"{cdn_base}/Satellite%20antenna/3D/satellite_antenna_3d.png",
+            "online": f"{cdn_base}/Check%20mark%20button/3D/check_mark_button_3d.png",
+            "battery_low": f"{cdn_base}/Battery/3D/battery_3d.png",
+            "uv_extreme": f"{cdn_base}/Sun/3D/sun_3d.png",
+            "anomaly": f"{cdn_base}/Warning/3D/warning_3d.png",
+            "leak": f"{cdn_base}/Droplet/3D/droplet_3d.png"
+        }
+        return icons_map.get(alert_type, f"{cdn_base}/Sun%20behind%20cloud/3D/sun_behind_cloud_3d.png")
 
     @staticmethod
     def _get_tags(alert_type: str) -> str:

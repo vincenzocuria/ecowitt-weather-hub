@@ -1,9 +1,5 @@
 // Service Worker con supporto PWA e Web Push Nativo (iOS 16.4+, Android, Desktop)
-const CACHE_NAME = 'meteo-hub-v11';
-
-
-
-
+const CACHE_NAME = 'meteo-hub-v12';
 
 self.addEventListener('install', (event) => {
     self.skipWaiting();
@@ -26,12 +22,35 @@ self.addEventListener('fetch', (event) => {
     );
 });
 
+// Gestione messaggi dal client principale (es. reset badge o sincronizzazione)
+self.addEventListener('message', (event) => {
+    if (event.data) {
+        if (event.data.type === 'CLEAR_BADGE') {
+            if ('clearAppBadge' in navigator) {
+                navigator.clearAppBadge().catch(() => {});
+            } else if ('setAppBadge' in navigator) {
+                navigator.setAppBadge(0).catch(() => {});
+            }
+        } else if (event.data.type === 'SET_BADGE') {
+            const count = parseInt(event.data.count, 10) || 0;
+            if (count > 0 && 'setAppBadge' in navigator) {
+                navigator.setAppBadge(count).catch(() => {});
+            } else if ('clearAppBadge' in navigator) {
+                navigator.clearAppBadge().catch(() => {});
+            } else if ('setAppBadge' in navigator) {
+                navigator.setAppBadge(0).catch(() => {});
+            }
+        }
+    }
+});
+
 // Gestione Notifiche Push in background
 self.addEventListener('push', (event) => {
     let payload = {
         title: 'Meteo Alert',
         body: 'Nuovo aggiornamento meteo rilevato dalla tua stazione',
         tag: 'meteo-alert',
+        unread_count: 1,
         data: { url: '/alerts-page' }
     };
 
@@ -41,6 +60,7 @@ self.addEventListener('push', (event) => {
             payload.title = data.title || payload.title;
             payload.body = data.body || data.message || payload.body;
             payload.tag = data.tag || payload.tag;
+            payload.unread_count = (typeof data.unread_count === 'number') ? data.unread_count : (data.data && typeof data.data.unread_count === 'number' ? data.data.unread_count : 1);
             payload.data = data.data || payload.data;
         } catch (e) {
             payload.body = event.data.text();
@@ -56,9 +76,10 @@ self.addEventListener('push', (event) => {
         data: payload.data
     };
 
-    // App Badging API se supportata
+    // App Badging API se supportata (imposta il conteggio esatto)
     if ('setAppBadge' in navigator) {
-        navigator.setAppBadge().catch(() => {});
+        const badgeCount = (payload.unread_count && payload.unread_count > 0) ? payload.unread_count : 1;
+        navigator.setAppBadge(badgeCount).catch(() => {});
     }
 
     // Su browser che supportano la vibrazione (es. Android Chrome)
@@ -73,7 +94,8 @@ self.addEventListener('push', (event) => {
                 type: 'PUSH_RECEIVED',
                 title: payload.title,
                 body: payload.body,
-                tag: payload.tag
+                tag: payload.tag,
+                unread_count: payload.unread_count
             });
         }
     });
@@ -90,6 +112,13 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
     const targetUrl = (event.notification.data && event.notification.data.url) ? event.notification.data.url : '/alerts-page';
+
+    // Azzeramento o pulizia badge al click
+    if ('clearAppBadge' in navigator) {
+        navigator.clearAppBadge().catch(() => {});
+    } else if ('setAppBadge' in navigator) {
+        navigator.setAppBadge(0).catch(() => {});
+    }
 
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {

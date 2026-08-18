@@ -1005,6 +1005,11 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', (event) => {
         if (event.data && event.data.type === 'PUSH_RECEIVED') {
             console.log('Push ricevuto in foreground:', event.data);
+            if (typeof event.data.unread_count === 'number') {
+                updateBadgeElements(event.data.unread_count);
+            } else {
+                refreshAlertBadges();
+            }
         }
     });
 }
@@ -1023,41 +1028,67 @@ async function refreshAlertBadges() {
 }
 
 function updateBadgeElements(count) {
+    const safeCount = Math.max(0, parseInt(count, 10) || 0);
     const mobBadge = document.getElementById('mobile-alert-badge');
     const deskBadge = document.getElementById('desktop-alert-badge');
     const unreadHeaderBadge = document.getElementById('unread-count-badge');
     const unreadFilterCount = document.getElementById('unread-filter-count');
+    const unreadStatusPill = document.getElementById('unread-status-pill');
 
     if (mobBadge) {
-        if (count > 0) {
-            mobBadge.innerText = count > 99 ? '99+' : count;
+        if (safeCount > 0) {
+            mobBadge.innerText = safeCount > 99 ? '99+' : safeCount;
             mobBadge.style.display = 'block';
         } else {
+            mobBadge.innerText = '0';
             mobBadge.style.display = 'none';
         }
     }
     if (deskBadge) {
-        if (count > 0) {
-            deskBadge.innerText = count > 99 ? '99+' : count;
+        if (safeCount > 0) {
+            deskBadge.innerText = safeCount > 99 ? '99+' : safeCount;
             deskBadge.style.display = 'inline-block';
         } else {
+            deskBadge.innerText = '0';
             deskBadge.style.display = 'none';
         }
     }
     if (unreadHeaderBadge) {
-        unreadHeaderBadge.innerText = count;
+        unreadHeaderBadge.innerText = safeCount;
     }
     if (unreadFilterCount) {
-        unreadFilterCount.innerText = count;
+        unreadFilterCount.innerText = safeCount;
+    }
+    if (unreadStatusPill) {
+        if (safeCount > 0) {
+            unreadStatusPill.className = 'status-pill badge-warning';
+            unreadStatusPill.innerHTML = `<span id="unread-count-badge">${safeCount}</span> da leggere`;
+        } else {
+            unreadStatusPill.className = 'status-pill badge-live';
+            unreadStatusPill.innerHTML = 'Nessuna da leggere';
+        }
     }
 
     // App Badging API su PWA installata (iOS 16.4+ / Android / Chrome Desktop)
-    if ('setAppBadge' in navigator) {
-        if (count > 0) {
-            navigator.setAppBadge(count).catch(() => {});
-        } else if ('clearAppBadge' in navigator) {
+    if (safeCount > 0) {
+        if ('setAppBadge' in navigator) {
+            navigator.setAppBadge(safeCount).catch(() => {});
+        }
+    } else {
+        if ('clearAppBadge' in navigator) {
             navigator.clearAppBadge().catch(() => {});
         }
+        if ('setAppBadge' in navigator) {
+            navigator.setAppBadge(0).catch(() => {});
+        }
+    }
+
+    // Comunica al Service Worker lo stato aggiornato del badge
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+            type: safeCount > 0 ? 'SET_BADGE' : 'CLEAR_BADGE',
+            count: safeCount
+        });
     }
 }
 
@@ -1095,7 +1126,7 @@ async function markAllAlertsAsRead() {
     try {
         const res = await fetch('/api/alerts/mark-all-read', { method: 'POST' });
         if (res.ok) {
-            const items = document.querySelectorAll('.notification-item.unread');
+            const items = document.querySelectorAll('.notification-item');
             items.forEach(item => {
                 item.classList.remove('unread');
                 item.setAttribute('data-unread', '0');
@@ -1107,6 +1138,10 @@ async function markAllAlertsAsRead() {
                 if (unreadDot) unreadDot.remove();
             });
             updateBadgeElements(0);
+            const btnUnread = document.getElementById('filter-btn-unread');
+            if (btnUnread && btnUnread.classList.contains('active')) {
+                filterAlerts('unread');
+            }
         }
     } catch (err) {
         console.error('Errore durante la marcatura di tutte le notifiche:', err);
@@ -1131,8 +1166,15 @@ async function deleteAlertItem(alertId) {
             }
             const totalBadge = document.getElementById('total-count-badge');
             if (totalBadge) {
-                const cur = parseInt(totalBadge.innerText) || 0;
+                const cur = parseInt(totalBadge.innerText, 10) || 0;
                 totalBadge.innerText = Math.max(0, cur - 1);
+            }
+            const remaining = document.querySelectorAll('.notification-item');
+            if (remaining.length === 0) {
+                const list = document.getElementById('notifications-list-container');
+                if (list) {
+                    list.innerHTML = `<div class="card" style="text-align: center; padding: 2.5rem 1rem; color: var(--text-dim);"><p style="font-size: 1.1rem; margin-bottom: 0.5rem;">✨ Nessuna notifica presente</p><p style="font-size: 0.85rem;">Il registro notifiche è vuoto.</p></div>`;
+                }
             }
         }
     } catch (err) {
@@ -1188,6 +1230,15 @@ document.addEventListener('DOMContentLoaded', () => {
         checkPushSubscriptionStatus();
     }
     refreshAlertBadges();
+    // Aggiornamento periodico badge notifiche (ogni 20s)
+    setInterval(refreshAlertBadges, 20000);
+});
+
+// Sincronizza badge quando l'utente torna sull'app/scheda
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        refreshAlertBadges();
+    }
 });
 
 /* ==========================================================================
