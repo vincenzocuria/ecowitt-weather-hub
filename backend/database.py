@@ -123,9 +123,15 @@ def init_db():
             alert_type TEXT NOT NULL,
             title TEXT NOT NULL,
             message TEXT NOT NULL,
-            data_json TEXT
+            data_json TEXT,
+            is_read INTEGER DEFAULT 0
         )
     """)
+    try:
+        cursor.execute("ALTER TABLE alert_logs ADD COLUMN is_read INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_alert_is_read ON alert_logs (is_read)")
 
     # 5. Sottoscrizioni Web Push PWA (iOS / Android / Desktop)
     cursor.execute("""
@@ -728,19 +734,66 @@ def log_alert_db(alert_type: str, title: str, message: str, data: Optional[Dict[
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO alert_logs (timestamp, alert_type, title, message, data_json)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO alert_logs (timestamp, alert_type, title, message, data_json, is_read)
+        VALUES (?, ?, ?, ?, ?, 0)
     """, (datetime.now(timezone.utc).isoformat(), alert_type, title, message, json.dumps(data or {})))
     conn.commit()
     conn.close()
 
-def get_alert_logs(limit: int = 20) -> List[Dict[str, Any]]:
+def get_alert_logs(limit: int = 50, unread_only: bool = False) -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM alert_logs ORDER BY id DESC LIMIT ?", (limit,))
+    if unread_only:
+        cursor.execute("SELECT * FROM alert_logs WHERE is_read = 0 ORDER BY id DESC LIMIT ?", (limit,))
+    else:
+        cursor.execute("SELECT * FROM alert_logs ORDER BY id DESC LIMIT ?", (limit,))
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def get_unread_alerts_count() -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM alert_logs WHERE is_read = 0")
+    row = cursor.fetchone()
+    conn.close()
+    return int(row[0]) if row else 0
+
+def mark_alert_as_read(alert_id: int) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE alert_logs SET is_read = 1 WHERE id = ?", (alert_id,))
+    conn.commit()
+    affected = cursor.rowcount > 0
+    conn.close()
+    return affected
+
+def mark_all_alerts_as_read() -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE alert_logs SET is_read = 1 WHERE is_read = 0")
+    conn.commit()
+    affected = cursor.rowcount
+    conn.close()
+    return affected
+
+def delete_alert_log(alert_id: int) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM alert_logs WHERE id = ?", (alert_id,))
+    conn.commit()
+    affected = cursor.rowcount > 0
+    conn.close()
+    return affected
+
+def clear_all_alert_logs() -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM alert_logs")
+    conn.commit()
+    affected = cursor.rowcount
+    conn.close()
+    return affected
 
 # ----------------- ANALISI GIORNALIERA & CONFRONTI -----------------
 

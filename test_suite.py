@@ -372,7 +372,11 @@ class TestEcowittHub(unittest.TestCase):
         res = client.get("/alerts-page")
         self.assertEqual(res.status_code, 200)
         self.assertIn("Centro Notifiche", res.text)
-        self.assertIn("Record Storici Assoluti", res.text)
+        self.assertIn("Segna tutte come lette", res.text)
+
+        res_rec = client.get("/records")
+        self.assertEqual(res_rec.status_code, 200)
+        self.assertIn("Albo dei Record", res_rec.text)
 
         res_idx = client.get("/")
         self.assertEqual(res_idx.status_code, 200)

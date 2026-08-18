@@ -4,66 +4,87 @@
 <div class="header-card">
     <div class="header-title">
         <h1>⚙️ Impostazioni & Centro di Controllo</h1>
-        <p>Configura diagnostica hardware, manutenzione database SQLite, personalizzazione sensori e sicurezza.</p>
+        <p>Configura notifiche push, diagnostica hardware, manutenzione database SQLite, sensori e sicurezza.</p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <a href="/api/system/backup" class="btn btn-gold" style="padding: 0.6rem 1.2rem; text-decoration: none;" download>💾 Scarica Backup DB</a>
-        <a href="/alerts-page" class="btn btn-outline" style="padding: 0.6rem 1.2rem; text-decoration: none;">🔔 Gestisci Notifiche & Allerte</a>
+        <a href="/alerts-page" class="btn btn-outline" style="padding: 0.6rem 1.2rem; text-decoration: none;">🔔 Vai al Centro Notifiche</a>
     </div>
 </div>
 
 <div class="grid">
-    <!-- 1. COLLEGAMENTO DIRETTO AL CENTRO NOTIFICHE -->
-    <div class="card" style="border: 1px solid rgba(56, 189, 248, 0.3); background: linear-gradient(145deg, rgba(56, 189, 248, 0.06), var(--card-bg));">
-        <div class="card-header">
-            <span>🔔 Notifiche Push & Allarmi Meteo</span>
-            <span class="sub-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--accent);">Hub Notifiche</span>
+    <!-- 1. NOTIFICHE PUSH NATIVE PWA & CANALI (UNIFICATO) -->
+    <div class="card" id="notifications" style="grid-column: 1 / -1; border: 1px solid var(--accent); background: linear-gradient(145deg, rgba(56, 189, 248, 0.05), var(--card-bg));">
+        <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2); flex-wrap: wrap; gap: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span>🔔 Notifiche Push Native (PWA) & Canali di Ricezione</span>
+            </div>
+            <span id="push-status-badge" class="status-pill badge-waiting">Verifica in corso...</span>
         </div>
-        <p style="font-size: 0.88rem; color: var(--text-dim); line-height: 1.5; margin-bottom: 0.85rem;">
-            Tutte le impostazioni di ricezione notifiche (PWA Web Push nativo, canale ntfy.sh, test istantanei e registro allarmi) sono centralizzate nella sezione dedicata.
-        </p>
-        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <a href="/alerts-page" class="btn btn-primary" style="flex: 1; text-align: center; text-decoration: none; padding: 0.6rem 1rem;">
-                👉 Apri Centro Notifiche & Test Push
-            </a>
-            <a href="/api/daily-digest/send" class="btn btn-outline" style="text-align: center; text-decoration: none; padding: 0.6rem 1rem;" target="_blank" title="Invia ora l'anteprima del digest Buongiorno Meteo">
-                ☕ Test Digest
-            </a>
+
+        <div style="display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0;">
+            <p id="push-status-text" style="color: var(--text); font-size: 0.95rem; line-height: 1.5;">
+                Ricevi avvisi meteo istantanei direttamente sul tuo smartphone o PC, anche ad applicazione chiusa, senza bisogno di installare app esterne.
+            </p>
+
+            <div class="push-actions-row">
+                <button id="btn-push-toggle" class="btn btn-primary push-action-btn">
+                    🔔 Attiva Notifiche Push PWA
+                </button>
+                <button id="btn-test-alert" class="btn btn-outline push-action-btn" onclick="testPushNotification()">
+                    🧪 Prova Notifica Istantanea
+                </button>
+                <a href="/api/daily-digest/send" class="btn btn-outline push-action-btn" target="_blank" title="Invia ora l'anteprima del digest Buongiorno Meteo">
+                    ☕ Test Buongiorno Meteo
+                </a>
+                <a href="https://ntfy.sh/{{ ntfy_topic }}" target="_blank" class="btn btn-outline push-action-btn" title="Canale ntfy.sh parallelo per smartwatch o domotica">
+                    📡 Canale ntfy.sh ({{ ntfy_topic }})
+                </a>
+            </div>
+
+            <div class="push-guide-box">
+                <strong style="color: var(--accent);">💡 Come attivare sui tuoi dispositivi:</strong>
+                <div>🍏 <strong>iPhone / iPad (iOS 16.4+):</strong> Apri il link meteo in Safari, tocca il tasto Condividi (icona quadrato con freccia in su) e scegli <em>"Aggiungi alla schermata Home"</em>. Apri l'icona creata sulla schermata Home e premi <strong>Attiva Notifiche</strong>.</div>
+                <div>🤖 <strong>Android:</strong> Clicca semplicemente su <em>"Attiva Notifiche Push"</em> (funziona direttamente da Chrome, Edge o da Web App installata).</div>
+                <div>💻 <strong>PC / Mac:</strong> Clicca su <em>"Attiva Notifiche"</em> e consenti i permessi del browser (Chrome, Edge, Firefox, Safari).</div>
+            </div>
         </div>
     </div>
 
-    <!-- 2. PERSONALIZZAZIONE NOMI SENSORI (ALIAS UTENTE) -->
+    <!-- 2. PERSONALIZZAZIONE NOMI SENSORI (SOLO SENSORI RILEVATI DALLA STAZIONE) -->
     <div class="card">
-        <div class="card-header">
+        <div class="card-header" style="flex-wrap: wrap; gap: 0.5rem;">
             <span>🏷️ Personalizzazione Nomi Sensori</span>
-            <span class="sub-badge">Alias Utente</span>
+            <span class="sub-badge">{% if detected_sensors %}{{ detected_sensors|length }} Rilevati{% else %}Nessun Extra{% endif %}</span>
         </div>
         <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.85rem;">
-            Assegna un'etichetta personalizzata e riconoscibile ai tuoi sensori (es: <em>"Piante Soggiorno"</em>, <em>"Orto Pomodori"</em>, <em>"Giardino"</em>).
+            Assegna un'etichetta personalizzata e riconoscibile ai sensori opzionali associati alla tua stazione meteo.
         </p>
+        
+        {% if detected_sensors %}
         <div class="item-list" id="sensor_alias_form_list">
-            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
-                <span style="font-size: 0.85rem; width: 120px; color: var(--text-muted);">🌱 Suolo CH1:</span>
-                <input type="text" id="alias_soil_ch1" value="{{ sensor_aliases.get('soil_ch1', '') if sensor_aliases else '' }}" placeholder="Es: Giardino Prato" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
-                <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('soil_ch1', document.getElementById('alias_soil_ch1').value)">Salva</button>
+            {% for s in detected_sensors %}
+            <div class="sensor-alias-row">
+                <div class="sensor-alias-header-line">
+                    <span class="sensor-alias-title">{{ s.icon }} <strong>{{ s.type_label }}</strong> ({{ s.channel_label }})</span>
+                    {% if s.current_val %}
+                    <span class="badge-tag" style="font-size: 0.72rem;">{{ s.current_val }}</span>
+                    {% endif %}
+                </div>
+                <div class="sensor-alias-input-group">
+                    <input type="text" id="alias_{{ s.key }}" class="sensor-alias-input" value="{{ s.alias }}" placeholder="Es: Giardino, Piante Soggiorno...">
+                    <button type="button" class="btn btn-sm sensor-alias-btn" onclick="saveSensorAlias('{{ s.key }}', document.getElementById('alias_{{ s.key }}').value)">Salva</button>
+                </div>
             </div>
-            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
-                <span style="font-size: 0.85rem; width: 120px; color: var(--text-muted);">🌱 Suolo CH2:</span>
-                <input type="text" id="alias_soil_ch2" value="{{ sensor_aliases.get('soil_ch2', '') if sensor_aliases else '' }}" placeholder="Es: Piante Balcone" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
-                <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('soil_ch2', document.getElementById('alias_soil_ch2').value)">Salva</button>
-            </div>
-            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
-                <span style="font-size: 0.85rem; width: 120px; color: var(--text-muted);">🌱 Suolo CH3:</span>
-                <input type="text" id="alias_soil_ch3" value="{{ sensor_aliases.get('soil_ch3', '') if sensor_aliases else '' }}" placeholder="Es: Vasi Terrazzo" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
-                <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('soil_ch3', document.getElementById('alias_soil_ch3').value)">Salva</button>
-            </div>
-            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
-                <span style="font-size: 0.85rem; width: 120px; color: var(--text-muted);">🌡️ Temp Extra 1:</span>
-                <input type="text" id="alias_temp_ch1" value="{{ sensor_aliases.get('temp_ch1', '') if sensor_aliases else '' }}" placeholder="Es: Cantina / Garage" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
-                <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('temp_ch1', document.getElementById('alias_temp_ch1').value)">Salva</button>
-            </div>
+            {% endfor %}
         </div>
         <div id="sensor_alias_status" style="font-size: 0.8rem; color: #10b981; margin-top: 0.5rem; display: none;"></div>
+        {% else %}
+        <div style="background: rgba(255,255,255,0.03); border: 1px dashed var(--card-border); border-radius: 12px; padding: 1.25rem; text-align: center; color: var(--text-dim); font-size: 0.85rem; line-height: 1.5;">
+            🌱 <strong>Nessun sensore opzionale aggiuntivo connesso.</strong><br>
+            La stazione sta trasmettendo con il gruppo sensori esterno standard (7-in-1). Se colleghi sensori opzionali di umidità suolo (WH51), termometri multi-canale (WH31), sonde temperatura (WN34) o rilevatori perdite (WH55), appariranno automaticamente qui per essere rinominati.
+        </div>
+        {% endif %}
     </div>
 
     <!-- 3. DATABASE SQLITE & MANUTENZIONE STORICO -->
@@ -79,33 +100,156 @@
             <div class="item"><span>Politica Retention:</span> <strong>Raw 60gg + Downsampling Orario/Giorno</strong></div>
         </div>
         <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
-            <a href="/api/system/backup" class="btn btn-gold" style="flex: 1; text-align: center; text-decoration: none;" download>💾 Backup DB (.db)</a>
-            <button type="button" class="btn" style="flex: 1;" onclick="triggerDbMaintenance()">🧹 Ottimizza DB</button>
+            <a href="/api/system/backup" class="btn btn-gold" style="flex: 1 1 140px; text-align: center; text-decoration: none;" download>💾 Backup DB (.db)</a>
+            <button type="button" class="btn" style="flex: 1 1 140px;" onclick="triggerDbMaintenance()">🧹 Ottimizza DB</button>
         </div>
         <div id="db_maintenance_result" style="font-size: 0.8rem; color: #38bdf8; margin-top: 0.5rem; display: none;"></div>
     </div>
 
     <!-- 4. DIAGNOSTICA HARDWARE & RETE -->
-    <div class="card">
+    <div class="card" style="grid-column: 1 / -1;">
         <div class="card-header">
             <span>📡 Diagnostica Hardware, Rete & Integrazioni</span>
             <span class="sub-badge badge-live">Connesso</span>
         </div>
-        <div class="item-list">
-            <div class="item"><span>Modello Stazione:</span> <strong>{{ station_model }}</strong></div>
-            <div class="item"><span>Inverter / Batteria:</span> <strong>Aton Green Storage ({{ aton_sn }})</strong></div>
-            <div class="item"><span>Climatizzazione Smart:</span> <strong>LG ThinQ Connect</strong></div>
-            <div class="item"><span>Domotica Elettrodomestici:</span> <strong>Samsung SmartThings</strong></div>
-            <div class="item"><span>Modelli Previsionali:</span> <strong>ECMWF IFS 9km / ICON-EU</strong></div>
+        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem; margin-top: 0.25rem;">
+            <div class="item-list">
+                <div class="item"><span>Modello Stazione:</span> <strong>{{ station_model }}</strong></div>
+                <div class="item"><span>Stato Batteria Gruppo 7-in-1:</span> <strong>{{ batt_wh65 }}</strong></div>
+                <div class="item"><span>Inverter / Batteria:</span> <strong>Aton Green Storage ({{ aton_sn }})</strong></div>
+            </div>
+            <div class="item-list">
+                <div class="item"><span>Climatizzazione Smart:</span> <strong>{% if thinq_enabled %}🟢 LG ThinQ Attivo{% else %}⚪ LG ThinQ Disattivato{% endif %}</strong></div>
+                <div class="item"><span>Domotica Elettrodomestici:</span> <strong>{% if smartthings_enabled %}🟢 Samsung SmartThings Attivo{% else %}⚪ SmartThings Disattivato{% endif %}</strong></div>
+                <div class="item"><span>Modelli Previsionali:</span> <strong>ECMWF IFS 9km / ICON-EU</strong></div>
+            </div>
         </div>
-        <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
-            <a href="/api/live" class="btn" style="flex: 1; text-align: center; text-decoration: none;" target="_blank">🌐 Endpoint API Live</a>
-            <a href="/history" class="btn" style="flex: 1; text-align: center; text-decoration: none;">🔍 Archivio Dati</a>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.85rem; flex-wrap: wrap;">
+            <a href="/api/live" class="btn" style="flex: 1 1 140px; text-align: center; text-decoration: none;" target="_blank">🌐 API Dati Live</a>
+            <a href="/history" class="btn" style="flex: 1 1 140px; text-align: center; text-decoration: none;">🔍 Archivio Storico</a>
         </div>
     </div>
 
-    <!-- 5. SICUREZZA & SESSIONE -->
-    <div class="card">
+    <!-- 5. CATALOGO COMPLETO ALLARMI & SOGLIE ATTIVE (FULL WIDTH) -->
+    <div class="card" style="grid-column: 1 / -1; min-width: 0;">
+        <div class="card-header" style="flex-wrap: wrap; gap: 0.5rem;">
+            <span>📋 Catalogo Allarmi & Soglie di Scatto del Sistema</span>
+            <span class="sub-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--accent);">16 Regole Attive</span>
+        </div>
+        <div class="table-responsive" style="width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;">
+            <table class="weather-table" style="min-width: 520px;">
+                <thead>
+                    <tr>
+                        <th>Evento Allarme</th>
+                        <th>Icona</th>
+                        <th>Condizione di Scatto Automatica</th>
+                        <th>Priorità</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>⚡ Temporale / Fulmini</strong></td>
+                        <td><span style="font-size: 1.2rem;">⚡</span></td>
+                        <td>Fulmine rilevato a meno di 30 km dalla stazione</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>⚠️ Burrasca / Crollo Pressione</strong></td>
+                        <td><span style="font-size: 1.2rem;">⚠️ ↘️</span></td>
+                        <td>Calo barometrico ≥ 2.0 hPa in 3 ore (forte peggioramento)</td>
+                        <td><span class="badge-tag urgent">Urgente</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>🌧️ Nubifragio / Bomba d'Acqua</strong></td>
+                        <td><span style="font-size: 1.2rem;">🌧️</span></td>
+                        <td>Intensità di pioggia estrema ≥ 25.0 mm/h</td>
+                        <td><span class="badge-tag urgent">Urgente</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>☔ Pioggia Prevista a Breve</strong></td>
+                        <td><span style="font-size: 1.2rem;">☔</span></td>
+                        <td>Previsione oraria Open-Meteo: probabilità pioggia ≥ 60% o ≥ 0.5 mm nelle prossime 1-2 ore</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>🌧️ Ha Iniziato a Piovere</strong></td>
+                        <td><span style="font-size: 1.2rem;">🌧️💧</span></td>
+                        <td>Rilevamento prime gocce / inizio precipitazioni dalla stazione</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>🌧️ Pioggia Intensa</strong></td>
+                        <td><span style="font-size: 1.2rem;">🌧️</span></td>
+                        <td>Rovescio moderato/forte ≥ 5.0 mm/h</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>💨 Raffica di Vento Anomala</strong></td>
+                        <td><span style="font-size: 1.2rem;">💨</span></td>
+                        <td>Raffica improvvisa (Wind Spike) ≥ 45.0 km/h</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>❄️ Allerta Gelo</strong></td>
+                        <td><span style="font-size: 1.2rem;">❄️</span></td>
+                        <td>Temperatura scesa a ≤ 1.0°C (rischio ghiaccio/piante)</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>🔥 Caldo Estremo</strong></td>
+                        <td><span style="font-size: 1.2rem;">🔥</span></td>
+                        <td>Temperatura salita a ≥ 38.0°C</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>🌡️ Sbalzo Termico Repentino</strong></td>
+                        <td><span style="font-size: 1.2rem;">🌡️</span></td>
+                        <td>Crollo o impennata di temperatura ≥ 4.0°C in 1 ora</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>☀️ Indice UV Pericoloso</strong></td>
+                        <td><span style="font-size: 1.2rem;">☀️</span></td>
+                        <td>Indice UV ≥ 8 (rischio scottature in pochi minuti)</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>🌱 Terreno Secco</strong></td>
+                        <td><span style="font-size: 1.2rem;">🌱</span></td>
+                        <td>Umidità suolo sensore WH51 ≤ 25.0% (promemoria annaffiatura)</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>🏆 Record Storico Infranto</strong></td>
+                        <td><span style="font-size: 1.2rem;">🏆</span></td>
+                        <td>Battuto un nuovo record assoluto significativo (Temp ≥0.5°C, Raffica ≥5 km/h)</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>☕ Buongiorno Meteo</strong></td>
+                        <td><span style="font-size: 1.2rem;">☕</span></td>
+                        <td>Ogni giorno alle 08:00 (Previsione, Minima, Sole, Asciugatura bucato)</td>
+                        <td><span class="badge-tag">Digest</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>🔴 Stazione Offline / Riconnessa</strong></td>
+                        <td><span style="font-size: 1.2rem;">📡</span></td>
+                        <td>Watchdog: assenza segnale per oltre 10 minuti</td>
+                        <td><span class="badge-tag urgent">Urgente</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>🪫 Batteria Sensori Bassa</strong></td>
+                        <td><span style="font-size: 1.2rem;">🪫</span></td>
+                        <td>Pile sensori in esaurimento (WH65 7-in-1, WH57, WH51, WH31)</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 6. SICUREZZA & SESSIONE -->
+    <div class="card" style="grid-column: 1 / -1;">
         <div class="card-header">
             <span>🔒 Sicurezza & Disconnessione</span>
             <span class="sub-badge">Accesso Protetto</span>
@@ -114,10 +258,104 @@
             La tua sessione corrente su questo browser è autenticata e protetta tramite cookie di sicurezza HTTP-Only crittografato.
         </p>
         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <a href="/logout" class="btn btn-outline" style="color: #ef4444; border-color: rgba(239,68,68,0.4); text-decoration: none;">
+            <a href="/logout" class="btn btn-outline" style="color: #ef4444; border-color: rgba(239,68,68,0.4); text-decoration: none; width: 100%; text-align: center;">
                 🚪 Disconnetti questo dispositivo (Logout)
             </a>
         </div>
     </div>
 </div>
+
+<style>
+.push-actions-row {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.push-action-btn {
+    padding: 0.7rem 1.1rem;
+    font-size: 0.9rem;
+    flex: 1 1 200px;
+    text-align: center;
+    white-space: normal;
+    word-break: normal;
+    text-decoration: none;
+}
+.push-guide-box {
+    background: rgba(0,0,0,0.25);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+.sensor-alias-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.sensor-alias-row:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+.sensor-alias-header-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    color: var(--text);
+}
+.sensor-alias-title {
+    font-size: 0.85rem;
+}
+.sensor-alias-input-group {
+    display: flex;
+    gap: 0.4rem;
+    width: 100%;
+}
+.sensor-alias-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.45rem 0.65rem;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(0,0,0,0.3);
+    color: #fff;
+    font-size: 0.85rem;
+}
+.sensor-alias-btn {
+    padding: 0.45rem 0.85rem;
+    font-size: 0.82rem;
+    flex-shrink: 0;
+}
+.badge-tag {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(148, 163, 184, 0.15);
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+.badge-tag.urgent {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+}
+
+@media (max-width: 600px) {
+    .push-action-btn {
+        flex: 1 1 100%;
+        width: 100%;
+    }
+}
+</style>
 {% endblock %}

@@ -31,6 +31,8 @@ from backend.database import (
     save_push_subscription, delete_push_subscription, get_all_push_subscriptions,
     save_energy_reading, get_latest_energy, get_today_energy_summary, get_energy_timeseries,
     get_sensor_aliases, save_sensor_alias, get_database_stats, perform_database_maintenance,
+    get_unread_alerts_count, mark_alert_as_read, mark_all_alerts_as_read,
+    delete_alert_log, clear_all_alert_logs,
     to_local_datetime_str, DB_PATH
 )
 from backend.analytics import (
@@ -497,8 +499,38 @@ async def api_export_records_csv():
     )
 
 @app.get("/api/alerts")
-async def api_alerts(limit: int = 20):
-    return {"alerts": get_alert_logs(limit=limit)}
+async def api_alerts(limit: int = 50, unread_only: bool = False):
+    alerts = get_alert_logs(limit=limit, unread_only=unread_only)
+    unread_count = get_unread_alerts_count()
+    return {
+        "alerts": alerts,
+        "unread_count": unread_count,
+        "total_count": len(alerts)
+    }
+
+@app.get("/api/alerts/unread-count")
+async def api_alerts_unread_count():
+    return {"unread_count": get_unread_alerts_count()}
+
+@app.post("/api/alerts/{alert_id}/read")
+async def api_mark_alert_read(alert_id: int):
+    success = mark_alert_as_read(alert_id)
+    return {"status": "ok" if success else "not_found", "unread_count": get_unread_alerts_count()}
+
+@app.post("/api/alerts/mark-all-read")
+async def api_mark_all_alerts_read():
+    marked = mark_all_alerts_as_read()
+    return {"status": "ok", "marked": marked, "unread_count": 0}
+
+@app.delete("/api/alerts/{alert_id}")
+async def api_delete_alert(alert_id: int):
+    success = delete_alert_log(alert_id)
+    return {"status": "ok" if success else "not_found", "unread_count": get_unread_alerts_count()}
+
+@app.post("/api/alerts/clear-all")
+async def api_clear_all_alerts():
+    cleared = clear_all_alert_logs()
+    return {"status": "ok", "cleared": cleared, "unread_count": 0}
 
 # --- Web Push (PWA iOS / Android / Desktop) Endpoints ---
 @app.get("/api/push/vapid-public-key")
@@ -821,20 +853,127 @@ async def history_page(request: Request, start_date: Optional[str] = None, end_d
 
 @app.get("/alerts-page", response_class=HTMLResponse)
 async def alerts_page(request: Request):
-    alerts = get_alert_logs(limit=50)
-    all_records = get_all_records()
-    top_records = [r for r in all_records if r["record_key"] in ("temp_max", "temp_min", "wind_gust_max", "rain_daily_max", "pressure_min")][:4]
+    alerts = get_alert_logs(limit=100)
+    unread_count = get_unread_alerts_count()
     return templates.TemplateResponse(
         request=request,
         name="alerts.html",
         context={
             "active_page": "alerts",
-            "title": "Registro Notifiche • Weather Hub",
+            "title": "Centro Notifiche • Weather Hub",
             "alerts": alerts,
-            "top_records": top_records,
+            "unread_count": unread_count,
+            "total_count": len(alerts),
             "ntfy_topic": settings.NTFY_TOPIC
         }
     )
+
+def get_detected_sensors(raw: Dict[str, Any], soil_moisture: Dict[str, Any], saved_aliases: Dict[str, str]) -> List[Dict[str, Any]]:
+    """Restituisce solo i sensori opzionali/aggiuntivi effettivamente rilevati o con alias salvato."""
+    sensors = []
+
+    # 1. Sensore Interno Gateway / Console (tempin)
+    if ("tempinf" in raw and raw.get("tempinf") != "") or "temp_in" in saved_aliases:
+        t_in = raw.get("tempinf")
+        sensors.append({
+            "key": "temp_in",
+            "icon": "🏠",
+            "type_label": "Sensore Interno Gateway",
+            "channel_label": "Interno",
+            "current_val": f"{t_in}°F" if t_in is not None else None,
+            "alias": saved_aliases.get("temp_in", "")
+        })
+
+    # 2. Sensori Umidità Suolo (WH51, ch1..ch8)
+    for i in range(1, 9):
+        ch_key = f"ch{i}"
+        raw_key = f"soilmoisture{i}"
+        key = f"soil_ch{i}"
+        val = soil_moisture.get(ch_key)
+        if val is not None or (raw_key in raw and raw.get(raw_key) != "") or key in saved_aliases:
+            curr = f"{val}%" if val is not None else (f"{raw.get(raw_key)}%" if raw.get(raw_key) is not None else None)
+            sensors.append({
+                "key": key,
+                "icon": "🌱",
+                "type_label": "Sensore Umidità Suolo",
+                "channel_label": f"Canale {i}",
+                "current_val": curr,
+                "alias": saved_aliases.get(key, "")
+            })
+
+    # 3. Termometri / Igrometri Multi-Canale (WH31, ch1..ch8)
+    for i in range(1, 9):
+        raw_t = f"temp{i}f"
+        key = f"temp_ch{i}"
+        if (raw_t in raw and raw.get(raw_t) != "") or key in saved_aliases:
+            t_val = raw.get(raw_t)
+            sensors.append({
+                "key": key,
+                "icon": "🌡️",
+                "type_label": "Termo-Igrometro Extra",
+                "channel_label": f"Canale {i}",
+                "current_val": f"{t_val}°F" if t_val is not None else None,
+                "alias": saved_aliases.get(key, "")
+            })
+
+    # 4. Sonde di Temperatura ad Immersione (WN34, tf_ch1..tf_ch8)
+    for i in range(1, 9):
+        raw_tf = f"tf_ch{i}"
+        key = f"tf_ch{i}"
+        if (raw_tf in raw and raw.get(raw_tf) != "") or key in saved_aliases:
+            tf_val = raw.get(raw_tf)
+            sensors.append({
+                "key": key,
+                "icon": "🧪",
+                "type_label": "Sonda Temperatura",
+                "channel_label": f"Canale {i}",
+                "current_val": f"{tf_val}°F" if tf_val is not None else None,
+                "alias": saved_aliases.get(key, "")
+            })
+
+    # 5. Rilevatori Perdite d'Acqua / Allagamento (WH55, leak_ch1..leak_ch4)
+    for i in range(1, 5):
+        raw_leak = f"leak_ch{i}"
+        key = f"leak_ch{i}"
+        if (raw_leak in raw and raw.get(raw_leak) != "") or key in saved_aliases:
+            leak_val = raw.get(raw_leak)
+            status_text = "Allarme Perdita! 🚨" if str(leak_val) == "1" else "Normale / Asciutto 🟢"
+            sensors.append({
+                "key": key,
+                "icon": "💧",
+                "type_label": "Rilevatore Allagamento",
+                "channel_label": f"Canale {i}",
+                "current_val": status_text if leak_val is not None else None,
+                "alias": saved_aliases.get(key, "")
+            })
+
+    # 6. Qualità dell'Aria (PM2.5 / PM10 / CO2)
+    for i in range(1, 5):
+        raw_pm = f"pm25_ch{i}"
+        key = f"pm25_ch{i}"
+        if (raw_pm in raw and raw.get(raw_pm) != "") or key in saved_aliases:
+            pm_val = raw.get(raw_pm)
+            sensors.append({
+                "key": key,
+                "icon": "🌫️",
+                "type_label": "Sensore PM2.5",
+                "channel_label": f"Canale {i}",
+                "current_val": f"{pm_val} µg/m³" if pm_val is not None else None,
+                "alias": saved_aliases.get(key, "")
+            })
+
+    if ("co2" in raw and raw.get("co2") != "") or "co2" in saved_aliases:
+        co2_val = raw.get("co2")
+        sensors.append({
+            "key": "co2",
+            "icon": "🫧",
+            "type_label": "Sensore CO2",
+            "channel_label": "Ambiente",
+            "current_val": f"{co2_val} ppm" if co2_val is not None else None,
+            "alias": saved_aliases.get("co2", "")
+        })
+
+    return sensors
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
@@ -847,6 +986,9 @@ async def settings_page(request: Request):
             raw = {}
     station_model = raw.get("model", raw.get("stationtype", "Sainlogic / Ecowitt"))
     batt_wh65 = "🟢 Buona / OK" if raw.get("wh65batt") == "0" else ("🔴 Bassa" if raw.get("wh65batt") else "N/D")
+    aliases = get_sensor_aliases()
+    soil_moist = latest.get("soil_moisture") or {}
+    detected_sensors = get_detected_sensors(raw, soil_moist, aliases)
     return templates.TemplateResponse(
         request=request,
         name="settings.html",
@@ -859,7 +1001,8 @@ async def settings_page(request: Request):
             "aton_enabled": settings.ATON_ENABLED,
             "thinq_enabled": settings.LG_THINQ_ENABLED,
             "smartthings_enabled": settings.SMARTTHINGS_ENABLED,
-            "sensor_aliases": get_sensor_aliases(),
+            "sensor_aliases": aliases,
+            "detected_sensors": detected_sensors,
             "db_stats": get_database_stats(),
             "ntfy_topic": settings.NTFY_TOPIC
         }

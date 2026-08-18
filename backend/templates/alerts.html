@@ -3,268 +3,269 @@
 {% block content %}
 <div class="header-card">
     <div class="header-title">
-        <h1>🔔 Centro Notifiche & Allarmi</h1>
-        <p>Gestisci le notifiche push native per iPhone, Android e PC, e consulta il catalogo degli eventi meteorologici monitorati.</p>
+        <h1>🔔 Centro Notifiche</h1>
+        <p>Consulta lo storico degli avvisi generati in tempo reale dal sistema meteorologico.</p>
     </div>
-    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-        <a href="/api/export/alerts-csv" class="btn btn-gold" style="padding: 0.6rem 1.2rem;">📥 Esporta Registro in Excel</a>
-        <button id="btn-test-alert" class="btn" style="padding: 0.6rem 1.2rem;" onclick="testPushNotification()">🚀 Invia Notifica di Test</button>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+        <button id="btn-mark-all-read" class="btn btn-primary" style="padding: 0.6rem 1.1rem; font-size: 0.88rem;" onclick="markAllAlertsAsRead()">
+            ✓ Segna tutte come lette
+        </button>
+        <a href="/api/export/alerts-csv" class="btn btn-gold" style="padding: 0.6rem 1.1rem; font-size: 0.88rem; text-decoration: none;">
+            📥 Esporta Excel/CSV
+        </a>
+        <a href="/settings#notifications" class="btn btn-outline" style="padding: 0.6rem 1.1rem; font-size: 0.88rem; text-decoration: none;">
+            ⚙️ Impostazioni Notifiche
+        </a>
     </div>
 </div>
 
-<!-- BANNER RECORD IN EVIDENZA -->
-{% if top_records %}
-<div class="records-banner" style="margin-bottom: 1.25rem;">
-    <div class="records-banner-header">
-        <div class="records-banner-title">
-            🏆 Record Storici Assoluti
+<!-- BARRA STATISTICHE & FILTRI RAPIDI -->
+<div class="card" style="margin-bottom: 1.25rem; padding: 0.85rem 1.2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <span style="font-size: 0.9rem; color: var(--text-dim); margin-right: 0.25rem;">Filtra:</span>
+            <button id="filter-btn-all" class="filter-chip active" onclick="filterAlerts('all')">
+                Tutte (<span id="total-count-badge">{{ alerts|length }}</span>)
+            </button>
+            <button id="filter-btn-unread" class="filter-chip" onclick="filterAlerts('unread')">
+                Non lette (<span id="unread-filter-count">{{ unread_count }}</span>)
+            </button>
         </div>
-        <a href="/records" class="btn btn-gold" style="padding: 0.4rem 0.9rem; font-size: 0.82rem;">Vedi Albo dei Record Completo →</a>
+        
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            {% if unread_count > 0 %}
+            <span class="status-pill badge-warning" id="unread-status-pill" style="font-size: 0.8rem;">
+                <span id="unread-count-badge">{{ unread_count }}</span> da leggere
+            </span>
+            {% else %}
+            <span class="status-pill badge-live" id="unread-status-pill" style="font-size: 0.8rem;">
+                Nessuna da leggere
+            </span>
+            {% endif %}
+            
+            {% if alerts %}
+            <button class="btn btn-outline" style="padding: 0.35rem 0.75rem; font-size: 0.78rem; color: var(--danger); border-color: rgba(239,68,68,0.3);" onclick="clearAllAlerts()">
+                🗑️ Svuota registro
+            </button>
+            {% endif %}
+        </div>
     </div>
-    <div class="records-mini-grid">
-        {% for r in top_records %}
-        <div class="rec-mini-card">
-            <span class="rec-mini-label">{{ r.title }}</span>
-            <span class="rec-mini-val">
-                {% if r.value is not none %}{{ r.value }} {{ r.unit }}{% else %}--{% endif %}
-            </span>
-            <span class="rec-mini-date">
-                {% if r.timestamp %}{{ r.timestamp | local_dt_short }}{% else %}In attesa{% endif %}
-            </span>
+</div>
+
+<!-- FEED DELLE NOTIFICHE -->
+<div id="notifications-list-container" style="display: flex; flex-direction: column; gap: 0.85rem; margin-bottom: 1.5rem;">
+    {% if alerts %}
+        {% for a in alerts %}
+        <div class="card notification-item {% if not a.is_read %}unread{% endif %}" id="alert-item-{{ a.id }}" data-unread="{{ 1 if not a.is_read else 0 }}">
+            <div class="notification-icon-wrap">
+                {% if a.alert_type == 'lightning' %}⚡
+                {% elif a.alert_type == 'storm' %}⚠️
+                {% elif a.alert_type == 'rain' or a.alert_type == 'rain_start' %}🌧️
+                {% elif a.alert_type == 'rain_forecast' %}☔
+                {% elif a.alert_type == 'freeze' %}❄️
+                {% elif a.alert_type == 'heatwave' %}🔥
+                {% elif a.alert_type == 'wind_spike' %}💨
+                {% elif a.alert_type == 'soil_dry' %}🌱
+                {% elif a.alert_type == 'record' %}🏆
+                {% elif a.alert_type == 'digest' %}☕
+                {% elif a.alert_type == 'offline' %}📡
+                {% elif a.alert_type == 'online' %}🟢
+                {% elif a.alert_type == 'battery_low' %}🪫
+                {% elif a.alert_type == 'uv_extreme' %}☀️
+                {% else %}🔔{% endif %}
+            </div>
+            
+            <div class="notification-content">
+                <div class="notification-meta">
+                    <span class="alert-type-pill {{ a.alert_type }}">{{ a.alert_type }}</span>
+                    <span class="notification-date">{{ a.timestamp | local_dt }}</span>
+                    {% if not a.is_read %}
+                    <span class="unread-dot" title="Non letta"></span>
+                    {% endif %}
+                </div>
+                
+                <div class="notification-title">{{ a.title }}</div>
+                <div class="notification-message">{{ a.message }}</div>
+            </div>
+            
+            <div class="notification-actions">
+                {% if not a.is_read %}
+                <button class="btn btn-outline btn-mark-read" style="padding: 0.4rem 0.85rem; font-size: 0.8rem; white-space: nowrap;" onclick="markAlertAsRead({{ a.id }})">
+                    ✓ Segna come letta
+                </button>
+                {% else %}
+                <span class="badge-tag read-status-tag" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 0.75rem;">
+                    ✓ Letta
+                </span>
+                {% endif %}
+                
+                <button class="btn-del-item" onclick="deleteAlertItem({{ a.id }})" title="Elimina notifica">
+                    ✕
+                </button>
+            </div>
         </div>
         {% endfor %}
-    </div>
-</div>
-{% endif %}
-
-<!-- SEZIONE NOTIFICHE PUSH NATIVE PWA -->
-<div class="card" style="border: 1px solid var(--accent); background: linear-gradient(145deg, rgba(56, 189, 248, 0.05), var(--card-bg));">
-    <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2);">
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <span>📱 Notifiche Push Native Web App (PWA)</span>
-        </div>
-        <span id="push-status-badge" class="status-pill badge-waiting">Verifica in corso...</span>
-    </div>
-
-    <div style="display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0;">
-        <p id="push-status-text" style="color: var(--text); font-size: 0.95rem; line-height: 1.5;">
-            Ricevi avvisi meteo istantanei direttamente sul tuo smartphone o PC, anche ad applicazione chiusa, senza bisogno di installare app esterne.
-        </p>
-
-        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
-            <button id="btn-push-toggle" class="btn btn-primary" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
-                🔔 Attiva Notifiche Push PWA
-            </button>
-            <button class="btn btn-outline" style="padding: 0.75rem 1.2rem; font-size: 0.9rem;" onclick="testPushNotification()">
-                🧪 Prova Notifica Istantanea
-            </button>
-        </div>
-
-        <div style="background: rgba(0,0,0,0.25); border-radius: 12px; padding: 1rem; margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-dim); display: flex; flex-direction: column; gap: 0.4rem;">
-            <strong style="color: var(--accent);">💡 Come funziona sui tuoi dispositivi:</strong>
-            <div>🍏 <strong>iPhone / iPad (iOS 16.4+):</strong> Apri il tuo link meteo in Safari, tocca il tasto Condividi (icona quadrato con freccia in su) e scegli <em>"Aggiungi alla schermata Home"</em>. Apri l'app dalla schermata Home e tocca <strong>Attiva Notifiche</strong>.</div>
-            <div>🤖 <strong>Android:</strong> Clicca semplicemente su <em>"Attiva Notifiche Push"</em> (funziona sia da browser che da PWA installata).</div>
-            <div>💻 <strong>PC / Mac:</strong> Clicca su <em>"Attiva Notifiche"</em> e consenti le notifiche del browser Chrome, Edge, Safari o Firefox.</div>
-        </div>
-    </div>
-</div>
-
-<!-- SEZIONE CANALE OPZIONALE NTFY -->
-<div class="card">
-    <div class="card-header">
-        <span>📡 Canale Push Parallelo (ntfy.sh)</span>
-        <span style="font-size: 0.85rem; color: var(--text-dim);">Topic: <strong>{{ ntfy_topic }}</strong></span>
-    </div>
-    <div style="font-size: 0.9rem; color: var(--text-dim); line-height: 1.5; display: flex; flex-direction: column; gap: 0.5rem;">
-        <p>In parallelo alle notifiche PWA, il server invia gli avvisi sul topic ntfy configurato. Su ntfy.sh i topic pubblici sono ad accesso diretto: ideale per ricevere notifiche su smartwatch o webhook per domotica.</p>
-        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <a href="https://ntfy.sh/{{ ntfy_topic }}" target="_blank" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.85rem;">🌐 Apri Canale ntfy.sh</a>
-        </div>
-    </div>
-</div>
-
-<!-- CATALOGO COMPLETO DELLE NOTIFICHE ATTIVE -->
-<div class="card">
-    <div class="card-header">
-        <span>📋 Catalogo Allarmi & Soglie Attive</span>
-    </div>
-    <div class="table-responsive">
-        <table class="weather-table">
-            <thead>
-                <tr>
-                    <th>Evento</th>
-                    <th>Icona</th>
-                    <th>Condizione di Scatto</th>
-                    <th>Priorità</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td><strong>⚡ Temporale / Fulmini</strong></td>
-                    <td><span style="font-size: 1.2rem;">⚡</span></td>
-                    <td>Fulmine rilevato a meno di 30 km dalla stazione</td>
-                    <td><span class="badge-tag urgent">Alta</span></td>
-                </tr>
-                <tr>
-                    <td><strong>⚠️ Burrasca / Crollo Pressione</strong></td>
-                    <td><span style="font-size: 1.2rem;">⚠️ ↘️</span></td>
-                    <td>Calo barometrico ≥ 2.0 hPa in 3 ore (forte peggioramento)</td>
-                    <td><span class="badge-tag urgent">Urgente</span></td>
-                </tr>
-                <tr>
-                    <td><strong>🌧️ Nubifragio / Bomba d'Acqua</strong></td>
-                    <td><span style="font-size: 1.2rem;">🌧️</span></td>
-                    <td>Intensità di pioggia estrema ≥ 25.0 mm/h</td>
-                    <td><span class="badge-tag urgent">Urgente</span></td>
-                </tr>
-                <tr>
-                    <td><strong>☔ Pioggia Prevista a Breve</strong></td>
-                    <td><span style="font-size: 1.2rem;">☔</span></td>
-                    <td>Previsione oraria Open-Meteo: probabilità pioggia ≥ 60% o ≥ 0.5 mm nelle prossime 1-2 ore</td>
-                    <td><span class="badge-tag">Normale</span></td>
-                </tr>
-                <tr>
-                    <td><strong>🌧️ Ha Iniziato a Piovere</strong></td>
-                    <td><span style="font-size: 1.2rem;">🌧️💧</span></td>
-                    <td>Rilevamento prime gocce / inizio precipitazioni dalla stazione</td>
-                    <td><span class="badge-tag urgent">Alta</span></td>
-                </tr>
-                <tr>
-                    <td><strong>🌧️ Pioggia Intensa</strong></td>
-                    <td><span style="font-size: 1.2rem;">🌧️</span></td>
-                    <td>Rovescio moderato/forte ≥ 5.0 mm/h</td>
-                    <td><span class="badge-tag">Normale</span></td>
-                </tr>
-                <tr>
-                    <td><strong>💨 Raffica di Vento Anomala</strong></td>
-                    <td><span style="font-size: 1.2rem;">💨</span></td>
-                    <td>Raffica improvvisa (Wind Spike) ≥ 45.0 km/h</td>
-                    <td><span class="badge-tag urgent">Alta</span></td>
-                </tr>
-                <tr>
-                    <td><strong>❄️ Allerta Gelo</strong></td>
-                    <td><span style="font-size: 1.2rem;">❄️</span></td>
-                    <td>Temperatura scesa a ≤ 1.0°C (rischio ghiaccio/piante)</td>
-                    <td><span class="badge-tag urgent">Alta</span></td>
-                </tr>
-                <tr>
-                    <td><strong>🔥 Caldo Estremo</strong></td>
-                    <td><span style="font-size: 1.2rem;">🔥</span></td>
-                    <td>Temperatura salita a ≥ 38.0°C</td>
-                    <td><span class="badge-tag">Normale</span></td>
-                </tr>
-                <tr>
-                    <td><strong>🌡️ Sbalzo Termico Repentino</strong></td>
-                    <td><span style="font-size: 1.2rem;">🌡️</span></td>
-                    <td>Crollo o impennata di temperatura ≥ 4.0°C in 1 ora</td>
-                    <td><span class="badge-tag">Normale</span></td>
-                </tr>
-                <tr>
-                    <td><strong>☀️ Indice UV Pericoloso</strong></td>
-                    <td><span style="font-size: 1.2rem;">☀️</span></td>
-                    <td>Indice UV ≥ 8 (rischio scottature in pochi minuti)</td>
-                    <td><span class="badge-tag">Normale</span></td>
-                </tr>
-                <tr>
-                    <td><strong>🌱 Terreno Secco</strong></td>
-                    <td><span style="font-size: 1.2rem;">🌱</span></td>
-                    <td>Umidità suolo sensore WH51 ≤ 25.0% (promemoria annaffiatura)</td>
-                    <td><span class="badge-tag">Normale</span></td>
-                </tr>
-                <tr>
-                    <td><strong>🏆 Record Storico Infranto</strong></td>
-                    <td><span style="font-size: 1.2rem;">🏆</span></td>
-                    <td>Battuto un nuovo record assoluto significativo (Temp ≥0.5°C, Raffica ≥5 km/h)</td>
-                    <td><span class="badge-tag urgent">Alta</span></td>
-                </tr>
-                <tr>
-                    <td><strong>☀️ Buongiorno Meteo</strong></td>
-                    <td><span style="font-size: 1.2rem;">☕</span></td>
-                    <td>Ogni giorno alle 08:00 (Previsione, Minima, Sole, Asciugatura bucato)</td>
-                    <td><span class="badge-tag">Digest</span></td>
-                </tr>
-                <tr>
-                    <td><strong>🔴 Stazione Offline / Riconnessa</strong></td>
-                    <td><span style="font-size: 1.2rem;">📡</span></td>
-                    <td>Watchdog: assenza segnale per oltre 10 minuti</td>
-                    <td><span class="badge-tag urgent">Urgente</span></td>
-                </tr>
-                <tr>
-                    <td><strong>🪫 Batteria Sensori Bassa</strong></td>
-                    <td><span style="font-size: 1.2rem;">🪫</span></td>
-                    <td>Pile sensori in esaurimento (WH65 7-in-1, WH57, WH51, WH31)</td>
-                    <td><span class="badge-tag urgent">Alta</span></td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<!-- REGISTRO CRONOLOGICO ULTIMI EVENTI -->
-<div class="card">
-    <div class="card-header">
-        <span>Ultime Notifiche Generate dal Sistema</span>
-        <span style="font-size: 0.85rem; color: var(--text-dim);">Totale nel registro: {{ alerts|length }}</span>
-    </div>
-
-    {% if alerts %}
-    <div class="table-responsive">
-        <table class="weather-table">
-            <thead>
-                <tr>
-                    <th>Data & Ora</th>
-                    <th>Tipo</th>
-                    <th>Titolo Allarme</th>
-                    <th>Messaggio</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for a in alerts %}
-                <tr>
-                    <td>{{ a.timestamp | local_dt }}</td>
-                    <td>
-                        <span style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border-radius: 8px; background: rgba(56, 189, 248, 0.15); color: var(--accent);">
-                            {{ a.alert_type }}
-                        </span>
-                    </td>
-                    <td><strong>{{ a.title }}</strong></td>
-                    <td style="color: var(--text-dim);">{{ a.message }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
     {% else %}
-    <p style="color: var(--text-dim); padding: 1.5rem; text-align: center;">Nessun allarme generato di recente.</p>
+        <div class="card" style="text-align: center; padding: 3rem 1.5rem; color: var(--text-dim);">
+            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">✨</div>
+            <h3 style="color: var(--text); margin-bottom: 0.4rem;">Nessuna notifica presente</h3>
+            <p style="font-size: 0.9rem; max-width: 450px; margin: 0 auto;">
+                Il registro delle notifiche è vuoto. Gli eventi meteorologici rilevati dalla stazione compariranno automaticamente qui.
+            </p>
+        </div>
     {% endif %}
 </div>
 
+<!-- BOX INFORMATIVO COLLEGAMENTO IMPOSTAZIONI -->
+<div class="card" style="background: rgba(15, 23, 42, 0.4); border: 1px dashed var(--card-border); padding: 1rem 1.25rem;">
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+        <div style="font-size: 0.88rem; color: var(--text-dim); line-height: 1.45;">
+            💡 <strong>Configurazione e Soglie:</strong> Per abilitare le Notifiche Push Web sul tuo smartphone (PWA), attivare il canale ntfy.sh o consultare tutte le soglie di scatto degli allarmi, visita la pagina Impostazioni.
+        </div>
+        <a href="/settings#notifications" class="btn btn-outline" style="font-size: 0.85rem; padding: 0.5rem 1rem; text-decoration: none; white-space: nowrap;">
+            ⚙️ Vai a Impostazioni Notifiche →
+        </a>
+    </div>
+</div>
+
 <style>
-.badge-tag {
-    font-size: 0.75rem;
-    font-weight: 700;
-    padding: 3px 8px;
-    border-radius: 6px;
-    background: rgba(148, 163, 184, 0.15);
+.filter-chip {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--card-border);
     color: var(--text-dim);
+    padding: 0.35rem 0.85rem;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
 }
-.badge-tag.urgent {
+.filter-chip:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+.filter-chip.active {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.notification-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1.1rem 1.25rem;
+    border-radius: 12px;
+    transition: all 0.25s ease;
+    border: 1px solid var(--card-border);
+}
+.notification-item.unread {
+    border-color: rgba(56, 189, 248, 0.45);
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, var(--card-bg) 100%);
+    box-shadow: 0 4px 16px rgba(56, 189, 248, 0.06);
+}
+.notification-icon-wrap {
+    font-size: 1.6rem;
+    min-width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.notification-content {
+    flex: 1;
+    min-width: 0;
+}
+.notification-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.3rem;
+    flex-wrap: wrap;
+}
+.alert-type-pill {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: rgba(56, 189, 248, 0.15);
+    color: var(--accent);
+    letter-spacing: 0.5px;
+}
+.alert-type-pill.lightning,
+.alert-type-pill.storm,
+.alert-type-pill.freeze {
     background: rgba(239, 68, 68, 0.2);
     color: #f87171;
 }
-.btn-primary {
-    background: linear-gradient(135deg, #0284c7, #0369a1);
-    color: white;
-    border: none;
+.alert-type-pill.record {
+    background: rgba(234, 179, 8, 0.2);
+    color: #facc15;
 }
-.btn-outline {
-    background: transparent;
-    border: 1px solid var(--card-border);
+.alert-type-pill.digest {
+    background: rgba(168, 85, 247, 0.2);
+    color: #c084fc;
+}
+.notification-date {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+.unread-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--accent);
+    display: inline-block;
+    animation: pulse 2s infinite;
+}
+.notification-title {
+    font-size: 0.98rem;
+    font-weight: 600;
     color: var(--text);
+    margin-bottom: 0.25rem;
 }
-.btn-outline:hover {
-    border-color: var(--accent);
-    color: var(--accent);
+.notification-message {
+    font-size: 0.88rem;
+    color: var(--text-dim);
+    line-height: 1.45;
+}
+.notification-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    align-self: center;
+}
+.btn-del-item {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    cursor: pointer;
+    padding: 0.35rem 0.5rem;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+.btn-del-item:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+@media (max-width: 640px) {
+    .notification-item {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    .notification-actions {
+        width: 100%;
+        justify-content: space-between;
+        padding-top: 0.5rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
 }
 </style>
 {% endblock %}

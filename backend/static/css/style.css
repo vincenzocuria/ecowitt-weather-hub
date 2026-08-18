@@ -29,6 +29,12 @@
     padding: 0;
 }
 
+html, body {
+    overflow-x: hidden;
+    max-width: 100%;
+    width: 100%;
+}
+
 body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     background-color: var(--bg);
@@ -46,6 +52,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
+    min-width: 0;
 }
 
 /* NAVBAR */
@@ -847,6 +854,8 @@ body {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
     gap: 1.25rem;
+    min-width: 0;
+    max-width: 100%;
 }
 .card {
     background: var(--card-bg);
@@ -856,6 +865,10 @@ body {
     display: flex;
     flex-direction: column;
     gap: 0.9rem;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: break-word;
+    word-break: break-word;
     transition: transform 0.15s ease, border-color 0.15s ease;
 }
 .card:hover {

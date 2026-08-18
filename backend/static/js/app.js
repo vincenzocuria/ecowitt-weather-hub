@@ -1007,42 +1007,173 @@ if ('serviceWorker' in navigator) {
 // Sincronizzazione Badge Allerte (Mobile Tab & Desktop Navbar & PWA Icon Badge)
 async function refreshAlertBadges() {
     try {
-        const res = await fetch('/api/alerts?limit=10');
+        const res = await fetch('/api/alerts/unread-count');
         if (!res.ok) return;
         const data = await res.json();
-        const alerts = data.alerts || [];
-        const count = Array.isArray(alerts) ? alerts.length : 0;
-
-        const mobBadge = document.getElementById('mobile-alert-badge');
-        const deskBadge = document.getElementById('desktop-alert-badge');
-
-        if (mobBadge) {
-            if (count > 0) {
-                mobBadge.innerText = count > 99 ? '99+' : count;
-                mobBadge.style.display = 'block';
-            } else {
-                mobBadge.style.display = 'none';
-            }
-        }
-        if (deskBadge) {
-            if (count > 0) {
-                deskBadge.innerText = count > 99 ? '99+' : count;
-                deskBadge.style.display = 'inline-block';
-            } else {
-                deskBadge.style.display = 'none';
-            }
-        }
-
-        // App Badging API su PWA installata
-        if ('setAppBadge' in navigator) {
-            if (count > 0) {
-                navigator.setAppBadge(count).catch(() => {});
-            } else if ('clearAppBadge' in navigator) {
-                navigator.clearAppBadge().catch(() => {});
-            }
-        }
+        const count = (data && typeof data.unread_count === 'number') ? data.unread_count : 0;
+        updateBadgeElements(count);
     } catch (e) {
         // fail silently
+    }
+}
+
+function updateBadgeElements(count) {
+    const mobBadge = document.getElementById('mobile-alert-badge');
+    const deskBadge = document.getElementById('desktop-alert-badge');
+    const unreadHeaderBadge = document.getElementById('unread-count-badge');
+    const unreadFilterCount = document.getElementById('unread-filter-count');
+
+    if (mobBadge) {
+        if (count > 0) {
+            mobBadge.innerText = count > 99 ? '99+' : count;
+            mobBadge.style.display = 'block';
+        } else {
+            mobBadge.style.display = 'none';
+        }
+    }
+    if (deskBadge) {
+        if (count > 0) {
+            deskBadge.innerText = count > 99 ? '99+' : count;
+            deskBadge.style.display = 'inline-block';
+        } else {
+            deskBadge.style.display = 'none';
+        }
+    }
+    if (unreadHeaderBadge) {
+        unreadHeaderBadge.innerText = count;
+    }
+    if (unreadFilterCount) {
+        unreadFilterCount.innerText = count;
+    }
+
+    // App Badging API su PWA installata (iOS 16.4+ / Android / Chrome Desktop)
+    if ('setAppBadge' in navigator) {
+        if (count > 0) {
+            navigator.setAppBadge(count).catch(() => {});
+        } else if ('clearAppBadge' in navigator) {
+            navigator.clearAppBadge().catch(() => {});
+        }
+    }
+}
+
+async function markAlertAsRead(alertId) {
+    const item = document.getElementById(`alert-item-${alertId}`);
+    try {
+        const res = await fetch(`/api/alerts/${alertId}/read`, { method: 'POST' });
+        if (res.ok) {
+            const data = await res.json();
+            if (item) {
+                item.classList.remove('unread');
+                item.setAttribute('data-unread', '0');
+                const btnRead = item.querySelector('.btn-mark-read');
+                if (btnRead) {
+                    btnRead.outerHTML = `<span class="badge-tag read-status-tag" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 0.75rem;">✓ Letta</span>`;
+                }
+                const unreadDot = item.querySelector('.unread-dot');
+                if (unreadDot) unreadDot.remove();
+            }
+            if (typeof data.unread_count === 'number') {
+                updateBadgeElements(data.unread_count);
+            }
+        }
+    } catch (err) {
+        console.error('Errore segna notifica come letta:', err);
+    }
+}
+
+async function markAllAlertsAsRead() {
+    const btn = document.getElementById('btn-mark-all-read');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = '⏳ Aggiornamento...';
+    }
+    try {
+        const res = await fetch('/api/alerts/mark-all-read', { method: 'POST' });
+        if (res.ok) {
+            const items = document.querySelectorAll('.notification-item.unread');
+            items.forEach(item => {
+                item.classList.remove('unread');
+                item.setAttribute('data-unread', '0');
+                const btnRead = item.querySelector('.btn-mark-read');
+                if (btnRead) {
+                    btnRead.outerHTML = `<span class="badge-tag read-status-tag" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 0.75rem;">✓ Letta</span>`;
+                }
+                const unreadDot = item.querySelector('.unread-dot');
+                if (unreadDot) unreadDot.remove();
+            });
+            updateBadgeElements(0);
+        }
+    } catch (err) {
+        console.error('Errore durante la marcatura di tutte le notifiche:', err);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '✓ Tutte lette';
+        }
+    }
+}
+
+async function deleteAlertItem(alertId) {
+    if (!confirm('Vuoi eliminare questa notifica dal registro?')) return;
+    const item = document.getElementById(`alert-item-${alertId}`);
+    try {
+        const res = await fetch(`/api/alerts/${alertId}`, { method: 'DELETE' });
+        if (res.ok) {
+            const data = await res.json();
+            if (item) item.remove();
+            if (typeof data.unread_count === 'number') {
+                updateBadgeElements(data.unread_count);
+            }
+            const totalBadge = document.getElementById('total-count-badge');
+            if (totalBadge) {
+                const cur = parseInt(totalBadge.innerText) || 0;
+                totalBadge.innerText = Math.max(0, cur - 1);
+            }
+        }
+    } catch (err) {
+        console.error('Errore eliminazione notifica:', err);
+    }
+}
+
+async function clearAllAlerts() {
+    if (!confirm('Sei sicuro di voler svuotare l\'intero registro delle notifiche?')) return;
+    try {
+        const res = await fetch('/api/alerts/clear-all', { method: 'POST' });
+        if (res.ok) {
+            const list = document.getElementById('notifications-list-container');
+            if (list) {
+                list.innerHTML = `<div class="card" style="text-align: center; padding: 2.5rem 1rem; color: var(--text-dim);"><p style="font-size: 1.1rem; margin-bottom: 0.5rem;">✨ Nessuna notifica presente</p><p style="font-size: 0.85rem;">Il registro notifiche è vuoto.</p></div>`;
+            }
+            updateBadgeElements(0);
+            const totalBadge = document.getElementById('total-count-badge');
+            if (totalBadge) totalBadge.innerText = '0';
+        }
+    } catch (err) {
+        console.error('Errore svuotamento registro:', err);
+    }
+}
+
+function filterAlerts(mode) {
+    const btnAll = document.getElementById('filter-btn-all');
+    const btnUnread = document.getElementById('filter-btn-unread');
+    const items = document.querySelectorAll('.notification-item');
+
+    if (mode === 'unread') {
+        if (btnUnread) btnUnread.classList.add('active');
+        if (btnAll) btnAll.classList.remove('active');
+        items.forEach(it => {
+            if (it.getAttribute('data-unread') === '1') {
+                it.style.display = 'flex';
+            } else {
+                it.style.display = 'none';
+            }
+        });
+    } else {
+        if (btnAll) btnAll.classList.add('active');
+        if (btnUnread) btnUnread.classList.remove('active');
+        items.forEach(it => {
+            it.style.display = 'flex';
+        });
     }
 }
 
