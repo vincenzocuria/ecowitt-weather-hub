@@ -625,9 +625,42 @@ class TestEcowittHub(unittest.TestCase):
         res_zero = client.get("/api/alerts/unread-count")
         self.assertEqual(res_zero.json()["unread_count"], 0)
 
+    def test_history_kpis_and_page(self):
+        from backend.database import get_history_kpis, get_connection
+        from fastapi.testclient import TestClient
+        from backend.main import app
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO weather_records (timestamp, temp_c, humidity, temp_in_c, humidity_in, pressure_rel_hpa, wind_speed_kmh, wind_gust_kmh, daily_rain_mm, rain_rate_mm_hr, solar_radiation, uv_index)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("2026-08-18 10:00:00", 28.5, 55, 23.0, 50, 1014.2, 12.0, 22.5, 4.2, 1.5, 750, 7))
+        conn.commit()
+        conn.close()
+
+        kpis = get_history_kpis()
+        self.assertGreaterEqual(kpis["total_records"], 1)
+        self.assertIsNotNone(kpis["max_temp"])
+        self.assertIsNotNone(kpis["max_gust"])
+        self.assertGreaterEqual(kpis["total_rain"], 4.2)
+
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+        res = client.get("/history")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("Riepilogo Parametri del Periodo", res.text)
+        self.assertIn("history-record-card", res.text)
+        self.assertIn("Esporta CSV", res.text)
+
+        # Test API search kpis
+        api_res = client.get("/api/search/kpis")
+        self.assertEqual(api_res.status_code, 200)
+        self.assertIn("max_temp", api_res.json())
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

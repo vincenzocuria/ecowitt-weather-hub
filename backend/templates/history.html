@@ -1,71 +1,326 @@
 {% extends "base.html" %}
 
 {% block content %}
+<!-- HEADER CARD -->
 <div class="header-card">
     <div class="header-title">
         <h1>🔍 Archivio & Ricerche Storiche</h1>
-        <p>Cerca tra le letture registrate dalla stazione meteo, analizza periodi specifici ed esporta i dati in formato CSV.</p>
+        <p>Consulta lo storico delle rilevazioni meteo, analizza i parametri estremi del periodo ed esporta i dati in CSV.</p>
+    </div>
+    <div class="header-actions">
+        <a href="/api/export/csv?start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-gold history-export-btn" title="Scarica tutte le letture del periodo in formato CSV per Excel">
+            📥 Esporta CSV
+        </a>
     </div>
 </div>
 
-<!-- BARRA DI FILTRO & RICERCA -->
-<form method="GET" action="/history" class="filter-bar">
-    <div class="form-group">
-        <label for="start_date">Data Inizio:</label>
-        <input type="date" id="start_date" name="start_date" class="form-control" value="{{ start_date or '' }}">
+<!-- SEZIONE FILTRI & PRESET RAPIDI -->
+<div class="history-filter-card">
+    <!-- FILTRI PRESET VELOCI (1-TAP SU SMARTPHONE) -->
+    <div class="history-presets-label">⚡ Periodi Rapidi:</div>
+    <div class="history-presets">
+        <button type="button" class="preset-pill" onclick="applyPreset('today')">Oggi</button>
+        <button type="button" class="preset-pill" onclick="applyPreset('yesterday')">Ieri</button>
+        <button type="button" class="preset-pill" onclick="applyPreset('7d')">Ultimi 7 gg</button>
+        <button type="button" class="preset-pill" onclick="applyPreset('30d')">Ultimi 30 gg</button>
+        <button type="button" class="preset-pill" onclick="applyPreset('month')">Questo Mese</button>
+        <a href="/history" class="preset-pill {% if not start_date and not end_date %}active{% endif %}">Tutto lo Storico</a>
     </div>
-    <div class="form-group">
-        <label for="end_date">Data Fine:</label>
-        <input type="date" id="end_date" name="end_date" class="form-control" value="{{ end_date or '' }}">
-    </div>
-    <button type="submit" class="btn" style="padding: 0.6rem 1.2rem;">Filtra</button>
-    <a href="/history" class="btn btn-secondary" style="padding: 0.6rem 1.2rem;">Azzera</a>
-    
-    <div style="margin-left: auto;">
-        <a href="/api/export/csv?start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-gold" style="padding: 0.6rem 1.2rem;">📥 Esporta CSV</a>
-    </div>
-</form>
 
-<!-- TABELLA RISULTATI -->
-<div class="card">
-    <div class="card-header">
-        <span>Risultati Trovati: {{ total_count }} letture</span>
-        <span style="font-size: 0.85rem; color: var(--text-dim);">Pagina {{ page }} di {{ max_pages }}</span>
+    <!-- FORM DI RICERCA INTERVALLO -->
+    <form method="GET" action="/history" id="history-filter-form" class="history-form-grid">
+        <div class="form-group">
+            <label for="start_date">📅 Data Inizio:</label>
+            <input type="date" id="start_date" name="start_date" class="form-control" value="{{ start_date or '' }}">
+        </div>
+        <div class="form-group">
+            <label for="end_date">📅 Data Fine:</label>
+            <input type="date" id="end_date" name="end_date" class="form-control" value="{{ end_date or '' }}">
+        </div>
+        <div class="history-btn-group">
+            <button type="submit" class="btn btn-primary" style="flex: 1 1 auto; min-height: 42px;">🔍 Filtra</button>
+            <a href="/history" class="btn btn-secondary" style="flex: 1 1 auto; min-height: 42px; text-align: center; text-decoration: none;">🔄 Azzera</a>
+        </div>
+    </form>
+</div>
+
+<!-- SEZIONE KPI AGGREGATI DEL PERIODO FILTRATO -->
+{% if kpis and kpis.total_records > 0 %}
+<div class="history-kpi-section">
+    <div class="history-kpi-header">
+        <div class="history-kpi-title">
+            <span class="kpi-icon">📊</span>
+            <div>
+                <h3>Riepilogo Parametri del Periodo</h3>
+                <p class="history-kpi-sub">
+                    {% if start_date or end_date %}
+                        Intervallo: <strong>{{ start_date or 'Inizio' }}</strong> ➔ <strong>{{ end_date or 'Oggi' }}</strong>
+                    {% else %}
+                        Tutte le registrazioni archiviate nel database
+                    {% endif %}
+                    • <strong>{{ kpis.total_records }}</strong> letture campionate
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="history-kpi-grid">
+        <!-- KPI 1: TEMPERATURA ESTERNA -->
+        <div class="history-kpi-card">
+            <div class="kpi-card-top">
+                <span class="kpi-tag">🌡️ Temp Esterna</span>
+                <span class="kpi-stat-avg">Media: <strong>{{ kpis.avg_temp if kpis.avg_temp is not none else '--' }}°C</strong></span>
+            </div>
+            <div class="kpi-dual-values">
+                <div class="kpi-val-box max">
+                    <span class="kpi-lbl">MAX</span>
+                    <span class="kpi-val">{{ kpis.max_temp if kpis.max_temp is not none else '--' }}<small>°C</small></span>
+                </div>
+                <div class="kpi-val-box min">
+                    <span class="kpi-lbl">MIN</span>
+                    <span class="kpi-val">{{ kpis.min_temp if kpis.min_temp is not none else '--' }}<small>°C</small></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI 2: UMIDITÀ ESTERNA -->
+        <div class="history-kpi-card">
+            <div class="kpi-card-top">
+                <span class="kpi-tag">💧 Umidità Esterna</span>
+                <span class="kpi-stat-avg">Media: <strong>{{ kpis.avg_hum if kpis.avg_hum is not none else '--' }}%</strong></span>
+            </div>
+            <div class="kpi-dual-values">
+                <div class="kpi-val-box max">
+                    <span class="kpi-lbl">MAX</span>
+                    <span class="kpi-val">{{ kpis.max_hum if kpis.max_hum is not none else '--' }}<small>%</small></span>
+                </div>
+                <div class="kpi-val-box min">
+                    <span class="kpi-lbl">MIN</span>
+                    <span class="kpi-val">{{ kpis.min_hum if kpis.min_hum is not none else '--' }}<small>%</small></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI 3: VENTO & RAFFICHE -->
+        <div class="history-kpi-card">
+            <div class="kpi-card-top">
+                <span class="kpi-tag">💨 Vento & Raffiche</span>
+                <span class="kpi-stat-avg">Vento Medio: <strong>{{ kpis.avg_wind if kpis.avg_wind is not none else '--' }} km/h</strong></span>
+            </div>
+            <div class="kpi-dual-values">
+                <div class="kpi-val-box wind-gust">
+                    <span class="kpi-lbl">MAX RAFFICA</span>
+                    <span class="kpi-val" style="color: var(--gold);">{{ kpis.max_gust if kpis.max_gust is not none else '--' }}<small>km/h</small></span>
+                </div>
+                <div class="kpi-val-box max">
+                    <span class="kpi-lbl">MAX VENTO</span>
+                    <span class="kpi-val">{{ kpis.max_wind if kpis.max_wind is not none else '--' }}<small>km/h</small></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI 4: PIOGGIA NEL PERIODO -->
+        <div class="history-kpi-card">
+            <div class="kpi-card-top">
+                <span class="kpi-tag">🌧️ Pioggia Periodo</span>
+                <span class="kpi-stat-avg">Rate Max: <strong>{{ kpis.max_rain_rate if kpis.max_rain_rate is not none else '0.0' }} mm/h</strong></span>
+            </div>
+            <div class="kpi-single-value">
+                <span class="kpi-val highlight-blue">{{ kpis.total_rain if kpis.total_rain is not none else '0.0' }} <small>mm</small></span>
+                <span class="kpi-sub-text">Accumulo totale stimato</span>
+            </div>
+        </div>
+
+        <!-- KPI 5: PRESSIONE BAROMETRICA -->
+        <div class="history-kpi-card">
+            <div class="kpi-card-top">
+                <span class="kpi-tag">📈 Pressione</span>
+                <span class="kpi-stat-avg">Media: <strong>{{ kpis.avg_press if kpis.avg_press is not none else '--' }} hPa</strong></span>
+            </div>
+            <div class="kpi-dual-values">
+                <div class="kpi-val-box max">
+                    <span class="kpi-lbl">MAX</span>
+                    <span class="kpi-val">{{ kpis.max_press if kpis.max_press is not none else '--' }}<small>hPa</small></span>
+                </div>
+                <div class="kpi-val-box min">
+                    <span class="kpi-lbl">MIN</span>
+                    <span class="kpi-val">{{ kpis.min_press if kpis.min_press is not none else '--' }}<small>hPa</small></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI 6: RADIAZIONE & UV -->
+        <div class="history-kpi-card">
+            <div class="kpi-card-top">
+                <span class="kpi-tag">☀️ Sole & Radiazione</span>
+                <span class="kpi-stat-avg">UV Max: <strong>{{ kpis.max_uv if kpis.max_uv is not none else '0' }}</strong></span>
+            </div>
+            <div class="kpi-dual-values">
+                <div class="kpi-val-box solar-box">
+                    <span class="kpi-lbl">MAX RAD.</span>
+                    <span class="kpi-val" style="color: #fde047;">{{ kpis.max_solar if kpis.max_solar is not none else '0' }}<small>W/m²</small></span>
+                </div>
+                <div class="kpi-val-box uv-box">
+                    <span class="kpi-lbl">INDICE UV</span>
+                    <span class="kpi-val" style="color: #fb923c;">{{ kpis.max_uv if kpis.max_uv is not none else '0' }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI 7: AMBIENTE CASA -->
+        <div class="history-kpi-card">
+            <div class="kpi-card-top">
+                <span class="kpi-tag">🏠 Clima Casa</span>
+                <span class="kpi-stat-avg">Umidità Media: <strong>{{ kpis.avg_hum_in if kpis.avg_hum_in is not none else '--' }}%</strong></span>
+            </div>
+            <div class="kpi-dual-values">
+                <div class="kpi-val-box max">
+                    <span class="kpi-lbl">MAX CASA</span>
+                    <span class="kpi-val" style="color: #f59e0b;">{{ kpis.max_temp_in if kpis.max_temp_in is not none else '--' }}<small>°C</small></span>
+                </div>
+                <div class="kpi-val-box min">
+                    <span class="kpi-lbl">MIN CASA</span>
+                    <span class="kpi-val" style="color: #fcd34d;">{{ kpis.min_temp_in if kpis.min_temp_in is not none else '--' }}<small>°C</small></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- SEZIONE RISULTATI & REGISTRO LETTURE -->
+<div class="card history-results-card">
+    <div class="history-results-header">
+        <div class="history-results-title">
+            <span>📋 Risultati: <strong>{{ total_count }}</strong> letture trovate</span>
+            <span class="history-page-badge">Pagina {{ page }} di {{ max_pages }}</span>
+        </div>
+
+        <!-- TOGGLE VISTA (SCHEDE PER SMARTPHONE / TABELLA PER DESKTOP) -->
+        <div class="history-view-toggle">
+            <button type="button" id="btn-view-cards" class="view-toggle-btn active" onclick="setHistoryView('cards')" title="Visualizza come schede (ideale per mobile)">📱 Schede</button>
+            <button type="button" id="btn-view-table" class="view-toggle-btn" onclick="setHistoryView('table')" title="Visualizza come tabella densa">📊 Tabella</button>
+        </div>
     </div>
 
     {% if records %}
-    <div class="table-responsive">
-        <table class="weather-table">
+    
+    <!-- 1. VISTA SCHEDE (MOBILE-FIRST) -->
+    <div id="history-cards-container" class="history-cards-container">
+        {% for r in records %}
+        <div class="history-record-card">
+            <!-- HEADER SCHEDA: DATA, ORA E BADGE SALIENTI -->
+            <div class="record-card-header">
+                <div class="record-timestamp">
+                    <span class="record-dot"></span>
+                    <span class="record-time-text">{{ r.timestamp | local_dt }}</span>
+                </div>
+                <div class="record-badges">
+                    {% if r.daily_rain_mm and r.daily_rain_mm > 0 %}
+                    <span class="record-badge badge-rain">🌧️ {{ r.daily_rain_mm }} mm</span>
+                    {% endif %}
+                    {% if r.wind_gust_kmh and r.wind_gust_kmh >= 25 %}
+                    <span class="record-badge badge-wind">💨 {{ r.wind_gust_kmh }} km/h</span>
+                    {% endif %}
+                    {% if r.uv_index and r.uv_index >= 3 %}
+                    <span class="record-badge badge-uv">☀️ UV {{ r.uv_index }}</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- GRIGLIA PARAMETRI METEOROLOGICI -->
+            <div class="record-grid">
+                <!-- METRICA: TEMPERATURA ESTERNA -->
+                <div class="record-metric-item">
+                    <span class="metric-label">🌡️ Temp Out</span>
+                    <span class="metric-val highlight-temp">
+                        {{ r.temp_c if r.temp_c is not none else '--' }} <small>°C</small>
+                    </span>
+                    <span class="metric-sub">Umidità: <strong>{{ r.humidity if r.humidity is not none else '--' }}%</strong></span>
+                </div>
+
+                <!-- METRICA: TEMPERATURA CASA -->
+                <div class="record-metric-item">
+                    <span class="metric-label">🏠 Temp Casa</span>
+                    <span class="metric-val highlight-house">
+                        {{ r.temp_in_c if r.temp_in_c is not none else '--' }} <small>°C</small>
+                    </span>
+                    <span class="metric-sub">Umidità: <strong>{{ r.humidity_in if r.humidity_in is not none else '--' }}%</strong></span>
+                </div>
+
+                <!-- METRICA: VENTO & RAFFICA -->
+                <div class="record-metric-item">
+                    <span class="metric-label">💨 Vento</span>
+                    <span class="metric-val">
+                        {{ r.wind_speed_kmh if r.wind_speed_kmh is not none else '0.0' }} <small>km/h</small>
+                    </span>
+                    <span class="metric-sub">Raffica: <strong>{{ r.wind_gust_kmh if r.wind_gust_kmh is not none else '0.0' }} km/h</strong></span>
+                </div>
+
+                <!-- METRICA: PIOGGIA & RATE -->
+                <div class="record-metric-item">
+                    <span class="metric-label">🌧️ Pioggia</span>
+                    <span class="metric-val highlight-rain">
+                        {{ r.daily_rain_mm if r.daily_rain_mm is not none else '0.0' }} <small>mm</small>
+                    </span>
+                    <span class="metric-sub">Rate: <strong>{{ r.rain_rate_mm_hr if r.rain_rate_mm_hr is not none else '0.0' }} mm/h</strong></span>
+                </div>
+
+                <!-- METRICA: PRESSIONE -->
+                <div class="record-metric-item">
+                    <span class="metric-label">📈 Pressione</span>
+                    <span class="metric-val">
+                        {{ r.pressure_rel_hpa if r.pressure_rel_hpa is not none else '--' }} <small>hPa</small>
+                    </span>
+                    <span class="metric-sub">Rugiada: <strong>{{ r.dew_point_c if r.dew_point_c is not none else '--' }}°C</strong></span>
+                </div>
+
+                <!-- METRICA: RADIAZIONE SOLARE & UV -->
+                <div class="record-metric-item">
+                    <span class="metric-label">☀️ Sole & UV</span>
+                    <span class="metric-val highlight-solar">
+                        {{ r.solar_radiation if r.solar_radiation is not none else '0' }} <small>W/m²</small>
+                    </span>
+                    <span class="metric-sub">Indice UV: <strong>{{ r.uv_index if r.uv_index is not none else '0' }}</strong></span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- 2. VISTA TABELLA TRADIZIONALE MIGLIORATA (RESPONSIVE) -->
+    <div id="history-table-container" class="history-table-container table-responsive" style="display: none;">
+        <table class="weather-table history-table">
             <thead>
                 <tr>
                     <th>Data & Ora</th>
-                    <th>Temp Out (°C)</th>
-                    <th>Umidità Out</th>
-                    <th>Temp Casa (°C)</th>
-                    <th>Umidità Casa</th>
-                    <th>Rug. (°C)</th>
+                    <th>Temp Out</th>
+                    <th>Umidità</th>
+                    <th>Temp Casa</th>
+                    <th>Umid. Casa</th>
+                    <th>P. Rugiada</th>
                     <th>Pressione</th>
-                    <th>Vento (km/h)</th>
-                    <th>Raffica (km/h)</th>
+                    <th>Vento</th>
+                    <th>Raffica</th>
                     <th>Pioggia Oggi</th>
-                    <th>Rad. (W/m²)</th>
-                    <th>UV</th>
+                    <th>Rad. Solare</th>
+                    <th>Indice UV</th>
                 </tr>
             </thead>
             <tbody>
                 {% for r in records %}
                 <tr>
-                    <td>{{ r.timestamp | local_dt }}</td>
-                    <td><strong>{{ r.temp_c if r.temp_c is not none else '--' }}</strong></td>
+                    <td class="history-col-time"><strong>{{ r.timestamp | local_dt }}</strong></td>
+                    <td class="history-col-temp"><strong>{{ r.temp_c if r.temp_c is not none else '--' }} °C</strong></td>
                     <td>{{ r.humidity if r.humidity is not none else '--' }} %</td>
-                    <td style="color: #f59e0b;"><strong>{{ r.temp_in_c if r.temp_in_c is not none else '--' }}</strong></td>
+                    <td style="color: #f59e0b;"><strong>{{ r.temp_in_c if r.temp_in_c is not none else '--' }} °C</strong></td>
                     <td>{{ r.humidity_in if r.humidity_in is not none else '--' }} %</td>
-                    <td>{{ r.dew_point_c if r.dew_point_c is not none else '--' }}</td>
-                    <td>{{ r.pressure_rel_hpa if r.pressure_rel_hpa is not none else '--' }}</td>
-                    <td>{{ r.wind_speed_kmh if r.wind_speed_kmh is not none else '--' }}</td>
-                    <td>{{ r.wind_gust_kmh if r.wind_gust_kmh is not none else '--' }}</td>
-                    <td>{{ r.daily_rain_mm if r.daily_rain_mm is not none else '0.0' }} mm</td>
-                    <td>{{ r.solar_radiation if r.solar_radiation is not none else '0' }}</td>
+                    <td>{{ r.dew_point_c if r.dew_point_c is not none else '--' }} °C</td>
+                    <td>{{ r.pressure_rel_hpa if r.pressure_rel_hpa is not none else '--' }} hPa</td>
+                    <td>{{ r.wind_speed_kmh if r.wind_speed_kmh is not none else '--' }} km/h</td>
+                    <td style="color: var(--gold);">{{ r.wind_gust_kmh if r.wind_gust_kmh is not none else '--' }} km/h</td>
+                    <td style="color: #38bdf8;"><strong>{{ r.daily_rain_mm if r.daily_rain_mm is not none else '0.0' }} mm</strong></td>
+                    <td>{{ r.solar_radiation if r.solar_radiation is not none else '0' }} W/m²</td>
                     <td>{{ r.uv_index if r.uv_index is not none else '0' }}</td>
                 </tr>
                 {% endfor %}
@@ -73,21 +328,120 @@
         </table>
     </div>
 
-    <!-- PAGINAZIONE -->
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
+    <!-- BARRA DI PAGINAZIONE TOUCH-FRIENDLY -->
+    <div class="history-pagination-bar">
         {% if page > 1 %}
-        <a href="/history?page={{ page - 1 }}&start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-secondary" style="padding: 0.5rem 1rem;">← Precedente</a>
+        <a href="/history?page={{ page - 1 }}&start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-secondary pagination-btn">
+            ← Precedente
+        </a>
         {% else %}
-        <div></div>
+        <span class="btn btn-secondary pagination-btn disabled">← Precedente</span>
         {% endif %}
 
+        <div class="pagination-info">
+            Pagina <strong>{{ page }}</strong> di <strong>{{ max_pages }}</strong>
+        </div>
+
         {% if page < max_pages %}
-        <a href="/history?page={{ page + 1 }}&start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-secondary" style="padding: 0.5rem 1rem;">Successivo →</a>
+        <a href="/history?page={{ page + 1 }}&start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-secondary pagination-btn">
+            Successivo →
+        </a>
+        {% else %}
+        <span class="btn btn-secondary pagination-btn disabled">Successivo →</span>
         {% endif %}
     </div>
 
     {% else %}
-    <p style="color: var(--text-dim); padding: 1.5rem; text-align: center;">Nessun dato trovato per l'intervallo selezionato.</p>
+    <div class="history-empty-state">
+        <span style="font-size: 2.5rem; display: block; margin-bottom: 0.5rem;">🔍</span>
+        <h3>Nessuna lettura trovata</h3>
+        <p>Non ci sono dati registrati per l'intervallo temporale selezionato. Prova a modificare le date o premi "Azzera".</p>
+        <a href="/history" class="btn btn-primary" style="margin-top: 1rem; display: inline-block;">Mostra Tutte le Letture</a>
+    </div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Gestione Preset Rapidi per le Date
+    function applyPreset(type) {
+        const now = new Date();
+        const startInput = document.getElementById('start_date');
+        const endInput = document.getElementById('end_date');
+        const form = document.getElementById('history-filter-form');
+        
+        function formatDate(d) {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        }
+
+        if (type === 'today') {
+            startInput.value = formatDate(now);
+            endInput.value = formatDate(now);
+        } else if (type === 'yesterday') {
+            const yest = new Date(now);
+            yest.setDate(yest.getDate() - 1);
+            startInput.value = formatDate(yest);
+            endInput.value = formatDate(yest);
+        } else if (type === '7d') {
+            const past = new Date(now);
+            past.setDate(past.getDate() - 7);
+            startInput.value = formatDate(past);
+            endInput.value = formatDate(now);
+        } else if (type === '30d') {
+            const past = new Date(now);
+            past.setDate(past.getDate() - 30);
+            startInput.value = formatDate(past);
+            endInput.value = formatDate(now);
+        } else if (type === 'month') {
+            const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+            startInput.value = formatDate(firstDay);
+            endInput.value = formatDate(now);
+        }
+
+        form.submit();
+    }
+
+    // Gestione Switch Vista: Schede (Mobile) vs Tabella (Desktop)
+    function setHistoryView(view) {
+        const cardsEl = document.getElementById('history-cards-container');
+        const tableEl = document.getElementById('history-table-container');
+        const btnCards = document.getElementById('btn-view-cards');
+        const btnTable = document.getElementById('btn-view-table');
+
+        if (!cardsEl || !tableEl) return;
+
+        if (view === 'table') {
+            cardsEl.style.display = 'none';
+            tableEl.style.display = 'block';
+            btnTable.classList.add('active');
+            btnCards.classList.remove('active');
+            localStorage.setItem('history_view_pref', 'table');
+        } else {
+            cardsEl.style.display = 'grid';
+            tableEl.style.display = 'none';
+            btnCards.classList.add('active');
+            btnTable.classList.remove('active');
+            localStorage.setItem('history_view_pref', 'cards');
+        }
+    }
+
+    // Inizializza la visualizzazione in base a preferenza o larghezza schermo
+    document.addEventListener('DOMContentLoaded', () => {
+        const savedView = localStorage.getItem('history_view_pref');
+        if (savedView) {
+            setHistoryView(savedView);
+        } else {
+            // Su schermi piccoli <= 768px usa cards, altrimenti tabella
+            if (window.innerWidth <= 768) {
+                setHistoryView('cards');
+            } else {
+                setHistoryView('table');
+            }
+        }
+    });
+</script>
 {% endblock %}

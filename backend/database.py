@@ -742,6 +742,105 @@ def search_history(start_date: Optional[str] = None, end_date: Optional[str] = N
         records.append(d)
     return records, total_count
 
+def get_history_kpis(start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    where_clauses = []
+    params = []
+    if start_date:
+        where_clauses.append("timestamp >= ?")
+        params.append(start_date if "T" in start_date else f"{start_date}T00:00:00")
+    if end_date:
+        where_clauses.append("timestamp <= ?")
+        params.append(end_date if "T" in end_date else f"{end_date}T23:59:59")
+
+    where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+    
+    cursor.execute(f"""
+        SELECT 
+            COUNT(*) as total_records,
+            MIN(temp_c) as min_temp,
+            MAX(temp_c) as max_temp,
+            AVG(temp_c) as avg_temp,
+            MIN(humidity) as min_hum,
+            MAX(humidity) as max_hum,
+            AVG(humidity) as avg_hum,
+            MIN(temp_in_c) as min_temp_in,
+            MAX(temp_in_c) as max_temp_in,
+            AVG(temp_in_c) as avg_temp_in,
+            MIN(humidity_in) as min_hum_in,
+            MAX(humidity_in) as max_hum_in,
+            AVG(humidity_in) as avg_hum_in,
+            MAX(wind_speed_kmh) as max_wind,
+            AVG(wind_speed_kmh) as avg_wind,
+            MAX(wind_gust_kmh) as max_gust,
+            MIN(pressure_rel_hpa) as min_press,
+            MAX(pressure_rel_hpa) as max_press,
+            AVG(pressure_rel_hpa) as avg_press,
+            MAX(solar_radiation) as max_solar,
+            MAX(uv_index) as max_uv,
+            MAX(rain_rate_mm_hr) as max_rain_rate,
+            MIN(timestamp) as first_ts,
+            MAX(timestamp) as last_ts
+        FROM weather_records {where_sql}
+    """, params)
+    row = cursor.fetchone()
+    
+    cursor.execute(f"""
+        SELECT COALESCE(SUM(day_rain), 0.0) FROM (
+            SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
+            FROM weather_records {where_sql}
+            GROUP BY date(timestamp)
+        )
+    """, params)
+    rain_row = cursor.fetchone()
+    total_rain = rain_row[0] if rain_row and rain_row[0] is not None else 0.0
+    
+    conn.close()
+    
+    if not row or row["total_records"] == 0:
+        return {
+            "total_records": 0,
+            "min_temp": None, "max_temp": None, "avg_temp": None,
+            "min_hum": None, "max_hum": None, "avg_hum": None,
+            "min_temp_in": None, "max_temp_in": None, "avg_temp_in": None,
+            "min_hum_in": None, "max_hum_in": None, "avg_hum_in": None,
+            "max_wind": None, "avg_wind": None, "max_gust": None,
+            "min_press": None, "max_press": None, "avg_press": None,
+            "max_solar": None, "max_uv": None,
+            "max_rain_rate": None, "total_rain": 0.0,
+            "first_ts": None, "last_ts": None
+        }
+        
+    return {
+        "total_records": row["total_records"],
+        "min_temp": round(row["min_temp"], 1) if row["min_temp"] is not None else None,
+        "max_temp": round(row["max_temp"], 1) if row["max_temp"] is not None else None,
+        "avg_temp": round(row["avg_temp"], 1) if row["avg_temp"] is not None else None,
+        "min_hum": round(row["min_hum"]) if row["min_hum"] is not None else None,
+        "max_hum": round(row["max_hum"]) if row["max_hum"] is not None else None,
+        "avg_hum": round(row["avg_hum"]) if row["avg_hum"] is not None else None,
+        "min_temp_in": round(row["min_temp_in"], 1) if row["min_temp_in"] is not None else None,
+        "max_temp_in": round(row["max_temp_in"], 1) if row["max_temp_in"] is not None else None,
+        "avg_temp_in": round(row["avg_temp_in"], 1) if row["avg_temp_in"] is not None else None,
+        "min_hum_in": round(row["min_hum_in"]) if row["min_hum_in"] is not None else None,
+        "max_hum_in": round(row["max_hum_in"]) if row["max_hum_in"] is not None else None,
+        "avg_hum_in": round(row["avg_hum_in"]) if row["avg_hum_in"] is not None else None,
+        "max_wind": round(row["max_wind"], 1) if row["max_wind"] is not None else None,
+        "avg_wind": round(row["avg_wind"], 1) if row["avg_wind"] is not None else None,
+        "max_gust": round(row["max_gust"], 1) if row["max_gust"] is not None else None,
+        "min_press": round(row["min_press"], 1) if row["min_press"] is not None else None,
+        "max_press": round(row["max_press"], 1) if row["max_press"] is not None else None,
+        "avg_press": round(row["avg_press"], 1) if row["avg_press"] is not None else None,
+        "max_solar": round(row["max_solar"], 0) if row["max_solar"] is not None else None,
+        "max_uv": round(row["max_uv"], 1) if row["max_uv"] is not None else None,
+        "max_rain_rate": round(row["max_rain_rate"], 1) if row["max_rain_rate"] is not None else None,
+        "total_rain": round(total_rain, 1),
+        "first_ts": row["first_ts"],
+        "last_ts": row["last_ts"]
+    }
+
 def log_alert_db(alert_type: str, title: str, message: str, data: Optional[Dict[str, Any]] = None):
     conn = get_connection()
     cursor = conn.cursor()

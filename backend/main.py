@@ -26,7 +26,7 @@ from backend.alert_engine import engine
 from backend.notifier import notifier
 from backend.database import (
     save_reading, get_latest_reading, get_all_records, get_records_history,
-    get_timeseries, search_history, get_alert_logs, deg_to_compass, calc_dew_point,
+    get_timeseries, search_history, get_history_kpis, get_alert_logs, deg_to_compass, calc_dew_point,
     get_station_status, get_pressure_trend, calc_apparent_temp,
     get_today_extremes, get_yesterday_same_time, get_recent_rain_totals,
     save_push_subscription, delete_push_subscription, get_all_push_subscriptions,
@@ -429,6 +429,10 @@ async def api_search(start_date: Optional[str] = None, end_date: Optional[str] =
     offset = (page - 1) * limit
     records, total = search_history(start_date=start_date, end_date=end_date, limit=limit, offset=offset)
     return {"records": records, "total": total, "page": page, "limit": limit}
+
+@app.get("/api/search/kpis")
+async def api_search_kpis(start_date: Optional[str] = None, end_date: Optional[str] = None):
+    return get_history_kpis(start_date=start_date, end_date=end_date)
 
 @app.get("/api/export/csv")
 async def api_export_csv(start_date: Optional[str] = None, end_date: Optional[str] = None):
@@ -1168,6 +1172,7 @@ async def history_page(request: Request, start_date: Optional[str] = None, end_d
     limit = 25
     offset = (page - 1) * limit
     records, total_count = search_history(start_date=start_date, end_date=end_date, limit=limit, offset=offset)
+    kpis = get_history_kpis(start_date=start_date, end_date=end_date)
     max_pages = max(1, (total_count + limit - 1) // limit)
     
     return templates.TemplateResponse(
@@ -1181,7 +1186,8 @@ async def history_page(request: Request, start_date: Optional[str] = None, end_d
             "page": page,
             "max_pages": max_pages,
             "start_date": start_date,
-            "end_date": end_date
+            "end_date": end_date,
+            "kpis": kpis
         }
     )
 
