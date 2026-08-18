@@ -87,6 +87,79 @@
         {% endif %}
     </div>
 
+    <!-- SEZIONE DISPOSITIVI SMART LIFE (TUYA) & GESTIONE ATTIVAZIONE -->
+    <div class="card" id="tuya_settings_card" style="grid-column: 1 / -1; border: 1px solid rgba(168, 85, 247, 0.3); background: linear-gradient(145deg, rgba(168, 85, 247, 0.05), var(--card-bg));">
+        <div class="card-header" style="border-bottom: 1px solid rgba(168, 85, 247, 0.2); flex-wrap: wrap; gap: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span>🔌 Dispositivi Smart Life / Tuya & Gestione Visibilità</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="sub-badge" id="tuya_active_count_badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc;">
+                    {{ tuya_summary.enabled_devices_count }} / {{ tuya_summary.total_devices_count }} Dispositivi Attivi
+                </span>
+                <button type="button" class="btn btn-sm" onclick="syncTuyaDevicesNow()" title="Forza sincronizzazione con Tuya Cloud">🔄 Sincronizza</button>
+            </div>
+        </div>
+
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.5;">
+            Abilita o disabilita individualmente ciascun dispositivo Smart Life per decidere se mostrarlo nella dashboard e includerlo nelle statistiche energetiche e nelle automazioni. I dispositivi disattivati non appariranno nella home.
+        </p>
+
+        <div id="tuya_status_msg" style="font-size: 0.82rem; margin-bottom: 0.75rem; display: none;"></div>
+
+        {% if tuya_devices %}
+        <div class="tuya-devices-list" id="tuya_devices_container">
+            {% for dev in tuya_devices %}
+            <div class="tuya-device-row {% if not dev.enabled %}is-disabled{% endif %}" id="tuya_row_{{ dev.id }}">
+                <div class="tuya-device-left">
+                    <span class="tuya-device-icon">{{ dev.icon }}</span>
+                    <div class="tuya-device-info">
+                        <div class="tuya-device-name-line">
+                            <strong class="tuya-dev-name" id="tuya_name_disp_{{ dev.id }}">{{ dev.name }}</strong>
+                            <span class="badge-tag" style="font-size: 0.7rem;">{{ dev.type_label }}</span>
+                            {% if dev.is_on is not none %}
+                            <span class="badge-tag {% if dev.is_on %}tag-on{% else %}tag-off{% endif %}" id="tuya_state_tag_{{ dev.id }}">
+                                {% if dev.is_on %}🟢 ON{% else %}⚪ OFF{% endif %}
+                            </span>
+                            {% endif %}
+                        </div>
+                        <div class="tuya-device-meta">
+                            <span>Modello: {{ dev.product_name or dev.model or 'Generico' }}</span> • <span style="font-family: monospace; font-size: 0.75rem; color: var(--text-dim);">ID: {{ dev.id }}</span>
+                            {% if dev.power_w > 0 %}
+                            • <strong style="color: #38bdf8;">⚡ {{ dev.power_w }} W</strong>
+                            {% endif %}
+                            {% if dev.battery_pct is not none %}
+                            • <span style="color: #10b981;">🔋 {{ dev.battery_pct }}%</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tuya-device-actions">
+                    <!-- Toggle Visibilità Switch -->
+                    <label class="tuya-toggle-label" title="Attiva o disattiva il dispositivo nella Dashboard">
+                        <input type="checkbox" class="tuya-switch-input" id="tuya_toggle_{{ dev.id }}" {% if dev.enabled %}checked{% endif %} onchange="updateTuyaDeviceConfig('{{ dev.id }}', this.checked)">
+                        <span class="tuya-switch-slider"></span>
+                        <span class="tuya-switch-text" id="tuya_text_{{ dev.id }}">{% if dev.enabled %}Attivo{% else %}Disattivato{% endif %}</span>
+                    </label>
+
+                    <!-- Test rapido ON/OFF se presa o luce -->
+                    {% if dev.is_on is not none %}
+                    <button type="button" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="testToggleTuya('{{ dev.id }}')">
+                        ⚡ Toggle ON/OFF
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div style="background: rgba(255,255,255,0.03); border: 1px dashed var(--card-border); border-radius: 12px; padding: 1.25rem; text-align: center; color: var(--text-dim); font-size: 0.85rem;">
+            Nessun dispositivo Tuya rilevato. Verifica le credenziali Client ID e Secret.
+        </div>
+        {% endif %}
+    </div>
+
     <!-- 3. DATABASE SQLITE & MANUTENZIONE STORICO -->
     <div class="card">
         <div class="card-header">
@@ -346,9 +419,119 @@
     color: var(--text-dim);
     white-space: nowrap;
 }
-.badge-tag.urgent {
-    background: rgba(239, 68, 68, 0.2);
-    color: #f87171;
+.badge-tag.tag-on {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+}
+.badge-tag.tag-off {
+    background: rgba(148, 163, 184, 0.15);
+    color: var(--text-dim);
+}
+
+/* TUYA DEVICES LIST STYLES */
+.tuya-devices-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+.tuya-device-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 0.85rem 1.1rem;
+    gap: 1rem;
+    flex-wrap: wrap;
+    transition: all 0.2s ease;
+}
+.tuya-device-row.is-disabled {
+    opacity: 0.45;
+    border-style: dashed;
+    background: rgba(0, 0, 0, 0.12);
+}
+.tuya-device-left {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: 220px;
+    flex: 1 1 auto;
+}
+.tuya-device-icon {
+    font-size: 1.6rem;
+    flex-shrink: 0;
+}
+.tuya-device-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+.tuya-device-name-line {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.tuya-dev-name {
+    font-size: 0.95rem;
+    color: #fff;
+}
+.tuya-device-meta {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+.tuya-device-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+/* Modern Switch Toggle */
+.tuya-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+}
+.tuya-switch-input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.tuya-switch-slider {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 24px;
+    transition: all 0.25s ease;
+}
+.tuya-switch-slider::before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    border-radius: 50%;
+    transition: all 0.25s ease;
+}
+.tuya-switch-input:checked + .tuya-switch-slider {
+    background-color: #10b981;
+}
+.tuya-switch-input:checked + .tuya-switch-slider::before {
+    transform: translateX(20px);
+}
+.tuya-switch-text {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text);
 }
 
 @media (max-width: 600px) {
@@ -356,6 +539,125 @@
         flex: 1 1 100%;
         width: 100%;
     }
+    .tuya-device-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .tuya-device-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
 }
 </style>
+
+<script>
+async function updateTuyaDeviceConfig(deviceId, isEnabled) {
+    const row = document.getElementById(`tuya_row_${deviceId}`);
+    const textEl = document.getElementById(`tuya_text_${deviceId}`);
+    const msgEl = document.getElementById('tuya_status_msg');
+    
+    if (textEl) {
+        textEl.innerText = isEnabled ? 'Attivo' : 'Disattivato';
+    }
+    if (row) {
+        if (isEnabled) row.classList.remove('is-disabled');
+        else row.classList.add('is-disabled');
+    }
+    
+    try {
+        const resp = await fetch(`/api/tuya/device/${deviceId}/config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: isEnabled })
+        });
+        const res = await resp.json();
+        if (msgEl) {
+            msgEl.style.display = 'block';
+            msgEl.style.color = '#10b981';
+            msgEl.innerText = `✅ Dispositivo ${isEnabled ? 'attivato' : 'disattivato'} nella Dashboard!`;
+            setTimeout(() => { msgEl.style.display = 'none'; }, 3500);
+        }
+        // Aggiorna badge conteggio
+        updateTuyaBadgeCounts();
+    } catch (e) {
+        if (msgEl) {
+            msgEl.style.display = 'block';
+            msgEl.style.color = '#ef4444';
+            msgEl.innerText = `❌ Errore salvataggio impostazione: ${e.message}`;
+        }
+    }
+}
+
+function updateTuyaBadgeCounts() {
+    const checkboxes = document.querySelectorAll('.tuya-switch-input');
+    const badge = document.getElementById('tuya_active_count_badge');
+    if (!badge || !checkboxes.length) return;
+    let enabledCount = 0;
+    checkboxes.forEach(cb => { if (cb.checked) enabledCount++; });
+    badge.innerText = `${enabledCount} / ${checkboxes.length} Dispositivi Attivi`;
+}
+
+async function testToggleTuya(deviceId) {
+    const msgEl = document.getElementById('tuya_status_msg');
+    if (msgEl) {
+        msgEl.style.display = 'block';
+        msgEl.style.color = '#38bdf8';
+        msgEl.innerText = 'Invio comando in corso...';
+    }
+    try {
+        const resp = await fetch(`/api/tuya/device/${deviceId}/toggle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const res = await resp.json();
+        if (msgEl) {
+            msgEl.style.color = '#10b981';
+            msgEl.innerText = '✅ Comando inviato con successo a Tuya Cloud!';
+            setTimeout(() => { msgEl.style.display = 'none'; }, 3000);
+        }
+        // Aggiorna tag stato
+        setTimeout(async () => {
+            const devResp = await fetch('/api/tuya/summary');
+            const summary = await devResp.json();
+            const dev = (summary.all_devices || []).find(d => d.id === deviceId);
+            if (dev && dev.is_on !== null) {
+                const tag = document.getElementById(`tuya_state_tag_${deviceId}`);
+                if (tag) {
+                    tag.className = `badge-tag ${dev.is_on ? 'tag-on' : 'tag-off'}`;
+                    tag.innerText = dev.is_on ? '🟢 ON' : '⚪ OFF';
+                }
+            }
+        }, 1500);
+    } catch (e) {
+        if (msgEl) {
+            msgEl.style.color = '#ef4444';
+            msgEl.innerText = `❌ Errore invio comando: ${e.message}`;
+        }
+    }
+}
+
+async function syncTuyaDevicesNow() {
+    const msgEl = document.getElementById('tuya_status_msg');
+    if (msgEl) {
+        msgEl.style.display = 'block';
+        msgEl.style.color = '#38bdf8';
+        msgEl.innerText = 'Sincronizzazione dispositivi con Tuya Cloud...';
+    }
+    try {
+        const resp = await fetch('/api/tuya/sync', { method: 'POST' });
+        const summary = await resp.json();
+        if (msgEl) {
+            msgEl.style.color = '#10b981';
+            msgEl.innerText = `✅ Sincronizzazione completata! (${summary.total_devices_count || 0} dispositivi)`;
+            setTimeout(() => { location.reload(); }, 1200);
+        }
+    } catch (e) {
+        if (msgEl) {
+            msgEl.style.color = '#ef4444';
+            msgEl.innerText = `❌ Errore sincronizzazione: ${e.message}`;
+        }
+    }
+}
+</script>
 {% endblock %}

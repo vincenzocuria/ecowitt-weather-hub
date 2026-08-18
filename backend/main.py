@@ -45,6 +45,7 @@ from backend.forecast_service import forecast_service
 from backend.aton_service import aton_service
 from backend.thinq_service import thinq_service
 from backend.smartthings_service import smartthings_service
+from backend.tuya_service import tuya_service
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -79,6 +80,7 @@ async def lifespan(app: FastAPI):
     aton_task = asyncio.create_task(aton_service.worker_loop())
     thinq_task = asyncio.create_task(thinq_service.worker_loop())
     smartthings_task = asyncio.create_task(smartthings_service.worker_loop())
+    tuya_task = asyncio.create_task(tuya_service.worker_loop())
     yield
     watchdog_task.cancel()
     aton_service.stop()
@@ -87,6 +89,7 @@ async def lifespan(app: FastAPI):
     thinq_task.cancel()
     smartthings_task.cancel()
     await smartthings_service.close()
+    tuya_task.cancel()
 
 
 
@@ -395,6 +398,9 @@ async def api_live():
         aton_service.latest_data or get_latest_energy() or {},
         analytics_ctx.get("drying_index") if analytics_ctx else None
     )
+    clean_latest["smartthings_enabled"] = settings.SMARTTHINGS_ENABLED
+    clean_latest["tuya"] = tuya_service.get_summary()
+    clean_latest["tuya_enabled"] = settings.TUYA_ENABLED
     return clean_latest
 
 
@@ -731,6 +737,60 @@ async def api_smartthings_command(device_id: str, request: Request):
     res = await smartthings_service.execute_command(device_id, cap, cmd, args)
     return {"success": res}
 
+# --- Tuya / Smart Life Endpoints ---
+@app.get("/api/tuya/summary")
+async def api_tuya_summary():
+    """Restituisce il riepilogo in tempo reale di tutti i dispositivi Smart Life (Tuya) abilitati."""
+    return tuya_service.get_summary()
+
+@app.post("/api/tuya/sync")
+@app.get("/api/tuya/sync")
+async def api_tuya_sync():
+    """Forza la risincronizzazione con il cloud Tuya."""
+    await tuya_service.sync_all()
+    return tuya_service.get_summary()
+
+@app.get("/api/tuya/devices")
+async def api_tuya_devices():
+    """Restituisce tutti i dispositivi rilevati su Tuya con relativo stato di abilitazione."""
+    summary = tuya_service.get_summary()
+    return {"devices": summary.get("all_devices", []), "enabled_count": summary.get("enabled_devices_count", 0)}
+
+@app.post("/api/tuya/device/{device_id}/toggle")
+async def api_tuya_toggle(device_id: str, request: Request):
+    """Inverte o imposta lo stato ON/OFF del dispositivo Tuya."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    target_state = payload.get("state")
+    res = await tuya_service.toggle_device(device_id, target_state)
+    return res
+
+@app.post("/api/tuya/device/{device_id}/command")
+async def api_tuya_command(device_id: str, request: Request):
+    """Invia un comando avanzato (es: setpoint temperatura) a un dispositivo Tuya."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    commands = payload.get("commands", [])
+    if not commands and "temp_c" in payload:
+        return await tuya_service.set_thermostat_temp(device_id, float(payload["temp_c"]))
+    return await tuya_service.send_command(device_id, commands)
+
+@app.post("/api/tuya/device/{device_id}/config")
+async def api_tuya_config(device_id: str, request: Request):
+    """Salva le impostazioni di abilitazione (ON/OFF visibilità) e nome personalizzato per il dispositivo Tuya."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    enabled = payload.get("enabled", True)
+    custom_name = payload.get("custom_name")
+    await tuya_service.set_device_enabled(device_id, enabled, custom_name)
+    return {"status": "ok", "device_id": device_id, "enabled": enabled, "custom_name": custom_name}
+
 # ----------------- UI HTML ROUTES -----------------
 @app.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
@@ -764,8 +824,9 @@ async def dashboard_page(request: Request):
     energy_latest = aton_service.latest_data or get_latest_energy() or {}
     energy_summary = get_today_energy_summary()
 
-    # Dati SmartThings
+    # Dati SmartThings & Tuya Smart Life
     smartthings_summary = smartthings_service.get_summary(energy_latest, analytics.get("drying_index") if analytics else None)
+    tuya_summary = tuya_service.get_summary()
 
     return templates.TemplateResponse(
         request=request,
@@ -794,6 +855,8 @@ async def dashboard_page(request: Request):
             "climate_devices": thinq_service.get_cached_devices(),
             "smartthings": smartthings_summary,
             "smartthings_enabled": settings.SMARTTHINGS_ENABLED,
+            "tuya": tuya_summary,
+            "tuya_enabled": settings.TUYA_ENABLED,
             "sensor_aliases": get_sensor_aliases(),
             "db_stats": get_database_stats(),
             "ntfy_topic": settings.NTFY_TOPIC
@@ -990,6 +1053,7 @@ async def settings_page(request: Request):
     aliases = get_sensor_aliases()
     soil_moist = latest.get("soil_moisture") or {}
     detected_sensors = get_detected_sensors(raw, soil_moist, aliases)
+    tuya_sum = tuya_service.get_summary()
     return templates.TemplateResponse(
         request=request,
         name="settings.html",
@@ -1002,6 +1066,9 @@ async def settings_page(request: Request):
             "aton_enabled": settings.ATON_ENABLED,
             "thinq_enabled": settings.LG_THINQ_ENABLED,
             "smartthings_enabled": settings.SMARTTHINGS_ENABLED,
+            "tuya_enabled": settings.TUYA_ENABLED,
+            "tuya_summary": tuya_sum,
+            "tuya_devices": tuya_sum.get("all_devices", []),
             "sensor_aliases": aliases,
             "detected_sensors": detected_sensors,
             "db_stats": get_database_stats(),

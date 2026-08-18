@@ -560,6 +560,44 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIn("letter", z_res)
         self.assertIn("text", z_res)
 
+    def test_tuya_service_and_db_config(self):
+        from backend.tuya_service import tuya_service
+        from backend.database import get_tuya_device_configs, save_tuya_device_config
+
+        # Test DB save and retrieve
+        test_dev_id = "test_plug_123"
+        save_tuya_device_config(test_dev_id, enabled=True, custom_name="Test Presa Forno", category="cz", icon="🔌")
+        configs = get_tuya_device_configs()
+        self.assertIn(test_dev_id, configs)
+        self.assertTrue(configs[test_dev_id]["enabled"])
+        self.assertEqual(configs[test_dev_id]["custom_name"], "Test Presa Forno")
+
+        # Test toggle to disabled
+        save_tuya_device_config(test_dev_id, enabled=False)
+        configs = get_tuya_device_configs()
+        self.assertFalse(configs[test_dev_id]["enabled"])
+
+        # Test status formatting
+        mock_dev_info = {
+            "id": test_dev_id,
+            "name": "Smart Socket Raw",
+            "category": "cz",
+            "product_name": "smart plug"
+        }
+        mock_raw_status = [
+            {"code": "switch_1", "value": True},
+            {"code": "cur_power", "value": 1500}, # 150.0 W
+            {"code": "cur_voltage", "value": 2305}, # 230.5 V
+            {"code": "cur_current", "value": 650} # 0.65 A
+        ]
+        formatted = tuya_service._format_device_status(mock_dev_info, mock_raw_status, configs[test_dev_id])
+        self.assertEqual(formatted["name"], "Test Presa Forno")
+        self.assertFalse(formatted["enabled"])
+        self.assertTrue(formatted["is_on"])
+        self.assertEqual(formatted["power_w"], 150.0)
+        self.assertEqual(formatted["voltage_v"], 230.5)
+        self.assertEqual(formatted["current_a"], 0.65)
+
 
 if __name__ == "__main__":
     unittest.main()

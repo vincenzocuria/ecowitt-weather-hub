@@ -9,3 +9,4 @@ aiofiles>=23.2.1
 pywebpush>=2.0.0
 tzdata>=2024.1
 thinqconnect>=1.0.13
+tinytuya>=1.20.0

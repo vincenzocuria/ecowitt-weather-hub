@@ -185,6 +185,18 @@ def init_db():
             updated_at TEXT NOT NULL
         )
     """)
+
+    # 8. Configurazione e Attivazione Dispositivi Tuya / Smart Life
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tuya_devices_config (
+            device_id TEXT PRIMARY KEY,
+            enabled INTEGER DEFAULT 1,
+            custom_name TEXT,
+            category TEXT,
+            icon TEXT,
+            updated_at TEXT NOT NULL
+        )
+    """)
     
     conn.commit()
     conn.close()
@@ -1213,6 +1225,51 @@ def save_sensor_alias(sensor_id: str, alias: str) -> None:
             VALUES (?, ?, ?)
             ON CONFLICT(sensor_id) DO UPDATE SET alias=excluded.alias, updated_at=excluded.updated_at
         """, (sensor_id.strip(), alias.strip(), now_iso))
+    conn.commit()
+    conn.close()
+
+# ----------------- GESTIONE DISPOSITIVI TUYA / SMART LIFE -----------------
+
+def get_tuya_device_configs() -> Dict[str, Dict[str, Any]]:
+    """Restituisce le preferenze di attivazione e nomi dei dispositivi Tuya."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT device_id, enabled, custom_name, category, icon, updated_at FROM tuya_devices_config")
+    rows = cursor.fetchall()
+    conn.close()
+    return {
+        r["device_id"]: {
+            "device_id": r["device_id"],
+            "enabled": bool(r["enabled"]),
+            "custom_name": r["custom_name"],
+            "category": r["category"],
+            "icon": r["icon"],
+            "updated_at": r["updated_at"]
+        }
+        for r in rows
+    }
+
+def save_tuya_device_config(
+    device_id: str,
+    enabled: bool,
+    custom_name: Optional[str] = None,
+    category: Optional[str] = None,
+    icon: Optional[str] = None
+) -> None:
+    """Salva o aggiorna lo stato di abilitazione e il nome personalizzato di un dispositivo Tuya."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT INTO tuya_devices_config (device_id, enabled, custom_name, category, icon, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(device_id) DO UPDATE SET
+            enabled=excluded.enabled,
+            custom_name=COALESCE(excluded.custom_name, tuya_devices_config.custom_name),
+            category=COALESCE(excluded.category, tuya_devices_config.category),
+            icon=COALESCE(excluded.icon, tuya_devices_config.icon),
+            updated_at=excluded.updated_at
+    """, (device_id.strip(), 1 if enabled else 0, custom_name, category, icon, now_iso))
     conn.commit()
     conn.close()
 

@@ -115,6 +115,13 @@ class Settings:
     SMARTTHINGS_PAT: str = os.getenv("SMARTTHINGS_PAT", os.getenv("SAMSUNG_PAT", ""))
     SMARTTHINGS_POLL_INTERVAL_SEC: int = int(os.getenv("SMARTTHINGS_POLL_INTERVAL_SEC", "30"))
 
+    # Configurazione Tuya / Smart Life
+    TUYA_ENABLED: bool = os.getenv("TUYA_ENABLED", "true").lower() in ("true", "1", "yes")
+    TUYA_CLIENT_ID: str = os.getenv("TUYA_CLIENT_ID", "fe7rmdm3pm8e5kt8wkhr")
+    TUYA_SECRET: str = os.getenv("TUYA_SECRET", "e64e1072681a4ec7bbfccf10fc2a4a59")
+    TUYA_REGION: str = os.getenv("TUYA_REGION", "eu")
+    TUYA_POLL_INTERVAL_SEC: int = int(os.getenv("TUYA_POLL_INTERVAL_SEC", "30"))
+
     # Notifiche push (ntfy.sh) & Web Push
     ENABLE_NTFY: bool = True
     NTFY_TOPIC: str = os.getenv("NTFY_TOPIC", "")

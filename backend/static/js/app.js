@@ -458,6 +458,11 @@ function startDashboardPolling() {
                     if (data.smartthings) {
                         updateSmartThingsUI(data.smartthings);
                     }
+
+                    // Dispositivi Smart Life (Tuya)
+                    if (data.tuya) {
+                        updateTuyaUI(data.tuya);
+                    }
                 }
             })
             .catch(() => {});
@@ -1272,6 +1277,113 @@ function syncSmartThingsDevices() {
             const btn2 = document.getElementById('st_sync_btn');
             if (btn2) {
                 btn2.innerHTML = `<span class="pulse-dot"></span> <span id="st_status_text">🟢 SmartThings Connesso</span>`;
+            }
+        });
+}
+
+function updateTuyaUI(tuya) {
+    if (!tuya) return;
+
+    // Totale potenza assorbita
+    const totalWEl = document.getElementById('tuya_total_w_val');
+    if (totalWEl && tuya.total_plug_power_w !== undefined) {
+        totalWEl.innerText = `${tuya.total_plug_power_w} W`;
+    }
+
+    // Badge status
+    const statusText = document.getElementById('tuya_status_text');
+    if (statusText && tuya.enabled_devices_count !== undefined) {
+        statusText.innerText = `🟢 ${tuya.enabled_devices_count} Attivi`;
+    }
+
+    // Aggiornamento singole card
+    const devs = tuya.enabled_devices || [];
+    devs.forEach(dev => {
+        const id = dev.id;
+        
+        // Power W
+        const pEl = document.getElementById(`tuya_p_${id}`);
+        if (pEl && dev.power_w !== undefined) {
+            pEl.innerText = `${dev.power_w} W`;
+            pEl.style.color = (dev.power_w > 50) ? '#38bdf8' : 'var(--text)';
+        }
+
+        // Voltage V
+        const vEl = document.getElementById(`tuya_v_${id}`);
+        if (vEl && dev.voltage_v !== undefined) {
+            vEl.innerText = `${dev.voltage_v} V`;
+        }
+
+        // Current A
+        const iEl = document.getElementById(`tuya_i_${id}`);
+        if (iEl && dev.current_a !== undefined) {
+            iEl.innerText = `${dev.current_a} A`;
+        }
+
+        // State Text
+        const stateEl = document.getElementById(`tuya_state_${id}`);
+        if (stateEl && dev.is_on !== null && dev.is_on !== undefined) {
+            stateEl.innerText = dev.is_on ? 'Alimentato' : 'Spento';
+        }
+
+        // Pill button
+        const pill = document.getElementById(`tuya_pill_${id}`);
+        if (pill && dev.is_on !== null && dev.is_on !== undefined) {
+            pill.className = `appliance-status-pill ${dev.is_on ? 'pill-active' : 'pill-standby'}`;
+            pill.innerText = dev.is_on ? '🟢 ON' : '⚪ OFF';
+        }
+
+        // Card container class
+        const card = document.getElementById(`tuya_card_${id}`);
+        if (card && dev.is_on !== null && dev.is_on !== undefined) {
+            if (dev.is_on) {
+                card.classList.add('is-on');
+                card.classList.remove('is-standby');
+            } else {
+                card.classList.remove('is-on');
+                card.classList.add('is-standby');
+            }
+        }
+    });
+}
+
+async function toggleTuyaFromDashboard(deviceId) {
+    const pill = document.getElementById(`tuya_pill_${deviceId}`);
+    if (pill) {
+        pill.innerText = '⏳ ...';
+    }
+    try {
+        const resp = await fetch(`/api/tuya/device/${deviceId}/toggle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const res = await resp.json();
+        // Refresh immediato
+        setTimeout(async () => {
+            const sumResp = await fetch('/api/tuya/summary');
+            const summary = await sumResp.json();
+            updateTuyaUI(summary);
+        }, 1200);
+    } catch (e) {
+        console.error('Errore toggle Tuya:', e);
+    }
+}
+
+function syncTuyaLiveDevices() {
+    const btn = document.getElementById('tuya_sync_btn');
+    if (btn) {
+        btn.innerHTML = `<span class="pulse-dot"></span> <span>⏳ Sincronizzazione...</span>`;
+    }
+    fetch('/api/tuya/sync', { method: 'POST' })
+        .then(r => r.json())
+        .then(res => {
+            if (res) updateTuyaUI(res);
+        })
+        .finally(() => {
+            const btn2 = document.getElementById('tuya_sync_btn');
+            if (btn2) {
+                btn2.innerHTML = `<span class="pulse-dot"></span> <span id="tuya_status_text">🟢 Sincronizzato</span>`;
             }
         });
 }
