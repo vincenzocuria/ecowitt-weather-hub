@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 
 {% block content %}
+<!-- HEADER PRINCIPALE & AZIONI RAPIDE -->
 <div class="header-card">
     <div class="header-title">
         <h1>🔔 Centro Notifiche</h1>
-        <p>Consulta lo storico degli avvisi generati in tempo reale dal sistema meteorologico.</p>
+        <p>Monitoraggio allarmi, anomalie meteo e registro storico degli eventi in tempo reale.</p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
         <button id="btn-mark-all-read" class="btn btn-primary" style="padding: 0.6rem 1.1rem; font-size: 0.88rem;" onclick="markAllAlertsAsRead()">
@@ -19,102 +20,273 @@
     </div>
 </div>
 
-<!-- BARRA STATISTICHE & FILTRI RAPIDI -->
-<div class="card" style="margin-bottom: 1.25rem; padding: 0.85rem 1.2rem;">
-    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
-        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-            <span style="font-size: 0.9rem; color: var(--text-dim); margin-right: 0.25rem;">Filtra:</span>
-            <button id="filter-btn-all" class="filter-chip active" onclick="filterAlerts('all')">
-                Tutte (<span id="total-count-badge">{{ alerts|length }}</span>)
-            </button>
-            <button id="filter-btn-unread" class="filter-chip" onclick="filterAlerts('unread')">
-                Non lette (<span id="unread-filter-count">{{ unread_count }}</span>)
-            </button>
+<!-- KPI CARDS CRUSCOTTO STATISTICHE -->
+<div class="alerts-kpi-grid">
+    <div class="card alerts-kpi-card" onclick="filterAlerts('all')">
+        <div class="kpi-icon-wrap" style="background: rgba(56, 189, 248, 0.12); color: #38bdf8;">📋</div>
+        <div class="kpi-content">
+            <div class="kpi-label">Totale Notifiche</div>
+            <div class="kpi-value" id="kpi-total-val">{{ stats.total_count if stats else alerts|length }}</div>
+            <div class="kpi-sub">Registro complessivo</div>
         </div>
-        
-        <div style="display: flex; align-items: center; gap: 0.75rem;">
-            {% if unread_count > 0 %}
-            <span class="status-pill badge-warning" id="unread-status-pill" style="font-size: 0.8rem;">
-                <span id="unread-count-badge">{{ unread_count }}</span> da leggere
-            </span>
-            {% else %}
-            <span class="status-pill badge-live" id="unread-status-pill" style="font-size: 0.8rem;">
-                Nessuna da leggere
-            </span>
-            {% endif %}
-            
-            {% if alerts %}
-            <button class="btn btn-outline" style="padding: 0.35rem 0.75rem; font-size: 0.78rem; color: var(--danger); border-color: rgba(239,68,68,0.3);" onclick="clearAllAlerts()">
-                🗑️ Svuota registro
-            </button>
-            {% endif %}
+    </div>
+
+    <div class="card alerts-kpi-card {% if unread_count > 0 %}kpi-warning-glow{% endif %}" onclick="filterAlerts('unread')">
+        <div class="kpi-icon-wrap" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b;">📬</div>
+        <div class="kpi-content">
+            <div class="kpi-label">Da Leggere</div>
+            <div class="kpi-value" id="kpi-unread-val" style="color: {% if unread_count > 0 %}#f59e0b{% else %}#10b981{% endif %};">
+                {{ unread_count }}
+            </div>
+            <div class="kpi-sub" id="kpi-unread-sub">{% if unread_count > 0 %}Richiedono attenzione{% else %}Tutte lette ✨{% endif %}</div>
+        </div>
+    </div>
+
+    <div class="card alerts-kpi-card" onclick="filterByToday()">
+        <div class="kpi-icon-wrap" style="background: rgba(16, 185, 129, 0.12); color: #10b981;">📅</div>
+        <div class="kpi-content">
+            <div class="kpi-label">Oggi</div>
+            <div class="kpi-value" id="kpi-today-val">{{ stats.today_count if stats else 0 }}</div>
+            <div class="kpi-sub">Eventi ultime 24h</div>
+        </div>
+    </div>
+
+    <div class="card alerts-kpi-card">
+        <div class="kpi-icon-wrap" style="background: rgba(168, 85, 247, 0.12); color: #c084fc;">
+            {% if stats and stats.top_type == 'lightning' %}⚡
+            {% elif stats and stats.top_type in ('rain', 'rain_start') %}🌧️
+            {% elif stats and stats.top_type == 'storm' %}⚠️
+            {% elif stats and stats.top_type == 'freeze' %}❄️
+            {% elif stats and stats.top_type == 'heatwave' %}🔥
+            {% elif stats and stats.top_type == 'record' %}🏆
+            {% else %}⚡{% endif %}
+        </div>
+        <div class="kpi-content">
+            <div class="kpi-label">Tipo Frequente</div>
+            <div class="kpi-value" style="font-size: 1.15rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                {{ stats.top_type if (stats and stats.top_type) else 'Nessuno' }}
+            </div>
+            <div class="kpi-sub">{{ stats.top_type_count if (stats and stats.top_type_count) else 0 }} occorrenze</div>
         </div>
     </div>
 </div>
 
-<!-- FEED DELLE NOTIFICHE -->
-<div id="notifications-list-container" style="display: flex; flex-direction: column; gap: 0.85rem; margin-bottom: 1.5rem;">
-    {% if alerts %}
-        {% for a in alerts %}
-        <div class="card notification-item {% if not a.is_read %}unread{% endif %}" id="alert-item-{{ a.id }}" data-unread="{{ 1 if not a.is_read else 0 }}">
-            <div class="notification-icon-wrap">
-                {% if a.alert_type == 'lightning' %}⚡
-                {% elif a.alert_type == 'storm' %}⚠️
-                {% elif a.alert_type == 'rain' or a.alert_type == 'rain_start' %}🌧️
-                {% elif a.alert_type == 'rain_forecast' %}☔
-                {% elif a.alert_type == 'freeze' %}❄️
-                {% elif a.alert_type == 'heatwave' %}🔥
-                {% elif a.alert_type == 'wind_spike' %}💨
-                {% elif a.alert_type == 'soil_dry' %}🌱
-                {% elif a.alert_type == 'record' %}🏆
-                {% elif a.alert_type == 'digest' %}☕
-                {% elif a.alert_type == 'offline' %}📡
-                {% elif a.alert_type == 'online' %}🟢
-                {% elif a.alert_type == 'battery_low' %}🪫
-                {% elif a.alert_type == 'uv_extreme' %}☀️
-                {% else %}🔔{% endif %}
+<!-- BARRA RICERCA & FILTRI AVANZATI -->
+<div class="card" style="margin-bottom: 1.5rem; padding: 1rem 1.25rem;">
+    <div style="display: flex; flex-direction: column; gap: 0.9rem;">
+        <!-- Input di Ricerca Testuale in Tempo Reale -->
+        <div class="search-bar-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="alert-search-input" class="search-input" placeholder="Cerca notifiche per testo, titolo, tipo (es. pioggia, fulmine, gelo, record)..." oninput="handleAlertSearch()">
+            <button id="search-clear-btn" class="search-clear-btn" style="display:none;" onclick="clearAlertSearch()">✕</button>
+        </div>
+
+        <!-- Barra Filtri Chip Categoria & Stato -->
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+            <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;" id="category-filter-chips">
+                <button id="filter-btn-all" class="filter-chip active" onclick="filterAlerts('all')">
+                    Tutte (<span id="total-count-badge">{{ alerts|length }}</span>)
+                </button>
+                <button id="filter-btn-unread" class="filter-chip" onclick="filterAlerts('unread')">
+                    Non lette (<span id="unread-filter-count">{{ unread_count }}</span>)
+                </button>
+                <button class="filter-chip" data-category="storms" onclick="filterCategory('lightning,storm,wind_spike', this)">
+                    ⚡ Temporali & Vento
+                </button>
+                <button class="filter-chip" data-category="rain" onclick="filterCategory('rain,rain_start,rain_forecast', this)">
+                    🌧️ Pioggia
+                </button>
+                <button class="filter-chip" data-category="temp" onclick="filterCategory('freeze,heatwave', this)">
+                    🌡️ Temperature
+                </button>
+                <button class="filter-chip" data-category="system" onclick="filterCategory('record,offline,online,battery_low,soil_dry,digest,leak', this)">
+                    ⚙️ Sistema & Record
+                </button>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <span class="status-pill {% if unread_count > 0 %}badge-warning{% else %}badge-live{% endif %}" id="unread-status-pill" style="font-size: 0.8rem;">
+                    {% if unread_count > 0 %}
+                    <span id="unread-count-badge">{{ unread_count }}</span> da leggere
+                    {% else %}
+                    Nessuna da leggere
+                    {% endif %}
+                </span>
+
+                {% if alerts %}
+                <button class="btn btn-outline" style="padding: 0.35rem 0.75rem; font-size: 0.78rem; color: var(--danger); border-color: rgba(239,68,68,0.3);" onclick="clearAllAlerts()">
+                    🗑️ Svuota registro
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SEZIONE 1: ULTIME NOTIFICHE RECENTI (VISIBILI DI DEFAULT) -->
+{% if alerts %}
+<div class="section-title-wrap" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+    <h3 style="font-size: 1.05rem; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 0.5rem;">
+        <span>⚡ Ultime Notifiche</span>
+        <span class="badge-tag" style="background: rgba(56, 189, 248, 0.15); color: var(--accent); font-size: 0.75rem;" id="recent-count-tag">
+            {{ recent_alerts|length if recent_alerts else alerts|length }} recenti
+        </span>
+    </h3>
+    <span style="font-size: 0.8rem; color: var(--text-dim);" id="matching-results-indicator"></span>
+</div>
+
+<div id="recent-notifications-container" style="display: flex; flex-direction: column; gap: 0.85rem; margin-bottom: 1.5rem;">
+    {% for a in recent_alerts %}
+    <div class="card notification-item {% if not a.is_read %}unread{% endif %}" id="alert-item-{{ a.id }}" data-unread="{{ 1 if not a.is_read else 0 }}" data-type="{{ a.alert_type }}" data-timestamp="{{ a.timestamp }}">
+        <div class="notification-icon-wrap">
+            {% if a.alert_type == 'lightning' %}⚡
+            {% elif a.alert_type == 'storm' %}⚠️
+            {% elif a.alert_type in ('rain', 'rain_start') %}🌧️
+            {% elif a.alert_type == 'rain_forecast' %}☔
+            {% elif a.alert_type == 'freeze' %}❄️
+            {% elif a.alert_type == 'heatwave' %}🔥
+            {% elif a.alert_type == 'wind_spike' %}💨
+            {% elif a.alert_type == 'soil_dry' %}🌱
+            {% elif a.alert_type == 'record' %}🏆
+            {% elif a.alert_type == 'digest' %}☕
+            {% elif a.alert_type == 'offline' %}📡
+            {% elif a.alert_type == 'online' %}🟢
+            {% elif a.alert_type == 'battery_low' %}🪫
+            {% elif a.alert_type == 'uv_extreme' %}☀️
+            {% else %}🔔{% endif %}
+        </div>
+        
+        <div class="notification-content">
+            <div class="notification-meta">
+                <span class="alert-type-pill {{ a.alert_type }}">{{ a.alert_type }}</span>
+                <span class="notification-date">{{ a.timestamp | local_dt }}</span>
+                {% if not a.is_read %}
+                <span class="unread-dot" title="Non letta"></span>
+                {% endif %}
             </div>
             
-            <div class="notification-content">
-                <div class="notification-meta">
-                    <span class="alert-type-pill {{ a.alert_type }}">{{ a.alert_type }}</span>
-                    <span class="notification-date">{{ a.timestamp | local_dt }}</span>
-                    {% if not a.is_read %}
-                    <span class="unread-dot" title="Non letta"></span>
-                    {% endif %}
+            <div class="notification-title">{{ a.title }}</div>
+            <div class="notification-message">{{ a.message }}</div>
+        </div>
+        
+        <div class="notification-actions">
+            {% if not a.is_read %}
+            <button class="btn btn-outline btn-mark-read" style="padding: 0.4rem 0.85rem; font-size: 0.8rem; white-space: nowrap;" onclick="markAlertAsRead({{ a.id }})">
+                ✓ Segna come letta
+            </button>
+            {% else %}
+            <span class="badge-tag read-status-tag" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 0.75rem;">
+                ✓ Letta
+            </span>
+            {% endif %}
+            
+            <button class="btn-del-item" onclick="deleteAlertItem({{ a.id }})" title="Elimina notifica">
+                ✕
+            </button>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- SEZIONE 2: ARCHIVIO NOTIFICHE STORICHE (COLLASSABILE - CHIUSO DI DEFAULT) -->
+{% if archive_alerts %}
+<div class="card archive-accordion-card" id="archive-accordion-wrapper" style="margin-bottom: 1.5rem; padding: 0; overflow: hidden; border: 1px solid var(--card-border);">
+    <button class="accordion-header-btn" id="btn-toggle-archive" onclick="toggleArchiveAccordion()">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span class="accordion-icon" id="archive-chevron">▶</span>
+            <div style="text-align: left;">
+                <div style="font-weight: 600; font-size: 0.95rem; color: var(--text);">
+                    📂 Archivio Notifiche Precedenti
+                </div>
+                <div style="font-size: 0.78rem; color: var(--text-dim);" id="archive-summary-text">
+                    {{ archive_alerts|length }} notifiche storiche meno recenti (chiuso di default)
+                </div>
+            </div>
+        </div>
+        <span class="badge-tag" style="background: rgba(255, 255, 255, 0.06); color: var(--text-dim); font-size: 0.78rem;" id="archive-badge-tag">
+            {{ archive_alerts|length }} archiviate
+        </span>
+    </button>
+
+    <div class="accordion-body-collapse" id="archive-notifications-body" style="display: none; padding: 1rem 1.25rem; background: rgba(0, 0, 0, 0.12);">
+        <div id="archive-notifications-container" style="display: flex; flex-direction: column; gap: 0.85rem;">
+            {% for a in archive_alerts %}
+            <div class="card notification-item {% if not a.is_read %}unread{% endif %}" id="alert-item-{{ a.id }}" data-unread="{{ 1 if not a.is_read else 0 }}" data-type="{{ a.alert_type }}" data-timestamp="{{ a.timestamp }}">
+                <div class="notification-icon-wrap">
+                    {% if a.alert_type == 'lightning' %}⚡
+                    {% elif a.alert_type == 'storm' %}⚠️
+                    {% elif a.alert_type in ('rain', 'rain_start') %}🌧️
+                    {% elif a.alert_type == 'rain_forecast' %}☔
+                    {% elif a.alert_type == 'freeze' %}❄️
+                    {% elif a.alert_type == 'heatwave' %}🔥
+                    {% elif a.alert_type == 'wind_spike' %}💨
+                    {% elif a.alert_type == 'soil_dry' %}🌱
+                    {% elif a.alert_type == 'record' %}🏆
+                    {% elif a.alert_type == 'digest' %}☕
+                    {% elif a.alert_type == 'offline' %}📡
+                    {% elif a.alert_type == 'online' %}🟢
+                    {% elif a.alert_type == 'battery_low' %}🪫
+                    {% elif a.alert_type == 'uv_extreme' %}☀️
+                    {% else %}🔔{% endif %}
                 </div>
                 
-                <div class="notification-title">{{ a.title }}</div>
-                <div class="notification-message">{{ a.message }}</div>
-            </div>
-            
-            <div class="notification-actions">
-                {% if not a.is_read %}
-                <button class="btn btn-outline btn-mark-read" style="padding: 0.4rem 0.85rem; font-size: 0.8rem; white-space: nowrap;" onclick="markAlertAsRead({{ a.id }})">
-                    ✓ Segna come letta
-                </button>
-                {% else %}
-                <span class="badge-tag read-status-tag" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 0.75rem;">
-                    ✓ Letta
-                </span>
-                {% endif %}
+                <div class="notification-content">
+                    <div class="notification-meta">
+                        <span class="alert-type-pill {{ a.alert_type }}">{{ a.alert_type }}</span>
+                        <span class="notification-date">{{ a.timestamp | local_dt }}</span>
+                        {% if not a.is_read %}
+                        <span class="unread-dot" title="Non letta"></span>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="notification-title">{{ a.title }}</div>
+                    <div class="notification-message">{{ a.message }}</div>
+                </div>
                 
-                <button class="btn-del-item" onclick="deleteAlertItem({{ a.id }})" title="Elimina notifica">
-                    ✕
-                </button>
+                <div class="notification-actions">
+                    {% if not a.is_read %}
+                    <button class="btn btn-outline btn-mark-read" style="padding: 0.4rem 0.85rem; font-size: 0.8rem; white-space: nowrap;" onclick="markAlertAsRead({{ a.id }})">
+                        ✓ Segna come letta
+                    </button>
+                    {% else %}
+                    <span class="badge-tag read-status-tag" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 0.75rem;">
+                        ✓ Letta
+                    </span>
+                    {% endif %}
+                    
+                    <button class="btn-del-item" onclick="deleteAlertItem({{ a.id }})" title="Elimina notifica">
+                        ✕
+                    </button>
+                </div>
             </div>
+            {% endfor %}
         </div>
-        {% endfor %}
-    {% else %}
-        <div class="card" style="text-align: center; padding: 3rem 1.5rem; color: var(--text-dim);">
-            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">✨</div>
-            <h3 style="color: var(--text); margin-bottom: 0.4rem;">Nessuna notifica presente</h3>
-            <p style="font-size: 0.9rem; max-width: 450px; margin: 0 auto;">
-                Il registro delle notifiche è vuoto. Gli eventi meteorologici rilevati dalla stazione compariranno automaticamente qui.
-            </p>
-        </div>
-    {% endif %}
+    </div>
 </div>
+{% endif %}
+
+<!-- STATO NESSUN RISULTATO FILTRO/RICERCA -->
+<div id="no-search-results" class="card" style="display: none; text-align: center; padding: 2.5rem 1.5rem; color: var(--text-dim);">
+    <div style="font-size: 2.2rem; margin-bottom: 0.4rem;">🔍</div>
+    <h3 style="color: var(--text); margin-bottom: 0.3rem;">Nessuna notifica trovata</h3>
+    <p style="font-size: 0.88rem; max-width: 420px; margin: 0 auto 0.75rem;">
+        Non ci sono notifiche corrispondenti ai parametri di ricerca o filtri selezionati.
+    </p>
+    <button class="btn btn-outline" style="padding: 0.45rem 1rem; font-size: 0.82rem;" onclick="resetAllAlertFilters()">
+        Reimposta filtri
+    </button>
+</div>
+
+{% else %}
+<!-- REGISTRO COMPLETAMENTE VUOTO -->
+<div class="card" style="text-align: center; padding: 3rem 1.5rem; color: var(--text-dim); margin-bottom: 1.5rem;">
+    <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">✨</div>
+    <h3 style="color: var(--text); margin-bottom: 0.4rem;">Nessuna notifica presente</h3>
+    <p style="font-size: 0.9rem; max-width: 450px; margin: 0 auto;">
+        Il registro delle notifiche è vuoto. Gli eventi meteorologici rilevati dalla stazione compariranno automaticamente qui.
+    </p>
+</div>
+{% endif %}
 
 <!-- BOX INFORMATIVO COLLEGAMENTO IMPOSTAZIONI -->
 <div class="card" style="background: rgba(15, 23, 42, 0.4); border: 1px dashed var(--card-border); padding: 1rem 1.25rem;">
@@ -129,6 +301,131 @@
 </div>
 
 <style>
+/* Grid KPI Cards */
+.alerts-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.alerts-kpi-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.1rem 1.25rem;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    border: 1px solid var(--card-border);
+}
+
+.alerts-kpi-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+.kpi-warning-glow {
+    border-color: rgba(245, 158, 11, 0.4) !important;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.06) 0%, var(--card-bg) 100%) !important;
+}
+
+.kpi-icon-wrap {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.kpi-content {
+    min-width: 0;
+    flex: 1;
+}
+
+.kpi-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.15rem;
+}
+
+.kpi-value {
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+}
+
+.kpi-sub {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-top: 0.15rem;
+}
+
+/* Search Bar */
+.search-bar-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.search-icon {
+    position: absolute;
+    left: 1rem;
+    font-size: 0.95rem;
+    color: var(--text-dim);
+    pointer-events: none;
+}
+
+.search-input {
+    width: 100%;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    padding: 0.65rem 2.4rem 0.65rem 2.6rem;
+    color: var(--text);
+    font-size: 0.88rem;
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.search-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+    background: rgba(15, 23, 42, 0.85);
+}
+
+.search-clear-btn {
+    position: absolute;
+    right: 0.75rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: var(--text-dim);
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.search-clear-btn:hover {
+    background: rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+}
+
+/* Filter Chips */
 .filter-chip {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid var(--card-border);
@@ -138,11 +435,14 @@
     font-size: 0.82rem;
     cursor: pointer;
     transition: all 0.2s ease;
+    white-space: nowrap;
 }
+
 .filter-chip:hover {
     border-color: var(--accent);
     color: var(--text);
 }
+
 .filter-chip.active {
     background: rgba(56, 189, 248, 0.2);
     border-color: var(--accent);
@@ -150,6 +450,35 @@
     font-weight: 600;
 }
 
+/* Accordion Archive Button */
+.accordion-header-btn {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.03);
+    border: none;
+    padding: 1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.accordion-header-btn:hover {
+    background: rgba(56, 189, 248, 0.06);
+}
+
+.accordion-icon {
+    font-size: 0.75rem;
+    color: var(--accent);
+    display: inline-block;
+    transition: transform 0.25s ease;
+}
+
+.accordion-icon.expanded {
+    transform: rotate(90deg);
+}
+
+/* Notification Item */
 .notification-item {
     display: flex;
     align-items: flex-start;
@@ -159,11 +488,13 @@
     transition: all 0.25s ease;
     border: 1px solid var(--card-border);
 }
+
 .notification-item.unread {
     border-color: rgba(56, 189, 248, 0.45);
     background: linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, var(--card-bg) 100%);
     box-shadow: 0 4px 16px rgba(56, 189, 248, 0.06);
 }
+
 .notification-icon-wrap {
     font-size: 1.6rem;
     min-width: 42px;
@@ -175,10 +506,12 @@
     justify-content: center;
     border: 1px solid rgba(255, 255, 255, 0.08);
 }
+
 .notification-content {
     flex: 1;
     min-width: 0;
 }
+
 .notification-meta {
     display: flex;
     align-items: center;
@@ -186,6 +519,7 @@
     margin-bottom: 0.3rem;
     flex-wrap: wrap;
 }
+
 .alert-type-pill {
     font-size: 0.72rem;
     font-weight: 700;
@@ -196,24 +530,29 @@
     color: var(--accent);
     letter-spacing: 0.5px;
 }
+
 .alert-type-pill.lightning,
 .alert-type-pill.storm,
 .alert-type-pill.freeze {
     background: rgba(239, 68, 68, 0.2);
     color: #f87171;
 }
+
 .alert-type-pill.record {
     background: rgba(234, 179, 8, 0.2);
     color: #facc15;
 }
+
 .alert-type-pill.digest {
     background: rgba(168, 85, 247, 0.2);
     color: #c084fc;
 }
+
 .notification-date {
     font-size: 0.8rem;
     color: var(--text-dim);
 }
+
 .unread-dot {
     width: 8px;
     height: 8px;
@@ -223,23 +562,27 @@
     display: inline-block;
     animation: pulse 2s infinite;
 }
+
 .notification-title {
     font-size: 0.98rem;
     font-weight: 600;
     color: var(--text);
     margin-bottom: 0.25rem;
 }
+
 .notification-message {
     font-size: 0.88rem;
     color: var(--text-dim);
     line-height: 1.45;
 }
+
 .notification-actions {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     align-self: center;
 }
+
 .btn-del-item {
     background: transparent;
     border: none;
@@ -250,12 +593,28 @@
     border-radius: 6px;
     transition: all 0.2s;
 }
+
 .btn-del-item:hover {
     background: rgba(239, 68, 68, 0.15);
     color: #ef4444;
 }
 
 @media (max-width: 640px) {
+    .alerts-kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+    }
+    .alerts-kpi-card {
+        padding: 0.85rem 1rem;
+    }
+    .kpi-icon-wrap {
+        width: 38px;
+        height: 38px;
+        font-size: 1.25rem;
+    }
+    .kpi-value {
+        font-size: 1.2rem;
+    }
     .notification-item {
         flex-direction: column;
         gap: 0.75rem;
@@ -268,4 +627,149 @@
     }
 }
 </style>
+
+<script>
+let currentFilterMode = 'all';
+let currentCategoryFilter = null;
+let currentSearchQuery = '';
+
+function toggleArchiveAccordion() {
+    const body = document.getElementById('archive-notifications-body');
+    const chevron = document.getElementById('archive-chevron');
+    if (!body) return;
+    const isHidden = body.style.display === 'none';
+    body.style.display = isHidden ? 'block' : 'none';
+    if (chevron) {
+        if (isHidden) chevron.classList.add('expanded');
+        else chevron.classList.remove('expanded');
+    }
+}
+
+function handleAlertSearch() {
+    const input = document.getElementById('alert-search-input');
+    const clearBtn = document.getElementById('search-clear-btn');
+    if (!input) return;
+    currentSearchQuery = input.value.trim().toLowerCase();
+    if (clearBtn) {
+        clearBtn.style.display = currentSearchQuery ? 'flex' : 'none';
+    }
+
+    // Se c'è una ricerca attiva, espandi automaticamente l'archivio per mostrare tutti i risultati
+    if (currentSearchQuery) {
+        const body = document.getElementById('archive-notifications-body');
+        const chevron = document.getElementById('archive-chevron');
+        if (body && body.style.display === 'none') {
+            body.style.display = 'block';
+            if (chevron) chevron.classList.add('expanded');
+        }
+    }
+    applyCombinedFilters();
+}
+
+function clearAlertSearch() {
+    const input = document.getElementById('alert-search-input');
+    if (input) input.value = '';
+    currentSearchQuery = '';
+    const clearBtn = document.getElementById('search-clear-btn');
+    if (clearBtn) clearBtn.style.display = 'none';
+    applyCombinedFilters();
+}
+
+function filterAlerts(mode) {
+    currentFilterMode = mode;
+    currentCategoryFilter = null;
+    document.querySelectorAll('#category-filter-chips .filter-chip').forEach(btn => btn.classList.remove('active'));
+    const targetBtn = mode === 'unread' ? document.getElementById('filter-btn-unread') : document.getElementById('filter-btn-all');
+    if (targetBtn) targetBtn.classList.add('active');
+    applyCombinedFilters();
+}
+
+function filterCategory(typesCsv, btnElement) {
+    currentFilterMode = 'category';
+    currentCategoryFilter = typesCsv.split(',').map(s => s.trim().toLowerCase());
+    document.querySelectorAll('#category-filter-chips .filter-chip').forEach(btn => btn.classList.remove('active'));
+    if (btnElement) btnElement.classList.add('active');
+    
+    // Espandi archivio se filtra per categoria
+    const body = document.getElementById('archive-notifications-body');
+    const chevron = document.getElementById('archive-chevron');
+    if (body && body.style.display === 'none') {
+        body.style.display = 'block';
+        if (chevron) chevron.classList.add('expanded');
+    }
+    applyCombinedFilters();
+}
+
+function filterByToday() {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    currentFilterMode = 'today';
+    currentCategoryFilter = null;
+    document.querySelectorAll('#category-filter-chips .filter-chip').forEach(btn => btn.classList.remove('active'));
+    applyCombinedFilters();
+}
+
+function resetAllAlertFilters() {
+    clearAlertSearch();
+    filterAlerts('all');
+}
+
+function applyCombinedFilters() {
+    const items = document.querySelectorAll('.notification-item');
+    const todayIso = new Date().toISOString().slice(0, 10);
+    let visibleCount = 0;
+
+    items.forEach(item => {
+        const isUnread = item.getAttribute('data-unread') === '1';
+        const type = (item.getAttribute('data-type') || '').toLowerCase();
+        const timestamp = item.getAttribute('data-timestamp') || '';
+        const textContent = item.innerText.toLowerCase();
+
+        let matchesFilter = true;
+
+        // 1. Filtro di base (all / unread / category / today)
+        if (currentFilterMode === 'unread' && !isUnread) {
+            matchesFilter = false;
+        } else if (currentFilterMode === 'category' && currentCategoryFilter) {
+            if (!currentCategoryFilter.includes(type)) {
+                matchesFilter = false;
+            }
+        } else if (currentFilterMode === 'today') {
+            if (!timestamp.startsWith(todayIso)) {
+                matchesFilter = false;
+            }
+        }
+
+        // 2. Filtro di ricerca testuale
+        if (matchesFilter && currentSearchQuery) {
+            if (!textContent.includes(currentSearchQuery) && !type.includes(currentSearchQuery)) {
+                matchesFilter = false;
+            }
+        }
+
+        if (matchesFilter) {
+            item.style.display = 'flex';
+            visibleCount++;
+        } else {
+            item.style.display = 'none';
+        }
+    });
+
+    // Indicatore risultati
+    const indicator = document.getElementById('matching-results-indicator');
+    const noResultsBox = document.getElementById('no-search-results');
+    const isFiltered = currentSearchQuery || currentFilterMode !== 'all';
+
+    if (indicator) {
+        if (isFiltered) {
+            indicator.innerText = `${visibleCount} risultati trovati`;
+        } else {
+            indicator.innerText = '';
+        }
+    }
+
+    if (noResultsBox) {
+        noResultsBox.style.display = (visibleCount === 0 && items.length > 0) ? 'block' : 'none';
+    }
+}
+</script>
 {% endblock %}

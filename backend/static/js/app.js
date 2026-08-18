@@ -1068,6 +1068,15 @@ function updateBadgeElements(count) {
             unreadStatusPill.innerHTML = 'Nessuna da leggere';
         }
     }
+    const kpiUnreadVal = document.getElementById('kpi-unread-val');
+    const kpiUnreadSub = document.getElementById('kpi-unread-sub');
+    if (kpiUnreadVal) {
+        kpiUnreadVal.innerText = safeCount;
+        kpiUnreadVal.style.color = safeCount > 0 ? '#f59e0b' : '#10b981';
+    }
+    if (kpiUnreadSub) {
+        kpiUnreadSub.innerText = safeCount > 0 ? 'Richiedono attenzione' : 'Tutte lette ✨';
+    }
 
     // App Badging API su PWA installata (iOS 16.4+ / Android / Chrome Desktop)
     if (safeCount > 0) {

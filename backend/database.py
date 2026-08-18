@@ -807,6 +807,53 @@ def clear_all_alert_logs() -> int:
     conn.close()
     return affected
 
+def get_alerts_stats() -> Dict[str, Any]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # 1. Conteggio totale
+    cursor.execute("SELECT COUNT(*) FROM alert_logs")
+    row_tot = cursor.fetchone()
+    total_count = int(row_tot[0]) if row_tot else 0
+    
+    # 2. Conteggio non lette
+    cursor.execute("SELECT COUNT(*) FROM alert_logs WHERE COALESCE(is_read, 0) = 0")
+    row_unread = cursor.fetchone()
+    unread_count = int(row_unread[0]) if row_unread else 0
+    
+    # 3. Conteggio odierno
+    today_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    cursor.execute("SELECT COUNT(*) FROM alert_logs WHERE timestamp LIKE ?", (f"{today_prefix}%",))
+    row_today = cursor.fetchone()
+    today_count = int(row_today[0]) if row_today else 0
+    
+    # 4. Tipo di notifica più frequente
+    cursor.execute("""
+        SELECT alert_type, COUNT(*) as c 
+        FROM alert_logs 
+        GROUP BY alert_type 
+        ORDER BY c DESC 
+        LIMIT 1
+    """)
+    top_row = cursor.fetchone()
+    top_type = top_row[0] if top_row else None
+    top_type_count = int(top_row[1]) if top_row else 0
+    
+    # 5. Ultimo allarme registrato
+    cursor.execute("SELECT timestamp, alert_type, title FROM alert_logs ORDER BY id DESC LIMIT 1")
+    latest_row = cursor.fetchone()
+    latest_alert = dict(latest_row) if latest_row else None
+    
+    conn.close()
+    return {
+        "total_count": total_count,
+        "unread_count": unread_count,
+        "today_count": today_count,
+        "top_type": top_type,
+        "top_type_count": top_type_count,
+        "latest_alert": latest_alert
+    }
+
 # ----------------- ANALISI GIORNALIERA & CONFRONTI -----------------
 
 def get_today_extremes() -> Dict[str, Any]:

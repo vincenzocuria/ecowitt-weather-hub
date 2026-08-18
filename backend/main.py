@@ -33,7 +33,7 @@ from backend.database import (
     save_energy_reading, get_latest_energy, get_today_energy_summary, get_energy_timeseries,
     get_sensor_aliases, save_sensor_alias, get_database_stats, perform_database_maintenance,
     get_unread_alerts_count, mark_alert_as_read, mark_all_alerts_as_read,
-    delete_alert_log, clear_all_alert_logs,
+    delete_alert_log, clear_all_alert_logs, get_alerts_stats,
     to_local_datetime_str, DB_PATH
 )
 from backend.analytics import (
@@ -1187,8 +1187,12 @@ async def history_page(request: Request, start_date: Optional[str] = None, end_d
 
 @app.get("/alerts-page", response_class=HTMLResponse)
 async def alerts_page(request: Request):
-    alerts = get_alert_logs(limit=100)
+    alerts = get_alert_logs(limit=250)
     unread_count = get_unread_alerts_count()
+    stats = get_alerts_stats()
+    recent_limit = 5
+    recent_alerts = alerts[:recent_limit]
+    archive_alerts = alerts[recent_limit:]
     return templates.TemplateResponse(
         request=request,
         name="alerts.html",
@@ -1196,8 +1200,12 @@ async def alerts_page(request: Request):
             "active_page": "alerts",
             "title": "Centro Notifiche • Weather Hub",
             "alerts": alerts,
+            "recent_alerts": recent_alerts,
+            "archive_alerts": archive_alerts,
+            "recent_limit": recent_limit,
             "unread_count": unread_count,
-            "total_count": len(alerts),
+            "total_count": stats.get("total_count", len(alerts)),
+            "stats": stats,
             "ntfy_topic": settings.NTFY_TOPIC
         }
     )
