@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import sys
 import io
@@ -9,7 +10,7 @@ import logging
 # Assicura che la root del progetto sia sempre nel PYTHONPATH
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from typing import Optional
+from typing import Optional, Dict, Any, List, Union
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, BackgroundTasks, Query
 from fastapi.responses import JSONResponse, HTMLResponse, Response, RedirectResponse, FileResponse
