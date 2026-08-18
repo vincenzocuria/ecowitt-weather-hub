@@ -20,10 +20,18 @@ logger = logging.getLogger("TuyaService")
 # Mappa icone e categorie per UI
 CATEGORY_METADATA = {
     "cz": {"type": "plug", "icon": "🔌", "label": "Presa Smart con Misuratore"},
+    "pc": {"type": "plug", "icon": "🔌", "label": "Presa / Ciabatta Smart"},
     "wk": {"type": "thermostat", "icon": "🌡️", "label": "Cronotermostato Smart"},
     "sfkzq": {"type": "irrigation", "icon": "💧", "label": "Elettrovalvola Irrigazione"},
     "cl": {"type": "curtain", "icon": "🪟", "label": "Interruttore Persiana/Tenda"},
+    "clkg": {"type": "curtain", "icon": "🪟", "label": "Interruttore Persiana/Tapparella"},
+    "bl": {"type": "curtain", "icon": "🪟", "label": "Persiana/Tapparella Motorizzata"},
+    "cs": {"type": "curtain", "icon": "🪟", "label": "Comando Persiana/Tenda"},
+    "jd": {"type": "switch", "icon": "🔘", "label": "Modulo Relè / Interruttore"},
+    "kg": {"type": "switch", "icon": "🔘", "label": "Interruttore Smart"},
     "dj": {"type": "light", "icon": "💡", "label": "Lampadina Smart Wi-Fi"},
+    "dd": {"type": "light", "icon": "💡", "label": "Luce / Striscia LED Smart"},
+    "mc": {"type": "contact", "icon": "🚪", "label": "Sensore Porta / Finestra"},
     "tzc1": {"type": "scale", "icon": "⚖️", "label": "Bilancia Smart"},
 }
 
@@ -118,9 +126,18 @@ class TuyaService:
             work_state = status_dict.get("work_state", "idle")
             weather_delay = status_dict.get("weather_delay", "cancel")
 
-        # Persiana / Tenda ('cl')
-        if category == "cl":
-            curtain_state = status_dict.get("control") or status_dict.get("percent_control")
+        # Persiana / Tenda / Tapparella
+        cat_lower = category.lower()
+        name_lower = (dev_info.get("name") or "").lower()
+        if cat_lower in ("cl", "clkg", "bl", "cs") or any(kw in name_lower for kw in ("persian", "tapparel", "tenda", "curtain", "shutter", "blind", "avvolgibil")):
+            meta = {"type": "curtain", "icon": "🪟", "label": "Persiana / Tenda Smart"}
+            curtain_state = (
+                status_dict.get("control")
+                or status_dict.get("percent_control")
+                or status_dict.get("mach_oper")
+                or status_dict.get("percent_state")
+                or ("Aperta" if is_on is True else ("Chiusa" if is_on is False else None))
+            )
 
         # Nome visualizzato (alias utente se presente, altrimenti nome originale)
         custom_name = user_cfg.get("custom_name") if user_cfg else None
@@ -164,6 +181,10 @@ class TuyaService:
                 self.raw_devices = res
                 self.is_connected = True
                 return res
+            elif isinstance(res, dict) and "result" in res and isinstance(res["result"], list):
+                self.raw_devices = res["result"]
+                self.is_connected = True
+                return res["result"]
             else:
                 logger.warning("Risposta imprevista getdevices da Tuya: %s", res)
                 return []
@@ -232,12 +253,17 @@ class TuyaService:
         )
 
         # Raggruppamento per tipologia per facilitare la UI
-        plugs = [d for d in enabled_devs if d.get("category") == "cz"]
-        climates = [d for d in enabled_devs if d.get("category") == "wk"]
-        irrigations = [d for d in enabled_devs if d.get("category") == "sfkzq"]
-        lights = [d for d in enabled_devs if d.get("category") == "dj"]
-        curtains = [d for d in enabled_devs if d.get("category") == "cl"]
-        others = [d for d in enabled_devs if d.get("category") not in ("cz", "wk", "sfkzq", "dj", "cl")]
+        plugs = [d for d in enabled_devs if d.get("category") in ("cz", "pc") or (d.get("type") == "plug" and d.get("category") not in ("dj", "dd"))]
+        climates = [d for d in enabled_devs if d.get("category") == "wk" or d.get("type") == "thermostat"]
+        irrigations = [d for d in enabled_devs if d.get("category") == "sfkzq" or d.get("type") == "irrigation"]
+        lights = [d for d in enabled_devs if d.get("category") in ("dj", "dd") or d.get("type") == "light"]
+        curtains = [
+            d for d in enabled_devs 
+            if d.get("category") in ("cl", "clkg", "bl", "cs") 
+            or d.get("type") == "curtain"
+            or any(kw in (d.get("name") or "").lower() for kw in ("persian", "tapparel", "tenda", "curtain", "shutter", "blind", "avvolgibil"))
+        ]
+        others = [d for d in enabled_devs if d not in plugs and d not in climates and d not in irrigations and d not in lights and d not in curtains]
 
         return {
             "enabled": self.enabled,

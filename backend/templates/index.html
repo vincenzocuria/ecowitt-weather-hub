@@ -976,6 +976,19 @@
                         <span class="app-metric-label">Ritardo Pioggia</span>
                         <strong class="app-metric-val">{% if dev.weather_delay != 'cancel' %}Attivo 🌧️{% else %}Disattivato{% endif %}</strong>
                     </div>
+                    {% elif dev.type == 'curtain' or dev.category in ('cl', 'clkg', 'bl', 'cs') %}
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Stato Persiana</span>
+                        <strong class="app-metric-val">{% if dev.curtain_state %}{{ dev.curtain_state|capitalize }}{% elif dev.is_on is true %}Aperta 🪟{% elif dev.is_on is false %}Chiusa 🔒{% else %}Online 🟢{% endif %}</strong>
+                    </div>
+                    <div class="appliance-metric-item" style="grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.25rem;">
+                        <span class="app-metric-label" style="margin: 0;">Comandi:</span>
+                        <div style="display: flex; gap: 0.4rem;">
+                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="sendTuyaCommand('{{ dev.id }}', [{code: 'control', value: 'open'}])">🔼 Apri</button>
+                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="sendTuyaCommand('{{ dev.id }}', [{code: 'control', value: 'stop'}])">⏸️ Stop</button>
+                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="sendTuyaCommand('{{ dev.id }}', [{code: 'control', value: 'close'}])">🔽 Chiudi</button>
+                        </div>
+                    </div>
                     {% else %}
                     <div class="appliance-metric-item">
                         <span class="app-metric-label">Tipologia</span>

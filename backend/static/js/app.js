@@ -1430,6 +1430,25 @@ async function toggleTuyaFromDashboard(deviceId) {
     }
 }
 
+async function sendTuyaCommand(deviceId, commands) {
+    try {
+        const resp = await fetch(`/api/tuya/device/${deviceId}/command`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commands: commands })
+        });
+        const res = await resp.json();
+        setTimeout(async () => {
+            const sumResp = await fetch('/api/tuya/summary');
+            const summary = await sumResp.json();
+            updateTuyaUI(summary);
+        }, 1200);
+        return res;
+    } catch (e) {
+        console.error('Errore invio comando Tuya:', e);
+    }
+}
+
 function syncTuyaLiveDevices() {
     const btn = document.getElementById('tuya_sync_btn');
     if (btn) {

@@ -803,7 +803,7 @@ def build_devices_catalog() -> Dict[str, Any]:
     # 1. Tuya / Smart Life
     tuya_summary = tuya_service.get_summary() if settings.TUYA_ENABLED else {}
     for dev in tuya_summary.get("devices", []):
-        c_type = dev.get("category_meta", {}).get("type", "generic")
+        c_type = dev.get("type") or dev.get("category_meta", {}).get("type", "generic")
         
         ui_category = "plugs"
         if c_type in ("thermostat",):
@@ -818,7 +818,13 @@ def build_devices_catalog() -> Dict[str, Any]:
             ui_category = "other"
             
         status_parts = []
-        if dev.get("is_on") is True:
+        if c_type == "curtain":
+            c_state = dev.get("curtain_state")
+            if c_state:
+                status_parts.append(str(c_state).capitalize())
+            else:
+                status_parts.append("Pronta")
+        elif dev.get("is_on") is True:
             p_w = dev.get("power_w", 0.0) or 0.0
             if p_w > 0:
                 status_parts.append(f"Acceso ({p_w:.1f} W)")
@@ -837,9 +843,9 @@ def build_devices_catalog() -> Dict[str, Any]:
             "raw_id": dev.get("id"),
             "ecosystem": "tuya",
             "name": dev.get("name", "Dispositivo Tuya"),
-            "icon": dev.get("category_meta", {}).get("icon", "🔌"),
+            "icon": dev.get("icon") or dev.get("category_meta", {}).get("icon", "🔌"),
             "category": ui_category,
-            "category_label": dev.get("category_meta", {}).get("label", "Smart Life"),
+            "category_label": dev.get("type_label") or dev.get("category_meta", {}).get("label", "Smart Life"),
             "is_on": dev.get("is_on"),
             "can_toggle": (c_type != "curtain") and (dev.get("is_on") is not None or c_type in ("plug", "light", "irrigation")),
             "is_online": dev.get("online", True),
