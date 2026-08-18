@@ -773,7 +773,7 @@ async def api_tuya_toggle(device_id: str, request: Request):
 
 @app.post("/api/tuya/device/{device_id}/command")
 async def api_tuya_command(device_id: str, request: Request):
-    """Invia un comando avanzato (es: setpoint temperatura) a un dispositivo Tuya."""
+    """Invia un comando avanzato (es: setpoint temperatura, comandi raw) a un dispositivo Tuya."""
     try:
         payload = await request.json()
     except Exception:
@@ -781,7 +781,19 @@ async def api_tuya_command(device_id: str, request: Request):
     commands = payload.get("commands", [])
     if not commands and "temp_c" in payload:
         return await tuya_service.set_thermostat_temp(device_id, float(payload["temp_c"]))
+    if not commands and ("action" in payload or "control" in payload):
+        return await tuya_service.control_curtain(device_id, payload.get("action") or payload.get("control"))
     return await tuya_service.send_command(device_id, commands)
+
+@app.post("/api/tuya/device/{device_id}/curtain")
+async def api_tuya_curtain(device_id: str, request: Request):
+    """Invia comandi di apertura/stop/chiusura alla persiana/tenda Tuya."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    action = payload.get("action") or payload.get("control") or "stop"
+    return await tuya_service.control_curtain(device_id, action)
 
 @app.post("/api/tuya/device/{device_id}/config")
 async def api_tuya_config(device_id: str, request: Request):

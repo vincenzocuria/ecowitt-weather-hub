@@ -122,6 +122,12 @@
                         {% elif dev.category == 'climate' and dev.temp_current is not none %}
                             <span class="metric-tag tag-temp">🌡️ {{ dev.temp_current }}°C</span>
                             {% if dev.temp_set %}<span class="metric-tag tag-target">🎯 {{ dev.temp_set }}°C</span>{% endif %}
+                        {% elif dev.category == 'curtains' %}
+                            <div style="display: flex; gap: 4px; width: 100%; justify-content: space-between;" onclick="event.stopPropagation();">
+                                <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="controlTuyaCurtain('{{ dev.raw_id }}', 'open')">🔼 Apri</button>
+                                <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="controlTuyaCurtain('{{ dev.raw_id }}', 'stop')">⏸️ Stop</button>
+                                <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="controlTuyaCurtain('{{ dev.raw_id }}', 'close')">🔽 Chiudi</button>
+                            </div>
                         {% elif dev.category == 'appliances' %}
                             <span class="metric-tag tag-info">{{ dev.status_text }}</span>
                         {% elif dev.category == 'energy' %}
@@ -409,9 +415,54 @@ function renderTuyaDetail(dev) {
     const pW = dev.power_w || 0;
     const vV = dev.voltage_v || '--';
     const aA = dev.current_a || '--';
-    const cType = raw.category_meta ? raw.category_meta.type : 'plug';
+    const cType = (dev.category === 'curtains' || raw.type === 'curtain') ? 'curtain' : ((dev.category === 'climate' || raw.type === 'thermostat') ? 'thermostat' : (raw.type || (raw.category_meta ? raw.category_meta.type : 'plug')));
 
-    let html = `
+    let html = '';
+
+    if (cType === 'curtain') {
+        const curState = dev.curtain_state || raw.curtain_state || 'Pronta 🪟';
+        html += `
+            <div class="modal-quick-state-card state-card-on" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.3);">
+                <div class="state-card-info">
+                    <span class="state-indicator-dot dot-on" style="background: #38bdf8; box-shadow: 0 0 8px #38bdf8;"></span>
+                    <span class="state-text">Persiana / Tenda: <strong>${curState}</strong></span>
+                </div>
+                <span class="badge-tag" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; font-size: 0.8rem;">Cloud Tuya 🟢</span>
+            </div>
+
+            <div class="curtain-controls-box" style="margin-top: 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 14px; padding: 1.25rem; text-align: center;">
+                <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Comandi Rapidi Motorizzazione</div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem;">
+                    <button type="button" class="btn btn-action-primary" style="padding: 1rem 0.5rem; font-size: 1rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; border-radius: 12px;" onclick="controlTuyaCurtain('${dev.raw_id}', 'open')">
+                        <span style="font-size: 1.6rem;">🔼</span>
+                        <span>Apri</span>
+                    </button>
+                    <button type="button" class="btn btn-outline" style="padding: 1rem 0.5rem; font-size: 1rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; border-radius: 12px; border-color: rgba(255,255,255,0.2);" onclick="controlTuyaCurtain('${dev.raw_id}', 'stop')">
+                        <span style="font-size: 1.6rem;">⏸️</span>
+                        <span>Pausa / Stop</span>
+                    </button>
+                    <button type="button" class="btn btn-action-danger" style="padding: 1rem 0.5rem; font-size: 1rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; border-radius: 12px;" onclick="controlTuyaCurtain('${dev.raw_id}', 'close')">
+                        <span style="font-size: 1.6rem;">🔽</span>
+                        <span>Chiudi</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+                <div class="telemetry-card">
+                    <span class="tel-label">Dispositivo</span>
+                    <span class="tel-val" style="font-size: 0.9rem;">${dev.name}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">Stato Connessione</span>
+                    <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Cloud Online 🟢' : 'Offline 🔴'}</span>
+                </div>
+            </div>
+        `;
+        return html;
+    }
+
+    html += `
         <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
             <div class="state-card-info">
                 <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
@@ -462,17 +513,6 @@ function renderTuyaDetail(dev) {
                         <span class="dial-val">${setTemp.toFixed(1)}°C</span>
                     </div>
                     <button type="button" class="btn-dial" onclick="adjustThermostatTemp('${dev.raw_id}', ${setTemp + 0.5})">+</button>
-                </div>
-            </div>
-        `;
-    } else if (cType === 'curtain') {
-        html += `
-            <div class="curtain-controls-box">
-                <span class="section-title">Controllo Persiana / Tenda</span>
-                <div class="curtain-actions-row">
-                    <button type="button" class="btn btn-outline" onclick="sendTuyaCommand('${dev.raw_id}', [{code: 'control', value: 'open'}])">🔼 Apri Tenda</button>
-                    <button type="button" class="btn btn-outline" onclick="sendTuyaCommand('${dev.raw_id}', [{code: 'control', value: 'stop'}])">⏸️ Pausa / Stop</button>
-                    <button type="button" class="btn btn-outline" onclick="sendTuyaCommand('${dev.raw_id}', [{code: 'control', value: 'close'}])">🔽 Chiudi Tenda</button>
                 </div>
             </div>
         `;
@@ -722,6 +762,22 @@ async function setThinQFan(rawId, speed) {
         setTimeout(fetchDevicesData, 1000);
     } catch (e) {
         showToast('Errore impostazione ventilazione clima', 'danger');
+    }
+}
+
+async function controlTuyaCurtain(rawId, action) {
+    try {
+        const resp = await fetch(`/api/tuya/device/${rawId}/curtain`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: action})
+        });
+        const res = await resp.json();
+        const actionLabel = action === 'open' ? 'Apertura avviata 🔼' : (action === 'close' ? 'Chiusura avviata 🔽' : 'Persiana fermata ⏸️');
+        showToast(actionLabel, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore invio comando persiana', 'danger');
     }
 }
 

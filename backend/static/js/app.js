@@ -1449,6 +1449,25 @@ async function sendTuyaCommand(deviceId, commands) {
     }
 }
 
+async function controlTuyaCurtain(deviceId, action) {
+    try {
+        const resp = await fetch(`/api/tuya/device/${deviceId}/curtain`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: action })
+        });
+        const res = await resp.json();
+        setTimeout(async () => {
+            const sumResp = await fetch('/api/tuya/summary');
+            const summary = await sumResp.json();
+            updateTuyaUI(summary);
+        }, 1200);
+        return res;
+    } catch (e) {
+        console.error('Errore comando persiana:', e);
+    }
+}
+
 function syncTuyaLiveDevices() {
     const btn = document.getElementById('tuya_sync_btn');
     if (btn) {

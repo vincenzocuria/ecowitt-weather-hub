@@ -984,9 +984,9 @@
                     <div class="appliance-metric-item" style="grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.25rem;">
                         <span class="app-metric-label" style="margin: 0;">Comandi:</span>
                         <div style="display: flex; gap: 0.4rem;">
-                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="sendTuyaCommand('{{ dev.id }}', [{code: 'control', value: 'open'}])">🔼 Apri</button>
-                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="sendTuyaCommand('{{ dev.id }}', [{code: 'control', value: 'stop'}])">⏸️ Stop</button>
-                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="sendTuyaCommand('{{ dev.id }}', [{code: 'control', value: 'close'}])">🔽 Chiudi</button>
+                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="controlTuyaCurtain('{{ dev.id }}', 'open')">🔼 Apri</button>
+                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="controlTuyaCurtain('{{ dev.id }}', 'stop')">⏸️ Stop</button>
+                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="controlTuyaCurtain('{{ dev.id }}', 'close')">🔽 Chiudi</button>
                         </div>
                     </div>
                     {% else %}

@@ -284,17 +284,22 @@ class TuyaService:
             "others": others
         }
 
-    async def send_command(self, device_id: str, commands: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Invia un comando Tuya (es. switch, temperatura, ecc.)."""
+    async def send_command(self, device_id: str, commands: Any) -> Dict[str, Any]:
+        """Invia un comando Tuya (es. switch, temperatura, persiana, ecc.)."""
         if not self.enabled or not self.cloud:
             return {"success": False, "error": "Servizio Tuya non configurato"}
 
         loop = asyncio.get_running_loop()
         try:
-            # tinytuya.Cloud.sendcommand(deviceid, commands)
-            payload = {"commands": commands}
+            if isinstance(commands, list):
+                payload = {"commands": commands}
+            elif isinstance(commands, dict) and "commands" in commands:
+                payload = commands
+            else:
+                payload = {"commands": [commands]}
+
             res = await loop.run_in_executor(None, self.cloud.sendcommand, device_id, payload)
-            logger.info("Comando Tuya inviato a %s: %s -> %s", device_id, commands, res)
+            logger.info("Comando Tuya inviato a %s: %s -> %s", device_id, payload, res)
             
             # Schedula un refresh immediato dello stato del dispositivo
             asyncio.create_task(self.sync_single_device(device_id))
@@ -302,6 +307,38 @@ class TuyaService:
         except Exception as e:
             logger.error("Errore invio comando Tuya a %s: %s", device_id, e)
             return {"success": False, "error": str(e)}
+
+    async def control_curtain(self, device_id: str, action: str) -> Dict[str, Any]:
+        """Invia il comando di apertura, stop o chiusura a una persiana/tenda."""
+        action_norm = (action or "stop").lower().strip()
+        cmd_value = action_norm
+        if action_norm in ("open", "apri", "up", "su"):
+            cmd_value = "open"
+        elif action_norm in ("close", "chiudi", "down", "giu"):
+            cmd_value = "close"
+        elif action_norm in ("stop", "pause", "pausa", "ferma"):
+            cmd_value = "stop"
+
+        # 1. Prova con codice 'control' (standard Tuya Curtain Switch)
+        commands = [{"code": "control", "value": cmd_value}]
+        res = await self.send_command(device_id, commands)
+        
+        # 2. Fallback a 'mach_oper' (utilizzato da alcuni motori persiana)
+        if not res.get("success") or (isinstance(res.get("result"), dict) and not res["result"].get("success")):
+            alt_val = "FZ" if cmd_value == "open" else ("ZZ" if cmd_value == "close" else "STOP")
+            res2 = await self.send_command(device_id, [{"code": "mach_oper", "value": alt_val}])
+            if res2.get("success"):
+                res = res2
+
+        # 3. Fallback a 'percent_control' (0 per chiudi, 100 per apri)
+        if not res.get("success") or (isinstance(res.get("result"), dict) and not res["result"].get("success")):
+            if cmd_value in ("open", "close"):
+                pct = 100 if cmd_value == "open" else 0
+                res3 = await self.send_command(device_id, [{"code": "percent_control", "value": pct}])
+                if res3.get("success"):
+                    res = res3
+
+        return res
 
     async def toggle_device(self, device_id: str, target_state: Optional[bool] = None) -> Dict[str, Any]:
         """Inverte o imposta lo stato ON/OFF del dispositivo."""
