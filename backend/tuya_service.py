@@ -273,6 +273,7 @@ class TuyaService:
             "total_plug_power_w": round(total_plug_power_w, 1),
             "total_devices_count": len(all_devs),
             "enabled_devices_count": len(enabled_devs),
+            "devices": enabled_devs,
             "enabled_devices": enabled_devs,
             "all_devices": all_devs,
             "plugs": plugs,

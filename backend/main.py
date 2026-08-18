@@ -802,7 +802,8 @@ def build_devices_catalog() -> Dict[str, Any]:
     
     # 1. Tuya / Smart Life
     tuya_summary = tuya_service.get_summary() if settings.TUYA_ENABLED else {}
-    for dev in tuya_summary.get("devices", []):
+    tuya_dev_list = tuya_summary.get("enabled_devices") or tuya_summary.get("devices") or []
+    for dev in tuya_dev_list:
         c_type = dev.get("type") or dev.get("category_meta", {}).get("type", "generic")
         
         ui_category = "plugs"
@@ -1041,8 +1042,9 @@ async def api_devices_turn_all(request: Request):
     # 1. Tuya
     if settings.TUYA_ENABLED:
         tuya_summary = tuya_service.get_summary()
-        for dev in tuya_summary.get("devices", []):
-            c_type = dev.get("category_meta", {}).get("type", "generic")
+        tuya_devs = tuya_summary.get("enabled_devices") or tuya_summary.get("devices") or []
+        for dev in tuya_devs:
+            c_type = dev.get("type") or dev.get("category_meta", {}).get("type", "generic")
             if c_type in ("plug", "light", "irrigation") and (category in ("all", "plugs")):
                 if dev.get("is_on") != target_state:
                     res = await tuya_service.toggle_device(dev.get("id"), target_state)
