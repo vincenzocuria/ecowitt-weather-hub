@@ -657,6 +657,23 @@ class TestEcowittHub(unittest.TestCase):
         self.assertEqual(api_res.status_code, 200)
         self.assertIn("max_temp", api_res.json())
 
+    def test_devices_page_and_apis(self):
+        from fastapi.testclient import TestClient
+        from backend.main import app
+
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+        res = client.get("/devices")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("Dispositivi Smart", res.text)
+        self.assertIn("devices-header-card", res.text)
+        self.assertIn("devices-grid", res.text)
+
+        # Test devices all API
+        api_res = client.get("/api/devices/all")
+        self.assertEqual(api_res.status_code, 200)
+        self.assertIn("devices", api_res.json())
+        self.assertIn("stats", api_res.json())
+
 
 if __name__ == "__main__":
     unittest.main()

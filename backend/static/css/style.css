@@ -949,8 +949,17 @@ body {
     transform: translateY(-2px);
     box-shadow: 0 6px 20px rgba(2, 132, 199, 0.4);
 }
+.btn-primary {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+    color: #fff;
+}
+.btn-primary:hover {
+    box-shadow: 0 6px 20px rgba(2, 132, 199, 0.4);
+    transform: translateY(-2px);
+}
 .btn-gold {
     background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: #fff;
 }
 .btn-gold:hover {
     box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
@@ -962,8 +971,53 @@ body {
 }
 .btn-secondary:hover {
     background: #334155;
-    transform: none;
-    box-shadow: none;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+.btn-outline {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--card-border);
+    color: var(--text);
+}
+.btn-outline:hover {
+    background: rgba(56, 189, 248, 0.1);
+    border-color: var(--accent);
+    color: #fff;
+    transform: translateY(-2px);
+}
+.btn-danger {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: #fff;
+}
+.btn-danger:hover {
+    box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+    transform: translateY(-2px);
+}
+.btn-success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: #fff;
+}
+.btn-success:hover {
+    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+    transform: translateY(-2px);
+}
+.btn-loading {
+    opacity: 0.7;
+    pointer-events: none;
+    cursor: wait !important;
+}
+
+.badge-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-dim);
 }
 
 /* FORMS & FILTERS */
@@ -4033,12 +4087,12 @@ body {
 }
 
 .devices-header-card {
-    background: linear-gradient(135deg, rgba(19, 27, 46, 0.95), rgba(15, 23, 42, 0.9));
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
     border: 1px solid var(--card-border);
     border-radius: var(--radius-lg);
-    padding: 1.25rem 1.5rem;
+    padding: 1.35rem 1.75rem;
     backdrop-filter: blur(12px);
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
     display: flex;
     flex-direction: column;
     gap: 1rem;
@@ -4053,7 +4107,7 @@ body {
 }
 
 .devices-header-title h1 {
-    font-size: 1.5rem;
+    font-size: 1.55rem;
     font-weight: 800;
     color: #fff;
     letter-spacing: -0.02em;
@@ -4062,7 +4116,7 @@ body {
 .devices-subtitle {
     font-size: 0.85rem;
     color: var(--text-dim);
-    margin-top: 0.2rem;
+    margin-top: 0.25rem;
 }
 
 .devices-global-actions {
@@ -4205,7 +4259,7 @@ body {
 }
 
 .device-card {
-    background: rgba(19, 27, 46, 0.7);
+    background: rgba(19, 27, 46, 0.75);
     border: 1px solid var(--card-border);
     border-radius: var(--radius-md);
     padding: 1rem;
@@ -4267,6 +4321,14 @@ body {
     transition: all 0.2s ease;
 }
 
+.device-icon {
+    font-size: 1.25rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .icon-glow-on {
     background: rgba(56, 189, 248, 0.18);
     border-color: var(--accent);
@@ -4303,6 +4365,11 @@ body {
 }
 .badge-on .status-dot {
     box-shadow: 0 0 6px #10b981;
+}
+
+.status-label {
+    font-size: 0.68rem;
+    font-weight: 700;
 }
 
 /* INTERRUTTORE TOGGLE RAPIDO SUL MATTONCINO */
@@ -4505,6 +4572,26 @@ body {
     gap: 1.25rem;
 }
 
+.modal-loading-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1.5rem;
+    gap: 1rem;
+    color: var(--text-dim);
+    font-size: 0.95rem;
+}
+
+.spinner {
+    width: 38px;
+    height: 38px;
+    border: 3px solid rgba(56, 189, 248, 0.2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
 .device-modal-footer {
     padding: 1rem 1.5rem;
     border-top: 1px solid var(--card-border);
@@ -4587,6 +4674,19 @@ body {
     justify-content: space-around;
     align-items: center;
 }
+.clima-temp-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+.clima-sub {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
 .clima-big-val, .temp-large-val {
     font-size: 2rem;
     font-weight: 800;
@@ -4623,6 +4723,43 @@ body {
     font-weight: 800;
     color: #fff;
     min-width: 65px;
+}
+
+.thermostat-current-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 0.75rem;
+}
+.temp-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.dial-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 110px;
+}
+.dial-label {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+}
+.dial-val {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #fff;
+}
+
+.clima-options-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
 }
 
 .clima-pill-grid {
@@ -4662,6 +4799,16 @@ body {
     display: block;
 }
 
+.curtain-controls-box {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
 .curtain-actions-row {
     display: flex;
     gap: 0.5rem;
@@ -4669,6 +4816,44 @@ body {
 }
 .curtain-actions-row .btn {
     flex: 1;
+}
+
+/* MODALE PRESENZA */
+.modal-presence-box {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+}
+.presence-status-large {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.5rem;
+}
+.presence-icon {
+    font-size: 2.5rem;
+}
+.presence-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #fff;
+}
+.presence-sub {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+}
+
+/* MODALE SOLARE */
+.modal-solar-overview {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.solar-action-footer {
+    display: flex;
+    justify-content: center;
 }
 
 /* TOAST FEEDBACK */

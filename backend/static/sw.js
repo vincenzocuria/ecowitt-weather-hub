@@ -1,5 +1,5 @@
 // Service Worker con supporto PWA e Web Push Nativo (iOS 16.4+, Android, Desktop)
-const CACHE_NAME = 'meteo-hub-v12';
+const CACHE_NAME = 'meteo-hub-v13';
 
 self.addEventListener('install', (event) => {
     self.skipWaiting();
