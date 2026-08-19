@@ -877,10 +877,11 @@ def build_devices_catalog() -> Dict[str, Any]:
     # 2. LG ThinQ Climatizzatori
     thinq_devices = thinq_service.get_cached_devices() if settings.LG_THINQ_ENABLED else []
     for d in thinq_devices:
+        dev_id = d.get("device_id") or d.get("deviceId") or "unknown"
         is_on = d.get("is_on", False)
         t_curr = d.get("current_temp")
         t_target = d.get("target_temp")
-        mode = d.get("job_mode", "COOL")
+        mode = d.get("mode") or d.get("job_mode", "COOL")
         
         status_txt = "Acceso" if is_on else "Spento"
         if is_on and t_curr is not None:
@@ -889,24 +890,24 @@ def build_devices_catalog() -> Dict[str, Any]:
             status_txt += f" • {t_curr}°C"
 
         devices.append({
-            "id": f"thinq_{d.get('deviceId')}",
-            "raw_id": d.get("deviceId"),
+            "id": f"thinq_{dev_id}",
+            "raw_id": dev_id,
             "ecosystem": "thinq",
-            "name": d.get("alias", "Climatizzatore LG"),
+            "name": d.get("alias") or d.get("name", "Climatizzatore LG"),
             "icon": "❄️" if mode == "COOL" else ("🔥" if mode == "HEAT" else "🌬️"),
             "category": "climate",
             "category_label": "Climatizzatore LG ThinQ",
             "is_on": is_on,
             "can_toggle": True,
-            "is_online": d.get("connected", True),
+            "is_online": d.get("is_online", True),
             "status_text": status_txt,
             "power_w": 0.0,
             "temp_current": t_curr,
             "temp_set": t_target,
             "job_mode": mode,
             "fan_speed": d.get("fan_speed", "LOW"),
-            "swing_vertical": d.get("swing_vertical", False),
-            "swing_horizontal": d.get("swing_horizontal", False),
+            "swing_vertical": d.get("rotate_up_down", False),
+            "swing_horizontal": d.get("rotate_left_right", False),
             "raw": d
         })
 
@@ -1066,7 +1067,8 @@ async def api_devices_turn_all(request: Request):
     if settings.LG_THINQ_ENABLED and (category in ("all", "climate")):
         for d in thinq_service.get_cached_devices():
             if d.get("is_on") != target_state:
-                res = await thinq_service.control_device(d.get("deviceId"), {"power": target_state})
+                dev_id = d.get("device_id") or d.get("deviceId")
+                res = await thinq_service.control_device(dev_id, {"power": target_state})
                 results.append({"name": d.get("alias"), "res": res})
 
     return {"status": "ok", "target_state": target_state, "updated_count": len(results), "details": results}

@@ -26,6 +26,7 @@ class AlertEngine:
         
         # Anomaly cooldowns
         self.last_storm_alert = 0.0
+        self.last_storm_alert_press = None
         self.last_wind_spike_alert = 0.0
         self.last_rain_burst_alert = 0.0
         self.last_uv_alert = 0.0
@@ -111,15 +112,30 @@ class AlertEngine:
         if press is not None:
             trend_info = get_pressure_trend(press)
             if trend_info.get("is_storm_alert"):
-                if (now - self.last_storm_alert) >= (settings.ANOMALY_ALERT_COOLDOWN_MIN * 60):
+                cooldown_sec = getattr(settings, "STORM_ALERT_COOLDOWN_MIN", 240) * 60
+                time_elapsed = (now - self.last_storm_alert) >= cooldown_sec
+                # Se è già stato inviato un avviso per questa depressione, non re-inviare continuamente;
+                # invia solo se c'è un crollo ulteriore significativo (>= 1.5 hPa) rispetto alla pressione dell'ultimo allarme
+                further_drop = (
+                    self.last_storm_alert_press is not None and 
+                    (press <= self.last_storm_alert_press - 1.5) and 
+                    (now - self.last_storm_alert) >= 3600
+                )
+                
+                if (self.last_storm_alert == 0.0) or time_elapsed or further_drop:
                     self.last_storm_alert = now
+                    self.last_storm_alert_press = press
                     notifier.send_alert(
                         alert_type="storm",
                         title="⚠️ Allerta Burrasca: Crollo Pressione!",
                         message=f"La pressione barometrica è crollata a {press} hPa ({trend_info['diff']} hPa nelle ultime 3h). Forte peggioramento o tempesta in arrivo.",
                         priority="urgent",
-                        extra_data={"pressure_drop": str(trend_info['diff'])}
+                        extra_data={"pressure_drop": str(trend_info['diff']), "pressure": str(press)}
                     )
+            else:
+                # Se la tendenza non è più in allarme burrasca da almeno 2 ore, resetta la pressione di riferimento
+                if self.last_storm_alert_press is not None and (now - self.last_storm_alert) >= 7200:
+                    self.last_storm_alert_press = None
 
         # B. Raffica Anomala Improvvisa (Wind Spike)
         gust = data.get("wind_gust_kmh")

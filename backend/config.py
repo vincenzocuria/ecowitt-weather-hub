@@ -31,7 +31,7 @@ class Settings:
     RAIN_RATE_ALERT_MM_HR: float = float(os.getenv("RAIN_RATE_ALERT_MM_HR", "5.0"))
     
     # Soglie Eventi Anomali
-    PRESSURE_DROP_3H_THRESHOLD: float = float(os.getenv("PRESSURE_DROP_3H_THRESHOLD", "2.0"))     # Calo >= 2 hPa in 3h -> burrasca
+    PRESSURE_DROP_3H_THRESHOLD: float = float(os.getenv("PRESSURE_DROP_3H_THRESHOLD", "3.0"))     # Calo >= 3 hPa in 3h -> burrasca (standard WMO/nautico)
     TEMP_DROP_1H_THRESHOLD: float = float(os.getenv("TEMP_DROP_1H_THRESHOLD", "4.0"))           # Crollo >= 4°C in 1h
     TEMP_RISE_1H_THRESHOLD: float = float(os.getenv("TEMP_RISE_1H_THRESHOLD", "4.0"))           # Impennata >= 4°C in 1h
     GUST_SPIKE_THRESHOLD_KMH: float = float(os.getenv("GUST_SPIKE_THRESHOLD_KMH", "45.0"))       # Raffica anomala >= 45 km/h
@@ -50,6 +50,7 @@ class Settings:
     RAIN_FORECAST_COOLDOWN_MIN: int = int(os.getenv("RAIN_FORECAST_COOLDOWN_MIN", "180"))
     RECORD_BROKEN_COOLDOWN_MIN: int = int(os.getenv("RECORD_BROKEN_COOLDOWN_MIN", "1"))
     ANOMALY_ALERT_COOLDOWN_MIN: int = int(os.getenv("ANOMALY_ALERT_COOLDOWN_MIN", "60"))
+    STORM_ALERT_COOLDOWN_MIN: int = int(os.getenv("STORM_ALERT_COOLDOWN_MIN", "240"))  # Cooldown burrasca: 4h per evitare spam durante depressioni stazionarie
     
     # Nome Stazione & Località
     STATION_NAME: str = os.getenv("STATION_NAME", "Ecowitt Weather Hub")
@@ -103,7 +104,7 @@ class Settings:
     LG_THINQ_ENABLED: bool = os.getenv("LG_THINQ_ENABLED", "true").lower() in ("true", "1", "yes")
     LG_THINQ_PAT: str = os.getenv("LG_THINQ_PAT", os.getenv("THINQ_PAT", ""))
     LG_THINQ_COUNTRY: str = os.getenv("LG_THINQ_COUNTRY", "IT")
-    LG_THINQ_POLL_INTERVAL_SEC: int = int(os.getenv("LG_THINQ_POLL_INTERVAL_SEC", "30"))
+    LG_THINQ_POLL_INTERVAL_SEC: int = int(os.getenv("LG_THINQ_POLL_INTERVAL_SEC", "300"))
     
     # Automazione Clima & Solare Eco
     CLIMATE_SOLAR_ECO_ENABLED: bool = os.getenv("CLIMATE_SOLAR_ECO_ENABLED", "true").lower() in ("true", "1", "yes")
@@ -113,7 +114,7 @@ class Settings:
     # Configurazione Samsung SmartThings
     SMARTTHINGS_ENABLED: bool = os.getenv("SMARTTHINGS_ENABLED", "true").lower() in ("true", "1", "yes")
     SMARTTHINGS_PAT: str = os.getenv("SMARTTHINGS_PAT", os.getenv("SAMSUNG_PAT", ""))
-    SMARTTHINGS_POLL_INTERVAL_SEC: int = int(os.getenv("SMARTTHINGS_POLL_INTERVAL_SEC", "30"))
+    SMARTTHINGS_POLL_INTERVAL_SEC: int = int(os.getenv("SMARTTHINGS_POLL_INTERVAL_SEC", "180"))
 
     # Configurazione Tuya / Smart Life
     TUYA_ENABLED: bool = os.getenv("TUYA_ENABLED", "true").lower() in ("true", "1", "yes")

@@ -67,6 +67,9 @@ DISHWASHER_CYCLE_MAP = {
 }
 
 
+import os
+import json
+
 class SmartThingsService:
     def __init__(self):
         self.token = settings.SMARTTHINGS_PAT
@@ -79,6 +82,39 @@ class SmartThingsService:
         self.sync_error: Optional[str] = None
         self.is_connected = False
         self._session: Optional[aiohttp.ClientSession] = None
+        self.cache_file = os.path.join(settings.DATA_DIR, "smartthings_cache.json")
+        self._load_cache()
+
+    def _load_cache(self):
+        """Carica lo stato dei dispositivi Samsung SmartThings persistito su disco."""
+        try:
+            if os.path.exists(self.cache_file):
+                with open(self.cache_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.devices = data.get("devices", [])
+                    self.device_statuses = data.get("device_statuses", {})
+                    self.last_sync_time = data.get("last_sync_time")
+                    if self.devices:
+                        logger.info(f"📂 [SmartThings] Caricati {len(self.devices)} dispositivi dalla cache locale persistente.")
+        except Exception as e:
+            logger.warning(f"⚠️ [SmartThings] Impossibile caricare la cache da disco: {e}")
+
+    def _save_cache(self):
+        """Salva lo stato dei dispositivi su file JSON in modo atomico."""
+        try:
+            os.makedirs(settings.DATA_DIR, exist_ok=True)
+            tmp_path = f"{self.cache_file}.tmp"
+            payload = {
+                "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "devices": self.devices,
+                "device_statuses": self.device_statuses,
+                "last_sync_time": self.last_sync_time
+            }
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, self.cache_file)
+        except Exception as e:
+            logger.warning(f"⚠️ [SmartThings] Impossibile salvare la cache su disco: {e}")
 
     async def get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -105,7 +141,7 @@ class SmartThingsService:
     async def fetch_devices_list(self) -> List[Dict[str, Any]]:
         """Recupera l'elenco completo dei dispositivi associati all'account."""
         if not self.enabled:
-            return []
+            return self.devices
 
         session = await self.get_session()
         try:
@@ -116,16 +152,19 @@ class SmartThingsService:
                     self.devices = data.get("items", [])
                     self.is_connected = True
                     self.sync_error = None
+                    self._save_cache()
                     return self.devices
                 else:
                     err_txt = await resp.text()
+                    self.is_connected = False
                     self.sync_error = f"HTTP {resp.status}: {err_txt[:150]}"
                     logger.error(f"Errore recupero lista dispositivi SmartThings: {self.sync_error}")
-                    return []
+                    return self.devices
         except Exception as e:
+            self.is_connected = False
             self.sync_error = str(e)
             logger.error(f"Eccezione durante fetch_devices_list SmartThings: {e}")
-            return []
+            return self.devices
 
     async def fetch_device_status(self, device_id: str) -> Optional[Dict[str, Any]]:
         """Recupera lo stato attuale delle capability di un singolo dispositivo."""
@@ -136,13 +175,14 @@ class SmartThingsService:
                 if resp.status == 200:
                     data = await resp.json()
                     self.device_statuses[device_id] = data
+                    self._save_cache()
                     return data
                 else:
                     logger.warning(f"Status per dispositivo {device_id} ha risposto HTTP {resp.status}")
-                    return None
+                    return self.device_statuses.get(device_id)
         except Exception as e:
             logger.warning(f"Errore recupero status dispositivo {device_id}: {e}")
-            return None
+            return self.device_statuses.get(device_id)
 
     async def sync_all(self):
         """Sincronizza tutti i dispositivi SmartThings monitorati."""
@@ -163,6 +203,7 @@ class SmartThingsService:
             await asyncio.gather(*tasks, return_exceptions=True)
 
         self.last_sync_time = time.time()
+        self._save_cache()
         logger.info(f"Sincronizzazione SmartThings completata: {len(self.device_statuses)} stati aggiornati.")
 
     def parse_washer_data(self, status: Dict[str, Any], dev_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -497,14 +538,23 @@ class SmartThingsService:
 
     async def worker_loop(self):
         """Loop di polling in background per sincronizzare costantemente gli elettrodomestici."""
-        logger.info("Avvio worker loop SmartThings Service...")
+        if not self.enabled:
+            logger.info("ℹ️ [SmartThings] Servizio non abilitato o PAT assente.")
+            return
+
+        logger.info(f"🚀 [SmartThings] Background worker avviato (Intervallo: {self.poll_interval}s)")
         while True:
             try:
                 if self.enabled:
                     await self.sync_all()
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.error(f"Errore nel ciclo di polling SmartThings: {e}")
-            await asyncio.sleep(self.poll_interval)
+            
+            # Se errore 401 (PAT non valido o scaduto), attendi 5 minuti prima del prossimo tentativo per non intasare i log
+            sleep_time = 300 if (self.sync_error and "401" in self.sync_error) else self.poll_interval
+            await asyncio.sleep(sleep_time)
 
 
 # Istanza singleton globale

@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import json
 import uuid
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -20,6 +22,39 @@ class LGThinQService:
         self.device_profiles: Dict[str, Dict[str, Any]] = {}
         self.device_instances: Dict[str, Any] = {}
         self._running: bool = False
+        self.sync_error: Optional[str] = None
+        self.rate_limited: bool = False
+        self.cache_file = os.path.join(settings.DATA_DIR, "thinq_cache.json")
+        self._load_cache()
+
+    def _load_cache(self):
+        """Carica lo stato dei dispositivi persistito su disco per sopravvivere ai riavvii o ai limiti API."""
+        try:
+            if os.path.exists(self.cache_file):
+                with open(self.cache_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.devices_cache = data.get("devices_cache", {})
+                    self.device_profiles = data.get("device_profiles", {})
+                    if self.devices_cache:
+                        logger.info(f"📂 [LG ThinQ] Caricati {len(self.devices_cache)} dispositivi dalla cache locale persistente.")
+        except Exception as e:
+            logger.warning(f"⚠️ [LG ThinQ] Impossibile caricare la cache da disco: {e}")
+
+    def _save_cache(self):
+        """Salva lo stato dei dispositivi su file JSON in modo atomico."""
+        try:
+            os.makedirs(settings.DATA_DIR, exist_ok=True)
+            tmp_path = f"{self.cache_file}.tmp"
+            payload = {
+                "saved_at": settings.now_local().strftime("%Y-%m-%d %H:%M:%S"),
+                "devices_cache": self.devices_cache,
+                "device_profiles": self.device_profiles
+            }
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, self.cache_file)
+        except Exception as e:
+            logger.warning(f"⚠️ [LG ThinQ] Impossibile salvare la cache su disco: {e}")
 
     async def _ensure_session(self) -> bool:
         """Crea o rinnova la sessione aiohttp e l'istanza ThinQApi."""
@@ -45,17 +80,21 @@ class LGThinQService:
             
             return True
         except Exception as e:
-            logger.error(f"❌ [LG ThinQ] Errore inizializzazione API: {e}")
+            err_str = str(e)
+            logger.error(f"❌ [LG ThinQ] Errore inizializzazione API: {err_str}")
             self.is_connected = False
+            self.sync_error = err_str
+            if "1314" in err_str or "Exceeded User API calls" in err_str:
+                self.rate_limited = True
             return False
 
     async def fetch_all_devices(self) -> List[Dict[str, Any]]:
         """Recupera la lista dei dispositivi e aggiorna lo stato in cache."""
         if not settings.LG_THINQ_ENABLED or not settings.LG_THINQ_PAT:
-            return []
+            return list(self.devices_cache.values())
 
         if not await self._ensure_session():
-            return []
+            return list(self.devices_cache.values())
 
         try:
             raw_devices = await self.api.async_get_device_list()
@@ -111,6 +150,7 @@ class LGThinQService:
 
                     self.devices_cache[device_id] = {
                         "device_id": device_id,
+                        "deviceId": device_id,
                         "alias": alias,
                         "model_name": model_name,
                         "device_type": device_type,
@@ -137,6 +177,7 @@ class LGThinQService:
                     # Altri dispositivi (es. lavatrice, frigo)
                     self.devices_cache[device_id] = {
                         "device_id": device_id,
+                        "deviceId": device_id,
                         "alias": alias,
                         "model_name": model_name,
                         "device_type": device_type,
@@ -146,12 +187,20 @@ class LGThinQService:
                     }
 
             self.is_connected = True
+            self.sync_error = None
+            self.rate_limited = False
             self.last_fetch_time = settings.now_local()
+            self._save_cache()
             return list(self.devices_cache.values())
 
         except Exception as e:
-            logger.error(f"❌ [LG ThinQ] Errore durante fetch_all_devices: {e}")
+            err_str = str(e)
+            logger.error(f"❌ [LG ThinQ] Errore durante fetch_all_devices: {err_str}")
             self.is_connected = False
+            self.sync_error = err_str
+            if "1314" in err_str or "Exceeded User API calls" in err_str:
+                self.rate_limited = True
+                logger.warning("⚠️ [LG ThinQ] Quota chiamate API giornaliere superata (1314). Uso cache persistente.")
             return list(self.devices_cache.values())
 
     async def control_device(self, device_id: str, command: Dict[str, Any]) -> Dict[str, Any]:
@@ -264,13 +313,15 @@ class LGThinQService:
 
         while self._running:
             try:
-                await asyncio.sleep(settings.LG_THINQ_POLL_INTERVAL_SEC)
+                # Se siamo in rate limit (1314), attendi 10 minuti prima di riprovare
+                sleep_sec = 600 if self.rate_limited else settings.LG_THINQ_POLL_INTERVAL_SEC
+                await asyncio.sleep(sleep_sec)
                 await self.fetch_all_devices()
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"⚠️ [LG ThinQ] Errore nel worker loop: {e}")
-                await asyncio.sleep(15)
+                await asyncio.sleep(30)
 
     def stop(self):
         self._running = False
