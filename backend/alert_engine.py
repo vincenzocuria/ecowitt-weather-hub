@@ -208,17 +208,73 @@ class AlertEngine:
 
     def _check_soil_moisture(self, data: Dict[str, Any], now: float):
         soil = data.get("soil_moisture", {})
+        if not soil:
+            return
+
+        # 1. Recupera alias personalizzati dei sensori (se configurati)
+        from backend.database import get_sensor_aliases
+        aliases = get_sensor_aliases()
+
+        # 2. Controllo se sta già piovendo ora
+        rain_rate = data.get("rain_rate_mm_hr", 0.0) or 0.0
+        daily_rain = data.get("daily_rain_mm", 0.0) or 0.0
+        if rain_rate > 0.0 or (self.is_raining and daily_rain >= 0.5):
+            logger.info("Controllo irrigazione suolo: precipitazioni attualmente in corso, notifica non necessaria.")
+            return
+
+        # 3. Controllo previsione meteo pioggia nelle prossime ore (Open-Meteo ECMWF/ICON)
+        from backend.forecast_service import forecast_service
+        rain_imminent = False
+        rain_forecast_str = ""
+        try:
+            fc = forecast_service.fetch_open_meteo()
+            if fc and "hourly_next_36h" in fc:
+                # Controlla le prossime 6-8 ore
+                upcoming_hours = fc["hourly_next_36h"][:8]
+                max_prob = max((h.get("rain_prob_pct", 0) for h in upcoming_hours), default=0)
+                sum_rain = sum((h.get("rain_mm", 0.0) for h in upcoming_hours))
+                
+                # Se probabilità >= 50% o accumulo previsto >= 1.0mm
+                if max_prob >= 50 or sum_rain >= 1.0:
+                    rain_imminent = True
+                    rain_forecast_str = f"Prevista pioggia a breve ({max_prob}% probabilità, ~{sum_rain:.1f} mm)."
+        except Exception as e:
+            logger.warning(f"Errore verifica previsione pioggia per allerta suolo: {e}")
+
+        # Se pioverà a breve, sopprime con intelligenza l'avviso di annaffiare per risparmiare acqua
+        if rain_imminent:
+            logger.info(f"Avviso irrigazione suolo soppresso: {rain_forecast_str}")
+            return
+
+        # 4. Calcolo consiglio sull'orario ideale di irrigazione (evita ore calde / pieno sole)
+        local_hour = settings.now_local().hour
+        solar = data.get("solar_radiation", 0.0) or 0.0
+        temp_c = data.get("temp_c", 20.0) or 20.0
+        
+        advice_timing = ""
+        if 11 <= local_hour <= 17 and (solar > 250 or temp_c > 27):
+            advice_timing = " ☀️ Consiglio: evita di annaffiare sotto il sole cocente; preferisci stasera dopo il tramonto o domattina all'alba per evitare l'evaporazione rapida."
+        elif 6 <= local_hour <= 9:
+            advice_timing = " 🌅 Momento ideale: l'alba consente l'assorbimento radicale ottimale."
+        elif 19 <= local_hour <= 23:
+            advice_timing = " 🌙 Momento ideale: annaffiare di sera idrata il terreno per tutta la notte."
+
+        # 5. Verifica soglia umidità per ciascun canale suolo
         for channel, value in soil.items():
             if value is not None and value <= settings.SOIL_MOISTURE_LOW_THRESHOLD:
                 last_time = self.last_soil_alert.get(channel, 0.0)
                 if (now - last_time) >= (settings.SOIL_MOISTURE_COOLDOWN_MIN * 60):
                     self.last_soil_alert[channel] = now
+                    
+                    sensor_name = aliases.get(f"soil_{channel}") or aliases.get(channel) or f"Sensore Terreno ({channel})"
+                    msg = f"L'umidità di '{sensor_name}' è scesa al {value}% (soglia minima impostata: {settings.SOIL_MOISTURE_LOW_THRESHOLD}%). Nessuna pioggia prevista a breve.{advice_timing}"
+                    
                     notifier.send_alert(
                         alert_type="soil_dry",
-                        title="🌱 Annaffia le piante",
-                        message=f"L'umidità del terreno ({channel}) è scesa al {value}% (sotto la soglia minima del {settings.SOIL_MOISTURE_LOW_THRESHOLD}%).",
+                        title=f"🌱 Annaffia: {sensor_name}",
+                        message=msg,
                         priority="normal",
-                        extra_data={"channel": channel, "moisture": str(value)}
+                        extra_data={"channel": channel, "moisture": str(value), "sensor_name": sensor_name}
                     )
 
     def _check_temperatures(self, data: Dict[str, Any], now: float):
