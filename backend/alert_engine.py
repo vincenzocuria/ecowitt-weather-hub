@@ -1,7 +1,9 @@
+import os
+import json
 import time
 import logging
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from backend.config import settings
 from backend.notifier import notifier
 from backend.database import check_and_update_records, get_pressure_trend, get_temp_1h_change, get_station_status
@@ -11,10 +13,11 @@ logger = logging.getLogger("ecowitt_alert_engine")
 
 class AlertEngine:
     def __init__(self):
+        self._state_file = os.path.join(settings.DATA_DIR, "alert_state.json")
         self.last_lightning_epoch = None
         self.last_lightning_count = 0
         self.last_lightning_alert = 0.0
-        self.last_soil_alert = {}
+        self.last_soil_alert: Dict[str, float] = {}
         self.last_freeze_alert = 0.0
         self.last_heat_alert = 0.0
         self.last_rain_alert = 0.0
@@ -35,14 +38,192 @@ class AlertEngine:
         # Offline Watchdog state
         self.is_station_offline = False
         self.last_offline_alert_time = 0.0
-        self.last_battery_alert = {}
+        self.last_battery_alert: Dict[str, float] = {}
 
         # Energy Alert state (Aton Storage)
         self.last_high_consumption_alert = 0.0
         self.last_battery_low_alert = 0.0
         self.last_battery_full_alert = 0.0
-        self.last_evening_energy_date = None
+        self.last_evening_energy_date: Optional[str] = None
         self._was_battery_full = False
+
+        # Digest & Maintenance state
+        self.last_digest_date: Optional[str] = None
+        self.last_maintenance_date: Optional[str] = None
+
+        # SmartThings & Leak states
+        self._last_presence_is_present: Optional[bool] = None
+        self._last_washer_was_running: bool = False
+        self._last_solar_appliance_alert: float = 0.0
+        self.last_leak_alert: Dict[str, float] = {}
+
+        # Carica lo stato persistente da disco o DB
+        self._load_state()
+
+    def _save_state(self):
+        """Salva lo stato corrente e i cooldown degli allarmi su file JSON persistente."""
+        try:
+            os.makedirs(settings.DATA_DIR, exist_ok=True)
+            state_data = {
+                "saved_at": time.time(),
+                "last_lightning_epoch": self.last_lightning_epoch,
+                "last_lightning_count": self.last_lightning_count,
+                "last_lightning_alert": self.last_lightning_alert,
+                "last_soil_alert": self.last_soil_alert,
+                "last_freeze_alert": self.last_freeze_alert,
+                "last_heat_alert": self.last_heat_alert,
+                "last_rain_alert": self.last_rain_alert,
+                "last_rain_start_alert": self.last_rain_start_alert,
+                "is_raining": self.is_raining,
+                "last_rain_time": self.last_rain_time,
+                "last_rain_forecast_alert": self.last_rain_forecast_alert,
+                "last_record_alert": self.last_record_alert,
+                "last_storm_alert": self.last_storm_alert,
+                "last_storm_alert_press": self.last_storm_alert_press,
+                "last_wind_spike_alert": self.last_wind_spike_alert,
+                "last_rain_burst_alert": self.last_rain_burst_alert,
+                "last_uv_alert": self.last_uv_alert,
+                "last_temp_plunge_alert": self.last_temp_plunge_alert,
+                "is_station_offline": self.is_station_offline,
+                "last_offline_alert_time": self.last_offline_alert_time,
+                "last_battery_alert": self.last_battery_alert,
+                "last_high_consumption_alert": self.last_high_consumption_alert,
+                "last_battery_low_alert": self.last_battery_low_alert,
+                "last_battery_full_alert": self.last_battery_full_alert,
+                "last_evening_energy_date": self.last_evening_energy_date,
+                "last_digest_date": self.last_digest_date,
+                "last_maintenance_date": self.last_maintenance_date,
+                "_was_battery_full": self._was_battery_full,
+                "_last_presence_is_present": self._last_presence_is_present,
+                "_last_washer_was_running": self._last_washer_was_running,
+                "_last_solar_appliance_alert": self._last_solar_appliance_alert,
+                "last_leak_alert": self.last_leak_alert,
+            }
+            tmp_path = self._state_file + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(state_data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, self._state_file)
+        except Exception as e:
+            logger.warning(f"[ALERT-STATE] Impossibile salvare cache stato allarmi: {e}")
+
+    def _load_state(self):
+        """Carica lo stato da disk cache o ricostruisce lo stato dal DB."""
+        loaded_from_disk = False
+        if os.path.exists(self._state_file):
+            try:
+                with open(self._state_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.last_lightning_epoch = data.get("last_lightning_epoch", self.last_lightning_epoch)
+                self.last_lightning_count = data.get("last_lightning_count", self.last_lightning_count)
+                self.last_lightning_alert = data.get("last_lightning_alert", self.last_lightning_alert)
+                self.last_soil_alert = data.get("last_soil_alert", self.last_soil_alert)
+                self.last_freeze_alert = data.get("last_freeze_alert", self.last_freeze_alert)
+                self.last_heat_alert = data.get("last_heat_alert", self.last_heat_alert)
+                self.last_rain_alert = data.get("last_rain_alert", self.last_rain_alert)
+                self.last_rain_start_alert = data.get("last_rain_start_alert", self.last_rain_start_alert)
+                self.is_raining = data.get("is_raining", self.is_raining)
+                self.last_rain_time = data.get("last_rain_time", self.last_rain_time)
+                self.last_rain_forecast_alert = data.get("last_rain_forecast_alert", self.last_rain_forecast_alert)
+                self.last_record_alert = data.get("last_record_alert", self.last_record_alert)
+                self.last_storm_alert = data.get("last_storm_alert", self.last_storm_alert)
+                self.last_storm_alert_press = data.get("last_storm_alert_press", self.last_storm_alert_press)
+                self.last_wind_spike_alert = data.get("last_wind_spike_alert", self.last_wind_spike_alert)
+                self.last_rain_burst_alert = data.get("last_rain_burst_alert", self.last_rain_burst_alert)
+                self.last_uv_alert = data.get("last_uv_alert", self.last_uv_alert)
+                self.last_temp_plunge_alert = data.get("last_temp_plunge_alert", self.last_temp_plunge_alert)
+                self.is_station_offline = data.get("is_station_offline", self.is_station_offline)
+                self.last_offline_alert_time = data.get("last_offline_alert_time", self.last_offline_alert_time)
+                self.last_battery_alert = data.get("last_battery_alert", self.last_battery_alert)
+                self.last_high_consumption_alert = data.get("last_high_consumption_alert", self.last_high_consumption_alert)
+                self.last_battery_low_alert = data.get("last_battery_low_alert", self.last_battery_low_alert)
+                self.last_battery_full_alert = data.get("last_battery_full_alert", self.last_battery_full_alert)
+                self.last_evening_energy_date = data.get("last_evening_energy_date", self.last_evening_energy_date)
+                self.last_digest_date = data.get("last_digest_date", self.last_digest_date)
+                self.last_maintenance_date = data.get("last_maintenance_date", self.last_maintenance_date)
+                self._was_battery_full = data.get("_was_battery_full", self._was_battery_full)
+                self._last_presence_is_present = data.get("_last_presence_is_present", self._last_presence_is_present)
+                self._last_washer_was_running = data.get("_last_washer_was_running", self._last_washer_was_running)
+                self._last_solar_appliance_alert = data.get("_last_solar_appliance_alert", self._last_solar_appliance_alert)
+                self.last_leak_alert = data.get("last_leak_alert", self.last_leak_alert)
+                loaded_from_disk = True
+                logger.info("[ALERT-STATE] Cache stato allarmi caricata con successo da disco.")
+            except Exception as e:
+                logger.warning(f"[ALERT-STATE] Errore lettura cache stato allarmi da disco: {e}")
+
+        # Se non presente su disco, idrata dai log del DB SQLite
+        if not loaded_from_disk:
+            self._hydrate_from_db()
+
+    def _hydrate_from_db(self):
+        """Idrata i cooldown e gli stati dagli alert_logs e weather_records nel DB."""
+        try:
+            from backend.database import get_latest_alerts_by_type, get_latest_reading
+            latest_alerts = get_latest_alerts_by_type()
+            now_dt = settings.now_local()
+            today_str = now_dt.strftime("%Y-%m-%d")
+
+            for alert_type, info in latest_alerts.items():
+                ts_str = info.get("timestamp")
+                if not ts_str:
+                    continue
+                try:
+                    dt = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
+                    ts = dt.timestamp()
+                    local_dt = dt.astimezone(settings.get_tz())
+                    alert_date_str = local_dt.strftime("%Y-%m-%d")
+                except Exception:
+                    continue
+
+                if alert_type == "digest" and alert_date_str == today_str:
+                    self.last_digest_date = today_str
+                elif alert_type == "energy_digest" and alert_date_str == today_str:
+                    self.last_evening_energy_date = today_str
+                elif alert_type == "freeze":
+                    self.last_freeze_alert = max(self.last_freeze_alert, ts)
+                elif alert_type == "heatwave":
+                    self.last_heat_alert = max(self.last_heat_alert, ts)
+                elif alert_type == "rain":
+                    self.last_rain_alert = max(self.last_rain_alert, ts)
+                elif alert_type == "rain_start":
+                    self.last_rain_start_alert = max(self.last_rain_start_alert, ts)
+                elif alert_type == "rain_forecast":
+                    self.last_rain_forecast_alert = max(self.last_rain_forecast_alert, ts)
+                elif alert_type == "storm":
+                    self.last_storm_alert = max(self.last_storm_alert, ts)
+                elif alert_type == "wind_spike":
+                    self.last_wind_spike_alert = max(self.last_wind_spike_alert, ts)
+                elif alert_type == "lightning":
+                    self.last_lightning_alert = max(self.last_lightning_alert, ts)
+                elif alert_type == "uv_extreme":
+                    self.last_uv_alert = max(self.last_uv_alert, ts)
+                elif alert_type == "anomaly":
+                    self.last_temp_plunge_alert = max(self.last_temp_plunge_alert, ts)
+                elif alert_type == "energy_high":
+                    self.last_high_consumption_alert = max(self.last_high_consumption_alert, ts)
+                elif alert_type == "battery_full":
+                    self.last_battery_full_alert = max(self.last_battery_full_alert, ts)
+                elif alert_type == "battery_low":
+                    self.last_battery_low_alert = max(self.last_battery_low_alert, ts)
+                elif alert_type == "solar_synergy_appliances":
+                    self._last_solar_appliance_alert = max(self._last_solar_appliance_alert, ts)
+                elif alert_type == "soil_dry":
+                    extra = info.get("data") or {}
+                    ch = extra.get("channel")
+                    if ch:
+                        self.last_soil_alert[str(ch)] = max(self.last_soil_alert.get(str(ch), 0.0), ts)
+
+            # Verifica stato pioggia dall'ultima lettura
+            latest_read = get_latest_reading()
+            if latest_read:
+                rate = latest_read.get("rain_rate_mm_hr", 0.0) or 0.0
+                if rate > 0.0:
+                    self.is_raining = True
+                    self.last_rain_time = time.time()
+
+            logger.info("[ALERT-STATE] Idratazione stato allarmi da DB completata con successo.")
+            self._save_state()
+        except Exception as e:
+            logger.warning(f"[ALERT-STATE] Errore idratazione stato da DB: {e}")
 
 
     def evaluate(self, current_data: Dict[str, Any]):
@@ -51,6 +232,7 @@ class AlertEngine:
         # Se riceve dati, reimposta stato offline se era offline
         if self.is_station_offline:
             self.is_station_offline = False
+            self._save_state()
             notifier.send_alert(
                 alert_type="online",
                 title="🟢 Stazione Meteo Riconnessa!",
@@ -68,6 +250,7 @@ class AlertEngine:
                     logger.info(msg)
                     if rec.get("should_notify", True) and (now - self.last_record_alert) >= (settings.RECORD_BROKEN_COOLDOWN_MIN * 60):
                         self.last_record_alert = now
+                        self._save_state()
                         notifier.send_alert(
                             alert_type="record",
                             title=f"🏆 Record Battuto: {rec['title']}!",
@@ -95,9 +278,10 @@ class AlertEngine:
         leaks = data.get("leak_sensors", {})
         for ch, status in leaks.items():
             if status in (1, "1"):
-                last_time = getattr(self, f"_last_leak_alert_{ch}", 0.0)
+                last_time = self.last_leak_alert.get(ch, 0.0)
                 if (now - last_time) >= 1800:  # allarme ogni 30 min se persiste
-                    setattr(self, f"_last_leak_alert_{ch}", now)
+                    self.last_leak_alert[ch] = now
+                    self._save_state()
                     notifier.send_alert(
                         alert_type="leak",
                         title=f"🚨 ALLARME ALLAGAMENTO ({ch.upper()})!",
@@ -125,6 +309,7 @@ class AlertEngine:
                 if (self.last_storm_alert == 0.0) or time_elapsed or further_drop:
                     self.last_storm_alert = now
                     self.last_storm_alert_press = press
+                    self._save_state()
                     notifier.send_alert(
                         alert_type="storm",
                         title="⚠️ Allerta Burrasca: Crollo Pressione!",
@@ -136,6 +321,7 @@ class AlertEngine:
                 # Se la tendenza non è più in allarme burrasca da almeno 2 ore, resetta la pressione di riferimento
                 if self.last_storm_alert_press is not None and (now - self.last_storm_alert) >= 7200:
                     self.last_storm_alert_press = None
+                    self._save_state()
 
         # B. Raffica Anomala Improvvisa (Wind Spike)
         gust = data.get("wind_gust_kmh")
@@ -143,6 +329,7 @@ class AlertEngine:
         if gust is not None and gust >= settings.GUST_SPIKE_THRESHOLD_KMH:
             if (now - self.last_wind_spike_alert) >= (settings.ANOMALY_ALERT_COOLDOWN_MIN * 60):
                 self.last_wind_spike_alert = now
+                self._save_state()
                 notifier.send_alert(
                     alert_type="wind_spike",
                     title="💨 Forte Raffica di Vento Rilevata!",
@@ -156,6 +343,7 @@ class AlertEngine:
         if rain_rate is not None and rain_rate >= settings.RAIN_BURST_THRESHOLD_MM_HR:
             if (now - self.last_rain_burst_alert) >= (settings.ANOMALY_ALERT_COOLDOWN_MIN * 60):
                 self.last_rain_burst_alert = now
+                self._save_state()
                 notifier.send_alert(
                     alert_type="rain",
                     title="🌧️ Allerta Nubifragio in Corso!",
@@ -170,6 +358,7 @@ class AlertEngine:
             diff, is_plunge, is_spike = get_temp_1h_change(temp)
             if (is_plunge or is_spike) and (now - self.last_temp_plunge_alert) >= (settings.ANOMALY_ALERT_COOLDOWN_MIN * 60):
                 self.last_temp_plunge_alert = now
+                self._save_state()
                 direction_txt = "crollo termico" if is_plunge else "impennata termica"
                 notifier.send_alert(
                     alert_type="anomaly",
@@ -184,6 +373,7 @@ class AlertEngine:
         if uv is not None and uv >= settings.UV_EXTREME_THRESHOLD:
             if (now - self.last_uv_alert) >= (settings.ANOMALY_ALERT_COOLDOWN_MIN * 60):
                 self.last_uv_alert = now
+                self._save_state()
                 notifier.send_alert(
                     alert_type="uv_extreme",
                     title="☀️ Indice UV Pericoloso / Estremo!",
@@ -201,19 +391,23 @@ class AlertEngine:
         if self.last_lightning_epoch is None:
             self.last_lightning_epoch = strike_epoch
             self.last_lightning_count = count
+            self._save_state()
             return
 
         is_new_strike = False
         if strike_epoch and strike_epoch != self.last_lightning_epoch:
             is_new_strike = True
             self.last_lightning_epoch = strike_epoch
+            self._save_state()
         elif count > self.last_lightning_count:
             is_new_strike = True
             self.last_lightning_count = count
+            self._save_state()
 
         if is_new_strike and dist_km is not None and dist_km <= settings.LIGHTNING_MAX_DISTANCE_KM:
             if (now - self.last_lightning_alert) >= (settings.LIGHTNING_COOLDOWN_MIN * 60):
                 self.last_lightning_alert = now
+                self._save_state()
                 notifier.send_alert(
                     alert_type="lightning",
                     title="⚡ Temporale in arrivo!",
@@ -281,6 +475,7 @@ class AlertEngine:
                 last_time = self.last_soil_alert.get(channel, 0.0)
                 if (now - last_time) >= (settings.SOIL_MOISTURE_COOLDOWN_MIN * 60):
                     self.last_soil_alert[channel] = now
+                    self._save_state()
                     
                     sensor_name = aliases.get(f"soil_{channel}") or aliases.get(channel) or f"Sensore Terreno ({channel})"
                     msg = f"L'umidità di '{sensor_name}' è scesa al {value}% (soglia minima impostata: {settings.SOIL_MOISTURE_LOW_THRESHOLD}%). Nessuna pioggia prevista a breve.{advice_timing}"
@@ -301,6 +496,7 @@ class AlertEngine:
         if temp <= settings.TEMP_FREEZE_THRESHOLD_C:
             if (now - self.last_freeze_alert) >= (settings.TEMP_ALERT_COOLDOWN_MIN * 60):
                 self.last_freeze_alert = now
+                self._save_state()
                 notifier.send_alert(
                     alert_type="freeze",
                     title="❄️ Allerta Gelo",
@@ -311,6 +507,7 @@ class AlertEngine:
         elif temp >= settings.TEMP_HEAT_THRESHOLD_C:
             if (now - self.last_heat_alert) >= (settings.TEMP_ALERT_COOLDOWN_MIN * 60):
                 self.last_heat_alert = now
+                self._save_state()
                 notifier.send_alert(
                     alert_type="heatwave",
                     title="🔥 Caldo Estremo",
@@ -330,8 +527,10 @@ class AlertEngine:
             self.last_rain_time = now
             if not self.is_raining:
                 self.is_raining = True
+                self._save_state()
                 if settings.RAIN_START_ALERT_ENABLED and (now - self.last_rain_start_alert) >= (settings.RAIN_START_COOLDOWN_MIN * 60):
                     self.last_rain_start_alert = now
+                    self._save_state()
                     rate_str = f" (intensità: {rain_rate} mm/h)" if (rain_rate and rain_rate > 0) else ""
                     notifier.send_alert(
                         alert_type="rain_start",
@@ -340,15 +539,19 @@ class AlertEngine:
                         priority="high",
                         extra_data={"rain_rate": str(rain_rate or 0.0), "event_rain": str(event_rain or 0.0)}
                     )
+            else:
+                self._save_state()
         else:
             # Se per oltre 15 minuti non si registrano precipitazioni, reimposta lo stato asciutto
             if self.is_raining and (now - self.last_rain_time) >= 900:
                 self.is_raining = False
+                self._save_state()
 
         # 2. Pioggia Intensa (Standard)
         if rain_rate is not None and rain_rate >= settings.RAIN_RATE_ALERT_MM_HR and rain_rate < settings.RAIN_BURST_THRESHOLD_MM_HR:
             if (now - self.last_rain_alert) >= (settings.RAIN_ALERT_COOLDOWN_MIN * 60):
                 self.last_rain_alert = now
+                self._save_state()
                 notifier.send_alert(
                     alert_type="rain",
                     title="🌧️ Pioggia Intensa",
@@ -365,6 +568,7 @@ class AlertEngine:
             last_time = self.last_battery_alert.get("wh65", 0.0)
             if (now - last_time) >= (24 * 3600):
                 self.last_battery_alert["wh65"] = now
+                self._save_state()
                 notifier.send_alert(
                     alert_type="battery_low",
                     title="🪫 Batteria Bassa: Sensore 7-in-1",
@@ -378,6 +582,7 @@ class AlertEngine:
             last_time = self.last_battery_alert.get("wh57", 0.0)
             if (now - last_time) >= (24 * 3600):
                 self.last_battery_alert["wh57"] = now
+                self._save_state()
                 notifier.send_alert(
                     alert_type="battery_low",
                     title="🪫 Batteria Bassa: Sensore Fulmini WH57",
@@ -392,6 +597,7 @@ class AlertEngine:
                 last_time = self.last_battery_alert.get(f"soil_{ch}", 0.0)
                 if (now - last_time) >= (24 * 3600):
                     self.last_battery_alert[f"soil_{ch}"] = now
+                    self._save_state()
                     notifier.send_alert(
                         alert_type="battery_low",
                         title=f"🪫 Batteria Bassa: Sensore Suolo ({ch})",
@@ -414,6 +620,7 @@ class AlertEngine:
                 mins = (status_info.get("seconds_ago") or 0) // 60
                 logger.warning(f"[WATCHDOG] Stazione Meteo Offline da {mins} minuti!")
                 self.last_offline_alert_time = now
+                self._save_state()
                 notifier.send_alert(
                     alert_type="offline",
                     title="⚠️ Stazione Meteo OFFLINE!",
@@ -424,6 +631,7 @@ class AlertEngine:
             elif (now - self.last_offline_alert_time) >= (3600 * 3): # ripeti ogni 3 ore se ancora offline
                 self.last_offline_alert_time = now
                 mins = (status_info.get("seconds_ago") or 0) // 60
+                self._save_state()
                 notifier.send_alert(
                     alert_type="offline",
                     title="⚠️ Promemoria: Stazione Meteo Ancora Offline",
@@ -470,6 +678,7 @@ class AlertEngine:
 
                         if prob >= settings.RAIN_FORECAST_PROB_THRESHOLD or (mm >= 0.5 and prob >= 40):
                             self.last_rain_forecast_alert = now
+                            self._save_state()
                             hour_label = h.get("hour_label", f"{h_dt.hour:02d}:00")
                             cond_text = h.get("condition", "Pioggia")
                             notifier.send_alert(
@@ -500,6 +709,7 @@ class AlertEngine:
         if getattr(self, "last_digest_date", None) != today_str:
             if now_dt.hour == settings.DAILY_DIGEST_HOUR and now_dt.minute >= settings.DAILY_DIGEST_MINUTE:
                 self.last_digest_date = today_str
+                self._save_state()
                 self.send_daily_digest()
 
     def check_nightly_maintenance(self):
@@ -509,6 +719,7 @@ class AlertEngine:
         if getattr(self, "last_maintenance_date", None) != today_str:
             if now_dt.hour == 3 and now_dt.minute >= 30:
                 self.last_maintenance_date = today_str
+                self._save_state()
                 try:
                     from backend.database import perform_database_maintenance
                     res = perform_database_maintenance(retention_days=60)
@@ -577,6 +788,7 @@ class AlertEngine:
         if p_utenze >= settings.ENERGY_HIGH_CONSUMPTION_W:
             if (now - self.last_high_consumption_alert) >= (settings.ENERGY_HIGH_CONSUMPTION_COOLDOWN_MIN * 60):
                 self.last_high_consumption_alert = now
+                self._save_state()
                 kw = round(p_utenze / 1000.0, 2)
                 notifier.send_alert(
                     alert_type="energy_high",
@@ -592,6 +804,7 @@ class AlertEngine:
             if soc <= settings.ENERGY_BATTERY_LOW_PCT:
                 if (now - self.last_battery_low_alert) >= (settings.ENERGY_BATTERY_COOLDOWN_MIN * 60):
                     self.last_battery_low_alert = now
+                    self._save_state()
                     notifier.send_alert(
                         alert_type="battery_low",
                         title="🪫 Batteria Aton Quasi Scarica!",
@@ -605,6 +818,7 @@ class AlertEngine:
                 if not self._was_battery_full and (now - self.last_battery_full_alert) >= (settings.ENERGY_BATTERY_COOLDOWN_MIN * 60):
                     self.last_battery_full_alert = now
                     self._was_battery_full = True
+                    self._save_state()
                     notifier.send_alert(
                         alert_type="battery_full",
                         title="🔋 Batteria Aton Completamente Carica!",
@@ -613,7 +827,9 @@ class AlertEngine:
                         extra_data={"soc": str(soc)}
                     )
             elif soc < 90:
-                self._was_battery_full = False
+                if self._was_battery_full:
+                    self._was_battery_full = False
+                    self._save_state()
 
     def check_evening_energy_digest(self):
         """Controlla se è l'ora di inviare il bilancio energetico serale."""
@@ -626,6 +842,7 @@ class AlertEngine:
         if getattr(self, "last_evening_energy_date", None) != today_str:
             if now_dt.hour == settings.ENERGY_REPORT_HOUR and now_dt.minute >= 0:
                 self.last_evening_energy_date = today_str
+                self._save_state()
                 self.send_evening_energy_digest()
 
     def send_evening_energy_digest(self) -> Dict[str, Any]:
@@ -715,7 +932,9 @@ class AlertEngine:
                         extra_data={"device": dev_name, "presence": "away"}
                     )
 
-            self._last_presence_is_present = is_present
+            if self._last_presence_is_present != is_present:
+                self._last_presence_is_present = is_present
+                self._save_state()
 
         # 2. Notifica Lavatrice Terminata + Asciugatura Bucato al Sole
         washer = smartthings_data.get("washer")
@@ -739,7 +958,10 @@ class AlertEngine:
                     extra_data={"device": "Lavatrice Samsung AI"}
                 )
 
-            self._last_washer_was_running = washer.get("is_running", False)
+            is_running_now = washer.get("is_running", False)
+            if self._last_washer_was_running != is_running_now:
+                self._last_washer_was_running = is_running_now
+                self._save_state()
 
         # 3. Suggerimento Avvio Elettrodomestici con Surplus Solare Aton (quando Vincenzo è a casa)
         solar_syn = smartthings_data.get("solar_synergy", {})
@@ -748,6 +970,7 @@ class AlertEngine:
             # Notifica al massimo una volta ogni 3 ore (180 min) per non spammare
             if (now - last_solar_alert) >= (180 * 60):
                 self._last_solar_appliance_alert = now
+                self._save_state()
                 p_sol = int(solar_syn.get("p_solare", 0))
                 soc_val = int(solar_syn.get("soc", 0))
                 notifier.send_alert(

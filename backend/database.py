@@ -953,6 +953,37 @@ def get_alerts_stats() -> Dict[str, Any]:
         "latest_alert": latest_alert
     }
 
+def get_latest_alerts_by_type() -> Dict[str, Dict[str, Any]]:
+    """
+    Recupera l'ultima occorrenza registrata nel DB per ogni alert_type.
+    Utile per ricostruire i cooldown e prevenire duplicati al riavvio del server.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT alert_type, timestamp, title, message, data_json
+        FROM alert_logs
+        WHERE id IN (
+            SELECT MAX(id) FROM alert_logs GROUP BY alert_type
+        )
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    
+    res = {}
+    for r in rows:
+        try:
+            data = json.loads(r["data_json"]) if r["data_json"] else {}
+        except Exception:
+            data = {}
+        res[r["alert_type"]] = {
+            "timestamp": r["timestamp"],
+            "title": r["title"],
+            "message": r["message"],
+            "data": data
+        }
+    return res
+
 # ----------------- ANALISI GIORNALIERA & CONFRONTI -----------------
 
 def get_today_extremes() -> Dict[str, Any]:
