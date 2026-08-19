@@ -517,6 +517,10 @@ class TestEcowittHub(unittest.TestCase):
 
         try:
             now = time.time()
+            test_engine.is_raining = False
+            test_engine.last_rain_start_alert = 0.0
+            test_engine.last_rain_alert = 0.0
+            test_engine.last_rain_burst_alert = 0.0
 
             # 1. First rain reading (rain start)
             self.assertFalse(test_engine.is_raining)
@@ -674,9 +678,28 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIn("devices", api_res.json())
         self.assertIn("stats", api_res.json())
 
+    def test_house_breakdown_api(self):
+        from fastapi.testclient import TestClient
+        from backend.main import app
+
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+        res = client.get("/api/energy/house-breakdown")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("total_house_w", data)
+        self.assertIn("monitored_power_w", data)
+        self.assertIn("unmonitored_power_w", data)
+        self.assertIn("monitored_pct", data)
+        self.assertIn("unmonitored_pct", data)
+        self.assertIn("active_consumers", data)
+        self.assertIn("standby_devices", data)
+        self.assertIsInstance(data["active_consumers"], list)
+        self.assertIsInstance(data["standby_devices"], list)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

@@ -570,12 +570,15 @@
             </div>
 
             <!-- 3. CONSUMO DOMESTICO (CASA) -->
-            <div class="energy-node house-node">
+            <div class="energy-node house-node interactive-node" onclick="openHouseConsumptionModal()" title="Clicca per vedere chi sta consumando adesso in tempo reale" role="button" tabindex="0">
                 <div class="node-icon-wrapper">
                     <span class="node-icon">🏠</span>
                 </div>
                 <div class="node-content">
-                    <span class="node-label">Consumo Casa</span>
+                    <div class="node-label-row">
+                        <span class="node-label">Consumo Casa</span>
+                        <span class="node-badge-hint">⚡ Chi consuma?</span>
+                    </div>
                     <div class="node-value" id="p_utenze_val">
                         {{ energy_latest.p_utenze | int if energy_latest.p_utenze is defined else '--' }} <span class="unit">W</span>
                     </div>
@@ -1318,6 +1321,42 @@
                     <div class="comfort-advice-label"><span class="advice-icon">🏡</span> Dettaglio Casa</div>
                     <p class="comfort-sub" id="indoor_desc">{{ analytics.comfort.indoor.desc if analytics and analytics.comfort.indoor else 'Dati in attesa...' }}</p>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODALE DI DETTAGLIO CONSUMI CASA (CHI STA CONSUMANDO) -->
+<div id="house-consumption-modal-backdrop" class="device-modal-backdrop" onclick="closeHouseConsumptionModal(event)">
+    <div class="device-modal-dialog house-breakdown-dialog" onclick="event.stopPropagation()">
+        <div class="device-modal-header">
+            <div class="modal-title-group">
+                <div class="modal-icon-badge" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.35); color: #38bdf8;">
+                    🏠
+                </div>
+                <div>
+                    <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: #fff;">Chi sta consumando adesso?</h3>
+                    <div class="modal-device-meta" id="house-modal-meta">Ripartizione telemetrica carichi domestici</div>
+                </div>
+            </div>
+            <button type="button" class="modal-close-btn" onclick="closeHouseConsumptionModal()" title="Chiudi">&times;</button>
+        </div>
+
+        <div class="device-modal-body" id="house-modal-body">
+            <!-- Placeholder di caricamento -->
+            <div class="modal-loading-placeholder">
+                <div class="spinner"></div>
+                <p>Analisi consumi e dispositivi in corso...</p>
+            </div>
+        </div>
+
+        <div class="device-modal-footer">
+            <span class="modal-live-ticker"><span class="pulse-dot"></span> <span id="house-modal-ticker-text">Live • Telemetria Aton & IoT</span></span>
+            <div class="modal-footer-btns">
+                <button type="button" class="btn btn-secondary" onclick="closeHouseConsumptionModal()">Chiudi</button>
+                <button type="button" class="btn btn-primary" id="house-modal-refresh-btn" onclick="fetchAndRenderHouseBreakdown(true)">
+                    <span>🔄</span> Aggiorna ora
+                </button>
             </div>
         </div>
     </div>

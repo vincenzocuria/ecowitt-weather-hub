@@ -1632,9 +1632,319 @@ async function saveSensorAlias(sensorId, aliasVal) {
     }
 }
 
+// =========================================================================
+// MODALE DETTAGLIO CONSUMI CASA (CHI STA CONSUMANDO ADESSO)
+// =========================================================================
+
+let houseBreakdownTimer = null;
+
+function openHouseConsumptionModal() {
+    const backdrop = document.getElementById('house-consumption-modal-backdrop');
+    if (!backdrop) return;
+    backdrop.classList.add('show');
+    document.body.style.overflow = 'hidden';
+
+    fetchAndRenderHouseBreakdown(true);
+
+    if (houseBreakdownTimer) clearInterval(houseBreakdownTimer);
+    houseBreakdownTimer = setInterval(() => {
+        fetchAndRenderHouseBreakdown(false);
+    }, 4000);
+}
+
+function closeHouseConsumptionModal(e) {
+    if (e && e.target !== document.getElementById('house-consumption-modal-backdrop') &&
+        !e.target.classList.contains('modal-close-btn') &&
+        !e.target.closest('.modal-close-btn') &&
+        !e.target.classList.contains('btn-secondary')) {
+        return;
+    }
+
+    const backdrop = document.getElementById('house-consumption-modal-backdrop');
+    if (backdrop) {
+        backdrop.classList.remove('show');
+    }
+    document.body.style.overflow = '';
+
+    if (houseBreakdownTimer) {
+        clearInterval(houseBreakdownTimer);
+        houseBreakdownTimer = null;
+    }
+}
+
+// Chiusura con tasto Escape
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        const backdrop = document.getElementById('house-consumption-modal-backdrop');
+        if (backdrop && backdrop.classList.contains('show')) {
+            closeHouseConsumptionModal();
+        }
+    }
+});
+
+async function fetchAndRenderHouseBreakdown(forceSpinner = false) {
+    const bodyEl = document.getElementById('house-modal-body');
+    const refreshBtn = document.getElementById('house-modal-refresh-btn');
+    if (!bodyEl) return;
+
+    if (forceSpinner && !bodyEl.querySelector('.consumption-overview-card')) {
+        bodyEl.innerHTML = `
+            <div class="modal-loading-placeholder">
+                <div class="spinner"></div>
+                <p>Analisi consumi e dispositivi in corso...</p>
+            </div>
+        `;
+    }
+
+    if (refreshBtn) refreshBtn.classList.add('loading');
+
+    try {
+        const resp = await fetch('/api/energy/house-breakdown');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        renderHouseBreakdown(data);
+    } catch (err) {
+        console.error('Errore recupero dettaglio consumi:', err);
+        if (forceSpinner) {
+            bodyEl.innerHTML = `
+                <div class="modal-quick-state-card state-card-off" style="text-align:center; padding: 2rem;">
+                    <div style="font-size:2.5rem; margin-bottom:0.5rem;">⚠️</div>
+                    <h4>Impossibile caricare il dettaglio consumi</h4>
+                    <p style="font-size:0.85rem; color:var(--text-dim); margin-top:0.25rem;">${err.message || 'Verifica la connessione con Aton Storage e i servizi smart.'}</p>
+                    <button type="button" class="btn btn-primary" style="margin-top:1rem;" onclick="fetchAndRenderHouseBreakdown(true)">Riprova</button>
+                </div>
+            `;
+        }
+    } finally {
+        if (refreshBtn) refreshBtn.classList.remove('loading');
+    }
+}
+
+function renderHouseBreakdown(d) {
+    const bodyEl = document.getElementById('house-modal-body');
+    const metaEl = document.getElementById('house-modal-meta');
+    const tickerEl = document.getElementById('house-modal-ticker-text');
+    if (!bodyEl) return;
+
+    const totalW = Math.round(d.total_house_w || 0);
+    const monW = Math.round(d.monitored_power_w || 0);
+    const unmonW = Math.round(d.unmonitored_power_w || 0);
+    const monPct = d.monitored_pct || 0;
+    const unmonPct = d.unmonitored_pct || 0;
+    const todayKwh = d.total_house_kwh || '0.0';
+
+    if (metaEl) {
+        metaEl.innerText = `Carico totale: ${totalW} W • Consumo oggi: ${todayKwh} kWh`;
+    }
+    if (tickerEl) {
+        const now = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        tickerEl.innerText = `Live (${now}) • Aton, SmartThings & Tuya`;
+    }
+
+    const activeList = d.active_consumers || [];
+    const standbyList = d.standby_devices || [];
+
+    let activeCardsHtml = '';
+    if (activeList.length === 0) {
+        activeCardsHtml = `
+            <div class="empty-consumers-box">
+                <span class="empty-icon">🔌</span>
+                <p>Nessun dispositivo smart con assorbimento attivo rilevato al momento.</p>
+                <small>Il carico domestico attuale (${totalW} W) è assorbito da carichi tradizionali o in standby.</small>
+            </div>
+        `;
+    } else {
+        activeCardsHtml = activeList.map(c => {
+            const pW = c.power_w !== undefined ? Math.round(c.power_w * 10) / 10 : 0;
+            const pct = c.percent_of_total || 0;
+            const isPlug = c.type === 'plug' || c.ecosystem === 'tuya';
+            const isAppliance = c.type === 'appliance' || c.ecosystem === 'smartthings';
+            const isClimate = c.type === 'climate' || c.ecosystem === 'thinq';
+
+            let powerBadge = '';
+            if (pW > 0) {
+                powerBadge = `<span class="consumer-power-tag high-power">⚡ <strong>${pW}</strong> W</span>`;
+            } else if (c.is_running) {
+                powerBadge = `<span class="consumer-power-tag running-app">🫧 In Funzione</span>`;
+            } else if (c.is_on) {
+                powerBadge = `<span class="consumer-power-tag active-state">🟢 Acceso</span>`;
+            }
+
+            let telemetryLine = '';
+            if (c.voltage_v || c.current_a) {
+                telemetryLine = `<span class="consumer-va-chip">⚡ ${c.voltage_v || 230} V • ${c.current_a || 0} A</span>`;
+            }
+
+            let toggleBtn = '';
+            if (c.can_toggle) {
+                toggleBtn = `
+                    <button type="button" class="consumer-toggle-btn ${c.is_on ? 'btn-turn-off' : 'btn-turn-on'}"
+                            onclick="toggleDeviceFromHouseModal('${c.ecosystem}', '${c.raw_id}', ${c.is_on})"
+                            title="${c.is_on ? 'Spegni dispositivo' : 'Accendi dispositivo'}">
+                        ${c.is_on ? 'Spegni' : 'Accendi'}
+                    </button>
+                `;
+            }
+
+            return `
+                <div class="consumer-card ${pW > 100 ? 'consumer-card-high' : ''}">
+                    <div class="consumer-card-main">
+                        <div class="consumer-icon-wrap">
+                            <span class="consumer-icon">${c.icon || '🔌'}</span>
+                        </div>
+                        <div class="consumer-info">
+                            <div class="consumer-title-row">
+                                <span class="consumer-name">${c.name}</span>
+                                ${powerBadge}
+                            </div>
+                            <div class="consumer-sub-row">
+                                <span class="consumer-category">${c.category_label || 'Dispositivo Smart'}</span>
+                                <span class="consumer-status-desc">${c.status_text || ''}</span>
+                            </div>
+                            ${telemetryLine ? `<div class="consumer-telemetry-row">${telemetryLine}</div>` : ''}
+                        </div>
+                    </div>
+
+                    ${pct > 0 ? `
+                        <div class="consumer-meter-wrap">
+                            <div class="consumer-meter-bar">
+                                <div class="consumer-meter-fill" style="width: ${Math.min(100, Math.max(3, pct))}%;"></div>
+                            </div>
+                            <span class="consumer-meter-label">${pct}% del carico casa</span>
+                        </div>
+                    ` : ''}
+
+                    ${toggleBtn ? `<div class="consumer-action-row">${toggleBtn}</div>` : ''}
+                </div>
+            `;
+        }).join('');
+    }
+
+    // Standby devices list
+    let standbyHtml = '';
+    if (standbyList.length > 0) {
+        const standbyItems = standbyList.map(s => `
+            <div class="standby-mini-item">
+                <span class="standby-icon">${s.icon || '🔌'}</span>
+                <div class="standby-details">
+                    <span class="standby-name">${s.name}</span>
+                    <span class="standby-meta">${s.category_label || 'Smart'} • 0 W (Standby/Spento)</span>
+                </div>
+                ${s.can_toggle ? `
+                    <button type="button" class="btn-mini-on" onclick="toggleDeviceFromHouseModal('${s.ecosystem}', '${s.raw_id}', false)" title="Accendi">
+                        Accendi
+                    </button>
+                ` : ''}
+            </div>
+        `).join('');
+
+        standbyHtml = `
+            <details class="standby-accordion">
+                <summary class="standby-summary">
+                    <span>💤 Altri dispositivi monitorati in Standby o Spenti (${standbyList.length})</span>
+                    <span class="accordion-chevron">▾</span>
+                </summary>
+                <div class="standby-list-grid">
+                    ${standbyItems}
+                </div>
+            </details>
+        `;
+    }
+
+    bodyEl.innerHTML = `
+        <!-- PANORAMICA RIPARTIZIONE -->
+        <div class="consumption-overview-card">
+            <div class="consumption-metric-header">
+                <div class="metric-block">
+                    <span class="metric-label">Consumo Casa Totale</span>
+                    <span class="metric-value-total">${totalW} <span class="unit">W</span></span>
+                </div>
+                <div class="metric-block">
+                    <span class="metric-label">Tracciato da Smart IoT</span>
+                    <span class="metric-value-monitored">${monW} <span class="unit">W (${monPct}%)</span></span>
+                </div>
+                <div class="metric-block">
+                    <span class="metric-label">Carico Base / Non Tracciato</span>
+                    <span class="metric-value-unmonitored">${unmonW} <span class="unit">W (${unmonPct}%)</span></span>
+                </div>
+            </div>
+
+            <!-- BARRA RIPARTIZIONE MULTICOLORE -->
+            <div class="consumption-split-bar-wrap">
+                <div class="consumption-split-bar">
+                    <div class="split-segment segment-monitored" style="width: ${monPct}%;" title="Tracciato da Prese e Apparecchi Smart: ${monW} W (${monPct}%)"></div>
+                    <div class="split-segment segment-unmonitored" style="width: ${unmonPct}%;" title="Carico di Base e non tracciato: ${unmonW} W (${unmonPct}%)"></div>
+                </div>
+                <div class="split-legend">
+                    <span class="legend-item"><span class="legend-dot dot-monitored"></span> Dispositivi Noti (${monW} W)</span>
+                    <span class="legend-item"><span class="legend-dot dot-unmonitored"></span> Carico Base & Standby (${unmonW} W)</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- LISTA CONSUMATORI ATTIVI -->
+        <div class="consumers-section">
+            <div class="section-title-wrap">
+                <span class="section-title">⚡ Dispositivi Attivi (${activeList.length})</span>
+                <span class="section-badge">${monW} W monitorati</span>
+            </div>
+            <div class="consumers-list">
+                ${activeCardsHtml}
+            </div>
+        </div>
+
+        <!-- CARICO DI BASE E NON MONITORATO -->
+        <div class="unmonitored-info-box">
+            <div class="unmonitored-icon">🏡</div>
+            <div class="unmonitored-text">
+                <strong>Carico di Base & Apparecchi Tradizionali: ${unmonW} W</strong>
+                <p>Include il consumo continuo di fondo (frigoriferi o elettrodomestici senza presa smart, router Wi-Fi, luci di casa cablate e apparati in standby permanente).</p>
+            </div>
+        </div>
+
+        <!-- LISTA DISPOSITIVI IN STANDBY -->
+        ${standbyHtml}
+    `;
+}
+
+async function toggleDeviceFromHouseModal(ecosystem, rawId, currentState) {
+    const targetState = !currentState;
+    try {
+        let endpoint = '';
+        let body = {};
+
+        if (ecosystem === 'tuya') {
+            endpoint = `/api/tuya/device/${rawId}/toggle`;
+            body = { state: targetState };
+        } else if (ecosystem === 'thinq') {
+            endpoint = `/api/thinq/device/${rawId}/control`;
+            body = { power: targetState };
+        } else if (ecosystem === 'smartthings') {
+            endpoint = `/api/smartthings/device/${rawId}/toggle`;
+            body = { state: targetState ? 'on' : 'off' };
+        }
+
+        if (!endpoint) return;
+
+        const resp = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        if (resp.ok) {
+            // Ricarica immediata della ripartizione
+            setTimeout(() => { fetchAndRenderHouseBreakdown(false); }, 400);
+        }
+    } catch (e) {
+        console.warn('Errore toggle da modale consumi:', e);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     initDashboardTabs();
 });
+
 
 
 

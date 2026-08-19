@@ -5709,4 +5709,513 @@ body {
     }
 }
 
+/* =========================================================================
+   HOUSE NODE INTERACTIVE & MODALE DETTAGLIO CONSUMI CASA
+   ========================================================================= */
+
+.house-node.interactive-node {
+    cursor: pointer;
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+    user-select: none;
+}
+
+.house-node.interactive-node:hover {
+    transform: translateY(-3px);
+    border-color: rgba(56, 189, 248, 0.6);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45), 0 0 18px rgba(56, 189, 248, 0.2);
+}
+
+.house-node.interactive-node:active {
+    transform: translateY(-1px) scale(0.99);
+}
+
+.node-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.node-badge-hint {
+    font-size: 0.68rem;
+    font-weight: 700;
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 9999px;
+    padding: 2px 8px;
+    letter-spacing: 0.02em;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.house-node.interactive-node:hover .node-badge-hint {
+    background: #38bdf8;
+    color: #0f172a;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
+}
+
+/* Dialog modale ripartizione consumi */
+.house-breakdown-dialog {
+    max-width: 580px;
+}
+
+.consumption-overview-card {
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-md);
+    padding: 1.15rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.consumption-metric-header {
+    display: grid;
+    grid-template-columns: 1.1fr 1.2fr 1.2fr;
+    gap: 0.65rem;
+}
+
+.metric-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.metric-block .metric-label {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.metric-value-total {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #fff;
+}
+
+.metric-value-monitored {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #38bdf8;
+}
+
+.metric-value-unmonitored {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #94a3b8;
+}
+
+.consumption-split-bar-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.consumption-split-bar {
+    height: 12px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+    display: flex;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.split-segment.segment-monitored {
+    background: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%);
+    transition: width 0.4s ease;
+}
+
+.split-segment.segment-unmonitored {
+    background: rgba(148, 163, 184, 0.3);
+    transition: width 0.4s ease;
+}
+
+.split-legend {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.73rem;
+    color: var(--text-dim);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.dot-monitored {
+    background: #38bdf8;
+    box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+}
+
+.dot-unmonitored {
+    background: #94a3b8;
+}
+
+/* Sezione consumatori attivi */
+.consumers-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.section-title-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.section-title-wrap .section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.section-title-wrap .section-badge {
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.12);
+    padding: 2px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.consumers-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.consumer-card {
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    transition: all 0.2s ease;
+}
+
+.consumer-card:hover {
+    background: rgba(255, 255, 255, 0.045);
+    border-color: rgba(56, 189, 248, 0.3);
+}
+
+.consumer-card-high {
+    border-left: 4px solid #38bdf8;
+    background: linear-gradient(90deg, rgba(56, 189, 248, 0.06) 0%, rgba(255, 255, 255, 0.025) 100%);
+}
+
+.consumer-card-main {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.consumer-icon-wrap {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    flex-shrink: 0;
+}
+
+.consumer-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.consumer-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.consumer-name {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.consumer-power-tag {
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+}
+
+.consumer-power-tag.high-power {
+    background: rgba(56, 189, 248, 0.18);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.2);
+}
+
+.consumer-power-tag.running-app {
+    background: rgba(34, 197, 94, 0.18);
+    color: #22c55e;
+    border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+.consumer-power-tag.active-state {
+    background: rgba(245, 158, 11, 0.18);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.consumer-sub-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+}
+
+.consumer-category {
+    font-weight: 600;
+    color: #94a3b8;
+}
+
+.consumer-status-desc {
+    color: #cbd5e1;
+}
+
+.consumer-va-chip {
+    font-size: 0.72rem;
+    color: #94a3b8;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 1px 6px;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+.consumer-meter-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin-top: 0.1rem;
+}
+
+.consumer-meter-bar {
+    flex: 1;
+    height: 6px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+}
+
+.consumer-meter-fill {
+    height: 100%;
+    background: #38bdf8;
+    border-radius: 9999px;
+}
+
+.consumer-meter-label {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.consumer-toggle-btn {
+    border: none;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    align-self: flex-start;
+}
+
+.consumer-toggle-btn.btn-turn-off {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.consumer-toggle-btn.btn-turn-off:hover {
+    background: #ef4444;
+    color: #fff;
+}
+
+.consumer-toggle-btn.btn-turn-on {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.consumer-toggle-btn.btn-turn-on:hover {
+    background: #22c55e;
+    color: #fff;
+}
+
+/* Scatola informativo carico non monitorato */
+.unmonitored-info-box {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    background: rgba(148, 163, 184, 0.06);
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 1rem;
+    font-size: 0.82rem;
+    color: #cbd5e1;
+}
+
+.unmonitored-icon {
+    font-size: 1.35rem;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.unmonitored-text strong {
+    color: #fff;
+    display: block;
+    margin-bottom: 0.2rem;
+}
+
+.unmonitored-text p {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 0.76rem;
+    line-height: 1.35;
+}
+
+/* Accordion standby */
+.standby-accordion {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.standby-summary {
+    padding: 0.75rem 1rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    user-select: none;
+}
+
+.standby-summary:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.standby-list-grid {
+    padding: 0.5rem 1rem 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.standby-mini-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.4rem 0.5rem;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.015);
+}
+
+.standby-details {
+    display: flex;
+    flex-direction: column;
+}
+
+.standby-name {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #cbd5e1;
+}
+
+.standby-meta {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+}
+
+.btn-mini-on {
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    background: rgba(34, 197, 94, 0.1);
+    color: #22c55e;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.btn-mini-on:hover {
+    background: #22c55e;
+    color: #fff;
+}
+
+.empty-consumers-box {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: var(--text-dim);
+    background: rgba(255, 255, 255, 0.015);
+    border-radius: var(--radius-md);
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.empty-consumers-box .empty-icon {
+    font-size: 2rem;
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.empty-consumers-box p {
+    margin: 0;
+    color: #fff;
+    font-weight: 600;
+}
+
+.empty-consumers-box small {
+    display: block;
+    margin-top: 0.35rem;
+    color: var(--text-dim);
+}
+
+@media (max-width: 480px) {
+    .consumption-metric-header {
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+    }
+}
+
+
 
