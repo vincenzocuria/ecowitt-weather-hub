@@ -36,6 +36,9 @@ CATEGORY_METADATA = {
 }
 
 
+import os
+import json
+
 class TuyaService:
     def __init__(self):
         self.client_id = settings.TUYA_CLIENT_ID
@@ -51,9 +54,43 @@ class TuyaService:
         self.sync_error: Optional[str] = None
         self.is_connected = False
         self._lock = asyncio.Lock()
+        self.cache_file = os.path.join(settings.DATA_DIR, "tuya_cache.json")
+        self._load_cache()
 
         if self.enabled:
             self._init_cloud()
+
+    def _load_cache(self):
+        """Carica lo stato dei dispositivi Tuya persistito su disco per evitare che spariscano al riavvio."""
+        try:
+            if os.path.exists(self.cache_file):
+                with open(self.cache_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.raw_devices = data.get("raw_devices", [])
+                    self.device_statuses = data.get("device_statuses", {})
+                    self.last_sync_time = data.get("last_sync_time")
+                    if self.device_statuses:
+                        self.is_connected = True
+                        logger.info("📂 [Tuya] Caricati %d dispositivi dalla cache locale persistente.", len(self.device_statuses))
+        except Exception as e:
+            logger.warning("⚠️ [Tuya] Impossibile caricare la cache da disco: %s", e)
+
+    def _save_cache(self):
+        """Salva lo stato dei dispositivi su file JSON in modo atomico."""
+        try:
+            os.makedirs(settings.DATA_DIR, exist_ok=True)
+            tmp_path = f"{self.cache_file}.tmp"
+            payload = {
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+                "raw_devices": self.raw_devices,
+                "device_statuses": self.device_statuses,
+                "last_sync_time": self.last_sync_time
+            }
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, self.cache_file)
+        except Exception as e:
+            logger.warning("⚠️ [Tuya] Impossibile salvare la cache su disco: %s", e)
 
     def _init_cloud(self):
         try:
@@ -172,7 +209,7 @@ class TuyaService:
     async def fetch_devices_list(self) -> List[Dict[str, Any]]:
         """Recupera l'elenco di tutti i dispositivi associati all'account Tuya."""
         if not self.enabled or not self.cloud:
-            return []
+            return self.raw_devices
         
         loop = asyncio.get_running_loop()
         try:
@@ -180,29 +217,31 @@ class TuyaService:
             if isinstance(res, list):
                 self.raw_devices = res
                 self.is_connected = True
+                self._save_cache()
                 return res
             elif isinstance(res, dict) and "result" in res and isinstance(res["result"], list):
                 self.raw_devices = res["result"]
                 self.is_connected = True
+                self._save_cache()
                 return res["result"]
             else:
                 logger.warning("Risposta imprevista getdevices da Tuya: %s", res)
-                return []
+                return self.raw_devices
         except Exception as e:
             logger.error("Errore chiamata getdevices Tuya: %s", e)
             self.sync_error = str(e)
-            return []
+            return self.raw_devices
 
     async def sync_all(self) -> Dict[str, Any]:
-        """Sincronizza lo stato in tempo reale di tutti i dispositivi."""
+        """Sincronizza lo stato in tempo reale di tutti i dispositivi in parallelo."""
         if not self.enabled:
-            return {}
+            return self.get_summary()
 
         async with self._lock:
             if not self.cloud:
                 self._init_cloud()
                 if not self.cloud:
-                    return {}
+                    return self.get_summary()
 
             loop = asyncio.get_running_loop()
             
@@ -211,33 +250,37 @@ class TuyaService:
                 await self.fetch_devices_list()
 
             if not self.raw_devices:
-                return {}
+                return self.get_summary()
 
             configs = get_tuya_device_configs()
-            new_statuses = {}
 
-            for dev in self.raw_devices:
+            # Esecuzione parallela asincrona per tutte le chiamate di stato
+            async def _fetch_status_for_dev(dev):
                 d_id = dev.get("id")
                 if not d_id:
-                    continue
-
+                    return None, None
                 user_cfg = configs.get(d_id)
                 try:
-                    # Chiamata bloccante eseguita in thread pool
                     status_res = await loop.run_in_executor(None, self.cloud.getstatus, d_id)
                     raw_list = status_res.get("result", []) if isinstance(status_res, dict) else []
-                    
                     parsed = self._format_device_status(dev, raw_list, user_cfg)
-                    new_statuses[d_id] = parsed
+                    return d_id, parsed
                 except Exception as e:
                     logger.warning("Impossibile leggere stato dispositivo Tuya %s (%s): %s", dev.get("name"), d_id, e)
-                    # Mantieni il precedente se disponibile
                     if d_id in self.device_statuses:
-                        new_statuses[d_id] = self.device_statuses[d_id]
+                        return d_id, self.device_statuses[d_id]
+                    return d_id, None
 
-            self.device_statuses = new_statuses
+            tasks = [_fetch_status_for_dev(d) for d in self.raw_devices if d.get("id")]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for item in results:
+                if isinstance(item, tuple) and item[0] and item[1]:
+                    self.device_statuses[item[0]] = item[1]
+
             self.last_sync_time = time.time()
             self.sync_error = None
+            self._save_cache()
             return self.get_summary()
 
     def get_summary(self) -> Dict[str, Any]:
@@ -341,7 +384,7 @@ class TuyaService:
         return res
 
     async def toggle_device(self, device_id: str, target_state: Optional[bool] = None) -> Dict[str, Any]:
-        """Inverte o imposta lo stato ON/OFF del dispositivo."""
+        """Inverte o imposta lo stato ON/OFF del dispositivo con rilevamento dinamico del codice switch."""
         dev = self.device_statuses.get(device_id)
         if not dev:
             # Prova a sincronizzare prima
@@ -351,11 +394,25 @@ class TuyaService:
         current_state = dev.get("is_on", False) if dev else False
         new_state = (not current_state) if target_state is None else target_state
 
-        category = dev.get("category", "") if dev else ""
-        cmd_code = "switch_1" if category == "cz" else ("switch_led" if category == "dj" else "switch")
+        raw_status = dev.get("raw_status", {}) if dev else {}
+        cmd_code = None
+        for candidate in ["switch_1", "switch_led", "switch", "switch_2"]:
+            if candidate in raw_status:
+                cmd_code = candidate
+                break
+        
+        if not cmd_code:
+            category = dev.get("category", "") if dev else ""
+            cmd_code = "switch_1" if category == "cz" else ("switch_led" if category == "dj" else "switch")
 
         commands = [{"code": cmd_code, "value": new_state}]
-        return await self.send_command(device_id, commands)
+        res = await self.send_command(device_id, commands)
+        
+        if res.get("success") and dev:
+            dev["is_on"] = new_state
+            self._save_cache()
+            
+        return res
 
     async def set_thermostat_temp(self, device_id: str, temp_c: float) -> Dict[str, Any]:
         """Imposta il target di temperatura per un termostato Tuya."""
@@ -378,6 +435,7 @@ class TuyaService:
                 configs = get_tuya_device_configs()
                 user_cfg = configs.get(device_id)
                 self.device_statuses[device_id] = self._format_device_status(dev_info, raw_list, user_cfg)
+                self._save_cache()
         except Exception as e:
             logger.warning("Errore refresh singolo dispositivo Tuya %s: %s", device_id, e)
 
@@ -388,11 +446,12 @@ class TuyaService:
         icon = dev.get("icon") if dev else None
         save_tuya_device_config(device_id, enabled, custom_name, category, icon)
         
-        # Aggiorna in memoria
+        # Aggiorna in memoria e cache
         if device_id in self.device_statuses:
             self.device_statuses[device_id]["enabled"] = enabled
             if custom_name is not None:
                 self.device_statuses[device_id]["name"] = custom_name
+            self._save_cache()
         return True
 
     async def worker_loop(self):
@@ -402,19 +461,22 @@ class TuyaService:
             return
 
         logger.info("Avvio worker loop Tuya / Smart Life (intervallo %ss)...", self.poll_interval)
+        # Primo sync immediato
+        try:
+            await self.sync_all()
+        except Exception as e:
+            logger.error("Errore primo sync Tuya: %s", e)
+
         while True:
             try:
+                await asyncio.sleep(self.poll_interval)
                 await self.sync_all()
             except asyncio.CancelledError:
                 logger.info("Worker loop Tuya arrestato.")
                 break
             except Exception as e:
                 logger.error("Errore non gestito nel loop Tuya: %s", e)
-
-            try:
-                await asyncio.sleep(self.poll_interval)
-            except asyncio.CancelledError:
-                break
+                await asyncio.sleep(10)
 
 
 tuya_service = TuyaService()
