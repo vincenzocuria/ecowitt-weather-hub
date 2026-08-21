@@ -2,7 +2,7 @@ import os
 import json
 import math
 import sqlite3
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Union
 from datetime import datetime, timezone, timedelta
 from backend.config import settings
 
