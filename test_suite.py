@@ -708,17 +708,17 @@ class TestEcowittHub(unittest.TestCase):
         save_reading({
             "timestamp": "2026-07-15T04:00:00",
             "temp_c": 22.5,
-            "soil_moisture": {"ch1": 42.0, "ch2": 18.0}
+            "soil_moisture": {"ch1": 42.0}
         })
         save_reading({
             "timestamp": "2026-07-16T04:00:00",
             "temp_c": 26.2, # Notte Rovente >= 25°C
-            "soil_moisture": {"ch1": 40.0, "ch2": 15.0}
+            "soil_moisture": {"ch1": 40.0}
         })
         save_reading({
             "timestamp": "2026-07-17T04:00:00",
             "temp_c": 23.0,
-            "soil_moisture": {"ch1": 55.0, "ch2": 35.0}
+            "soil_moisture": {"ch1": 55.0}
         })
 
         # 2. Test calcolo statistiche Notti Tropicali
@@ -777,31 +777,45 @@ class TestEcowittHub(unittest.TestCase):
         self.assertEqual(r_charts.status_code, 200)
         self.assertIn("chartSoil", r_charts.text)
 
+        r_radar = client.get("/radar")
+        self.assertEqual(r_radar.status_code, 200)
+        self.assertIn("radar-map", r_radar.text)
+        self.assertIn("STATION_LAT", r_radar.text)
+        self.assertIn("RainViewer", r_radar.text)
+
         r_home = client.get("/")
         self.assertEqual(r_home.status_code, 200)
         self.assertIn("hero_tropical_pill", r_home.text)
 
         # 8. Test alert engine soil dry & soil wet
+        from backend import alert_engine
         from backend.alert_engine import AlertEngine
         test_engine = AlertEngine()
         test_engine.last_soil_alert = {}
         test_engine.last_soil_wet_alert = {}
 
-        # Terreno troppo umido / saturo
-        test_engine._check_soil_moisture({
-            "soil_moisture": {"ch1": 85.0},
-            "rain_rate_mm_hr": 0.0,
-            "daily_rain_mm": 0.0
-        }, now=100000.0)
-        self.assertIn("ch1", test_engine.last_soil_wet_alert)
+        original_send = alert_engine.notifier.send_alert
+        mock_soil_alerts = []
+        alert_engine.notifier.send_alert = lambda *args, **kwargs: mock_soil_alerts.append((args, kwargs))
 
-        # Terreno secco
-        test_engine._check_soil_moisture({
-            "soil_moisture": {"ch2": 12.0},
-            "rain_rate_mm_hr": 0.0,
-            "daily_rain_mm": 0.0
-        }, now=100000.0)
-        self.assertIn("ch2", test_engine.last_soil_alert)
+        try:
+            # Terreno troppo umido / saturo
+            test_engine._check_soil_moisture({
+                "soil_moisture": {"ch1": 85.0},
+                "rain_rate_mm_hr": 0.0,
+                "daily_rain_mm": 0.0
+            }, now=100000.0)
+            self.assertIn("ch1", test_engine.last_soil_wet_alert)
+
+            # Terreno secco
+            test_engine._check_soil_moisture({
+                "soil_moisture": {"ch2": 12.0},
+                "rain_rate_mm_hr": 0.0,
+                "daily_rain_mm": 0.0
+            }, now=100000.0)
+            self.assertIn("ch2", test_engine.last_soil_alert)
+        finally:
+            alert_engine.notifier.send_alert = original_send
 
 
 if __name__ == "__main__":

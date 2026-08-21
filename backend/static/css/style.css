@@ -6217,5 +6217,303 @@ body {
     }
 }
 
+/* ========================================================
+   RADAR PIOGGIA & TEMPORALI LIVE (LEAFLET + RAINVIEWER)
+   ======================================================== */
+.radar-page-wrapper {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.radar-container {
+    position: relative;
+    width: 100%;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: #0b0f19;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+.radar-map {
+    width: 100%;
+    height: 72vh;
+    min-height: 480px;
+    max-height: 800px;
+    background: #0f172a;
+    z-index: 1;
+}
+
+/* CONTROLLI RADAR SOVRAPPOSTI (GLASSMORPHISM) */
+.radar-controls-card {
+    position: relative;
+    background: rgba(15, 23, 42, 0.92);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 12px 16px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.radar-status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.radar-time-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.95rem;
+    color: #f1f5f9;
+}
+
+.radar-live-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #10b981;
+    display: inline-block;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    animation: livePulse 1.8s infinite;
+}
+
+.radar-live-dot.nowcast {
+    background: #3b82f6;
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+}
+
+.radar-badge-type {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.radar-badge-type.past {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.radar-badge-type.nowcast {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+/* TIMELINE SLIDER */
+.radar-timeline-row {
+    width: 100%;
+}
+
+.radar-slider {
+    width: 100%;
+    height: 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.15);
+    outline: none;
+    cursor: pointer;
+    accent-color: #38bdf8;
+}
+
+/* TOOLBAR PULSANTI */
+.radar-btn-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.radar-play-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.radar-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: var(--radius-sm);
+    color: #fff;
+    padding: 6px 12px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.radar-btn:hover {
+    background: rgba(255, 255, 255, 0.18);
+    transform: translateY(-1px);
+}
+
+.radar-btn-play {
+    min-width: 44px;
+    font-weight: 700;
+}
+
+.radar-btn-play.active {
+    background: rgba(56, 189, 248, 0.25);
+    border-color: #38bdf8;
+    color: #38bdf8;
+}
+
+.radar-options-group {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.radar-opacity-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.radar-mini-slider {
+    width: 70px;
+    height: 4px;
+    accent-color: #38bdf8;
+    cursor: pointer;
+}
+
+.radar-select {
+    background: rgba(0, 0, 0, 0.45);
+    color: #e2e8f0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: var(--radius-sm);
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+/* LEGENDA PIOGGIA */
+.radar-legend-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-top: 4px;
+}
+
+.legend-scale {
+    display: flex;
+    border-radius: 4px;
+    overflow: hidden;
+    flex: 1;
+    max-width: 380px;
+}
+
+.legend-step {
+    flex: 1;
+    text-align: center;
+    padding: 2px 4px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+/* MARKER PULSANTE STAZIONE LOCALE */
+.custom-station-pin {
+    background: transparent;
+    border: none;
+}
+
+.station-radar-pin {
+    position: relative;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pin-core {
+    width: 12px;
+    height: 12px;
+    background: #38bdf8;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.8);
+    z-index: 2;
+}
+
+.pin-pulse {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(56, 189, 248, 0.4);
+    animation: livePulse 2s infinite;
+    z-index: 1;
+}
+
+/* POPUP STAZIONE IN MAPPA */
+.leaflet-popup-content-wrapper {
+    background: rgba(15, 23, 42, 0.95) !important;
+    backdrop-filter: blur(8px);
+    color: #fff !important;
+    border-radius: var(--radius-md) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+}
+
+.leaflet-popup-tip {
+    background: rgba(15, 23, 42, 0.95) !important;
+}
+
+.radar-station-popup .popup-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #38bdf8;
+}
+
+.radar-station-popup .popup-sub {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+}
+
+.radar-station-popup .popup-data-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.82rem;
+    margin: 3px 0;
+    gap: 12px;
+}
+
+/* PULSANTE RADAR SU MOBILE TOP BAR */
+.mobile-radar-quickbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(59, 130, 246, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.35);
+    color: #93c5fd;
+    padding: 3px 8px;
+    border-radius: 20px;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.mobile-radar-quickbtn.active {
+    background: rgba(59, 130, 246, 0.35);
+    border-color: #60a5fa;
+    color: #fff;
+}
+
+
 
 

@@ -26,6 +26,9 @@
             <span class="mobile-app-name">{{ station_name or "Weather Hub" }}</span>
         </a>
         <div class="mobile-top-actions">
+            <a href="/radar" class="mobile-radar-quickbtn {% if active_page == 'radar' %}active{% endif %}" title="Radar Pioggia Live">
+                🌧️ <span style="font-size: 0.75rem; font-weight: 600;">Radar</span>
+            </a>
             <span class="mobile-live-dot" title="Live Data Stream"></span>
             <span class="mobile-live-text" id="mobile-live-indicator">LIVE</span>
         </div>
@@ -40,6 +43,7 @@
             </a>
             <div class="nav-links">
                 <a href="/" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">🏠 Dashboard</a>
+                <a href="/radar" class="nav-link {% if active_page == 'radar' %}active{% endif %}">🌧️ Radar Live</a>
                 <a href="/devices" class="nav-link {% if active_page == 'devices' %}active{% endif %}">💡 Dispositivi</a>
                 <a href="/records" class="nav-link {% if active_page == 'records' %}active{% endif %}">🏆 Record</a>
                 <a href="/charts" class="nav-link {% if active_page == 'charts' %}active{% endif %}">📈 Grafici</a>

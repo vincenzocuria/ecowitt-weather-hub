@@ -1,0 +1,357 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- LEAFLET CSS & CUSTOM RADAR STYLES -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+<div class="radar-page-wrapper">
+    <!-- HEADER DELLA PAGINA RADAR -->
+    <div class="header-card" style="margin-bottom: 12px;">
+        <div class="header-title">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.8rem;">🌧️</span>
+                <div>
+                    <h1 style="margin: 0; font-size: 1.5rem;">Radar Pioggia & Temporali Live</h1>
+                    <p style="margin: 2px 0 0 0; color: var(--text-dim); font-size: 0.88rem;">
+                        Monitoraggio satellitare e radar Doppler in tempo reale con nowcasting ad alta risoluzione (100% Free).
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button type="button" class="btn btn-secondary" onclick="centerToStation()" style="display: flex; align-items: center; gap: 6px;">
+                📍 <span>Mia Stazione</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- CONTENITORE MAPPA & OVERLAY CONTROLLI -->
+    <div class="radar-container">
+        <!-- MAPPA LEAFLET -->
+        <div id="radar-map" class="radar-map"></div>
+
+        <!-- RADAR CONTROLS OVERLAY BAR -->
+        <div class="radar-controls-card">
+            <!-- RIGA 1: STATO TEMPORALE & BADGE INFO -->
+            <div class="radar-status-row">
+                <div class="radar-time-badge" id="radar-time-badge">
+                    <span class="radar-live-dot" id="radar-live-dot"></span>
+                    <span id="radar-frame-label">Caricamento radar...</span>
+                </div>
+                <div class="radar-badge-type" id="radar-frame-type">RADAR PASSATO</div>
+            </div>
+
+            <!-- RIGA 2: TIMELINE SLIDER -->
+            <div class="radar-timeline-row">
+                <input type="range" id="radar-slider" min="0" max="0" value="0" step="1" class="radar-slider" oninput="onSliderInput(this.value)">
+            </div>
+
+            <!-- RIGA 3: PULSANTI PLAY / STEP / VELOCITÀ / OPACITÀ -->
+            <div class="radar-btn-toolbar">
+                <div class="radar-play-group">
+                    <button type="button" class="radar-btn" id="btn-prev-frame" onclick="stepFrame(-1)" title="Fotogramma precedente">
+                        ⏮️
+                    </button>
+                    <button type="button" class="radar-btn radar-btn-play" id="btn-play-pause" onclick="togglePlay()" title="Riproduci / Pausa">
+                        <span id="play-icon">▶️</span>
+                    </button>
+                    <button type="button" class="radar-btn" id="btn-next-frame" onclick="stepFrame(1)" title="Fotogramma successivo">
+                        ⏭️
+                    </button>
+                </div>
+
+                <div class="radar-options-group">
+                    <!-- CONTROLLO OPACITÀ -->
+                    <div class="radar-opacity-control" title="Regola opacità del radar">
+                        <span style="font-size: 0.8rem; color: var(--text-dim);">💧 Opacità:</span>
+                        <input type="range" id="radar-opacity-slider" min="20" max="100" value="80" step="5" class="radar-mini-slider" oninput="changeOpacity(this.value)">
+                    </div>
+
+                    <!-- SELETTORE COLORI RADAR -->
+                    <div class="radar-color-control">
+                        <select id="radar-color-scheme" class="radar-select" onchange="changeColorScheme(this.value)">
+                            <option value="2">Palette: Universale (Meteo standard)</option>
+                            <option value="1">Palette: Originale NWS</option>
+                            <option value="3">Palette: TITAN (Temporali intensi)</option>
+                            <option value="4">Palette: TWC (The Weather Channel)</option>
+                            <option value="6">Palette: Arcobaleno NEXRAD</option>
+                            <option value="8">Palette: Scuro / Notturno</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LEGENDA INTENSITÀ PIOGGIA -->
+            <div class="radar-legend-bar">
+                <span class="legend-label">Intensità:</span>
+                <div class="legend-scale">
+                    <div class="legend-step" style="background: rgba(0, 150, 255, 0.7);" title="Pioviggine / Debole">Debole</div>
+                    <div class="legend-step" style="background: rgba(0, 230, 100, 0.8);" title="Moderata (2-5 mm/h)">Moderata</div>
+                    <div class="legend-step" style="background: rgba(255, 200, 0, 0.85);" title="Forte (5-15 mm/h)">Forte</div>
+                    <div class="legend-step" style="background: rgba(255, 60, 0, 0.9);" title="Intensa (15-30 mm/h)">Intensa</div>
+                    <div class="legend-step" style="background: rgba(200, 0, 255, 0.95); color: #fff;" title="Nubifragio / Grandine (>30 mm/h)">Nubifragio</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- LEAFLET JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<script>
+    // Dati iniettati dal server per la stazione meteo locale
+    const STATION_LAT = {{ lat or 41.9028 }};
+    const STATION_LON = {{ lon or 12.4964 }};
+    const STATION_NAME = "{{ station_name or 'Stazione Meteo' }}";
+    const LOCATION_NAME = "{{ location_name or '' }}";
+    const STATION_TEMP = "{{ temp_c if temp_c is not none else '--' }}";
+    const STATION_RAIN = "{{ rain_rate if rain_rate is not none else '0.0' }}";
+    const STATION_COND_TEXT = "{{ current_cond.text if current_cond else 'Variabile' }}";
+    const STATION_COND_ICON = "{{ current_cond.icon if current_cond else '🌤️' }}";
+
+    // Variabili stato Radar
+    let map = null;
+    let stationMarker = null;
+    let radarLayers = {};
+    let radarFrames = [];
+    let currentFrameIndex = 0;
+    let isPlaying = false;
+    let playInterval = null;
+    let radarHost = "https://tilecache.rainviewer.com";
+    let colorScheme = 2; // Default Universale
+    let radarOpacity = 0.8;
+    const PLAY_SPEED_MS = 600;
+
+    // Inizializzazione Mappa
+    function initMap() {
+        map = L.map('radar-map', {
+            center: [STATION_LAT, STATION_LON],
+            zoom: 8,
+            minZoom: 4,
+            maxZoom: 14,
+            zoomControl: true
+        });
+
+        // Layer CartoDB Dark Matter per stile moderno dark
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a> | Radar by <a href="https://www.rainviewer.com">RainViewer</a>',
+            subdomains: 'abcd',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Marker personalizzato con pulsazione per la stazione meteo
+        const stationIcon = L.divIcon({
+            className: 'custom-station-pin',
+            html: `<div class="station-radar-pin"><span class="pin-core"></span><span class="pin-pulse"></span></div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+
+        stationMarker = L.marker([STATION_LAT, STATION_LON], { icon: stationIcon }).addTo(map);
+        stationMarker.bindPopup(`
+            <div class="radar-station-popup">
+                <div class="popup-title">🏠 ${STATION_NAME}</div>
+                <div class="popup-sub">${LOCATION_NAME}</div>
+                <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.15); margin: 6px 0;">
+                <div class="popup-data-row">
+                    <span>${STATION_COND_ICON} Condizione:</span>
+                    <strong>${STATION_COND_TEXT}</strong>
+                </div>
+                <div class="popup-data-row">
+                    <span>🌡️ Temperatura:</span>
+                    <strong>${STATION_TEMP}°C</strong>
+                </div>
+                <div class="popup-data-row">
+                    <span>🌧️ Tasso Pioggia:</span>
+                    <strong>${STATION_RAIN} mm/h</strong>
+                </div>
+            </div>
+        `);
+
+        // Carica dati fotogrammi da RainViewer
+        loadRainViewerData();
+    }
+
+    // Caricamento API RainViewer (100% Free e Aperto)
+    async function loadRainViewerData() {
+        try {
+            document.getElementById('radar-frame-label').innerText = "Download fotogrammi radar...";
+            const resp = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+            if (!resp.ok) throw new Error("Errore HTTP da RainViewer API");
+            
+            const data = await resp.json();
+            radarHost = data.host || "https://tilecache.rainviewer.com";
+
+            // Combina fotogrammi passati (past) e previsionali (nowcast)
+            const past = data.radar?.past || [];
+            const nowcast = data.radar?.nowcast || [];
+
+            radarFrames = [];
+            past.forEach(f => radarFrames.push({ ...f, type: 'past' }));
+            nowcast.forEach(f => radarFrames.push({ ...f, type: 'nowcast' }));
+
+            if (radarFrames.length === 0) {
+                document.getElementById('radar-frame-label').innerText = "Nessun dato radar disponibile al momento.";
+                return;
+            }
+
+            const slider = document.getElementById('radar-slider');
+            slider.max = radarFrames.length - 1;
+            
+            // Imposta l'ultimo fotogramma rilevato (prima del nowcast) o l'ultimo passato
+            const lastPastIdx = past.length > 0 ? past.length - 1 : 0;
+            currentFrameIndex = lastPastIdx;
+            slider.value = currentFrameIndex;
+
+            // Pre-carica e mostra fotogramma iniziale
+            showFrame(currentFrameIndex);
+
+            // Avvia automaticamente l'animazione dopo 1.2 secondi
+            setTimeout(() => {
+                startPlay();
+            }, 1200);
+
+        } catch (err) {
+            console.error("Errore caricamento radar:", err);
+            document.getElementById('radar-frame-label').innerText = "Errore connessione radar RainViewer.";
+        }
+    }
+
+    // Mostra fotogramma radar specifico
+    function showFrame(index) {
+        if (!radarFrames || radarFrames.length === 0 || index < 0 || index >= radarFrames.length) return;
+
+        const frame = radarFrames[index];
+        const slider = document.getElementById('radar-slider');
+        slider.value = index;
+
+        // Rimuovi layer precedente se presente
+        Object.keys(radarLayers).forEach(idx => {
+            if (parseInt(idx) !== index && radarLayers[idx]) {
+                map.removeLayer(radarLayers[idx]);
+            }
+        });
+
+        // Crea o aggiungi layer per l'indice corrente
+        if (!radarLayers[index]) {
+            const tileUrl = `${radarHost}${frame.path}/256/{z}/{x}/{y}/${colorScheme}/1_1.png`;
+            radarLayers[index] = L.tileLayer(tileUrl, {
+                opacity: radarOpacity,
+                zIndex: 10,
+                maxNativeZoom: 7,
+                maxZoom: 14
+            });
+        }
+
+        if (!map.hasLayer(radarLayers[index])) {
+            radarLayers[index].addTo(map);
+        }
+        radarLayers[index].setOpacity(radarOpacity);
+
+        // Formatta orario fotogramma (locale)
+        const frameDate = new Date(frame.time * 1000);
+        const timeStr = frameDate.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = frameDate.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
+
+        const isNowcast = frame.type === 'nowcast';
+        const typeBadge = document.getElementById('radar-frame-type');
+        const liveDot = document.getElementById('radar-live-dot');
+        const label = document.getElementById('radar-frame-label');
+
+        if (isNowcast) {
+            typeBadge.innerText = "NOWCAST PREVISIONE";
+            typeBadge.className = "radar-badge-type nowcast";
+            liveDot.className = "radar-live-dot nowcast";
+            label.innerHTML = `<strong>${timeStr}</strong> <small>(${dateStr})</small> • <span style="color:#60a5fa;">Stima Previsionale</span>`;
+        } else {
+            typeBadge.innerText = "RADAR IN DIRETTA";
+            typeBadge.className = "radar-badge-type past";
+            liveDot.className = "radar-live-dot";
+            label.innerHTML = `<strong>${timeStr}</strong> <small>(${dateStr})</small> • <span style="color:#34d399;">Rilevazione Reale</span>`;
+        }
+
+        currentFrameIndex = index;
+    }
+
+    // Gestione Timeline & Playback
+    function onSliderInput(val) {
+        stopPlay();
+        showFrame(parseInt(val));
+    }
+
+    function stepFrame(step) {
+        stopPlay();
+        let next = currentFrameIndex + step;
+        if (next < 0) next = radarFrames.length - 1;
+        if (next >= radarFrames.length) next = 0;
+        showFrame(next);
+    }
+
+    function togglePlay() {
+        if (isPlaying) {
+            stopPlay();
+        } else {
+            startPlay();
+        }
+    }
+
+    function startPlay() {
+        if (isPlaying || radarFrames.length === 0) return;
+        isPlaying = true;
+        document.getElementById('play-icon').innerText = "⏸️";
+        document.getElementById('btn-play-pause').classList.add('active');
+
+        playInterval = setInterval(() => {
+            let next = currentFrameIndex + 1;
+            if (next >= radarFrames.length) next = 0;
+            showFrame(next);
+        }, PLAY_SPEED_MS);
+    }
+
+    function stopPlay() {
+        if (!isPlaying) return;
+        isPlaying = false;
+        clearInterval(playInterval);
+        playInterval = null;
+        document.getElementById('play-icon').innerText = "▶️";
+        document.getElementById('btn-play-pause').classList.remove('active');
+    }
+
+    // Cambio Opacità
+    function changeOpacity(val) {
+        radarOpacity = parseFloat(val) / 100.0;
+        if (radarLayers[currentFrameIndex]) {
+            radarLayers[currentFrameIndex].setOpacity(radarOpacity);
+        }
+    }
+
+    // Cambio Palette Colori
+    function changeColorScheme(val) {
+        colorScheme = parseInt(val);
+        // Svuota cache layer per ricaricare con la nuova palette
+        Object.keys(radarLayers).forEach(idx => {
+            if (map.hasLayer(radarLayers[idx])) {
+                map.removeLayer(radarLayers[idx]);
+            }
+        });
+        radarLayers = {};
+        showFrame(currentFrameIndex);
+    }
+
+    // Ricentra sulla stazione
+    function centerToStation() {
+        if (map) {
+            map.flyTo([STATION_LAT, STATION_LON], 9, { animate: true, duration: 1 });
+            if (stationMarker) {
+                stationMarker.openPopup();
+            }
+        }
+    }
+
+    // Avvio al caricamento del DOM
+    document.addEventListener("DOMContentLoaded", () => {
+        initMap();
+    });
+</script>
+{% endblock %}

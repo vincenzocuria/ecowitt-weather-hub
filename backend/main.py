@@ -1393,6 +1393,39 @@ async def records_page(request: Request):
         }
     )
 
+@app.get("/radar", response_class=HTMLResponse)
+async def radar_page(request: Request):
+    latest = get_latest_reading() or {}
+    temp_c = latest.get("temp_c")
+    rain_rate = latest.get("rain_rate_mm_hr", 0.0) or 0.0
+    current_cond = calc_current_weather_condition(
+        temp_c=temp_c,
+        humidity=latest.get("humidity"),
+        dew_point_c=latest.get("dew_point_c"),
+        rain_rate=rain_rate,
+        solar_rad=latest.get("solar_radiation"),
+        uv_index=latest.get("uv_index"),
+        wind_spd=latest.get("wind_speed_kmh"),
+        wind_gust=latest.get("wind_gust_kmh"),
+        lightning_dist=latest.get("lightning_distance_km"),
+        sun_ephemeris=calc_sun_ephemeris(settings.LATITUDE, settings.LONGITUDE)
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="radar.html",
+        context={
+            "active_page": "radar",
+            "title": f"Radar Pioggia Live • {settings.STATION_NAME}",
+            "lat": settings.LATITUDE,
+            "lon": settings.LONGITUDE,
+            "station_name": settings.STATION_NAME,
+            "location_name": settings.LOCATION_NAME,
+            "temp_c": temp_c,
+            "rain_rate": rain_rate,
+            "current_cond": current_cond
+        }
+    )
+
 @app.get("/charts", response_class=HTMLResponse)
 async def charts_page(request: Request):
     return templates.TemplateResponse(
