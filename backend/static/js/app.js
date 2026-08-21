@@ -1196,7 +1196,10 @@ function updateBadgeElements(count) {
 async function markAlertAsRead(alertId) {
     const item = document.getElementById(`alert-item-${alertId}`);
     try {
-        const res = await fetch(`/api/alerts/${alertId}/read`, { method: 'POST' });
+        const res = await fetch(`/api/alerts/${alertId}/read`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
         if (res.ok) {
             const data = await res.json();
             if (item) {
@@ -1209,9 +1212,13 @@ async function markAlertAsRead(alertId) {
                 const unreadDot = item.querySelector('.unread-dot');
                 if (unreadDot) unreadDot.remove();
             }
-            if (typeof data.unread_count === 'number') {
-                updateBadgeElements(data.unread_count);
+            const count = typeof data.unread_count === 'number' ? data.unread_count : 0;
+            updateBadgeElements(count);
+            if (count === 0) {
+                document.querySelectorAll('.kpi-warning-glow').forEach(el => el.classList.remove('kpi-warning-glow'));
             }
+        } else {
+            console.error('Errore risposta server segna letta:', res.status);
         }
     } catch (err) {
         console.error('Errore segna notifica come letta:', err);
@@ -1225,7 +1232,10 @@ async function markAllAlertsAsRead() {
         btn.innerText = '⏳ Aggiornamento...';
     }
     try {
-        const res = await fetch('/api/alerts/mark-all-read', { method: 'POST' });
+        const res = await fetch('/api/alerts/mark-all-read', { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
         if (res.ok) {
             const items = document.querySelectorAll('.notification-item');
             items.forEach(item => {
@@ -1239,17 +1249,34 @@ async function markAllAlertsAsRead() {
                 if (unreadDot) unreadDot.remove();
             });
             updateBadgeElements(0);
-            const btnUnread = document.getElementById('filter-btn-unread');
-            if (btnUnread && btnUnread.classList.contains('active')) {
-                filterAlerts('unread');
+            document.querySelectorAll('.kpi-warning-glow').forEach(el => el.classList.remove('kpi-warning-glow'));
+            
+            if (typeof applyCombinedFilters === 'function') {
+                applyCombinedFilters();
+            } else {
+                const btnUnread = document.getElementById('filter-btn-unread');
+                if (btnUnread && btnUnread.classList.contains('active') && typeof filterAlerts === 'function') {
+                    filterAlerts('unread');
+                }
+            }
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '✓ Tutte lette';
+            }
+        } else {
+            console.error('Errore risposta server:', res.status);
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '❌ Errore (HTTP ' + res.status + ')';
+                setTimeout(() => { btn.innerHTML = '✓ Segna tutte come lette'; }, 3000);
             }
         }
     } catch (err) {
         console.error('Errore durante la marcatura di tutte le notifiche:', err);
-    } finally {
         if (btn) {
             btn.disabled = false;
-            btn.innerHTML = '✓ Tutte lette';
+            btn.innerHTML = '❌ Errore';
+            setTimeout(() => { btn.innerHTML = '✓ Segna tutte come lette'; }, 3000);
         }
     }
 }

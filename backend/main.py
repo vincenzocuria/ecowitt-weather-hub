@@ -594,11 +594,15 @@ async def api_alerts_unread_count():
     return {"unread_count": get_unread_alerts_count()}
 
 @app.post("/api/alerts/{alert_id}/read")
+@app.get("/api/alerts/{alert_id}/read")
 async def api_mark_alert_read(alert_id: int):
     success = mark_alert_as_read(alert_id)
     return {"status": "ok" if success else "not_found", "unread_count": get_unread_alerts_count()}
 
 @app.post("/api/alerts/mark-all-read")
+@app.post("/api/alerts/mark-read-all")
+@app.get("/api/alerts/mark-all-read")
+@app.get("/api/alerts/mark-read-all")
 async def api_mark_all_alerts_read():
     marked = mark_all_alerts_as_read()
     return {"status": "ok", "marked": marked, "unread_count": 0}
@@ -609,6 +613,7 @@ async def api_delete_alert(alert_id: int):
     return {"status": "ok" if success else "not_found", "unread_count": get_unread_alerts_count()}
 
 @app.post("/api/alerts/clear-all")
+@app.get("/api/alerts/clear-all")
 async def api_clear_all_alerts():
     cleared = clear_all_alert_logs()
     return {"status": "ok", "cleared": cleared, "unread_count": 0}

@@ -833,14 +833,22 @@ function filterAlarmsTable(query) {
 // AZIONE SEGNA TUTTE LE NOTIFICHE LETTE DA SETTINGS
 async function markAllAlertsAsReadFromSettings() {
     try {
-        await fetch('/api/alerts/mark-read-all', { method: 'POST' });
-        alert('✅ Tutte le notifiche sono state contrassegnate come lette!');
-        const badge = document.getElementById('desktop-alert-badge');
-        if (badge) badge.style.display = 'none';
-        const mobBadge = document.getElementById('mobile-alert-badge');
-        if (mobBadge) mobBadge.style.display = 'none';
+        const resp = await fetch('/api/alerts/mark-all-read', { method: 'POST' });
+        if (resp.ok) {
+            alert('✅ Tutte le notifiche sono state contrassegnate come lette!');
+            if (typeof updateBadgeElements === 'function') {
+                updateBadgeElements(0);
+            } else {
+                const badge = document.getElementById('desktop-alert-badge');
+                if (badge) badge.style.display = 'none';
+                const mobBadge = document.getElementById('mobile-alert-badge');
+                if (mobBadge) mobBadge.style.display = 'none';
+            }
+        } else {
+            alert('Errore durante l\'aggiornamento delle notifiche (HTTP ' + resp.status + ')');
+        }
     } catch (e) {
-        alert('Errore durante l\'aggiornamento delle notifiche: ' + e.message);
+        alert('Errore di connessione: ' + e.message);
     }
 }
 
