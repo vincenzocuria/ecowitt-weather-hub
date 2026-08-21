@@ -210,7 +210,7 @@
 <div class="card history-results-card">
     <div class="history-results-header">
         <div class="history-results-title">
-            <span>📋 Risultati: <strong>{{ total_count }}</strong> letture trovate</span>
+            <span>📋 Risultati: <strong id="history-header-count">{{ total_count }}</strong> letture trovate</span>
             <span class="history-page-badge">Pagina {{ page }} di {{ max_pages }}</span>
         </div>
 
@@ -223,10 +223,55 @@
 
     {% if records %}
     
+    <!-- TOOLBAR RICERCA RAPIDA & FILTRI NELLA PAGINA -->
+    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.8rem; margin-bottom: 1.2rem; background: rgba(0,0,0,0.25); padding: 0.8rem 1rem; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05);">
+        <!-- Input di Ricerca -->
+        <div style="position: relative; flex: 1; min-width: 240px; max-width: 460px;">
+            <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 0.95rem; color: var(--text-dim); pointer-events: none;">🔍</span>
+            <input 
+                type="text" 
+                id="history-live-search" 
+                placeholder="Cerca nella pagina (es. pioggia, 28°C, 15:30, vento)..." 
+                style="width: 100%; padding: 0.55rem 2.2rem 0.55rem 2.4rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-size: 0.88rem; outline: none; transition: border-color 0.2s, box-shadow 0.2s;"
+                onfocus="this.style.borderColor='var(--accent)'; this.style.boxShadow='0 0 0 3px rgba(56, 189, 248, 0.15)';"
+                onblur="this.style.borderColor='var(--card-border)'; this.style.boxShadow='none';"
+            >
+            <button 
+                id="history-live-clear" 
+                type="button" 
+                onclick="clearHistoryLiveSearch()" 
+                style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-dim); font-size: 1rem; cursor: pointer; display: none; padding: 2px 6px; border-radius: 4px;"
+                title="Azzera ricerca"
+            >✕</button>
+        </div>
+
+        <!-- Filtri Rapidi Parametri -->
+        <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+            <button class="history-quick-filter-btn active" data-filter="all" onclick="applyHistoryQuickFilter('all', this)">Tutti</button>
+            <button class="history-quick-filter-btn" data-filter="rain" onclick="applyHistoryQuickFilter('rain', this)">🌧️ Con Pioggia</button>
+            <button class="history-quick-filter-btn" data-filter="wind" onclick="applyHistoryQuickFilter('wind', this)">💨 Vento &ge;15 km/h</button>
+            <button class="history-quick-filter-btn" data-filter="hot" onclick="applyHistoryQuickFilter('hot', this)">🔥 Caldo &ge;28°C</button>
+            <button class="history-quick-filter-btn" data-filter="cold" onclick="applyHistoryQuickFilter('cold', this)">❄️ Freddo &le;5°C</button>
+        </div>
+    </div>
+
     <!-- 1. VISTA SCHEDE (MOBILE-FIRST) -->
     <div id="history-cards-container" class="history-cards-container">
         {% for r in records %}
-        <div class="history-record-card">
+        <div class="history-record-card history-item-row"
+            data-time="{{ r.timestamp or '' }}"
+            data-temp="{{ r.temp_c if r.temp_c is not none else -999 }}"
+            data-hum="{{ r.humidity if r.humidity is not none else -999 }}"
+            data-temp-in="{{ r.temp_in_c if r.temp_in_c is not none else -999 }}"
+            data-hum-in="{{ r.humidity_in if r.humidity_in is not none else -999 }}"
+            data-dew="{{ r.dew_point_c if r.dew_point_c is not none else -999 }}"
+            data-press="{{ r.pressure_rel_hpa if r.pressure_rel_hpa is not none else -999 }}"
+            data-wind="{{ r.wind_speed_kmh if r.wind_speed_kmh is not none else -999 }}"
+            data-gust="{{ r.wind_gust_kmh if r.wind_gust_kmh is not none else -999 }}"
+            data-rain="{{ r.daily_rain_mm if r.daily_rain_mm is not none else 0 }}"
+            data-solar="{{ r.solar_radiation if r.solar_radiation is not none else 0 }}"
+            data-uv="{{ r.uv_index if r.uv_index is not none else 0 }}"
+            data-search="{{ r.timestamp | local_dt }} {{ r.temp_c }} {{ r.humidity }} {{ r.temp_in_c }} {{ r.humidity_in }} {{ r.dew_point_c }} {{ r.pressure_rel_hpa }} {{ r.wind_speed_kmh }} {{ r.wind_gust_kmh }} {{ r.daily_rain_mm }} {{ r.solar_radiation }} {{ r.uv_index }}">
             <!-- HEADER SCHEDA: DATA, ORA E BADGE SALIENTI -->
             <div class="record-card-header">
                 <div class="record-timestamp">
@@ -306,28 +351,89 @@
         {% endfor %}
     </div>
 
-    <!-- 2. VISTA TABELLA TRADIZIONALE MIGLIORATA (RESPONSIVE) -->
+    <!-- 2. VISTA TABELLA TRADIZIONALE MIGLIORATA (RESPONSIVE & ORDINABILE) -->
     <div id="history-table-container" class="history-table-container table-responsive" style="display: none;">
-        <table class="weather-table history-table">
+        <table class="weather-table history-table" id="history-table-elem">
             <thead>
                 <tr>
-                    <th>Data & Ora</th>
-                    <th>Temp Out</th>
-                    <th>Umidità</th>
-                    <th>Temp Casa</th>
-                    <th>Umid. Casa</th>
-                    <th>P. Rugiada</th>
-                    <th>Pressione</th>
-                    <th>Vento</th>
-                    <th>Raffica</th>
-                    <th>Pioggia Oggi</th>
-                    <th>Rad. Solare</th>
-                    <th>Indice UV</th>
+                    <th class="sortable-hist-th active-sort" data-col="time" onclick="sortHistoryRecords('time')" title="Ordina per Data & Ora">
+                        <div style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span>Data & Ora</span> <span class="sort-icon-h" id="h-sort-time">▼</span>
+                        </div>
+                    </th>
+                    <th class="sortable-hist-th" data-col="temp" onclick="sortHistoryRecords('temp')" title="Ordina per Temp Out">
+                        <div style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span>Temp Out</span> <span class="sort-icon-h" id="h-sort-temp">⇅</span>
+                        </div>
+                    </th>
+                    <th class="sortable-hist-th" data-col="hum" onclick="sortHistoryRecords('hum')" title="Ordina per Umidità">
+                        <div style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span>Umidità</span> <span class="sort-icon-h" id="h-sort-hum">⇅</span>
+                        </div>
+                    </th>
+                    <th class="sortable-hist-th" data-col="temp-in" onclick="sortHistoryRecords('temp-in')" title="Ordina per Temp Casa">
+                        <div style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span>Temp Casa</span> <span class="sort-icon-h" id="h-sort-temp-in">⇅</span>
+                        </div>
+                    </th>
+                    <th class="sortable-hist-th" data-col="hum-in" onclick="sortHistoryRecords('hum-in')" title="Ordina per Umidità Casa">
+                        <div style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span>Umid. Casa</span> <span class="sort-icon-h" id="h-sort-hum-in">⇅</span>
+                        </div>
+                    </th>
+                    <th class="sortable-hist-th" data-col="dew" onclick="sortHistoryRecords('dew')" title="Ordina per Punto Rugiada">
+                        <div style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span>P. Rugiada</span> <span class="sort-icon-h" id="h-sort-dew">⇅</span>
+                        </div>
+                    </th>
+                    <th class="sortable-hist-th" data-col="press" onclick="sortHistoryRecords('press')" title="Ordina per Pressione">
+                        <div style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span>Pressione</span> <span class="sort-icon-h" id="h-sort-press">⇅</span>
+                        </div>
+                    </th>
+                    <th class="sortable-hist-th" data-col="wind" onclick="sortHistoryRecords('wind')" title="Ordina per Vento">
+                        <div style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span>Vento</span> <span class="sort-icon-h" id="h-sort-wind">⇅</span>
+                        </div>
+                    </th>
+                    <th class="sortable-hist-th" data-col="gust" onclick="sortHistoryRecords('gust')" title="Ordina per Raffica">
+                        <div style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span>Raffica</span> <span class="sort-icon-h" id="h-sort-gust">⇅</span>
+                        </div>
+                    </th>
+                    <th class="sortable-hist-th" data-col="rain" onclick="sortHistoryRecords('rain')" title="Ordina per Pioggia">
+                        <div style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span>Pioggia</span> <span class="sort-icon-h" id="h-sort-rain">⇅</span>
+                        </div>
+                    </th>
+                    <th class="sortable-hist-th" data-col="solar" onclick="sortHistoryRecords('solar')" title="Ordina per Radiazione Solare">
+                        <div style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span>Rad. Solare</span> <span class="sort-icon-h" id="h-sort-solar">⇅</span>
+                        </div>
+                    </th>
+                    <th class="sortable-hist-th" data-col="uv" onclick="sortHistoryRecords('uv')" title="Ordina per Indice UV">
+                        <div style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span>Indice UV</span> <span class="sort-icon-h" id="h-sort-uv">⇅</span>
+                        </div>
+                    </th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="history-tbody-elem">
                 {% for r in records %}
-                <tr>
+                <tr class="history-item-row"
+                    data-time="{{ r.timestamp or '' }}"
+                    data-temp="{{ r.temp_c if r.temp_c is not none else -999 }}"
+                    data-hum="{{ r.humidity if r.humidity is not none else -999 }}"
+                    data-temp-in="{{ r.temp_in_c if r.temp_in_c is not none else -999 }}"
+                    data-hum-in="{{ r.humidity_in if r.humidity_in is not none else -999 }}"
+                    data-dew="{{ r.dew_point_c if r.dew_point_c is not none else -999 }}"
+                    data-press="{{ r.pressure_rel_hpa if r.pressure_rel_hpa is not none else -999 }}"
+                    data-wind="{{ r.wind_speed_kmh if r.wind_speed_kmh is not none else -999 }}"
+                    data-gust="{{ r.wind_gust_kmh if r.wind_gust_kmh is not none else -999 }}"
+                    data-rain="{{ r.daily_rain_mm if r.daily_rain_mm is not none else 0 }}"
+                    data-solar="{{ r.solar_radiation if r.solar_radiation is not none else 0 }}"
+                    data-uv="{{ r.uv_index if r.uv_index is not none else 0 }}"
+                    data-search="{{ r.timestamp | local_dt }} {{ r.temp_c }} {{ r.humidity }} {{ r.temp_in_c }} {{ r.humidity_in }} {{ r.dew_point_c }} {{ r.pressure_rel_hpa }} {{ r.wind_speed_kmh }} {{ r.wind_gust_kmh }} {{ r.daily_rain_mm }} {{ r.solar_radiation }} {{ r.uv_index }}">
                     <td class="history-col-time"><strong>{{ r.timestamp | local_dt }}</strong></td>
                     <td class="history-col-temp"><strong>{{ r.temp_c if r.temp_c is not none else '--' }} °C</strong></td>
                     <td>{{ r.humidity if r.humidity is not none else '--' }} %</td>
@@ -344,6 +450,16 @@
                 {% endfor %}
             </tbody>
         </table>
+    </div>
+
+    <!-- RIGA NESSUN RISULTATO FILTRO NELLA PAGINA -->
+    <div id="history-filter-empty" style="display: none; padding: 2.5rem 1rem; text-align: center;">
+        <div style="font-size: 2.2rem; margin-bottom: 0.5rem; opacity: 0.7;">🔍</div>
+        <div style="font-weight: 700; color: var(--text); font-size: 1.05rem;">Nessuna rilevazione trovata</div>
+        <p style="color: var(--text-dim); font-size: 0.88rem; margin-top: 4px;">Nessun record nella pagina corrente corrisponde ai filtri di ricerca impostati.</p>
+        <button type="button" onclick="clearHistoryLiveSearch(true)" class="btn btn-primary" style="margin-top: 1rem; padding: 0.45rem 1rem; font-size: 0.85rem;">
+            Azzera ricerca e filtri
+        </button>
     </div>
 
     <!-- BARRA DI PAGINAZIONE TOUCH-FRIENDLY -->
@@ -378,6 +494,48 @@
     </div>
     {% endif %}
 </div>
+
+<style>
+.history-quick-filter-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-dim);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.history-quick-filter-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+.history-quick-filter-btn.active {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: #38bdf8;
+    color: #38bdf8;
+}
+.sortable-hist-th {
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+.sortable-hist-th:hover {
+    background: rgba(56, 189, 248, 0.08) !important;
+    color: var(--accent) !important;
+}
+.sort-icon-h {
+    display: inline-block;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+.sortable-hist-th.active-sort .sort-icon-h {
+    color: #f59e0b;
+    font-weight: bold;
+}
+</style>
 {% endblock %}
 
 {% block scripts %}
@@ -447,6 +605,159 @@
         }
     }
 
+    // LIVE SEARCH & QUICK FILTER & SORTING
+    let currentHistFilter = 'all';
+    let currentHistSortCol = 'time';
+    let currentHistSortOrder = 'desc';
+
+    const liveSearchInput = document.getElementById('history-live-search');
+    const liveSearchClear = document.getElementById('history-live-clear');
+    const emptyFilterNotice = document.getElementById('history-filter-empty');
+
+    function applyHistoryQuickFilter(filterKey, btnElem) {
+        currentHistFilter = filterKey;
+        document.querySelectorAll('.history-quick-filter-btn').forEach(b => b.classList.remove('active'));
+        if (btnElem) btnElem.classList.add('active');
+        applyHistoryFilters();
+    }
+
+    function clearHistoryLiveSearch(resetFilter) {
+        if (liveSearchInput) {
+            liveSearchInput.value = '';
+            if (liveSearchClear) liveSearchClear.style.display = 'none';
+        }
+        if (resetFilter) {
+            currentHistFilter = 'all';
+            document.querySelectorAll('.history-quick-filter-btn').forEach(b => {
+                b.classList.toggle('active', b.getAttribute('data-filter') === 'all');
+            });
+        }
+        applyHistoryFilters();
+    }
+
+    if (liveSearchInput) {
+        liveSearchInput.addEventListener('input', function() {
+            if (liveSearchClear) {
+                liveSearchClear.style.display = this.value.trim() ? 'block' : 'none';
+            }
+            applyHistoryFilters();
+        });
+    }
+
+    function applyHistoryFilters() {
+        const query = liveSearchInput ? liveSearchInput.value.toLowerCase().trim() : '';
+        const cardItems = Array.from(document.querySelectorAll('#history-cards-container .history-item-row'));
+        const tableRows = Array.from(document.querySelectorAll('#history-tbody-elem .history-item-row'));
+        
+        let visibleCount = 0;
+
+        function checkMatch(elem) {
+            const searchData = (elem.getAttribute('data-search') || '').toLowerCase();
+            const rain = parseFloat(elem.getAttribute('data-rain')) || 0;
+            const wind = parseFloat(elem.getAttribute('data-wind')) || 0;
+            const gust = parseFloat(elem.getAttribute('data-gust')) || 0;
+            const temp = parseFloat(elem.getAttribute('data-temp')) || -999;
+
+            let filterPass = true;
+            if (currentHistFilter === 'rain') filterPass = (rain > 0);
+            else if (currentHistFilter === 'wind') filterPass = (wind >= 15 || gust >= 15);
+            else if (currentHistFilter === 'hot') filterPass = (temp >= 28);
+            else if (currentHistFilter === 'cold') filterPass = (temp <= 5 && temp > -900);
+
+            const searchPass = !query || searchData.includes(query);
+            return filterPass && searchPass;
+        }
+
+        cardItems.forEach(card => {
+            const matches = checkMatch(card);
+            card.style.display = matches ? '' : 'none';
+            if (matches) visibleCount++;
+        });
+
+        tableRows.forEach(row => {
+            const matches = checkMatch(row);
+            row.style.display = matches ? '' : 'none';
+        });
+
+        if (emptyFilterNotice) {
+            emptyFilterNotice.style.display = (visibleCount === 0 && cardItems.length > 0) ? 'block' : 'none';
+        }
+
+        const cardsContainer = document.getElementById('history-cards-container');
+        const tableContainer = document.getElementById('history-table-container');
+        const viewPref = localStorage.getItem('history_view_pref') || (window.innerWidth <= 768 ? 'cards' : 'table');
+
+        if (visibleCount === 0 && cardItems.length > 0) {
+            if (cardsContainer) cardsContainer.style.display = 'none';
+            if (tableContainer) tableContainer.style.display = 'none';
+        } else {
+            if (viewPref === 'table') {
+                if (cardsContainer) cardsContainer.style.display = 'none';
+                if (tableContainer) tableContainer.style.display = 'block';
+            } else {
+                if (cardsContainer) cardsContainer.style.display = 'grid';
+                if (tableContainer) tableContainer.style.display = 'none';
+            }
+        }
+    }
+
+    function sortHistoryRecords(col) {
+        if (currentHistSortCol === col) {
+            currentHistSortOrder = (currentHistSortOrder === 'asc') ? 'desc' : 'asc';
+        } else {
+            currentHistSortCol = col;
+            currentHistSortOrder = (col === 'time' || col === 'temp' || col === 'rain' || col === 'wind' || col === 'gust' || col === 'solar' || col === 'uv') ? 'desc' : 'asc';
+        }
+
+        updateHistorySortIcons();
+        executeHistorySorting();
+    }
+
+    function updateHistorySortIcons() {
+        const cols = ['time', 'temp', 'hum', 'temp-in', 'hum-in', 'dew', 'press', 'wind', 'gust', 'rain', 'solar', 'uv'];
+        cols.forEach(c => {
+            const th = document.querySelector(`.sortable-hist-th[data-col="${c}"]`);
+            const icon = document.getElementById(`h-sort-${c}`);
+            if (th && icon) {
+                if (c === currentHistSortCol) {
+                    th.classList.add('active-sort');
+                    icon.textContent = currentHistSortOrder === 'asc' ? '▲' : '▼';
+                } else {
+                    th.classList.remove('active-sort');
+                    icon.textContent = '⇅';
+                }
+            }
+        });
+    }
+
+    function executeHistorySorting() {
+        const tbody = document.getElementById('history-tbody-elem');
+        const cardsCont = document.getElementById('history-cards-container');
+        if (!tbody || !cardsCont) return;
+
+        const rows = Array.from(tbody.querySelectorAll('.history-item-row'));
+        const cards = Array.from(cardsCont.querySelectorAll('.history-item-row'));
+
+        function compareItems(a, b) {
+            let valA, valB;
+            if (currentHistSortCol === 'time') {
+                valA = a.getAttribute('data-time') || '';
+                valB = b.getAttribute('data-time') || '';
+                return currentHistSortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            } else {
+                valA = parseFloat(a.getAttribute(`data-${currentHistSortCol}`)) || -9999;
+                valB = parseFloat(b.getAttribute(`data-${currentHistSortCol}`)) || -9999;
+                return currentHistSortOrder === 'asc' ? valA - valB : valB - valA;
+            }
+        }
+
+        rows.sort(compareItems);
+        cards.sort(compareItems);
+
+        rows.forEach(r => tbody.appendChild(r));
+        cards.forEach(c => cardsCont.appendChild(c));
+    }
+
     // Inizializza la visualizzazione in base a preferenza o larghezza schermo
     document.addEventListener('DOMContentLoaded', () => {
         const savedView = localStorage.getItem('history_view_pref');
@@ -460,6 +771,7 @@
                 setHistoryView('table');
             }
         }
+        updateHistorySortIcons();
     });
 </script>
 {% endblock %}
