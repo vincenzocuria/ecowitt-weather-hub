@@ -140,6 +140,9 @@
                         <span class="sep">•</span>
                         <span class="t-max" id="hero_today_max">Max {{ analytics.today_extremes.temp_max if analytics and analytics.today_extremes.temp_max is not none else '--' }}°</span>
                     </span>
+                    <span class="hero-apparent-pill" id="hero_tropical_pill" style="{% if not (analytics and analytics.today_extremes and analytics.today_extremes.temp_min is not none and analytics.today_extremes.temp_min >= 20.0) %}display: none;{% endif %} background: rgba(249, 115, 22, 0.2); border-color: rgba(249, 115, 22, 0.4); color: #fb923c;" title="Notte Tropicale: Minima >= 20°C">
+                        🌴 Notte Tropicale (Min: {{ analytics.today_extremes.temp_min if analytics and analytics.today_extremes and analytics.today_extremes.temp_min is not none else '--' }}°)
+                    </span>
                 </div>
             </div>
 
@@ -471,13 +474,26 @@
                     <strong id="lightning_time">{{ latest.lightning_last_time or 'Nessuna recente' }}</strong>
                 </div>
                 <div class="divider"></div>
-                {% if soil_moisture %}
+                <div id="soil_moisture_container">
+                {% if analytics and analytics.soil_summary and analytics.soil_summary.has_sensors %}
+                    {% for ch, info in analytics.soil_summary.channels.items() %}
+                    <div class="item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span>🌱 {{ info.name }}:</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <strong>{{ info.value }}%</strong>
+                            <span class="badge {{ info.badge_class }}" style="font-size: 0.72rem; padding: 2px 6px;">{{ info.status_label }}</span>
+                            <span style="font-size: 0.75rem; color: var(--text-dim);" title="Variazione 24h">{{ info.trend_icon }} {{ '+' if info.diff_24h > 0 else '' }}{{ info.diff_24h }}%</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% elif soil_moisture %}
                     {% for ch, val in soil_moisture.items() %}
-                    <div class="item"><span>Umidità Suolo {{ ch }}:</span> <strong>{{ val }}%</strong></div>
+                    <div class="item"><span>🌱 Umidità Suolo {{ ch }}:</span> <strong>{{ val }}%</strong></div>
                     {% endfor %}
                 {% else %}
-                    <div class="item"><span>Sensori Umidità Terreno:</span> <span style="color: var(--text-muted); font-size: 0.85rem;">In attesa di WH51</span></div>
+                    <div class="item"><span>🌱 Sensori Umidità Terreno:</span> <span style="color: var(--text-muted); font-size: 0.85rem;">In attesa di WH51</span></div>
                 {% endif %}
+                </div>
             </div>
         </div>
     </div>

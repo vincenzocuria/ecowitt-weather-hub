@@ -184,6 +184,24 @@
                 </div>
             </div>
         </div>
+
+        <!-- KPI 8: NOTTI TROPICALI NEL PERIODO -->
+        <div class="history-kpi-card" style="border-left: 4px solid #f97316;">
+            <div class="kpi-card-top">
+                <span class="kpi-tag" style="color: #f97316;">🌴 Notti Tropicali</span>
+                <span class="kpi-stat-avg">Min &ge; 20.0°C</span>
+            </div>
+            <div class="kpi-dual-values">
+                <div class="kpi-val-box">
+                    <span class="kpi-lbl">TROPICALI</span>
+                    <span class="kpi-val" style="color: #f97316;">{{ kpis.tropical_nights if kpis.tropical_nights is not none else 0 }}<small>notti</small></span>
+                </div>
+                <div class="kpi-val-box">
+                    <span class="kpi-lbl">ROVENTI (&ge;25°)</span>
+                    <span class="kpi-val" style="color: #ef4444;">{{ kpis.very_hot_nights if kpis.very_hot_nights is not none else 0 }}<small>notti</small></span>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 {% endif %}

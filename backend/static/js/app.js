@@ -463,6 +463,36 @@ function startDashboardPolling() {
                     if (data.tuya) {
                         updateTuyaUI(data.tuya);
                     }
+
+                    // Pill Notte Tropicale
+                    const tropPill = document.getElementById('hero_tropical_pill');
+                    if (tropPill && a.today_extremes) {
+                        if (a.today_extremes.temp_min !== null && a.today_extremes.temp_min >= 20.0) {
+                            tropPill.style.display = 'inline-flex';
+                            tropPill.innerText = `🌴 Notte Tropicale (Min: ${a.today_extremes.temp_min}°)`;
+                        } else {
+                            tropPill.style.display = 'none';
+                        }
+                    }
+
+                    // Umidità Terreno WH51
+                    if (a.soil_summary && a.soil_summary.has_sensors) {
+                        const soilContainer = document.getElementById('soil_moisture_container');
+                        if (soilContainer && a.soil_summary.channels) {
+                            let soilHtml = '';
+                            for (const [ch, info] of Object.entries(a.soil_summary.channels)) {
+                                soilHtml += `<div class="item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                    <span>🌱 ${info.name}:</span>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <strong>${info.value}%</strong>
+                                        <span class="badge ${info.badge_class}" style="font-size: 0.72rem; padding: 2px 6px;">${info.status_label}</span>
+                                        <span style="font-size: 0.75rem; color: var(--text-dim);" title="Variazione 24h">${info.trend_icon} ${info.diff_24h > 0 ? '+' : ''}${info.diff_24h}%</span>
+                                    </div>
+                                </div>`;
+                            }
+                            soilContainer.innerHTML = soilHtml;
+                        }
+                    }
                 }
             })
             .catch(() => {});

@@ -696,6 +696,91 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIsInstance(data["active_consumers"], list)
         self.assertIsInstance(data["standby_devices"], list)
 
+    def test_tropical_nights_and_soil_moisture(self):
+        from backend.database import (
+            get_tropical_nights_stats, get_soil_moisture_summary,
+            check_and_update_records, get_all_records, get_timeseries, get_history_kpis, save_reading
+        )
+        from fastapi.testclient import TestClient
+        from backend.main import app
+
+        # 1. Inserisci letture con notti tropicali e sensori suolo
+        save_reading({
+            "timestamp": "2026-07-15T04:00:00",
+            "temp_c": 22.5,
+            "soil_moisture": {"ch1": 42.0, "ch2": 18.0}
+        })
+        save_reading({
+            "timestamp": "2026-07-16T04:00:00",
+            "temp_c": 26.2, # Notte Rovente >= 25°C
+            "soil_moisture": {"ch1": 40.0, "ch2": 15.0}
+        })
+        save_reading({
+            "timestamp": "2026-07-17T04:00:00",
+            "temp_c": 23.0,
+            "soil_moisture": {"ch1": 55.0, "ch2": 35.0}
+        })
+
+        # 2. Test calcolo statistiche Notti Tropicali
+        trop_stats = get_tropical_nights_stats(year=2026)
+        self.assertEqual(trop_stats["year"], 2026)
+        self.assertGreaterEqual(trop_stats["total_tropical_nights"], 3)
+        self.assertGreaterEqual(trop_stats["total_super_tropical_nights"], 1)
+        self.assertGreaterEqual(trop_stats["highest_min_temp"], 22.5)
+        self.assertGreaterEqual(trop_stats["max_streak"], 1)
+        self.assertIn("monthly_stats", trop_stats)
+
+        # 3. Test record temp_min_highest
+        new_recs = check_and_update_records({
+            "temp_min_highest": 26.2,
+            "temp_min_highest_date": "2026-07-16",
+            "timestamp": "2026-07-16T08:00:00"
+        })
+        all_records = get_all_records()
+        rec_keys = [r["record_key"] for r in all_records]
+        self.assertIn("temp_min_highest", rec_keys)
+
+        # 4. Test stato e trend umidità terreno
+        soil_summary = get_soil_moisture_summary()
+        self.assertTrue(soil_summary["has_sensors"])
+        self.assertIn("ch1", soil_summary["channels"])
+        self.assertIn("status_label", soil_summary["channels"]["ch1"])
+        self.assertIn("trend_icon", soil_summary["channels"]["ch1"])
+
+        # 5. Test timeseries soil moisture
+        ts = get_timeseries("24h")
+        self.assertIn("soil_moisture", ts)
+
+        # 6. Test KPI archivio con tropical_nights
+        kpis = get_history_kpis("2026-07-01", "2026-07-31")
+        self.assertIn("tropical_nights", kpis)
+        self.assertIn("very_hot_nights", kpis)
+        self.assertGreaterEqual(kpis["tropical_nights"], 3)
+        self.assertGreaterEqual(kpis["very_hot_nights"], 1)
+
+        # 7. Test API endpoints
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+        r_trop = client.get("/api/climate/tropical-nights?year=2026")
+        self.assertEqual(r_trop.status_code, 200)
+        self.assertIn("total_tropical_nights", r_trop.json())
+
+        r_soil = client.get("/api/soil/summary")
+        self.assertEqual(r_soil.status_code, 200)
+        self.assertIn("has_sensors", r_soil.json())
+
+        r_page = client.get("/records")
+        self.assertEqual(r_page.status_code, 200)
+        self.assertIn("Climatologia Notti Tropicali", r_page.text)
+        self.assertIn("Minima Più Alta", r_page.text)
+
+        r_charts = client.get("/charts")
+        self.assertEqual(r_charts.status_code, 200)
+        self.assertIn("chartSoil", r_charts.text)
+
+        r_home = client.get("/")
+        self.assertEqual(r_home.status_code, 200)
+        self.assertIn("hero_tropical_pill", r_home.text)
+
 
 if __name__ == "__main__":
     unittest.main()

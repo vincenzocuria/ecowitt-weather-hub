@@ -28,6 +28,8 @@ class Settings:
     LIGHTNING_MAX_DISTANCE_KM: float = float(os.getenv("LIGHTNING_MAX_DISTANCE_KM", "30.0"))
     TEMP_FREEZE_THRESHOLD_C: float = float(os.getenv("TEMP_FREEZE_THRESHOLD_C", "1.0"))
     TEMP_HEAT_THRESHOLD_C: float = float(os.getenv("TEMP_HEAT_THRESHOLD_C", "38.0"))
+    TROPICAL_NIGHT_TEMP_THRESHOLD_C: float = float(os.getenv("TROPICAL_NIGHT_TEMP_THRESHOLD_C", "20.0"))
+    SUPER_TROPICAL_NIGHT_TEMP_THRESHOLD_C: float = float(os.getenv("SUPER_TROPICAL_NIGHT_TEMP_THRESHOLD_C", "25.0"))
     RAIN_RATE_ALERT_MM_HR: float = float(os.getenv("RAIN_RATE_ALERT_MM_HR", "5.0"))
     
     # Soglie Eventi Anomali

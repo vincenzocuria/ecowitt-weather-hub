@@ -34,6 +34,7 @@ def to_local_datetime_str(iso_str: Optional[str], fmt: str = "%Y-%m-%d %H:%M:%S"
 RECORD_DEFINITIONS = [
     {"key": "temp_max", "category": "temperature", "title": "Temperatura Massima", "unit": "°C", "type": "max"},
     {"key": "temp_min", "category": "temperature", "title": "Temperatura Minima", "unit": "°C", "type": "min"},
+    {"key": "temp_min_highest", "category": "temperature", "title": "Minima Più Alta (Notte Tropicale)", "unit": "°C", "type": "max"},
     {"key": "dew_point_max", "category": "temperature", "title": "Punto di Rugiada Max", "unit": "°C", "type": "max"},
     {"key": "wind_gust_max", "category": "wind", "title": "Raffica di Vento Max", "unit": "km/h", "type": "max"},
     {"key": "wind_speed_max", "category": "wind", "title": "Velocità Media Vento Max", "unit": "km/h", "type": "max"},
@@ -464,6 +465,7 @@ def check_and_update_records(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     candidates = {
         "temp_max": (data.get("temp_c"), {}),
         "temp_min": (data.get("temp_c"), {}),
+        "temp_min_highest": (data.get("temp_min_highest"), {"date": data.get("temp_min_highest_date") or ts[:10]}) if data.get("temp_min_highest") is not None else (None, {}),
         "dew_point_max": (data.get("dew_point_c") or calc_dew_point(data.get("temp_c"), data.get("humidity")), {}),
         "wind_gust_max": (data.get("wind_gust_kmh"), {"dir": deg_to_compass(data.get("wind_dir_deg"))}),
         "wind_speed_max": (data.get("wind_speed_kmh"), {"dir": deg_to_compass(data.get("wind_dir_deg"))}),
@@ -515,7 +517,7 @@ def check_and_update_records(data: Dict[str, Any]) -> List[Dict[str, Any]]:
         if is_broken:
             # Soglie minime di variazione per evitare spam nei log e notifiche per ogni 0.1
             min_step = 0.0
-            if key in ("temp_max", "temp_min", "dew_point_max"):
+            if key in ("temp_max", "temp_min", "temp_min_highest", "dew_point_max"):
                 min_step = 0.5
             elif key in ("wind_gust_max", "wind_speed_max"):
                 min_step = 5.0
@@ -646,7 +648,8 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
                 ROUND(MAX(wind_gust_kmh), 1) AS wind_gust_max,
                 ROUND(MAX(daily_rain_mm), 1) AS rain_day,
                 ROUND(AVG(solar_radiation), 1) AS solar_avg,
-                MAX(uv_index) AS uv_max
+                MAX(uv_index) AS uv_max,
+                GROUP_CONCAT(soil_moisture_json, '||') as soil_jsons
             FROM weather_records
             WHERE timestamp >= ?
             GROUP BY bucket
@@ -656,6 +659,32 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
         rows = cursor.fetchall()
         conn.close()
         
+        soil_channels = set()
+        bucket_soil_averages = []
+        for r in rows:
+            raw_concat = r["soil_jsons"] if "soil_jsons" in r.keys() and r["soil_jsons"] else ""
+            ch_sums = {}
+            ch_counts = {}
+            if raw_concat:
+                for piece in raw_concat.split("||"):
+                    if piece and piece != "{}":
+                        try:
+                            item = json.loads(piece)
+                            if isinstance(item, dict):
+                                for k, v in item.items():
+                                    if v is not None:
+                                        soil_channels.add(k)
+                                        ch_sums[k] = ch_sums.get(k, 0.0) + float(v)
+                                        ch_counts[k] = ch_counts.get(k, 0) + 1
+                        except Exception:
+                            pass
+            b_avg = {k: round(ch_sums[k] / ch_counts[k], 1) for k in ch_sums if ch_counts.get(k, 0) > 0}
+            bucket_soil_averages.append(b_avg)
+            
+        soil_moisture_series = {}
+        for ch in sorted(soil_channels):
+            soil_moisture_series[ch] = [b.get(ch) for b in bucket_soil_averages]
+
         return {
             "period": period,
             "labels": [r["bucket"] for r in rows],
@@ -671,13 +700,14 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
             "wind_gust": [r["wind_gust_max"] for r in rows],
             "daily_rain": [r["rain_day"] for r in rows],
             "solar": [r["solar_avg"] for r in rows],
-            "uv": [r["uv_max"] for r in rows]
+            "uv": [r["uv_max"] for r in rows],
+            "soil_moisture": soil_moisture_series
         }
     else:
         cursor.execute("""
             SELECT timestamp, temp_c, temp_in_c, humidity, humidity_in, dew_point_c, pressure_rel_hpa,
                    wind_speed_kmh, wind_gust_kmh, rain_rate_mm_hr, daily_rain_mm,
-                   solar_radiation, uv_index
+                   solar_radiation, uv_index, soil_moisture_json
             FROM weather_records
             WHERE timestamp >= ?
             ORDER BY timestamp ASC
@@ -685,6 +715,24 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
         """, (since,))
         rows = cursor.fetchall()
         conn.close()
+
+        soil_channels = set()
+        parsed_rows_soil = []
+        for r in rows:
+            s_val = {}
+            raw_s = r["soil_moisture_json"] if "soil_moisture_json" in r.keys() else None
+            if raw_s:
+                try:
+                    s_val = json.loads(raw_s) if isinstance(raw_s, str) else raw_s
+                    if isinstance(s_val, dict):
+                        soil_channels.update(s_val.keys())
+                except Exception:
+                    pass
+            parsed_rows_soil.append(s_val if isinstance(s_val, dict) else {})
+        
+        soil_moisture_series = {}
+        for ch in sorted(soil_channels):
+            soil_moisture_series[ch] = [p.get(ch) for p in parsed_rows_soil]
 
         return {
             "period": "24h",
@@ -700,7 +748,8 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
             "rain_rate": [r["rain_rate_mm_hr"] for r in rows],
             "daily_rain": [r["daily_rain_mm"] for r in rows],
             "solar": [r["solar_radiation"] for r in rows],
-            "uv": [r["uv_index"] for r in rows]
+            "uv": [r["uv_index"] for r in rows],
+            "soil_moisture": soil_moisture_series
         }
 
 # ----------------- RICERCA ARCHIVIO & EXPORT -----------------
@@ -724,13 +773,18 @@ def search_history(start_date: Optional[str] = None, end_date: Optional[str] = N
     total_count = cursor.fetchone()[0]
 
     cursor.execute(f"""
-        SELECT * FROM weather_records {where_sql}
+        SELECT id, timestamp, temp_c, temp_in_c, humidity, humidity_in, dew_point_c, pressure_rel_hpa,
+               wind_speed_kmh, wind_gust_kmh, wind_dir_deg, rain_rate_mm_hr, daily_rain_mm,
+               solar_radiation, uv_index, soil_moisture_json
+        FROM weather_records
+        {where_sql}
         ORDER BY timestamp DESC
         LIMIT ? OFFSET ?
     """, params + [limit, offset])
+    
     rows = cursor.fetchall()
     conn.close()
-
+    
     records = []
     for r in rows:
         d = dict(r)
@@ -739,7 +793,10 @@ def search_history(start_date: Optional[str] = None, end_date: Optional[str] = N
                 d["soil_moisture"] = json.loads(d["soil_moisture_json"])
             except Exception:
                 d["soil_moisture"] = {}
+        else:
+            d["soil_moisture"] = {}
         records.append(d)
+        
     return records, total_count
 
 def get_history_kpis(start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
@@ -796,6 +853,22 @@ def get_history_kpis(start_date: Optional[str] = None, end_date: Optional[str] =
     """, params)
     rain_row = cursor.fetchone()
     total_rain = rain_row[0] if rain_row and rain_row[0] is not None else 0.0
+
+    # Conteggio Notti Tropicali (Tmin >= 20°C) e Notti Roventi (Tmin >= 25°C) nel periodo
+    where_temp_sql = ("WHERE temp_c IS NOT NULL AND " + " AND ".join(where_clauses)) if where_clauses else "WHERE temp_c IS NOT NULL"
+    cursor.execute(f"""
+        SELECT 
+            COUNT(CASE WHEN day_min >= 20.0 THEN 1 END) as tropical_nights_count,
+            COUNT(CASE WHEN day_min >= 25.0 THEN 1 END) as very_hot_nights_count
+        FROM (
+            SELECT date(timestamp) as day, MIN(temp_c) as day_min
+            FROM weather_records {where_temp_sql}
+            GROUP BY date(timestamp)
+        )
+    """, params)
+    trop_row = cursor.fetchone()
+    tropical_nights_count = trop_row["tropical_nights_count"] if trop_row else 0
+    very_hot_nights_count = trop_row["very_hot_nights_count"] if trop_row else 0
     
     conn.close()
     
@@ -810,6 +883,7 @@ def get_history_kpis(start_date: Optional[str] = None, end_date: Optional[str] =
             "min_press": None, "max_press": None, "avg_press": None,
             "max_solar": None, "max_uv": None,
             "max_rain_rate": None, "total_rain": 0.0,
+            "tropical_nights": 0, "very_hot_nights": 0,
             "first_ts": None, "last_ts": None
         }
         
@@ -837,6 +911,8 @@ def get_history_kpis(start_date: Optional[str] = None, end_date: Optional[str] =
         "max_uv": round(row["max_uv"], 1) if row["max_uv"] is not None else None,
         "max_rain_rate": round(row["max_rain_rate"], 1) if row["max_rain_rate"] is not None else None,
         "total_rain": round(total_rain, 1),
+        "tropical_nights": tropical_nights_count,
+        "very_hot_nights": very_hot_nights_count,
         "first_ts": row["first_ts"],
         "last_ts": row["last_ts"]
     }
@@ -1649,4 +1725,240 @@ def perform_database_maintenance(retention_days: int = 60) -> Dict[str, Any]:
         "energy_records_purged": purged_energy,
         "stats_after": get_database_stats()
     }
+
+# ----------------- STATISTICHE NOTTI TROPICALI & CLIMATOLOGIA -----------------
+
+def get_tropical_nights_stats(year: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Calcola le statistiche climatologiche delle Notti Tropicali (Tmin >= 20°C)
+    e Notti Roventi (Tmin >= 25°C) per l'anno specificato (o anno corrente).
+    Include streak consecutivi, notti più calde, e distribuzione mensile.
+    """
+    tz = settings.get_tz()
+    now = settings.now_local()
+    if year is None:
+        year = now.year
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    year_start = f"{year}-01-01T00:00:00"
+    year_end = f"{year}-12-31T23:59:59"
+
+    cursor.execute("""
+        SELECT 
+            date(timestamp) as day_str,
+            ROUND(MIN(temp_c), 1) as min_temp,
+            ROUND(MAX(temp_c), 1) as max_temp,
+            ROUND(AVG(temp_c), 1) as avg_temp,
+            COUNT(*) as readings_count
+        FROM weather_records
+        WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
+        GROUP BY date(timestamp)
+        HAVING readings_count >= 1
+        ORDER BY day_str ASC
+    """, (year_start, year_end))
+    days = cursor.fetchall()
+    conn.close()
+
+    total_tropical_nights = 0
+    total_super_tropical_nights = 0
+    highest_min_temp = None
+    highest_min_day = None
+    
+    monthly_counts = {
+        "05": 0, "06": 0, "07": 0, "08": 0, "09": 0, "10": 0
+    }
+    
+    max_streak = 0
+    temp_streak = 0
+    recent_tropical_days = []
+
+    today_str = now.strftime("%Y-%m-%d")
+    yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    today_is_tropical = False
+    yesterday_was_tropical = False
+
+    for d in days:
+        d_str = d["day_str"]
+        min_t = d["min_temp"]
+        if min_t is None:
+            continue
+        
+        is_trop = (min_t >= settings.TROPICAL_NIGHT_TEMP_THRESHOLD_C)
+        is_super = (min_t >= settings.SUPER_TROPICAL_NIGHT_TEMP_THRESHOLD_C)
+
+        if d_str == today_str and is_trop:
+            today_is_tropical = True
+        if d_str == yesterday_str and is_trop:
+            yesterday_was_tropical = True
+
+        if is_trop:
+            total_tropical_nights += 1
+            temp_streak += 1
+            if temp_streak > max_streak:
+                max_streak = temp_streak
+            
+            m = d_str[5:7]
+            if m in monthly_counts:
+                monthly_counts[m] += 1
+                
+            if is_super:
+                total_super_tropical_nights += 1
+                
+            if highest_min_temp is None or min_t > highest_min_temp:
+                highest_min_temp = min_t
+                highest_min_day = d_str
+
+            recent_tropical_days.append({
+                "date": d_str,
+                "min_temp": min_t,
+                "is_super": is_super
+            })
+        else:
+            temp_streak = 0
+
+    # Calcolo streak corrente a ritroso
+    streak_count = 0
+    days_dict = {d["day_str"]: d["min_temp"] for d in days if d["min_temp"] is not None}
+    check_dt = now.date()
+    if today_str not in days_dict or days_dict[today_str] < settings.TROPICAL_NIGHT_TEMP_THRESHOLD_C:
+        check_dt = check_dt - timedelta(days=1)
+    
+    while True:
+        c_str = check_dt.strftime("%Y-%m-%d")
+        if c_str in days_dict and days_dict[c_str] >= settings.TROPICAL_NIGHT_TEMP_THRESHOLD_C:
+            streak_count += 1
+            check_dt = check_dt - timedelta(days=1)
+        else:
+            break
+
+    # Mappa nomi mesi italiani per UI
+    month_names_it = {
+        "05": "Maggio",
+        "06": "Giugno",
+        "07": "Luglio",
+        "08": "Agosto",
+        "09": "Settembre",
+        "10": "Ottobre"
+    }
+    monthly_stats = [
+        {"month_key": k, "name": month_names_it[k], "count": v}
+        for k, v in monthly_counts.items()
+    ]
+
+    return {
+        "year": year,
+        "threshold_c": settings.TROPICAL_NIGHT_TEMP_THRESHOLD_C,
+        "super_threshold_c": settings.SUPER_TROPICAL_NIGHT_TEMP_THRESHOLD_C,
+        "total_tropical_nights": total_tropical_nights,
+        "total_super_tropical_nights": total_super_tropical_nights,
+        "highest_min_temp": highest_min_temp,
+        "highest_min_day": highest_min_day,
+        "current_streak": streak_count,
+        "max_streak": max_streak,
+        "today_is_tropical": today_is_tropical,
+        "yesterday_was_tropical": yesterday_was_tropical,
+        "monthly_counts": monthly_counts,
+        "monthly_stats": monthly_stats,
+        "recent_tropical_days": recent_tropical_days[-10:]
+    }
+
+# ----------------- STATO & TREND UMIDITÀ TERRENO -----------------
+
+def get_soil_moisture_summary() -> Dict[str, Any]:
+    """
+    Calcola lo stato in tempo reale, il trend 24h e il livello di salute per i sensori di umidità WH51.
+    """
+    latest = get_latest_reading() or {}
+    soil = latest.get("soil_moisture", {})
+    aliases = get_sensor_aliases()
+
+    if not soil:
+        return {
+            "has_sensors": False,
+            "channels": {},
+            "avg_moisture": None,
+            "status": "none",
+            "status_text": "Nessun sensore WH51 configurato"
+        }
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    now = datetime.now(timezone.utc)
+    t_24h = (now - timedelta(hours=24)).isoformat()
+
+    cursor.execute("""
+        SELECT soil_moisture_json FROM weather_records
+        WHERE timestamp <= ? AND soil_moisture_json IS NOT NULL
+        ORDER BY timestamp DESC LIMIT 1
+    """, (t_24h,))
+    row_24h = cursor.fetchone()
+    conn.close()
+
+    soil_24h = json.loads(row_24h["soil_moisture_json"]) if row_24h and row_24h["soil_moisture_json"] else {}
+
+    channels_data = {}
+    values_list = []
+
+    for ch, val in soil.items():
+        if val is None:
+            continue
+        v = float(val)
+        values_list.append(v)
+
+        alias = aliases.get(f"soil_{ch}") or aliases.get(ch) or f"Sensore {ch.upper()}"
+        v_24h = float(soil_24h.get(ch)) if soil_24h.get(ch) is not None else None
+        diff_24h = round(v - v_24h, 1) if v_24h is not None else 0.0
+
+        if v < 15.0:
+            status_code = "critical"
+            status_label = "Critico / Arido"
+            badge_class = "badge-danger"
+        elif v < settings.SOIL_MOISTURE_LOW_THRESHOLD:
+            status_code = "dry"
+            status_label = "Terreno Secco"
+            badge_class = "badge-warning"
+        elif v <= 60.0:
+            status_code = "optimal"
+            status_label = "Umidità Ottimale"
+            badge_class = "badge-success"
+        else:
+            status_code = "wet"
+            status_label = "Molto Umido"
+            badge_class = "badge-info"
+
+        if diff_24h > 5.0:
+            trend_icon = "↗"
+            trend_text = f"+{diff_24h}% (Irrigato)"
+        elif diff_24h < -5.0:
+            trend_icon = "↘"
+            trend_text = f"{diff_24h}% (Asciugatura)"
+        else:
+            trend_icon = "→"
+            trend_text = "Stabile"
+
+        channels_data[ch] = {
+            "channel": ch,
+            "name": alias,
+            "value": v,
+            "diff_24h": diff_24h,
+            "trend_icon": trend_icon,
+            "trend_text": trend_text,
+            "status": status_code,
+            "status_label": status_label,
+            "badge_class": badge_class
+        }
+
+    avg_moisture = round(sum(values_list) / len(values_list), 1) if values_list else None
+
+    return {
+        "has_sensors": len(channels_data) > 0,
+        "channels": channels_data,
+        "avg_moisture": avg_moisture,
+        "status": "optimal" if avg_moisture and avg_moisture >= settings.SOIL_MOISTURE_LOW_THRESHOLD else ("dry" if avg_moisture else "none"),
+        "status_text": "Umidità Ottimale" if avg_moisture and avg_moisture >= settings.SOIL_MOISTURE_LOW_THRESHOLD else ("Terreno Secco" if avg_moisture else "In attesa dati")
+    }
+
 

@@ -9,12 +9,78 @@
     <a href="/api/export/records-csv" class="btn btn-gold" style="padding: 0.6rem 1.2rem;">📥 Esporta Record in Excel</a>
 </div>
 
+<!-- SEZIONE NOTTI TROPICALI & CLIMATOLOGIA -->
+<div class="card" style="margin-top: 1.2rem; background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(245, 158, 11, 0.06) 50%, var(--bg-card) 100%); border-left: 4px solid #f97316;">
+    <div class="card-header" style="border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.8rem; margin-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <span style="font-size: 1.5rem;">🌴</span>
+            <div>
+                <strong style="font-size: 1.1rem; color: #f97316;">Climatologia Notti Tropicali (Anno {{ tropical_stats.year }})</strong>
+                <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Standard OMM/WMO: Minima notturna/giornaliera &ge; 20.0°C • Notti Roventi &ge; 25.0°C</p>
+            </div>
+        </div>
+        {% if tropical_stats.today_is_tropical %}
+        <span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); font-size: 0.8rem; padding: 4px 10px;">
+            🔥 Notte Tropicale Oggi
+        </span>
+        {% endif %}
+    </div>
+
+    <!-- KPI NOTTI TROPICALI -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.8rem; margin-bottom: 1.2rem;">
+        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
+            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Notti Tropicali (&ge;20°)</span>
+            <div style="font-size: 1.8rem; font-weight: 800; color: #f97316; margin-top: 4px;">{{ tropical_stats.total_tropical_nights }}</div>
+            <span style="font-size: 0.75rem; color: var(--text-dim);">nell'anno {{ tropical_stats.year }}</span>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
+            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Notti Roventi (&ge;25°)</span>
+            <div style="font-size: 1.8rem; font-weight: 800; color: #ef4444; margin-top: 4px;">{{ tropical_stats.total_super_tropical_nights }}</div>
+            <span style="font-size: 0.75rem; color: var(--text-dim);">caldo estremo notturno</span>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
+            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Serie Consecutiva (Streak)</span>
+            <div style="font-size: 1.8rem; font-weight: 800; color: #eab308; margin-top: 4px;">
+                {{ tropical_stats.current_streak }}<span style="font-size: 1rem; font-weight: normal; color: var(--text-dim);"> gg</span>
+            </div>
+            <span style="font-size: 0.75rem; color: var(--text-dim);">Record anno: <strong>{{ tropical_stats.max_streak }} gg</strong></span>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
+            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Minima Più Alta</span>
+            <div style="font-size: 1.8rem; font-weight: 800; color: #ec4899; margin-top: 4px;">
+                {% if tropical_stats.highest_min_temp is not none %}{{ tropical_stats.highest_min_temp }}°C{% else %}--{% endif %}
+            </div>
+            <span style="font-size: 0.75rem; color: var(--text-dim);">{% if tropical_stats.highest_min_day %}{{ tropical_stats.highest_min_day }}{% else %}In attesa dati{% endif %}</span>
+        </div>
+    </div>
+
+    <!-- DISTRIBUZIONE MENSILE -->
+    <div style="background: rgba(0,0,0,0.2); padding: 0.8rem 1rem; border-radius: 8px;">
+        <span style="font-size: 0.82rem; font-weight: 600; color: var(--text-dim); display: block; margin-bottom: 0.5rem;">
+            📅 Ripartizione Mensile Notti Tropicali:
+        </span>
+        <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+            {% for m in tropical_stats.monthly_stats %}
+            <div style="flex: 1 1 80px; background: rgba(255,255,255,0.04); padding: 6px 10px; border-radius: 6px; text-align: center; border: 1px solid rgba(255,255,255,0.04);">
+                <div style="font-size: 0.74rem; color: var(--text-dim);">{{ m.name }}</div>
+                <div style="font-size: 1.1rem; font-weight: 700; color: {% if m.count > 0 %}#f97316{% else %}var(--text-muted){% endif %}; margin-top: 2px;">
+                    {{ m.count }}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
 <!-- CATEGORIE RECORD -->
-<h2 style="font-size: 1.3rem; margin-top: 1rem; color: var(--accent);">📊 Record Assoluti in Vigore</h2>
+<h2 style="font-size: 1.3rem; margin-top: 1.5rem; color: var(--accent);">📊 Record Assoluti in Vigore</h2>
 
 <div class="grid">
     {% for r in records %}
-    <div class="card" style="border-left: 4px solid {% if r.category == 'temperature' %}#ef4444{% elif r.category == 'wind' %}#f59e0b{% elif r.category == 'rain' %}#38bdf8{% elif r.category == 'pressure' %}#8b5cf6{% elif r.category == 'lightning' %}#eab308{% else %}#10b981{% endif %};">
+    <div class="card" style="border-left: 4px solid {% if r.key == 'temp_min_highest' %}#f97316{% elif r.category == 'temperature' %}#ef4444{% elif r.category == 'wind' %}#f59e0b{% elif r.category == 'rain' %}#38bdf8{% elif r.category == 'pressure' %}#8b5cf6{% elif r.category == 'lightning' %}#eab308{% else %}#10b981{% endif %};">
         <div class="card-header">
             <span>{{ r.title }}</span>
             <span style="font-size: 0.75rem; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.06); color: var(--text-dim);">
@@ -34,6 +100,9 @@
             </div>
             {% if r.details and r.details.dir %}
             <div class="item"><span>Direzione associata:</span> <strong>{{ r.details.dir }}</strong></div>
+            {% endif %}
+            {% if r.details and r.details.date %}
+            <div class="item"><span>Data evento:</span> <strong>{{ r.details.date }}</strong></div>
             {% endif %}
             {% if r.details and r.details.count %}
             <div class="item"><span>Scariche associate:</span> <strong>{{ r.details.count }}</strong></div>

@@ -34,6 +34,7 @@ from backend.database import (
     get_sensor_aliases, save_sensor_alias, get_database_stats, perform_database_maintenance,
     get_unread_alerts_count, mark_alert_as_read, mark_all_alerts_as_read,
     delete_alert_log, clear_all_alert_logs, get_alerts_stats,
+    get_tropical_nights_stats, get_soil_moisture_summary,
     to_local_datetime_str, DB_PATH
 )
 from backend.analytics import (
@@ -333,6 +334,9 @@ def build_analytics_context(latest: dict) -> dict:
         zambretti=zambretti
     )
 
+    tropical_nights = get_tropical_nights_stats()
+    soil_summary = get_soil_moisture_summary()
+
     return {
         "current_condition": current_cond,
         "zambretti": zambretti,
@@ -346,6 +350,8 @@ def build_analytics_context(latest: dict) -> dict:
         "today_extremes": today_ext,
         "yesterday_comparison": yesterday_cmp,
         "rain_totals": rain_totals,
+        "tropical_nights": tropical_nights,
+        "soil_summary": soil_summary,
         "sun_ephemeris": sun_info,
         "moon_phase": moon_info,
         "dew_point_c": dew_point,
@@ -433,6 +439,16 @@ async def api_search(start_date: Optional[str] = None, end_date: Optional[str] =
 @app.get("/api/search/kpis")
 async def api_search_kpis(start_date: Optional[str] = None, end_date: Optional[str] = None):
     return get_history_kpis(start_date=start_date, end_date=end_date)
+
+@app.get("/api/climate/tropical-nights")
+async def api_climate_tropical_nights(year: Optional[int] = None):
+    """Restituisce le statistiche climatologiche delle notti tropicali e roventi."""
+    return get_tropical_nights_stats(year=year)
+
+@app.get("/api/soil/summary")
+async def api_soil_summary():
+    """Restituisce lo stato, trend e salute dei sensori di umidità del suolo WH51."""
+    return get_soil_moisture_summary()
 
 @app.get("/api/export/csv")
 async def api_export_csv(start_date: Optional[str] = None, end_date: Optional[str] = None):
@@ -1362,6 +1378,8 @@ async def devices_page(request: Request):
 async def records_page(request: Request):
     records = get_all_records()
     history = get_records_history(limit=30)
+    tropical_stats = get_tropical_nights_stats()
+    soil_summary = get_soil_moisture_summary()
     return templates.TemplateResponse(
         request=request,
         name="records.html",
@@ -1369,7 +1387,9 @@ async def records_page(request: Request):
             "active_page": "records",
             "title": "Albo dei Record • Weather Hub",
             "records": records,
-            "history": history
+            "history": history,
+            "tropical_stats": tropical_stats,
+            "soil_summary": soil_summary
         }
     )
 

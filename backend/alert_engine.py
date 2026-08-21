@@ -471,20 +471,37 @@ class AlertEngine:
 
         # 5. Verifica soglia umidità per ciascun canale suolo
         for channel, value in soil.items():
-            if value is not None and value <= settings.SOIL_MOISTURE_LOW_THRESHOLD:
+            if value is None:
+                continue
+            sensor_name = aliases.get(f"soil_{channel}") or aliases.get(channel) or f"Sensore Terreno ({channel})"
+            
+            if value <= settings.SOIL_MOISTURE_LOW_THRESHOLD:
                 last_time = self.last_soil_alert.get(channel, 0.0)
                 if (now - last_time) >= (settings.SOIL_MOISTURE_COOLDOWN_MIN * 60):
                     self.last_soil_alert[channel] = now
                     self._save_state()
                     
-                    sensor_name = aliases.get(f"soil_{channel}") or aliases.get(channel) or f"Sensore Terreno ({channel})"
-                    msg = f"L'umidità di '{sensor_name}' è scesa al {value}% (soglia minima impostata: {settings.SOIL_MOISTURE_LOW_THRESHOLD}%). Nessuna pioggia prevista a breve.{advice_timing}"
+                    msg = f"L'umidità di '{sensor_name}' è scesa al {value}% (soglia minima: {settings.SOIL_MOISTURE_LOW_THRESHOLD}%). Nessuna pioggia prevista a breve.{advice_timing}"
                     
                     notifier.send_alert(
                         alert_type="soil_dry",
                         title=f"🌱 Annaffia: {sensor_name}",
                         message=msg,
                         priority="normal",
+                        extra_data={"channel": channel, "moisture": str(value), "sensor_name": sensor_name}
+                    )
+            elif value >= (settings.SOIL_MOISTURE_LOW_THRESHOLD + 15.0):
+                # Se era stato inviato un allarme di secca recente (< 24h), notifica il ripristino
+                last_time = self.last_soil_alert.get(channel, 0.0)
+                if last_time > 0 and (now - last_time) < (24 * 3600):
+                    # Ripristino idrico
+                    self.last_soil_alert[channel] = 0.0
+                    self._save_state()
+                    notifier.send_alert(
+                        alert_type="soil_recovered",
+                        title=f"💧 Terreno Irrigato: {sensor_name}",
+                        message=f"L'umidità di '{sensor_name}' è risalita al {value}% (condizione ottimale).",
+                        priority="low",
                         extra_data={"channel": channel, "moisture": str(value), "sensor_name": sensor_name}
                     )
 
@@ -731,7 +748,11 @@ class AlertEngine:
         """
         Genera e invia il report del mattino 'Buongiorno Meteo'.
         """
-        from backend.database import get_latest_reading, get_today_extremes, get_yesterday_same_time, get_pressure_trend
+        from backend.database import (
+            get_latest_reading, get_today_extremes, get_yesterday_same_time,
+            get_pressure_trend, get_tropical_nights_stats, get_soil_moisture_summary,
+            check_and_update_records
+        )
         from backend.analytics import calc_zambretti_forecast, abs_to_rel_pressure, evaluate_window_ventilation, evaluate_laundry_index, calc_sun_ephemeris
 
         latest = get_latest_reading() or {}
@@ -749,8 +770,20 @@ class AlertEngine:
             latest.get("solar_radiation"), latest.get("rain_rate_mm_hr")
         )
 
+        tropical_stats = get_tropical_nights_stats()
+        soil_summary = get_soil_moisture_summary()
+
+        # Verifica e aggiorna record Minima Più Alta (Notte Tropicale) se applicabile
+        min_t_val = today_ext.get("temp_min")
+        if min_t_val is not None and min_t_val >= settings.TROPICAL_NIGHT_TEMP_THRESHOLD_C:
+            check_and_update_records({
+                "temp_min_highest": min_t_val,
+                "temp_min_highest_date": settings.now_local().strftime("%Y-%m-%d"),
+                "timestamp": latest.get("timestamp")
+            })
+
         # Costruisci messaggio
-        min_txt = f"Minima: {today_ext['temp_min']}°C" if today_ext.get("temp_min") is not None else ""
+        min_txt = f"Minima: {min_t_val}°C" if min_t_val is not None else ""
         if today_ext.get("temp_min_time"):
             min_txt += f" (alle {today_ext['temp_min_time']})"
 
@@ -758,11 +791,26 @@ class AlertEngine:
         if yesterday_cmp.get("diff_c") is not None:
             cur_txt += f" ({yesterday_cmp['text']})"
 
+        # Riga Notte Tropicale (se la minima odierna è >= soglia o ieri notte)
+        tropical_line = ""
+        if min_t_val is not None and min_t_val >= settings.SUPER_TROPICAL_NIGHT_TEMP_THRESHOLD_C:
+            tropical_line = f"🔥 Notte Rovente! Minima di {min_t_val}°C (N° {tropical_stats['total_super_tropical_nights']} dell'anno)"
+        elif min_t_val is not None and min_t_val >= settings.TROPICAL_NIGHT_TEMP_THRESHOLD_C:
+            streak_txt = f" • {tropical_stats['current_streak']}° giorno consecutivo" if tropical_stats.get('current_streak', 0) > 1 else ""
+            tropical_line = f"🌴 Notte Tropicale: Minima non scesa sotto {min_t_val}°C (N° {tropical_stats['total_tropical_nights']} dell'anno{streak_txt})"
+
+        # Riga Terreno (se presenti sensori WH51)
+        soil_line = ""
+        if soil_summary.get("has_sensors") and soil_summary.get("avg_moisture") is not None:
+            soil_line = f"🌱 Terreno: Umidità {soil_summary['avg_moisture']}% ({soil_summary['status_text']})"
+
         lines = [
             f"🌅 {forecast['icon']} {forecast['text']}",
             f"🌡️ {cur_txt} • {min_txt}",
+            tropical_line,
             f"☀️ Alba: {sun['sunrise']} • Tramonto: {sun['sunset']} ({sun['daylight_duration']} di luce)",
-            f"{laundry['icon']} Panni: {laundry['title']} ({laundry['time_estimate']})"
+            f"{laundry['icon']} Panni: {laundry['title']} ({laundry['time_estimate']})",
+            soil_line
         ]
 
         title = "☕ Buongiorno Meteo!"
