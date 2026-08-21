@@ -6514,6 +6514,328 @@ body {
     color: #fff;
 }
 
+/* ========================================================
+   MODALITÀ KIOSK (GOOGLE NEST HUB / TABLET / SMART DISPLAY)
+   ======================================================== */
+.kiosk-body {
+    margin: 0;
+    padding: 0;
+    background: radial-gradient(circle at 50% 20%, #111827 0%, #070a12 100%);
+    color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.kiosk-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+    padding: 10px 16px;
+    box-sizing: border-box;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.kiosk-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(15, 23, 42, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    padding: 6px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.kiosk-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.kiosk-logo {
+    border-radius: 8px;
+}
+
+.kiosk-station-name {
+    font-weight: 800;
+    font-size: 1.05rem;
+    color: #fff;
+    letter-spacing: -0.01em;
+}
+
+.kiosk-location-name {
+    font-size: 0.78rem;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.kiosk-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    animation: livePulse 1.8s infinite;
+    display: inline-block;
+}
+
+.kiosk-clock-center {
+    text-align: center;
+}
+
+.kiosk-time {
+    font-size: 1.85rem;
+    font-weight: 800;
+    color: #38bdf8;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    line-height: 1.1;
+}
+
+.kiosk-date {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #cbd5e1;
+}
+
+.kiosk-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kiosk-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #e2e8f0;
+    padding: 5px 10px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.kiosk-btn:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.kiosk-btn-exit {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+}
+
+.kiosk-main-grid {
+    display: grid;
+    grid-template-columns: 1.25fr 2fr;
+    gap: 12px;
+    flex: 1;
+    min-height: 0;
+}
+
+.kiosk-hero-card {
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.9) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.kiosk-hero-top {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.kiosk-weather-icon {
+    font-size: 4.2rem;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4));
+    animation: gentleFloat 4s ease-in-out infinite;
+}
+
+.kiosk-temp-wrap {
+    display: flex;
+    flex-direction: column;
+}
+
+.kiosk-temp-val {
+    font-size: 3.8rem;
+    font-weight: 900;
+    line-height: 1;
+    color: #ffffff;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+}
+
+.kiosk-temp-val small {
+    font-size: 1.6rem;
+    color: #38bdf8;
+    font-weight: 700;
+    margin-left: 4px;
+}
+
+.kiosk-condition-text {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #93c5fd;
+    margin-top: 4px;
+}
+
+.kiosk-extremes-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    background: rgba(0, 0, 0, 0.35);
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.kiosk-ext-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.kiosk-ext-lbl {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+}
+
+.kiosk-ext-val {
+    font-size: 1.15rem;
+    font-weight: 800;
+    margin-top: 2px;
+}
+
+.kiosk-ext-item.min .kiosk-ext-val { color: #38bdf8; }
+.kiosk-ext-item.max .kiosk-ext-val { color: #f87171; }
+.kiosk-ext-item.app .kiosk-ext-val { color: #fbbf24; }
+
+.kiosk-tiles-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.kiosk-tile {
+    background: rgba(30, 41, 59, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.kiosk-tile-hdr {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+}
+
+.kiosk-tile-val {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #ffffff;
+    margin: 2px 0;
+}
+
+.kiosk-tile-val small {
+    font-size: 0.88rem;
+    color: #94a3b8;
+    font-weight: 600;
+    margin-left: 3px;
+}
+
+.kiosk-tile-sub {
+    font-size: 0.75rem;
+    color: #cbd5e1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.kiosk-forecast-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    background: rgba(15, 23, 42, 0.7);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    padding: 8px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.kiosk-fc-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.kiosk-fc-day {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #e2e8f0;
+}
+
+.kiosk-fc-icon {
+    font-size: 1.4rem;
+}
+
+.kiosk-fc-temps {
+    display: flex;
+    gap: 6px;
+    font-weight: 800;
+    font-size: 0.9rem;
+}
+
+.kiosk-fc-temps .max { color: #f87171; }
+.kiosk-fc-temps .min { color: #38bdf8; }
+
+.kiosk-fc-rain {
+    font-size: 0.75rem;
+    color: #60a5fa;
+    font-weight: 600;
+}
+
+@media (max-width: 768px) {
+    .kiosk-main-grid {
+        grid-template-columns: 1fr;
+    }
+    .kiosk-tiles-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .kiosk-forecast-bar {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+
 
 
 

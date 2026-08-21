@@ -1426,6 +1426,38 @@ async def radar_page(request: Request):
         }
     )
 
+@app.get("/kiosk", response_class=HTMLResponse)
+async def kiosk_page(request: Request):
+    latest = get_latest_reading() or {}
+    analytics = build_analytics_context(latest)
+    forecast_data = forecast_service.fetch_open_meteo()
+    pressure_trend = latest.get("pressure_trend") or get_pressure_trend(latest.get("pressure_rel_hpa"))
+    apparent_temp = latest.get("apparent_temp_c") or calc_apparent_temp(latest.get("temp_c"), latest.get("humidity"), latest.get("wind_speed_kmh"))
+    energy_latest = aton_service.latest_data or get_latest_energy() or {}
+    status_info = get_station_status()
+    today_ext = analytics.get("today_extremes") or get_today_extremes()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="kiosk.html",
+        context={
+            "active_page": "kiosk",
+            "title": f"Meteo Display Kiosk • {settings.STATION_NAME}",
+            "latest": latest,
+            "station_name": settings.STATION_NAME,
+            "location_name": settings.LOCATION_NAME,
+            "apparent_temp": apparent_temp,
+            "pressure_trend": pressure_trend,
+            "analytics": analytics,
+            "today_extremes": today_ext,
+            "forecast": forecast_data,
+            "energy_latest": energy_latest,
+            "status_info": status_info,
+            "lat": settings.LATITUDE,
+            "lon": settings.LONGITUDE
+        }
+    )
+
 @app.get("/charts", response_class=HTMLResponse)
 async def charts_page(request: Request):
     return templates.TemplateResponse(

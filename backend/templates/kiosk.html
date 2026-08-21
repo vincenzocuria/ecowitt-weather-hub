@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{{ title or "Meteo Display Kiosk" }}</title>
+    
+    <!-- PWA & Display Settings -->
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#070a12">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
+    
+    <link rel="stylesheet" href="/static/css/style.css?v=4.5">
+</head>
+<body class="kiosk-body">
+    <div class="kiosk-container">
+        <!-- TOP HEADER: STAZIONE, OROLOGIO CENTRALE, CONTROLLI -->
+        <header class="kiosk-header">
+            <div class="kiosk-brand">
+                <img src="/static/icons/icon-192.png" alt="Logo" class="kiosk-logo" width="32" height="32">
+                <div>
+                    <div class="kiosk-station-name">{{ station_name or "Weather Hub" }}</div>
+                    <div class="kiosk-location-name">
+                        <span class="kiosk-live-dot"></span> {{ location_name or "Meteo Live" }}
+                    </div>
+                </div>
+            </div>
+
+            <!-- OROLOGIO GIGANTE & DATA -->
+            <div class="kiosk-clock-center">
+                <div class="kiosk-time" id="kiosk-clock">--:--:--</div>
+                <div class="kiosk-date" id="kiosk-date">Caricamento data...</div>
+            </div>
+
+            <!-- AZIONI RAPIDE: FULLSCREEN, RADAR, EXIT -->
+            <div class="kiosk-actions">
+                <a href="/radar" class="kiosk-btn" title="Apri Radar Pioggia">🌧️ Radar</a>
+                <button type="button" class="kiosk-btn" onclick="toggleKioskFullscreen()" id="btn-fs" title="Schermo Intero">⛶ Full</button>
+                <a href="/" class="kiosk-btn kiosk-btn-exit" title="Torna alla Dashboard">✕ Esci</a>
+            </div>
+        </header>
+
+        <!-- GRIGLIA PRINCIPALE MONITORAGGIO METEO -->
+        <main class="kiosk-main-grid">
+            <!-- 1. HERO CARD: METEO ESTERNO ATTUALE (GRANDE) -->
+            <div class="kiosk-card kiosk-hero-card">
+                <div class="kiosk-hero-top">
+                    <div class="kiosk-weather-icon" id="kiosk_hero_icon">{{ analytics.current_condition.icon if analytics and analytics.current_condition else '☀️' }}</div>
+                    <div class="kiosk-temp-wrap">
+                        <div class="kiosk-temp-val">
+                            <span id="kiosk_temp_val">{{ latest.temp_c if latest.temp_c is not none else '--' }}</span><small>°C</small>
+                        </div>
+                        <div class="kiosk-condition-text" id="kiosk_condition_text">
+                            {{ analytics.current_condition.text if analytics and analytics.current_condition else 'Rilevamento in corso' }}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="kiosk-hero-bottom">
+                    <div class="kiosk-extremes-row">
+                        <div class="kiosk-ext-item min">
+                            <span class="kiosk-ext-lbl">MIN OGGI</span>
+                            <span class="kiosk-ext-val" id="kiosk_temp_min">{{ today_extremes.temp_min.val if today_extremes and today_extremes.temp_min else '--' }}°</span>
+                        </div>
+                        <div class="kiosk-ext-item max">
+                            <span class="kiosk-ext-lbl">MAX OGGI</span>
+                            <span class="kiosk-ext-val" id="kiosk_temp_max">{{ today_extremes.temp_max.val if today_extremes and today_extremes.temp_max else '--' }}°</span>
+                        </div>
+                        <div class="kiosk-ext-item app">
+                            <span class="kiosk-ext-lbl">PERCEPITA</span>
+                            <span class="kiosk-ext-val" id="kiosk_apparent_val">{{ apparent_temp if apparent_temp is not none else '--' }}°</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. TELEMETRIA SENSORI (6 TILE COMPATTE AD ALTO CONTRASTO) -->
+            <div class="kiosk-tiles-grid">
+                <!-- TILE 1: UMIDITÀ & DEW POINT -->
+                <div class="kiosk-tile">
+                    <div class="kiosk-tile-hdr">
+                        <span class="kiosk-tile-icon">💧</span>
+                        <span class="kiosk-tile-title">Umidità Esterna</span>
+                    </div>
+                    <div class="kiosk-tile-val">
+                        <span id="kiosk_hum_val">{{ latest.humidity if latest.humidity is not none else '--' }}</span><small>%</small>
+                    </div>
+                    <div class="kiosk-tile-sub">
+                        Rugiada: <strong id="kiosk_dew_val">{{ analytics.dew_point_c if analytics and analytics.dew_point_c is not none else '--' }}°C</strong>
+                    </div>
+                </div>
+
+                <!-- TILE 2: PIOGGIA ODIERNA & RATEO -->
+                <div class="kiosk-tile">
+                    <div class="kiosk-tile-hdr">
+                        <span class="kiosk-tile-icon">🌧️</span>
+                        <span class="kiosk-tile-title">Pioggia Oggi</span>
+                    </div>
+                    <div class="kiosk-tile-val">
+                        <span id="kiosk_rain_val">{{ latest.daily_rain_mm if latest.daily_rain_mm is not none else '0.0' }}</span><small>mm</small>
+                    </div>
+                    <div class="kiosk-tile-sub">
+                        Tasso: <strong id="kiosk_rain_rate_val">{{ latest.rain_rate_mm_hr if latest.rain_rate_mm_hr is not none else '0.0' }} mm/h</strong>
+                    </div>
+                </div>
+
+                <!-- TILE 3: VENTO & RAFFICA -->
+                <div class="kiosk-tile">
+                    <div class="kiosk-tile-hdr">
+                        <span class="kiosk-tile-icon">💨</span>
+                        <span class="kiosk-tile-title">Vento</span>
+                    </div>
+                    <div class="kiosk-tile-val">
+                        <span id="kiosk_wind_val">{{ latest.wind_speed_kmh if latest.wind_speed_kmh is not none else '0.0' }}</span><small>km/h</small>
+                    </div>
+                    <div class="kiosk-tile-sub">
+                        Raffica: <strong id="kiosk_gust_val">{{ latest.wind_gust_kmh if latest.wind_gust_kmh is not none else '0.0' }} km/h</strong>
+                    </div>
+                </div>
+
+                <!-- TILE 4: BAROMETRO & TREND ZAMBRETTI -->
+                <div class="kiosk-tile">
+                    <div class="kiosk-tile-hdr">
+                        <span class="kiosk-tile-icon">⏱️</span>
+                        <span class="kiosk-tile-title">Barometro</span>
+                    </div>
+                    <div class="kiosk-tile-val">
+                        <span id="kiosk_press_val">{{ latest.pressure_rel_hpa if latest.pressure_rel_hpa is not none else '--' }}</span><small>hPa</small>
+                    </div>
+                    <div class="kiosk-tile-sub" id="kiosk_trend_sub">
+                        {{ pressure_trend.text if pressure_trend else 'Stabile' }}
+                    </div>
+                </div>
+
+                <!-- TILE 5: COMFORT INTERNO CASA -->
+                <div class="kiosk-tile">
+                    <div class="kiosk-tile-hdr">
+                        <span class="kiosk-tile-icon">🏠</span>
+                        <span class="kiosk-tile-title">Interno Casa</span>
+                    </div>
+                    <div class="kiosk-tile-val">
+                        <span id="kiosk_temp_in_val">{{ latest.temp_in_c if latest.temp_in_c is not none else '--' }}</span><small>°C</small>
+                    </div>
+                    <div class="kiosk-tile-sub">
+                        Umidità: <strong id="kiosk_hum_in_val">{{ latest.humidity_in if latest.humidity_in is not none else '--' }}%</strong>
+                    </div>
+                </div>
+
+                <!-- TILE 6: SOLE, UV & RADIAZIONE -->
+                <div class="kiosk-tile">
+                    <div class="kiosk-tile-hdr">
+                        <span class="kiosk-tile-icon">☀️</span>
+                        <span class="kiosk-tile-title">Radiazione & UV</span>
+                    </div>
+                    <div class="kiosk-tile-val">
+                        UV <span id="kiosk_uv_val">{{ latest.uv_index if latest.uv_index is not none else '0' }}</span>
+                    </div>
+                    <div class="kiosk-tile-sub">
+                        Solare: <strong id="kiosk_solar_val">{{ latest.solar_radiation if latest.solar_radiation is not none else '0' }} W/m²</strong>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- BARRA INFERIORE: PREVISIONI 4 GIORNI -->
+        <footer class="kiosk-forecast-bar">
+            {% if forecast and forecast.daily %}
+                {% for day in forecast.daily[:4] %}
+                <div class="kiosk-fc-item {% if loop.first %}is-today{% endif %}">
+                    <span class="kiosk-fc-day">{{ day.day_name }}</span>
+                    <span class="kiosk-fc-icon">{{ day.icon }}</span>
+                    <div class="kiosk-fc-temps">
+                        <span class="max">{{ day.temp_max }}°</span>
+                        <span class="min">{{ day.temp_min }}°</span>
+                    </div>
+                    <span class="kiosk-fc-rain">💧 {{ day.rain_prob_pct }}%</span>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div style="color: var(--text-dim); text-align: center; width: 100%; font-size: 0.9rem;">
+                    Previsioni Open-Meteo in caricamento...
+                </div>
+            {% endif %}
+        </footer>
+    </div>
+
+    <!-- JAVASCRIPT KIOSK: OROLOGIO LIVE, WAKELOCK, POLLING CONTINUO -->
+    <script>
+        // Orologio digitale in tempo reale
+        function updateClock() {
+            const now = new Date();
+            const timeEl = document.getElementById('kiosk-clock');
+            const dateEl = document.getElementById('kiosk-date');
+            
+            if (timeEl) {
+                timeEl.innerText = now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            }
+            if (dateEl) {
+                const options = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
+                let dateStr = now.toLocaleDateString('it-IT', options);
+                dateEl.innerText = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+            }
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // Screen WakeLock API per prevenire spegnimento display sul Nest Hub / Tablet
+        let wakeLock = null;
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log('Screen WakeLock attivo');
+                }
+            } catch (err) {
+                console.warn('WakeLock non supportato o bloccato:', err);
+            }
+        }
+        requestWakeLock();
+        document.addEventListener('visibilitychange', () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                requestWakeLock();
+            }
+        });
+
+        // Fullscreen Toggle
+        function toggleKioskFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(e => console.warn(e));
+                document.getElementById('btn-fs').innerText = "⛶ Norm";
+            } else {
+                document.exitFullscreen().catch(e => console.warn(e));
+                document.getElementById('btn-fs').innerText = "⛶ Full";
+            }
+        }
+
+        // Live Auto-Refresh Polling ogni 12 secondi
+        async function fetchLiveKioskData() {
+            try {
+                const resp = await fetch('/api/live');
+                if (!resp.ok) return;
+                const d = await resp.json();
+
+                // Aggiorna Meteo Eroe
+                if (d.temp_c !== undefined && d.temp_c !== null) {
+                    document.getElementById('kiosk_temp_val').innerText = d.temp_c;
+                }
+                if (d.apparent_temp_c !== undefined && d.apparent_temp_c !== null) {
+                    document.getElementById('kiosk_apparent_val').innerText = d.apparent_temp_c + "°";
+                }
+                if (d.analytics && d.analytics.current_condition) {
+                    const cond = d.analytics.current_condition;
+                    if (cond.icon) document.getElementById('kiosk_hero_icon').innerText = cond.icon;
+                    if (cond.text) document.getElementById('kiosk_condition_text').innerText = cond.text;
+                }
+
+                // Aggiorna Estremi di Oggi
+                if (d.analytics && d.analytics.today_extremes) {
+                    const ext = d.analytics.today_extremes;
+                    if (ext.temp_min && ext.temp_min.val !== null) {
+                        document.getElementById('kiosk_temp_min').innerText = ext.temp_min.val + "°";
+                    }
+                    if (ext.temp_max && ext.temp_max.val !== null) {
+                        document.getElementById('kiosk_temp_max').innerText = ext.temp_max.val + "°";
+                    }
+                }
+
+                // Aggiorna Tile Sensori
+                if (d.humidity !== undefined && d.humidity !== null) {
+                    document.getElementById('kiosk_hum_val').innerText = d.humidity;
+                }
+                if (d.dew_point_c !== undefined && d.dew_point_c !== null) {
+                    document.getElementById('kiosk_dew_val').innerText = d.dew_point_c + "°C";
+                }
+                if (d.daily_rain_mm !== undefined && d.daily_rain_mm !== null) {
+                    document.getElementById('kiosk_rain_val').innerText = d.daily_rain_mm;
+                }
+                if (d.rain_rate_mm_hr !== undefined && d.rain_rate_mm_hr !== null) {
+                    document.getElementById('kiosk_rain_rate_val').innerText = d.rain_rate_mm_hr + " mm/h";
+                }
+                if (d.wind_speed_kmh !== undefined && d.wind_speed_kmh !== null) {
+                    document.getElementById('kiosk_wind_val').innerText = d.wind_speed_kmh;
+                }
+                if (d.wind_gust_kmh !== undefined && d.wind_gust_kmh !== null) {
+                    document.getElementById('kiosk_gust_val').innerText = d.wind_gust_kmh + " km/h";
+                }
+                if (d.pressure_rel_hpa !== undefined && d.pressure_rel_hpa !== null) {
+                    document.getElementById('kiosk_press_val').innerText = d.pressure_rel_hpa;
+                }
+                if (d.pressure_trend && d.pressure_trend.text) {
+                    document.getElementById('kiosk_trend_sub').innerText = d.pressure_trend.text;
+                }
+                if (d.temp_in_c !== undefined && d.temp_in_c !== null) {
+                    document.getElementById('kiosk_temp_in_val').innerText = d.temp_in_c;
+                }
+                if (d.humidity_in !== undefined && d.humidity_in !== null) {
+                    document.getElementById('kiosk_hum_in_val').innerText = d.humidity_in + "%";
+                }
+                if (d.uv_index !== undefined && d.uv_index !== null) {
+                    document.getElementById('kiosk_uv_val').innerText = d.uv_index;
+                }
+                if (d.solar_radiation !== undefined && d.solar_radiation !== null) {
+                    document.getElementById('kiosk_solar_val').innerText = d.solar_radiation + " W/m²";
+                }
+            } catch (e) {
+                console.warn('Errore live kiosk update:', e);
+            }
+        }
+        setInterval(fetchLiveKioskData, 12000);
+    </script>
+</body>
+</html>

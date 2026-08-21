@@ -783,6 +783,11 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIn("STATION_LAT", r_radar.text)
         self.assertIn("RainViewer", r_radar.text)
 
+        r_kiosk = client.get("/kiosk")
+        self.assertEqual(r_kiosk.status_code, 200)
+        self.assertIn("kiosk-container", r_kiosk.text)
+        self.assertIn("kiosk-clock", r_kiosk.text)
+
         r_home = client.get("/")
         self.assertEqual(r_home.status_code, 200)
         self.assertIn("hero_tropical_pill", r_home.text)
