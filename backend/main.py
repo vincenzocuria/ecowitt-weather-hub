@@ -1431,7 +1431,7 @@ async def devices_page(request: Request):
 @app.get("/records", response_class=HTMLResponse)
 async def records_page(request: Request):
     records = get_all_records()
-    history = get_records_history(limit=30)
+    history = get_records_history(limit=100)
     tropical_stats = get_tropical_nights_stats()
     soil_summary = get_soil_moisture_summary()
     climate_stats = get_climate_comparisons()

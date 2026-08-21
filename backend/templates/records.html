@@ -196,48 +196,338 @@
     {% endfor %}
 </div>
 
-<!-- CRONOLOGIA DEI RECORD INFRANTI -->
-<div class="card" style="margin-top: 1.5rem;">
-    <div class="card-header">
-        <span>📜 Cronologia dei Record Infranti nel Tempo</span>
-        <span style="font-size: 0.85rem; color: var(--text-dim);">Storico degli eventi</span>
+<!-- CRONOLOGIA DEI RECORD INFRANTI (SOLO DESKTOP CON RICERCA E ORDINAMENTO) -->
+<div class="card desktop-only" style="margin-top: 1.5rem;" id="records-history-section">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.9rem; margin-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <span style="font-size: 1.5rem;">📜</span>
+            <div>
+                <strong style="font-size: 1.1rem; color: #f59e0b;">Cronologia dei Record Infranti nel Tempo</strong>
+                <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Storico dettagliato dei primati battuti e degli aggiornamenti registrati</p>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <span id="history-total-count" class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); font-size: 0.82rem; padding: 4px 10px;">
+                {{ history|length }} record registrati
+            </span>
+        </div>
     </div>
     
     {% if history %}
+    <!-- TOOLBAR RICERCA E FILTRI RAPIDI -->
+    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.8rem; margin-bottom: 1rem; background: rgba(0,0,0,0.25); padding: 0.8rem 1rem; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05);">
+        <!-- Barra di Ricerca -->
+        <div style="position: relative; flex: 1; min-width: 260px; max-width: 480px;">
+            <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 0.95rem; color: var(--text-dim); pointer-events: none;">🔍</span>
+            <input 
+                type="text" 
+                id="history-search-input" 
+                placeholder="Cerca per tipo, data, valore... (es. Raffica, 35.4, 2026)" 
+                style="width: 100%; padding: 0.55rem 2.2rem 0.55rem 2.4rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-size: 0.88rem; outline: none; transition: border-color 0.2s, box-shadow 0.2s;"
+                onfocus="this.style.borderColor='var(--accent)'; this.style.boxShadow='0 0 0 3px rgba(56, 189, 248, 0.15)';"
+                onblur="this.style.borderColor='var(--card-border)'; this.style.boxShadow='none';"
+            >
+            <button 
+                id="history-search-clear" 
+                type="button" 
+                onclick="clearHistorySearch()" 
+                style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-dim); font-size: 1rem; cursor: pointer; display: none; padding: 2px 6px; border-radius: 4px;"
+                title="Azzera ricerca"
+            >✕</button>
+        </div>
+
+        <!-- Categorie Rapide -->
+        <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+            <button class="history-filter-btn active" data-category="all" onclick="filterHistoryCategory('all', this)">Tutti</button>
+            <button class="history-filter-btn" data-category="temperature" onclick="filterHistoryCategory('temperature', this)">🌡️ Temperature</button>
+            <button class="history-filter-btn" data-category="wind" onclick="filterHistoryCategory('wind', this)">💨 Vento</button>
+            <button class="history-filter-btn" data-category="rain" onclick="filterHistoryCategory('rain', this)">🌧️ Pioggia</button>
+            <button class="history-filter-btn" data-category="pressure" onclick="filterHistoryCategory('pressure', this)">⏲️ Pressione</button>
+            <button class="history-filter-btn" data-category="lightning" onclick="filterHistoryCategory('lightning', this)">⚡ Fulmini</button>
+        </div>
+    </div>
+
+    <!-- TABELLA ORDINABILE -->
     <div class="table-responsive">
-        <table class="weather-table">
+        <table class="weather-table" id="history-table">
             <thead>
                 <tr>
-                    <th>Data & Ora</th>
-                    <th>Record</th>
-                    <th>Vecchio Valore</th>
-                    <th>Nuovo Record Battuto</th>
-                    <th>Dettagli</th>
+                    <th class="sortable-th active-sort" data-col="time" onclick="sortHistoryTable('time')" style="cursor: pointer; user-select: none;" title="Clicca per ordinare per Data">
+                        <div style="display: inline-flex; align-items: center; gap: 6px;">
+                            <span>Data & Ora</span> <span class="sort-icon" id="sort-icon-time">▼</span>
+                        </div>
+                    </th>
+                    <th class="sortable-th" data-col="title" onclick="sortHistoryTable('title')" style="cursor: pointer; user-select: none;" title="Clicca per ordinare per Tipologia Record">
+                        <div style="display: inline-flex; align-items: center; gap: 6px;">
+                            <span>Record</span> <span class="sort-icon" id="sort-icon-title">⇅</span>
+                        </div>
+                    </th>
+                    <th class="sortable-th" data-col="old_val" onclick="sortHistoryTable('old_val')" style="cursor: pointer; user-select: none;" title="Clicca per ordinare per Vecchio Valore">
+                        <div style="display: inline-flex; align-items: center; gap: 6px;">
+                            <span>Vecchio Valore</span> <span class="sort-icon" id="sort-icon-old_val">⇅</span>
+                        </div>
+                    </th>
+                    <th class="sortable-th" data-col="new_val" onclick="sortHistoryTable('new_val')" style="cursor: pointer; user-select: none;" title="Clicca per ordinare per Nuovo Valore Battuto">
+                        <div style="display: inline-flex; align-items: center; gap: 6px;">
+                            <span>Nuovo Record Battuto</span> <span class="sort-icon" id="sort-icon-new_val">⇅</span>
+                        </div>
+                    </th>
+                    <th class="sortable-th" data-col="details" onclick="sortHistoryTable('details')" style="cursor: pointer; user-select: none;" title="Clicca per ordinare per Dettagli">
+                        <div style="display: inline-flex; align-items: center; gap: 6px;">
+                            <span>Dettagli</span> <span class="sort-icon" id="sort-icon-details">⇅</span>
+                        </div>
+                    </th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="history-tbody">
                 {% for h in history %}
-                <tr>
-                    <td>{{ h.timestamp | local_dt }}</td>
-                    <td><strong>{{ h.title }}</strong></td>
-                    <td style="color: var(--text-muted);">
-                        {% if h.old_value is not none %}{{ h.old_value }} {{ h.unit }}{% else %}Prima registrazione{% endif %}
-                    </td>
-                    <td style="color: var(--gold); font-weight: 800;">
-                        {{ h.new_value }} {{ h.unit }}
+                <tr class="history-row" 
+                    data-category="{{ h.category or '' }}"
+                    data-time="{{ h.timestamp or '' }}"
+                    data-title="{{ h.title or '' }}"
+                    data-old-val="{{ h.old_value if h.old_value is not none else -999999 }}"
+                    data-new-val="{{ h.new_value if h.new_value is not none else 0 }}"
+                    data-details="{{ h.details.dir if (h.details and h.details.dir) else (h.details.count|string if (h.details and h.details.count) else '') }}"
+                    data-search="{{ h.title }} {{ h.timestamp | local_dt }} {{ h.old_value }} {{ h.new_value }} {{ h.unit }} {{ h.details.dir if (h.details and h.details.dir) else '' }}">
+                    <td>
+                        <div style="font-weight: 600; color: var(--text);">{{ h.timestamp | local_dt }}</div>
                     </td>
                     <td>
-                        {% if h.details and h.details.dir %}Vento da {{ h.details.dir }}{% else %}—{% endif %}
+                        <span class="badge" style="background: rgba(255,255,255,0.06); color: {% if h.category == 'temperature' %}#ef4444{% elif h.category == 'wind' %}#f59e0b{% elif h.category == 'rain' %}#38bdf8{% elif h.category == 'pressure' %}#8b5cf6{% elif h.category == 'lightning' %}#eab308{% else %}#10b981{% endif %}; font-size: 0.72rem; text-transform: uppercase; margin-right: 6px;">
+                            {{ h.category }}
+                        </span>
+                        <strong>{{ h.title }}</strong>
+                    </td>
+                    <td style="color: var(--text-muted);">
+                        {% if h.old_value is not none %}{{ h.old_value }} <span style="font-size: 0.8rem;">{{ h.unit }}</span>{% else %}<em>Prima registrazione</em>{% endif %}
+                    </td>
+                    <td>
+                        <span style="color: var(--gold); font-weight: 800; font-size: 1.05rem;">
+                            {{ h.new_value }}
+                        </span>
+                        <span style="font-size: 0.82rem; color: var(--text-dim); font-weight: 600; margin-left: 2px;">{{ h.unit }}</span>
+                    </td>
+                    <td>
+                        {% if h.details and h.details.dir %}
+                        <span style="display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.04); padding: 2px 8px; border-radius: 4px; font-size: 0.85rem;">
+                            💨 Vento da <strong>{{ h.details.dir }}</strong>
+                        </span>
+                        {% elif h.details and h.details.count %}
+                        <span style="display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.04); padding: 2px 8px; border-radius: 4px; font-size: 0.85rem;">
+                            ⚡ {{ h.details.count }} scariche
+                        </span>
+                        {% else %}
+                        <span style="color: var(--text-muted);">—</span>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+
+    <!-- RIGA NESSUN RISULTATO RICERCA -->
+    <div id="history-no-results" style="display: none; padding: 2.5rem 1rem; text-align: center;">
+        <div style="font-size: 2.2rem; margin-bottom: 0.5rem; opacity: 0.7;">🔍</div>
+        <div style="font-weight: 700; color: var(--text); font-size: 1.05rem;">Nessun record trovato</div>
+        <p style="color: var(--text-dim); font-size: 0.88rem; margin-top: 4px;">Nessun evento della cronologia corrisponde ai filtri selezionati.</p>
+        <button type="button" onclick="clearHistorySearch(true)" class="btn btn-primary" style="margin-top: 1rem; padding: 0.45rem 1rem; font-size: 0.85rem;">
+            Azzera ricerca e filtri
+        </button>
+    </div>
+
     {% else %}
     <p style="color: var(--text-dim); padding: 1.5rem; text-align: center;">
         Nessun record infranto finora. I nuovi primati registrati dalla stazione appariranno qui automaticamente con data e vecchio valore sostituito.
     </p>
     {% endif %}
 </div>
+
+<style>
+.history-filter-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-dim);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.history-filter-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+.history-filter-btn.active {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: #38bdf8;
+    color: #38bdf8;
+}
+.sortable-th {
+    transition: background 0.2s ease, color 0.2s ease;
+}
+.sortable-th:hover {
+    background: rgba(56, 189, 248, 0.08) !important;
+    color: var(--accent) !important;
+}
+.sort-icon {
+    display: inline-block;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+.sortable-th.active-sort .sort-icon {
+    color: #f59e0b;
+    font-weight: bold;
+}
+</style>
+
+<script>
+(function() {
+    let currentCategory = 'all';
+    let currentSortCol = 'time';
+    let currentSortOrder = 'desc';
+
+    const searchInput = document.getElementById('history-search-input');
+    const searchClearBtn = document.getElementById('history-search-clear');
+    const tbody = document.getElementById('history-tbody');
+    const noResultsDiv = document.getElementById('history-no-results');
+    const totalCountBadge = document.getElementById('history-total-count');
+
+    window.filterHistoryCategory = function(cat, btnElem) {
+        currentCategory = cat;
+        document.querySelectorAll('.history-filter-btn').forEach(b => b.classList.remove('active'));
+        if (btnElem) btnElem.classList.add('active');
+        applyFiltersAndSearch();
+    };
+
+    window.clearHistorySearch = function(resetCategory) {
+        if (searchInput) {
+            searchInput.value = '';
+            if (searchClearBtn) searchClearBtn.style.display = 'none';
+        }
+        if (resetCategory) {
+            currentCategory = 'all';
+            document.querySelectorAll('.history-filter-btn').forEach(b => {
+                b.classList.toggle('active', b.getAttribute('data-category') === 'all');
+            });
+        }
+        applyFiltersAndSearch();
+    };
+
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            if (searchClearBtn) {
+                searchClearBtn.style.display = this.value.trim() ? 'block' : 'none';
+            }
+            applyFiltersAndSearch();
+        });
+    }
+
+    function applyFiltersAndSearch() {
+        if (!tbody) return;
+        const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
+        const rows = Array.from(tbody.querySelectorAll('.history-row'));
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            const rowCat = (row.getAttribute('data-category') || '').toLowerCase();
+            const searchData = (row.getAttribute('data-search') || '').toLowerCase();
+
+            const matchCat = (currentCategory === 'all' || rowCat === currentCategory);
+            const matchQuery = !query || searchData.includes(query);
+
+            if (matchCat && matchQuery) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+
+        if (noResultsDiv) {
+            noResultsDiv.style.display = (visibleCount === 0 && rows.length > 0) ? 'block' : 'none';
+        }
+
+        const table = document.getElementById('history-table');
+        if (table) {
+            table.style.display = visibleCount === 0 ? 'none' : '';
+        }
+
+        if (totalCountBadge) {
+            if (query || currentCategory !== 'all') {
+                totalCountBadge.textContent = `${visibleCount} di ${rows.length} record`;
+            } else {
+                totalCountBadge.textContent = `${rows.length} record registrati`;
+            }
+        }
+    }
+
+    window.sortHistoryTable = function(col) {
+        if (currentSortCol === col) {
+            currentSortOrder = (currentSortOrder === 'asc') ? 'desc' : 'asc';
+        } else {
+            currentSortCol = col;
+            currentSortOrder = (col === 'time' || col === 'new_val' || col === 'old_val') ? 'desc' : 'asc';
+        }
+
+        updateSortIndicators();
+        applySorting();
+    };
+
+    function updateSortIndicators() {
+        const cols = ['time', 'title', 'old_val', 'new_val', 'details'];
+        cols.forEach(c => {
+            const th = document.querySelector(`.sortable-th[data-col="${c}"]`);
+            const icon = document.getElementById(`sort-icon-${c}`);
+            if (th && icon) {
+                if (c === currentSortCol) {
+                    th.classList.add('active-sort');
+                    icon.textContent = currentSortOrder === 'asc' ? '▲' : '▼';
+                } else {
+                    th.classList.remove('active-sort');
+                    icon.textContent = '⇅';
+                }
+            }
+        });
+    }
+
+    function applySorting() {
+        if (!tbody) return;
+        const rows = Array.from(tbody.querySelectorAll('.history-row'));
+
+        rows.sort((a, b) => {
+            let valA, valB;
+            if (currentSortCol === 'time') {
+                valA = a.getAttribute('data-time') || '';
+                valB = b.getAttribute('data-time') || '';
+                return currentSortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            } else if (currentSortCol === 'old_val') {
+                valA = parseFloat(a.getAttribute('data-old-val')) || -999999;
+                valB = parseFloat(b.getAttribute('data-old-val')) || -999999;
+                return currentSortOrder === 'asc' ? valA - valB : valB - valA;
+            } else if (currentSortCol === 'new_val') {
+                valA = parseFloat(a.getAttribute('data-new-val')) || 0;
+                valB = parseFloat(b.getAttribute('data-new-val')) || 0;
+                return currentSortOrder === 'asc' ? valA - valB : valB - valA;
+            } else if (currentSortCol === 'title') {
+                valA = (a.getAttribute('data-title') || '').toLowerCase();
+                valB = (b.getAttribute('data-title') || '').toLowerCase();
+                return currentSortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            } else if (currentSortCol === 'details') {
+                valA = (a.getAttribute('data-details') || '').toLowerCase();
+                valB = (b.getAttribute('data-details') || '').toLowerCase();
+                return currentSortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            }
+            return 0;
+        });
+
+        rows.forEach(r => tbody.appendChild(r));
+    }
+
+    // Set initial sorting state indicator
+    updateSortIndicators();
+})();
+</script>
 {% endblock %}
