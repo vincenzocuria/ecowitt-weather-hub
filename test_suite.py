@@ -781,6 +781,28 @@ class TestEcowittHub(unittest.TestCase):
         self.assertEqual(r_home.status_code, 200)
         self.assertIn("hero_tropical_pill", r_home.text)
 
+        # 8. Test alert engine soil dry & soil wet
+        from backend.alert_engine import AlertEngine
+        test_engine = AlertEngine()
+        test_engine.last_soil_alert = {}
+        test_engine.last_soil_wet_alert = {}
+
+        # Terreno troppo umido / saturo
+        test_engine._check_soil_moisture({
+            "soil_moisture": {"ch1": 85.0},
+            "rain_rate_mm_hr": 0.0,
+            "daily_rain_mm": 0.0
+        }, now=100000.0)
+        self.assertIn("ch1", test_engine.last_soil_wet_alert)
+
+        # Terreno secco
+        test_engine._check_soil_moisture({
+            "soil_moisture": {"ch2": 12.0},
+            "rain_rate_mm_hr": 0.0,
+            "daily_rain_mm": 0.0
+        }, now=100000.0)
+        self.assertIn("ch2", test_engine.last_soil_alert)
+
 
 if __name__ == "__main__":
     unittest.main()

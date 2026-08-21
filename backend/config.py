@@ -25,6 +25,7 @@ class Settings:
     
     # Soglie Allarmi Standard
     SOIL_MOISTURE_LOW_THRESHOLD: float = float(os.getenv("SOIL_MOISTURE_LOW_THRESHOLD", "25.0"))
+    SOIL_MOISTURE_HIGH_THRESHOLD: float = float(os.getenv("SOIL_MOISTURE_HIGH_THRESHOLD", "75.0"))
     LIGHTNING_MAX_DISTANCE_KM: float = float(os.getenv("LIGHTNING_MAX_DISTANCE_KM", "30.0"))
     TEMP_FREEZE_THRESHOLD_C: float = float(os.getenv("TEMP_FREEZE_THRESHOLD_C", "1.0"))
     TEMP_HEAT_THRESHOLD_C: float = float(os.getenv("TEMP_HEAT_THRESHOLD_C", "38.0"))

@@ -18,6 +18,7 @@ class AlertEngine:
         self.last_lightning_count = 0
         self.last_lightning_alert = 0.0
         self.last_soil_alert: Dict[str, float] = {}
+        self.last_soil_wet_alert: Dict[str, float] = {}
         self.last_freeze_alert = 0.0
         self.last_heat_alert = 0.0
         self.last_rain_alert = 0.0
@@ -70,6 +71,7 @@ class AlertEngine:
                 "last_lightning_count": self.last_lightning_count,
                 "last_lightning_alert": self.last_lightning_alert,
                 "last_soil_alert": self.last_soil_alert,
+                "last_soil_wet_alert": self.last_soil_wet_alert,
                 "last_freeze_alert": self.last_freeze_alert,
                 "last_heat_alert": self.last_heat_alert,
                 "last_rain_alert": self.last_rain_alert,
@@ -117,6 +119,7 @@ class AlertEngine:
                 self.last_lightning_count = data.get("last_lightning_count", self.last_lightning_count)
                 self.last_lightning_alert = data.get("last_lightning_alert", self.last_lightning_alert)
                 self.last_soil_alert = data.get("last_soil_alert", self.last_soil_alert)
+                self.last_soil_wet_alert = data.get("last_soil_wet_alert", self.last_soil_wet_alert)
                 self.last_freeze_alert = data.get("last_freeze_alert", self.last_freeze_alert)
                 self.last_heat_alert = data.get("last_heat_alert", self.last_heat_alert)
                 self.last_rain_alert = data.get("last_rain_alert", self.last_rain_alert)
@@ -475,6 +478,7 @@ class AlertEngine:
                 continue
             sensor_name = aliases.get(f"soil_{channel}") or aliases.get(channel) or f"Sensore Terreno ({channel})"
             
+            # Caso A: Terreno Secco (sotto soglia minima)
             if value <= settings.SOIL_MOISTURE_LOW_THRESHOLD:
                 last_time = self.last_soil_alert.get(channel, 0.0)
                 if (now - last_time) >= (settings.SOIL_MOISTURE_COOLDOWN_MIN * 60):
@@ -490,11 +494,27 @@ class AlertEngine:
                         priority="normal",
                         extra_data={"channel": channel, "moisture": str(value), "sensor_name": sensor_name}
                     )
-            elif value >= (settings.SOIL_MOISTURE_LOW_THRESHOLD + 15.0):
-                # Se era stato inviato un allarme di secca recente (< 24h), notifica il ripristino
+            # Caso B: Terreno Troppo Umido / Saturo / Rischio Ristagno (sopra soglia massima)
+            elif value >= settings.SOIL_MOISTURE_HIGH_THRESHOLD:
+                last_wet_time = self.last_soil_wet_alert.get(channel, 0.0)
+                if (now - last_wet_time) >= (settings.SOIL_MOISTURE_COOLDOWN_MIN * 60):
+                    self.last_soil_wet_alert[channel] = now
+                    self._save_state()
+
+                    msg = f"L'umidità di '{sensor_name}' è salita al {value}% (soglia di saturazione: {settings.SOIL_MOISTURE_HIGH_THRESHOLD}%). Rischio ristagno idrico ed asfissia radicale; sospendi l'irrigazione."
+
+                    notifier.send_alert(
+                        alert_type="soil_wet",
+                        title=f"⚠️ Terreno Troppo Umido: {sensor_name}",
+                        message=msg,
+                        priority="normal",
+                        extra_data={"channel": channel, "moisture": str(value), "sensor_name": sensor_name}
+                    )
+            # Caso C: Ripristino Condizione Ottimale
+            elif settings.SOIL_MOISTURE_LOW_THRESHOLD < value < settings.SOIL_MOISTURE_HIGH_THRESHOLD:
+                # Ripristino da secca
                 last_time = self.last_soil_alert.get(channel, 0.0)
                 if last_time > 0 and (now - last_time) < (24 * 3600):
-                    # Ripristino idrico
                     self.last_soil_alert[channel] = 0.0
                     self._save_state()
                     notifier.send_alert(
@@ -504,6 +524,10 @@ class AlertEngine:
                         priority="low",
                         extra_data={"channel": channel, "moisture": str(value), "sensor_name": sensor_name}
                     )
+                # Reset allarme terreno saturo
+                if self.last_soil_wet_alert.get(channel, 0.0) > 0:
+                    self.last_soil_wet_alert[channel] = 0.0
+                    self._save_state()
 
     def _check_temperatures(self, data: Dict[str, Any], now: float):
         temp = data.get("temp_c")
