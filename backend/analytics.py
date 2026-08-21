@@ -1,7 +1,7 @@
 import math
 from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List, Union
 
 def get_station_tz(tz_name: Optional[str] = None) -> Any:
     """Restituisce il fuso orario configurato (default da settings.get_tz())."""
