@@ -85,6 +85,7 @@ body {
 }
 .nav-links {
     display: flex;
+    align-items: center;
     gap: 0.35rem;
     flex-wrap: wrap;
 }
@@ -96,6 +97,11 @@ body {
     font-size: 0.88rem;
     font-weight: 600;
     transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.2;
+    border-bottom: 2px solid transparent;
 }
 .nav-link:hover, .nav-link.active {
     color: #fff;

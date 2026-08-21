@@ -1,30 +1,72 @@
 {% extends "base.html" %}
 
 {% block content %}
+<!-- HEADER CARD -->
 <div class="header-card">
     <div class="header-title">
         <h1>⚙️ Impostazioni & Centro di Controllo</h1>
-        <p>Configura notifiche push, diagnostica hardware, manutenzione database SQLite, sensori e sicurezza.</p>
+        <p>Configura notifiche push, catalogo allarmi, sensori extra, domotica Smart Life e manutenzione del sistema.</p>
     </div>
-    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-        <a href="/api/system/backup" class="btn btn-gold" style="padding: 0.6rem 1.2rem; text-decoration: none;" download>💾 Scarica Backup DB</a>
-        <a href="/alerts-page" class="btn btn-outline" style="padding: 0.6rem 1.2rem; text-decoration: none;">🔔 Vai al Centro Notifiche</a>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+        <a href="/api/system/backup" class="btn btn-gold" style="padding: 0.6rem 1.15rem; text-decoration: none;" download title="Scarica una copia di backup dell'intero database SQLite">
+            💾 Scarica Backup DB
+        </a>
+        <a href="/alerts-page" class="btn btn-outline" style="padding: 0.6rem 1.15rem; text-decoration: none;" title="Vai al registro storico delle notifiche">
+            🔔 Registro Notifiche
+        </a>
     </div>
 </div>
 
-<div class="grid">
-    <!-- 1. NOTIFICHE PUSH NATIVE PWA & CANALI (UNIFICATO) -->
-    <div class="card" id="notifications" style="grid-column: 1 / -1; border: 1px solid var(--accent); background: linear-gradient(145deg, rgba(56, 189, 248, 0.05), var(--card-bg));">
+<!-- BARRA DI NAVIGAZIONE TAB IMPOSTAZIONI (ALLINEATA & RESPONSIVE) -->
+<div class="settings-tab-bar" id="settingsTabBar" role="tablist">
+    <button type="button" class="settings-tab-btn active" data-tab="notifications" onclick="switchSettingsTab('notifications', this)" role="tab" aria-selected="true">
+        <span class="settings-tab-icon">🔔</span>
+        <span>Notifiche & Push</span>
+    </button>
+    <button type="button" class="settings-tab-btn" data-tab="alarms" onclick="switchSettingsTab('alarms', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">📋</span>
+        <span>Allarmi & Soglie</span>
+    </button>
+    <button type="button" class="settings-tab-btn" data-tab="sensors" onclick="switchSettingsTab('sensors', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">🏷️</span>
+        <span>Nomi Sensori</span>
+        {% if detected_sensors %}
+        <span class="settings-tab-badge">{{ detected_sensors|length }}</span>
+        {% endif %}
+    </button>
+    <button type="button" class="settings-tab-btn" data-tab="tuya" onclick="switchSettingsTab('tuya', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">🔌</span>
+        <span>Smart Life & Tuya</span>
+        {% if tuya_summary and tuya_summary.enabled_devices_count %}
+        <span class="settings-tab-badge badge-tuya">{{ tuya_summary.enabled_devices_count }}</span>
+        {% endif %}
+    </button>
+    <button type="button" class="settings-tab-btn" data-tab="database" onclick="switchSettingsTab('database', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">🗄️</span>
+        <span>Database & Backup</span>
+    </button>
+    <button type="button" class="settings-tab-btn" data-tab="system" onclick="switchSettingsTab('system', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">📡</span>
+        <span>Diagnostica & Sistema</span>
+    </button>
+</div>
+
+<!-- ========================================================================= -->
+<!-- TAB 1: NOTIFICHE PUSH NATIVE & CANALI -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane active" id="pane-notifications" role="tabpanel">
+    <div class="card" style="border: 1px solid var(--accent); background: linear-gradient(145deg, rgba(56, 189, 248, 0.05), var(--card-bg));">
         <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2); flex-wrap: wrap; gap: 0.5rem;">
             <div style="display: flex; align-items: center; gap: 10px;">
-                <span>🔔 Notifiche Push Native (PWA) & Canali di Ricezione</span>
+                <span style="font-size: 1.25rem;">🔔</span>
+                <strong>Notifiche Push Native (PWA Web Push) & Canali Meteo</strong>
             </div>
             <span id="push-status-badge" class="status-pill badge-waiting">Verifica in corso...</span>
         </div>
 
-        <div style="display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0;">
-            <p id="push-status-text" style="color: var(--text); font-size: 0.95rem; line-height: 1.5;">
-                Ricevi avvisi meteo istantanei direttamente sul tuo smartphone o PC, anche ad applicazione chiusa, senza bisogno di installare app esterne.
+        <div style="display: flex; flex-direction: column; gap: 1.15rem; padding: 0.75rem 0;">
+            <p id="push-status-text" style="color: var(--text); font-size: 0.95rem; line-height: 1.55;">
+                Ricevi avvisi meteorologici tempestivi sul tuo smartphone o computer anche quando l'applicazione è chiusa o in background, senza alcuna app esterna necessaria.
             </p>
 
             <div class="push-actions-row">
@@ -42,22 +84,196 @@
                 </a>
             </div>
 
+            <!-- GUIDA ATTIVAZIONE -->
             <div class="push-guide-box">
-                <strong style="color: var(--accent);">💡 Come attivare sui tuoi dispositivi:</strong>
-                <div>🍏 <strong>iPhone / iPad (iOS 16.4+):</strong> Apri il link meteo in Safari, tocca il tasto Condividi (icona quadrato con freccia in su) e scegli <em>"Aggiungi alla schermata Home"</em>. Apri l'icona creata sulla schermata Home e premi <strong>Attiva Notifiche</strong>.</div>
-                <div>🤖 <strong>Android:</strong> Clicca semplicemente su <em>"Attiva Notifiche Push"</em> (funziona direttamente da Chrome, Edge o da Web App installata).</div>
-                <div>💻 <strong>PC / Mac:</strong> Clicca su <em>"Attiva Notifiche"</em> e consenti i permessi del browser (Chrome, Edge, Firefox, Safari).</div>
+                <strong style="color: var(--accent); font-size: 0.95rem;">💡 Come attivare la ricezione sui tuoi dispositivi:</strong>
+                <div>🍏 <strong>iPhone / iPad (iOS 16.4+):</strong> Apri il sito in Safari, tocca il pulsante Condividi (quadrato con freccia in su) e seleziona <em>"Aggiungi alla schermata Home"</em>. Apri l'icona creata sulla schermata Home e premi <strong>Attiva Notifiche Push</strong>.</div>
+                <div>🤖 <strong>Android:</strong> Clicca su <em>"Attiva Notifiche Push"</em> (funziona direttamente da Chrome, Edge o Web App PWA installata).</div>
+                <div>💻 <strong>PC / Mac:</strong> Clicca su <em>"Attiva Notifiche"</em> e accetta i permessi del browser.</div>
+            </div>
+
+            <!-- COLLEGAMENTO AL REGISTRO NOTIFICHE E AZIONI RAPIDE -->
+            <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 1rem; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; margin-top: 0.5rem;">
+                <div>
+                    <strong style="color: #fff; font-size: 0.95rem;">📋 Registro Storico Notifiche</strong>
+                    <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Consulta tutti gli eventi registrati, filtra per categoria ed esporta in Excel.</p>
+                </div>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="markAllAlertsAsReadFromSettings()">
+                        ✓ Segna tutte lette
+                    </button>
+                    <a href="/api/export/alerts-csv" class="btn btn-sm btn-gold" style="text-decoration: none;">
+                        📥 Esporta CSV
+                    </a>
+                    <a href="/alerts-page" class="btn btn-sm btn-outline" style="text-decoration: none;">
+                        Apri Centro Notifiche ➔
+                    </a>
+                </div>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- 2. PERSONALIZZAZIONE NOMI SENSORI (SOLO SENSORI RILEVATI DALLA STAZIONE) -->
+<!-- ========================================================================= -->
+<!-- TAB 2: CATALOGO ALLARMI & SOGLIE ATTIVE -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-alarms" role="tabpanel">
+    <div class="card" style="min-width: 0;">
+        <div class="card-header" style="flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.9rem; margin-bottom: 1rem;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.25rem;">📋</span>
+                <div>
+                    <strong>Catalogo Allarmi & Soglie di Scatto del Sistema</strong>
+                    <div style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Tutte le condizioni meteorologiche monitorate in background con protezione anti-spam debounced</div>
+                </div>
+            </div>
+            <span class="sub-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--accent);">16 Regole Attive</span>
+        </div>
+
+        <!-- BARRA DI RICERCA REGOLE -->
+        <div style="margin-bottom: 1rem; position: relative; max-width: 450px;">
+            <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 0.95rem; color: var(--text-dim); pointer-events: none;">🔍</span>
+            <input 
+                type="text" 
+                id="alarm-search-input" 
+                placeholder="Cerca allarme per evento o condizione (es. gelo, fulmine, pioggia)..." 
+                style="width: 100%; padding: 0.55rem 2rem 0.55rem 2.4rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-size: 0.88rem; outline: none; transition: border-color 0.2s;"
+                oninput="filterAlarmsTable(this.value)"
+            >
+            <button 
+                type="button" 
+                id="alarm-search-clear" 
+                onclick="document.getElementById('alarm-search-input').value=''; filterAlarmsTable(''); this.style.display='none';" 
+                style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-dim); font-size: 1rem; cursor: pointer; display: none;"
+            >✕</button>
+        </div>
+
+        <div class="table-responsive" style="width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;">
+            <table class="weather-table" id="alarms-rules-table" style="min-width: 520px;">
+                <thead>
+                    <tr>
+                        <th style="width: 250px;">Evento Allarme</th>
+                        <th style="width: 60px; text-align: center;">Icona</th>
+                        <th>Condizione di Scatto Automatica</th>
+                        <th style="width: 110px;">Priorità</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="alarm-rule-row">
+                        <td><strong>⚡ Temporale / Fulmini</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">⚡</span></td>
+                        <td>Fulmine rilevato a meno di 30 km dalla stazione</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>⚠️ Burrasca / Crollo Pressione</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">⚠️ ↘️</span></td>
+                        <td>Calo barometrico ≥ 2.0 hPa in 3 ore (forte peggioramento)</td>
+                        <td><span class="badge-tag urgent">Urgente</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🌧️ Nubifragio / Bomba d'Acqua</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌧️</span></td>
+                        <td>Intensità di pioggia estrema ≥ 25.0 mm/h</td>
+                        <td><span class="badge-tag urgent">Urgente</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>☔ Pioggia Prevista a Breve</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">☔</span></td>
+                        <td>Previsione oraria Open-Meteo: probabilità pioggia ≥ 60% o ≥ 0.5 mm nelle prossime 1-2 ore</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🌧️ Ha Iniziato a Piovere</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌧️💧</span></td>
+                        <td>Rilevamento prime gocce / inizio precipitazioni dalla stazione</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🌧️ Pioggia Intensa</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌧️</span></td>
+                        <td>Rovescio moderato/forte ≥ 5.0 mm/h</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>💨 Raffica di Vento Anomala</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">💨</span></td>
+                        <td>Raffica improvvisa (Wind Spike) ≥ 45.0 km/h</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>❄️ Allerta Gelo</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">❄️</span></td>
+                        <td>Temperatura scesa a ≤ 1.0°C (rischio ghiaccio/piante)</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🔥 Caldo Estremo</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🔥</span></td>
+                        <td>Temperatura salita a ≥ 38.0°C</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🌡️ Sbalzo Termico Repentino</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌡️</span></td>
+                        <td>Crollo o impennata di temperatura ≥ 4.0°C in 1 ora</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>☀️ Indice UV Pericoloso</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">☀️</span></td>
+                        <td>Indice UV ≥ 8 (rischio scottature in pochi minuti)</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🌱 Terreno Secco</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌱</span></td>
+                        <td>Umidità suolo sensore WH51 ≤ 25.0% (promemoria annaffiatura)</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🏆 Record Storico Infranto</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🏆</span></td>
+                        <td>Battuto un nuovo record assoluto significativo (Temp ≥0.5°C, Raffica ≥5 km/h)</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>☕ Buongiorno Meteo</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">☕</span></td>
+                        <td>Ogni giorno alle 08:00 (Previsione, Minima, Sole, Asciugatura bucato)</td>
+                        <td><span class="badge-tag">Digest</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🔴 Stazione Offline / Riconnessa</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">📡</span></td>
+                        <td>Watchdog: assenza segnale per oltre 10 minuti</td>
+                        <td><span class="badge-tag urgent">Urgente</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🪫 Batteria Sensori Bassa</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🪫</span></td>
+                        <td>Pile sensori in esaurimento (WH65 7-in-1, WH57, WH51, WH31)</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- TAB 3: PERSONALIZZAZIONE NOMI SENSORI EXTRA -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-sensors" role="tabpanel">
     <div class="card">
-        <div class="card-header" style="flex-wrap: wrap; gap: 0.5rem;">
-            <span>🏷️ Personalizzazione Nomi Sensori</span>
+        <div class="card-header" style="flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.25rem;">🏷️</span>
+                <strong>Personalizzazione Nomi Sensori</strong>
+            </div>
             <span class="sub-badge">{% if detected_sensors %}{{ detected_sensors|length }} Rilevati{% else %}Nessun Extra{% endif %}</span>
         </div>
-        <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.85rem;">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.1rem; line-height: 1.5;">
             Assegna un'etichetta personalizzata e riconoscibile ai sensori opzionali associati alla tua stazione meteo.
         </p>
         
@@ -80,24 +296,29 @@
         </div>
         <div id="sensor_alias_status" style="font-size: 0.8rem; color: #10b981; margin-top: 0.5rem; display: none;"></div>
         {% else %}
-        <div style="background: rgba(255,255,255,0.03); border: 1px dashed var(--card-border); border-radius: 12px; padding: 1.25rem; text-align: center; color: var(--text-dim); font-size: 0.85rem; line-height: 1.5;">
-            🌱 <strong>Nessun sensore opzionale aggiuntivo connesso.</strong><br>
+        <div style="background: rgba(255,255,255,0.03); border: 1px dashed var(--card-border); border-radius: 12px; padding: 1.5rem; text-align: center; color: var(--text-dim); font-size: 0.88rem; line-height: 1.5;">
+            🌱 <strong>Nessun sensore opzionale aggiuntivo connesso al momento.</strong><br>
             La stazione sta trasmettendo con il gruppo sensori esterno standard (7-in-1). Se colleghi sensori opzionali di umidità suolo (WH51), termometri multi-canale (WH31), sonde temperatura (WN34) o rilevatori perdite (WH55), appariranno automaticamente qui per essere rinominati.
         </div>
         {% endif %}
     </div>
+</div>
 
-    <!-- SEZIONE DISPOSITIVI SMART LIFE (TUYA) & GESTIONE ATTIVAZIONE -->
-    <div class="card" id="tuya_settings_card" style="grid-column: 1 / -1; border: 1px solid rgba(168, 85, 247, 0.3); background: linear-gradient(145deg, rgba(168, 85, 247, 0.05), var(--card-bg));">
-        <div class="card-header" style="border-bottom: 1px solid rgba(168, 85, 247, 0.2); flex-wrap: wrap; gap: 0.5rem;">
+<!-- ========================================================================= -->
+<!-- TAB 4: DISPOSITIVI SMART LIFE (TUYA) -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-tuya" role="tabpanel">
+    <div class="card" id="tuya_settings_card" style="border: 1px solid rgba(168, 85, 247, 0.3); background: linear-gradient(145deg, rgba(168, 85, 247, 0.05), var(--card-bg));">
+        <div class="card-header" style="border-bottom: 1px solid rgba(168, 85, 247, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 10px;">
-                <span>🔌 Dispositivi Smart Life / Tuya & Gestione Visibilità</span>
+                <span style="font-size: 1.25rem;">🔌</span>
+                <strong>Dispositivi Smart Life / Tuya & Gestione Visibilità</strong>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
                 <span class="sub-badge" id="tuya_active_count_badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc;">
                     {{ tuya_summary.enabled_devices_count }} / {{ tuya_summary.total_devices_count }} Dispositivi Attivi
                 </span>
-                <button type="button" class="btn btn-sm" onclick="syncTuyaDevicesNow()" title="Forza sincronizzazione con Tuya Cloud">🔄 Sincronizza</button>
+                <button type="button" class="btn btn-sm btn-primary" onclick="syncTuyaDevicesNow()" title="Forza sincronizzazione con Tuya Cloud">🔄 Sincronizza</button>
             </div>
         </div>
 
@@ -155,190 +376,171 @@
         </div>
         {% else %}
         <div style="background: rgba(255,255,255,0.03); border: 1px dashed var(--card-border); border-radius: 12px; padding: 1.25rem; text-align: center; color: var(--text-dim); font-size: 0.85rem;">
-            Nessun dispositivo Tuya rilevato. Verifica le credenziali Client ID e Secret.
+            Nessun dispositivo Tuya rilevato. Verifica le credenziali Client ID e Secret nel file di configurazione.
         </div>
         {% endif %}
     </div>
+</div>
 
-    <!-- 3. DATABASE SQLITE & MANUTENZIONE STORICO -->
+<!-- ========================================================================= -->
+<!-- TAB 5: DATABASE SQLITE & MANUTENZIONE -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-database" role="tabpanel">
     <div class="card">
-        <div class="card-header">
-            <span>🗄️ Database SQLite & Manutenzione</span>
+        <div class="card-header" style="justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.25rem;">🗄️</span>
+                <strong>Database SQLite Locale & Manutenzione</strong>
+            </div>
             <span class="sub-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">WAL Mode Attivo</span>
         </div>
         <div class="item-list">
-            <div class="item"><span>Dimensione Database:</span> <strong id="db_size_val">{{ db_stats.db_size_mb if db_stats else '--' }} MB</strong></div>
-            <div class="item"><span>Letture Meteo Salvate:</span> <strong id="db_weather_cnt">{{ db_stats.weather_records_count if db_stats else '--' }}</strong></div>
-            <div class="item"><span>Letture Energetiche Aton:</span> <strong id="db_energy_cnt">{{ db_stats.energy_records_count if db_stats else '--' }}</strong></div>
-            <div class="item"><span>Politica Retention:</span> <strong>Raw 60gg + Downsampling Orario/Giorno</strong></div>
+            <div class="item"><span>Dimensione Database su Disco:</span> <strong id="db_size_val">{{ db_stats.db_size_mb if db_stats else '--' }} MB</strong></div>
+            <div class="item"><span>Letture Meteo Campionate:</span> <strong id="db_weather_cnt">{{ db_stats.weather_records_count if db_stats else '--' }}</strong></div>
+            <div class="item"><span>Letture Energetiche Inverter Aton:</span> <strong id="db_energy_cnt">{{ db_stats.energy_records_count if db_stats else '--' }}</strong></div>
+            <div class="item"><span>Politica Retention Storico:</span> <strong>Raw 60gg + Downsampling Orario/Giorno</strong></div>
         </div>
-        <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
-            <a href="/api/system/backup" class="btn btn-gold" style="flex: 1 1 140px; text-align: center; text-decoration: none;" download>💾 Backup DB (.db)</a>
-            <button type="button" class="btn" style="flex: 1 1 140px;" onclick="triggerDbMaintenance()">🧹 Ottimizza DB</button>
-        </div>
-        <div id="db_maintenance_result" style="font-size: 0.8rem; color: #38bdf8; margin-top: 0.5rem; display: none;"></div>
-    </div>
-
-    <!-- 4. DIAGNOSTICA HARDWARE & RETE -->
-    <div class="card" style="grid-column: 1 / -1;">
-        <div class="card-header">
-            <span>📡 Diagnostica Hardware, Rete & Integrazioni</span>
-            <span class="sub-badge badge-live">Connesso</span>
-        </div>
-        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem; margin-top: 0.25rem;">
-            <div class="item-list">
-                <div class="item"><span>Modello Stazione:</span> <strong>{{ station_model }}</strong></div>
-                <div class="item"><span>Stato Batteria Gruppo 7-in-1:</span> <strong>{{ batt_wh65 }}</strong></div>
-                <div class="item"><span>Inverter / Batteria:</span> <strong>Aton Green Storage ({{ aton_sn }})</strong></div>
-            </div>
-            <div class="item-list">
-                <div class="item"><span>Climatizzazione Smart:</span> <strong>{% if thinq_enabled %}🟢 LG ThinQ Attivo{% else %}⚪ LG ThinQ Disattivato{% endif %}</strong></div>
-                <div class="item"><span>Domotica Elettrodomestici:</span> <strong>{% if smartthings_enabled %}🟢 Samsung SmartThings Attivo{% else %}⚪ SmartThings Disattivato{% endif %}</strong></div>
-                <div class="item"><span>Modelli Previsionali:</span> <strong>ECMWF IFS 9km / ICON-EU</strong></div>
-            </div>
-        </div>
-        <div style="display: flex; gap: 0.5rem; margin-top: 0.85rem; flex-wrap: wrap;">
-            <a href="/api/live" class="btn" style="flex: 1 1 140px; text-align: center; text-decoration: none;" target="_blank">🌐 API Dati Live</a>
-            <a href="/history" class="btn" style="flex: 1 1 140px; text-align: center; text-decoration: none;">🔍 Archivio Storico</a>
-        </div>
-    </div>
-
-    <!-- 5. CATALOGO COMPLETO ALLARMI & SOGLIE ATTIVE (FULL WIDTH) -->
-    <div class="card" style="grid-column: 1 / -1; min-width: 0;">
-        <div class="card-header" style="flex-wrap: wrap; gap: 0.5rem;">
-            <span>📋 Catalogo Allarmi & Soglie di Scatto del Sistema</span>
-            <span class="sub-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--accent);">16 Regole Attive</span>
-        </div>
-        <div class="table-responsive" style="width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;">
-            <table class="weather-table" style="min-width: 520px;">
-                <thead>
-                    <tr>
-                        <th>Evento Allarme</th>
-                        <th>Icona</th>
-                        <th>Condizione di Scatto Automatica</th>
-                        <th>Priorità</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><strong>⚡ Temporale / Fulmini</strong></td>
-                        <td><span style="font-size: 1.2rem;">⚡</span></td>
-                        <td>Fulmine rilevato a meno di 30 km dalla stazione</td>
-                        <td><span class="badge-tag urgent">Alta</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>⚠️ Burrasca / Crollo Pressione</strong></td>
-                        <td><span style="font-size: 1.2rem;">⚠️ ↘️</span></td>
-                        <td>Calo barometrico ≥ 2.0 hPa in 3 ore (forte peggioramento)</td>
-                        <td><span class="badge-tag urgent">Urgente</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>🌧️ Nubifragio / Bomba d'Acqua</strong></td>
-                        <td><span style="font-size: 1.2rem;">🌧️</span></td>
-                        <td>Intensità di pioggia estrema ≥ 25.0 mm/h</td>
-                        <td><span class="badge-tag urgent">Urgente</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>☔ Pioggia Prevista a Breve</strong></td>
-                        <td><span style="font-size: 1.2rem;">☔</span></td>
-                        <td>Previsione oraria Open-Meteo: probabilità pioggia ≥ 60% o ≥ 0.5 mm nelle prossime 1-2 ore</td>
-                        <td><span class="badge-tag">Normale</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>🌧️ Ha Iniziato a Piovere</strong></td>
-                        <td><span style="font-size: 1.2rem;">🌧️💧</span></td>
-                        <td>Rilevamento prime gocce / inizio precipitazioni dalla stazione</td>
-                        <td><span class="badge-tag urgent">Alta</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>🌧️ Pioggia Intensa</strong></td>
-                        <td><span style="font-size: 1.2rem;">🌧️</span></td>
-                        <td>Rovescio moderato/forte ≥ 5.0 mm/h</td>
-                        <td><span class="badge-tag">Normale</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>💨 Raffica di Vento Anomala</strong></td>
-                        <td><span style="font-size: 1.2rem;">💨</span></td>
-                        <td>Raffica improvvisa (Wind Spike) ≥ 45.0 km/h</td>
-                        <td><span class="badge-tag urgent">Alta</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>❄️ Allerta Gelo</strong></td>
-                        <td><span style="font-size: 1.2rem;">❄️</span></td>
-                        <td>Temperatura scesa a ≤ 1.0°C (rischio ghiaccio/piante)</td>
-                        <td><span class="badge-tag urgent">Alta</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>🔥 Caldo Estremo</strong></td>
-                        <td><span style="font-size: 1.2rem;">🔥</span></td>
-                        <td>Temperatura salita a ≥ 38.0°C</td>
-                        <td><span class="badge-tag">Normale</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>🌡️ Sbalzo Termico Repentino</strong></td>
-                        <td><span style="font-size: 1.2rem;">🌡️</span></td>
-                        <td>Crollo o impennata di temperatura ≥ 4.0°C in 1 ora</td>
-                        <td><span class="badge-tag">Normale</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>☀️ Indice UV Pericoloso</strong></td>
-                        <td><span style="font-size: 1.2rem;">☀️</span></td>
-                        <td>Indice UV ≥ 8 (rischio scottature in pochi minuti)</td>
-                        <td><span class="badge-tag">Normale</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>🌱 Terreno Secco</strong></td>
-                        <td><span style="font-size: 1.2rem;">🌱</span></td>
-                        <td>Umidità suolo sensore WH51 ≤ 25.0% (promemoria annaffiatura)</td>
-                        <td><span class="badge-tag">Normale</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>🏆 Record Storico Infranto</strong></td>
-                        <td><span style="font-size: 1.2rem;">🏆</span></td>
-                        <td>Battuto un nuovo record assoluto significativo (Temp ≥0.5°C, Raffica ≥5 km/h)</td>
-                        <td><span class="badge-tag urgent">Alta</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>☕ Buongiorno Meteo</strong></td>
-                        <td><span style="font-size: 1.2rem;">☕</span></td>
-                        <td>Ogni giorno alle 08:00 (Previsione, Minima, Sole, Asciugatura bucato)</td>
-                        <td><span class="badge-tag">Digest</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>🔴 Stazione Offline / Riconnessa</strong></td>
-                        <td><span style="font-size: 1.2rem;">📡</span></td>
-                        <td>Watchdog: assenza segnale per oltre 10 minuti</td>
-                        <td><span class="badge-tag urgent">Urgente</span></td>
-                    </tr>
-                    <tr>
-                        <td><strong>🪫 Batteria Sensori Bassa</strong></td>
-                        <td><span style="font-size: 1.2rem;">🪫</span></td>
-                        <td>Pile sensori in esaurimento (WH65 7-in-1, WH57, WH51, WH31)</td>
-                        <td><span class="badge-tag urgent">Alta</span></td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- 6. SICUREZZA & SESSIONE -->
-    <div class="card" style="grid-column: 1 / -1;">
-        <div class="card-header">
-            <span>🔒 Sicurezza & Disconnessione</span>
-            <span class="sub-badge">Accesso Protetto</span>
-        </div>
-        <p style="font-size: 0.84rem; color: var(--text-muted); margin-bottom: 0.75rem; line-height: 1.45;">
-            La tua sessione corrente su questo browser è autenticata e protetta tramite cookie di sicurezza HTTP-Only crittografato.
-        </p>
-        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <a href="/logout" class="btn btn-outline" style="color: #ef4444; border-color: rgba(239,68,68,0.4); text-decoration: none; width: 100%; text-align: center;">
-                🚪 Disconnetti questo dispositivo (Logout)
+        <div style="display: flex; gap: 0.6rem; margin-top: 1.2rem; flex-wrap: wrap;">
+            <a href="/api/system/backup" class="btn btn-gold" style="flex: 1 1 160px; text-align: center; text-decoration: none;" download>
+                💾 Scarica Backup DB (.db)
             </a>
+            <button type="button" class="btn btn-primary" style="flex: 1 1 160px;" onclick="triggerDbMaintenance()">
+                🧹 Ottimizza Database Ora
+            </button>
+        </div>
+        <div id="db_maintenance_result" style="font-size: 0.85rem; color: #38bdf8; margin-top: 0.75rem; display: none;"></div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- TAB 6: DIAGNOSTICA HARDWARE & RETE & SICUREZZA -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-system" role="tabpanel">
+    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <!-- DIAGNOSTICA HARDWARE -->
+        <div class="card">
+            <div class="card-header" style="justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.25rem;">📡</span>
+                    <strong>Diagnostica Hardware, Rete & Integrazioni</strong>
+                </div>
+                <span class="sub-badge badge-live">Connesso</span>
+            </div>
+            <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem; margin-top: 0.5rem;">
+                <div class="item-list">
+                    <div class="item"><span>Modello Stazione:</span> <strong>{{ station_model }}</strong></div>
+                    <div class="item"><span>Stato Batteria Gruppo 7-in-1:</span> <strong>{{ batt_wh65 }}</strong></div>
+                    <div class="item"><span>Inverter / Batteria:</span> <strong>Aton Green Storage ({{ aton_sn }})</strong></div>
+                </div>
+                <div class="item-list">
+                    <div class="item"><span>Climatizzazione Smart:</span> <strong>{% if thinq_enabled %}🟢 LG ThinQ Attivo{% else %}⚪ LG ThinQ Disattivato{% endif %}</strong></div>
+                    <div class="item"><span>Domotica Elettrodomestici:</span> <strong>{% if smartthings_enabled %}🟢 Samsung SmartThings Attivo{% else %}⚪ SmartThings Disattivato{% endif %}</strong></div>
+                    <div class="item"><span>Modelli Previsionali:</span> <strong>ECMWF IFS 9km / ICON-EU</strong></div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 0.6rem; margin-top: 1rem; flex-wrap: wrap;">
+                <a href="/api/live" class="btn btn-outline" style="flex: 1 1 140px; text-align: center; text-decoration: none;" target="_blank">🌐 API Dati Live</a>
+                <a href="/history" class="btn btn-outline" style="flex: 1 1 140px; text-align: center; text-decoration: none;">🔍 Archivio Storico</a>
+            </div>
+        </div>
+
+        <!-- SICUREZZA & SESSIONE -->
+        <div class="card">
+            <div class="card-header" style="justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.25rem;">🔒</span>
+                    <strong>Sicurezza & Disconnessione</strong>
+                </div>
+                <span class="sub-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">Sessione Protetta</span>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.85rem; line-height: 1.5;">
+                La tua sessione corrente su questo browser è autenticata e protetta tramite cookie di sicurezza HTTP-Only crittografato.
+            </p>
+            <div style="display: flex; gap: 0.5rem;">
+                <a href="/logout" class="btn btn-outline" style="color: #ef4444; border-color: rgba(239,68,68,0.4); text-decoration: none; width: 100%; text-align: center; padding: 0.7rem;">
+                    🚪 Disconnetti questo dispositivo (Logout)
+                </a>
+            </div>
         </div>
     </div>
 </div>
 
 <style>
+/* ==========================================================================
+   SETTINGS TAB NAVIGATION BAR (ALLINEATA & RESPONSIVE)
+   ========================================================================== */
+.settings-tab-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: rgba(15, 23, 42, 0.7);
+    padding: 6px;
+    border-radius: 16px;
+    border: 1px solid var(--card-border);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin-bottom: 1.25rem;
+}
+.settings-tab-bar::-webkit-scrollbar {
+    display: none;
+}
+.settings-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 0.65rem 1.05rem;
+    border-radius: 11px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    font-size: 0.86rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    user-select: none;
+}
+.settings-tab-btn:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.05);
+}
+.settings-tab-btn.active {
+    background: rgba(56, 189, 248, 0.15);
+    color: var(--accent);
+    border-color: rgba(56, 189, 248, 0.35);
+    box-shadow: 0 4px 14px rgba(56, 189, 248, 0.15);
+}
+.settings-tab-icon {
+    font-size: 1.05rem;
+}
+.settings-tab-badge {
+    font-size: 0.72rem;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 10px;
+    background: rgba(56, 189, 248, 0.2);
+    color: var(--accent);
+}
+.settings-tab-badge.badge-tuya {
+    background: rgba(168, 85, 247, 0.25);
+    color: #c084fc;
+}
+.settings-tab-pane {
+    display: none;
+    animation: fadeInTab 0.22s ease-in-out;
+}
+.settings-tab-pane.active {
+    display: block;
+}
+@keyframes fadeInTab {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* PUSH ACTIONS & GUIDES */
 .push-actions-row {
     display: flex;
     gap: 0.6rem;
@@ -358,15 +560,18 @@
     background: rgba(0,0,0,0.25);
     border-radius: 12px;
     padding: 1rem;
-    margin-top: 0.5rem;
+    margin-top: 0.25rem;
     font-size: 0.85rem;
     color: var(--text-dim);
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.45rem;
     overflow-wrap: break-word;
     word-break: break-word;
+    border: 1px solid rgba(255,255,255,0.04);
 }
+
+/* SENSOR ALIAS STYLES */
 .sensor-alias-row {
     display: flex;
     flex-direction: column;
@@ -418,6 +623,11 @@
     background: rgba(148, 163, 184, 0.15);
     color: var(--text-dim);
     white-space: nowrap;
+}
+.badge-tag.urgent {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
 }
 .badge-tag.tag-on {
     background: rgba(16, 185, 129, 0.2);
@@ -551,6 +761,90 @@
 </style>
 
 <script>
+// =========================================================================
+// GESTIONE SWITCH TAB IMPOSTAZIONI
+// =========================================================================
+function switchSettingsTab(tabName, btnElem) {
+    const panes = document.querySelectorAll('.settings-tab-pane');
+    const buttons = document.querySelectorAll('.settings-tab-btn');
+
+    panes.forEach(p => p.classList.remove('active'));
+    buttons.forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-selected', 'false');
+    });
+
+    const targetPane = document.getElementById(`pane-${tabName}`);
+    if (targetPane) {
+        targetPane.classList.add('active');
+    }
+
+    if (btnElem) {
+        btnElem.classList.add('active');
+        btnElem.setAttribute('aria-selected', 'true');
+    } else {
+        const matchingBtn = document.querySelector(`.settings-tab-btn[data-tab="${tabName}"]`);
+        if (matchingBtn) {
+            matchingBtn.classList.add('active');
+            matchingBtn.setAttribute('aria-selected', 'true');
+        }
+    }
+
+    // Salva preferenza e aggiorna URL hash
+    try {
+        localStorage.setItem('settings_active_tab', tabName);
+        if (history.replaceState) {
+            history.replaceState(null, null, `#${tabName}`);
+        }
+    } catch (e) {}
+}
+
+// Inizializza tab da URL hash o da localStorage
+document.addEventListener('DOMContentLoaded', () => {
+    let initialTab = 'notifications';
+    const hash = window.location.hash.replace('#', '').toLowerCase();
+    
+    // Mappa vecchi hash se necessario
+    const validTabs = ['notifications', 'alarms', 'sensors', 'tuya', 'database', 'system'];
+    if (hash && validTabs.includes(hash)) {
+        initialTab = hash;
+    } else {
+        const saved = localStorage.getItem('settings_active_tab');
+        if (saved && validTabs.includes(saved)) {
+            initialTab = saved;
+        }
+    }
+    switchSettingsTab(initialTab);
+});
+
+// FILTRO RAPIDO TABELLA ALLARMI
+function filterAlarmsTable(query) {
+    const q = (query || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('#alarms-rules-table tbody .alarm-rule-row');
+    const clearBtn = document.getElementById('alarm-search-clear');
+    if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
+
+    rows.forEach(r => {
+        const text = r.textContent.toLowerCase();
+        r.style.display = (!q || text.includes(q)) ? '' : 'none';
+    });
+}
+
+// AZIONE SEGNA TUTTE LE NOTIFICHE LETTE DA SETTINGS
+async function markAllAlertsAsReadFromSettings() {
+    try {
+        await fetch('/api/alerts/mark-read-all', { method: 'POST' });
+        alert('✅ Tutte le notifiche sono state contrassegnate come lette!');
+        const badge = document.getElementById('desktop-alert-badge');
+        if (badge) badge.style.display = 'none';
+        const mobBadge = document.getElementById('mobile-alert-badge');
+        if (mobBadge) mobBadge.style.display = 'none';
+    } catch (e) {
+        alert('Errore durante l\'aggiornamento delle notifiche: ' + e.message);
+    }
+}
+
+// TUYA DEVICES MANAGEMENT
 async function updateTuyaDeviceConfig(deviceId, isEnabled) {
     const row = document.getElementById(`tuya_row_${deviceId}`);
     const textEl = document.getElementById(`tuya_text_${deviceId}`);
@@ -577,7 +871,6 @@ async function updateTuyaDeviceConfig(deviceId, isEnabled) {
             msgEl.innerText = `✅ Dispositivo ${isEnabled ? 'attivato' : 'disattivato'} nella Dashboard!`;
             setTimeout(() => { msgEl.style.display = 'none'; }, 3500);
         }
-        // Aggiorna badge conteggio
         updateTuyaBadgeCounts();
     } catch (e) {
         if (msgEl) {
@@ -616,7 +909,6 @@ async function testToggleTuya(deviceId) {
             msgEl.innerText = '✅ Comando inviato con successo a Tuya Cloud!';
             setTimeout(() => { msgEl.style.display = 'none'; }, 3000);
         }
-        // Aggiorna tag stato
         setTimeout(async () => {
             const devResp = await fetch('/api/tuya/summary');
             const summary = await devResp.json();
