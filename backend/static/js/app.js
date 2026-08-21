@@ -477,21 +477,66 @@ function startDashboardPolling() {
 
                     // Umidità Terreno WH51
                     if (a.soil_summary && a.soil_summary.has_sensors) {
-                        const soilContainer = document.getElementById('soil_moisture_container');
-                        if (soilContainer && a.soil_summary.channels) {
-                            let soilHtml = '';
-                            for (const [ch, info] of Object.entries(a.soil_summary.channels)) {
-                                soilHtml += `<div class="item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                    <span>🌱 ${info.name}:</span>
-                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                        <strong>${info.value}%</strong>
-                                        <span class="badge ${info.badge_class}" style="font-size: 0.72rem; padding: 2px 6px;">${info.status_label}</span>
-                                        <span style="font-size: 0.75rem; color: var(--text-dim);" title="Variazione 24h">${info.trend_icon} ${info.diff_24h > 0 ? '+' : ''}${info.diff_24h}%</span>
+                    // Now Highlights (Cosa devi sapere adesso)
+                    if (a.now_highlights && Array.isArray(a.now_highlights)) {
+                        const nowContainer = document.getElementById('now_pills_container');
+                        if (nowContainer) {
+                            nowContainer.innerHTML = a.now_highlights.map(p => `
+                                <div class="now-pill">
+                                    <div class="now-pill-icon">${p.icon}</div>
+                                    <div class="now-pill-content">
+                                        <div class="now-pill-action">${p.action_text || 'INFO'}</div>
+                                        <div class="now-pill-title">${p.title}</div>
+                                        <div class="now-pill-sub">${p.subtitle}</div>
                                     </div>
-                                </div>`;
-                            }
-                            soilContainer.innerHTML = soilHtml;
+                                </div>
+                            `).join('');
                         }
+                    }
+
+                    // Rain Nowcasting
+                    if (a.rain_nowcast) {
+                        const nIcon = document.getElementById('nowcasting_icon');
+                        const nHead = document.getElementById('nowcasting_headline');
+                        const nDesc = document.getElementById('nowcasting_desc');
+                        if (nIcon && a.rain_nowcast.icon) nIcon.innerText = a.rain_nowcast.icon;
+                        if (nHead && a.rain_nowcast.headline) nHead.innerText = a.rain_nowcast.headline;
+                        if (nDesc && a.rain_nowcast.desc) nDesc.innerText = a.rain_nowcast.desc;
+                    }
+
+                    // Qualità dell'Aria & Pollini CAMS
+                    if (a.air_quality) {
+                        const aqi = a.air_quality;
+                        const aqiBadge = document.getElementById('aqi_badge');
+                        if (aqiBadge && aqi.eaqi) {
+                            aqiBadge.className = 'aqi-summary-badge ' + (aqi.eaqi.badge_class || 'badge-success');
+                            aqiBadge.innerText = (aqi.eaqi.icon || '🟢') + ' ' + (aqi.eaqi.label || 'Buona');
+                        }
+                        if (aqi.pollutants) {
+                            const p25 = document.getElementById('pm25_val');
+                            const p10 = document.getElementById('pm10_val');
+                            const no2 = document.getElementById('no2_val');
+                            const o3 = document.getElementById('o3_val');
+                            if (p25 && aqi.pollutants.pm2_5) p25.innerHTML = aqi.pollutants.pm2_5.val + ' <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span>';
+                            if (p10 && aqi.pollutants.pm10) p10.innerHTML = aqi.pollutants.pm10.val + ' <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span>';
+                            if (no2 && aqi.pollutants.no2) no2.innerHTML = aqi.pollutants.no2.val + ' <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span>';
+                            if (o3 && aqi.pollutants.o3) o3.innerHTML = aqi.pollutants.o3.val + ' <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span>';
+                        }
+                        const aqiAdv = document.getElementById('aqi_advice_text');
+                        if (aqiAdv && aqi.window_advice) aqiAdv.innerText = aqi.window_advice;
+                    }
+
+                    // Solar Forecast
+                    if (a.solar_forecast) {
+                        const sf = a.solar_forecast;
+                        const sKwh = document.getElementById('solar_fc_kwh');
+                        const b100 = document.getElementById('battery_100_est');
+                        const appWin = document.getElementById('appliances_window_est');
+                        const surp = document.getElementById('surplus_fc_kwh');
+                        if (sKwh && sf.tomorrow_range_str) sKwh.innerText = sf.tomorrow_range_str;
+                        if (b100 && sf.battery_100_est) b100.innerText = sf.battery_100_est;
+                        if (appWin && sf.best_appliances_window) appWin.innerText = sf.best_appliances_window;
+                        if (surp && sf.est_surplus_kwh !== undefined) surp.innerHTML = '+' + sf.est_surplus_kwh + ' <span style="font-size: 0.9rem;">kWh</span>';
                     }
                 }
             })

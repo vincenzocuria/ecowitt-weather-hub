@@ -28,7 +28,7 @@ from backend.database import (
     save_reading, get_latest_reading, get_all_records, get_records_history,
     get_timeseries, search_history, get_history_kpis, get_alert_logs, deg_to_compass, calc_dew_point,
     get_station_status, get_pressure_trend, calc_apparent_temp,
-    get_today_extremes, get_yesterday_same_time, get_recent_rain_totals,
+    get_today_extremes, get_yesterday_same_time, get_recent_rain_totals, get_climate_comparisons,
     save_push_subscription, delete_push_subscription, get_all_push_subscriptions,
     save_energy_reading, get_latest_energy, get_today_energy_summary, get_energy_timeseries,
     get_sensor_aliases, save_sensor_alias, get_database_stats, perform_database_maintenance,
@@ -40,7 +40,8 @@ from backend.database import (
 from backend.analytics import (
     calc_zambretti_forecast, abs_to_rel_pressure, evaluate_window_ventilation, evaluate_laundry_index,
     calc_humidex, evaluate_outdoor_activity, calc_sun_ephemeris, calc_moon_phase,
-    calc_beaufort_scale, evaluate_indoor_comfort, calc_current_weather_condition
+    calc_beaufort_scale, evaluate_indoor_comfort, calc_current_weather_condition,
+    calc_evapotranspiration, evaluate_smart_irrigation, generate_now_highlights
 )
 from backend.forecast_service import forecast_service
 from backend.aton_service import aton_service
@@ -297,7 +298,11 @@ def build_analytics_context(latest: dict) -> dict:
     press_trend = latest.get("pressure_trend") or get_pressure_trend(press)
     zambretti = calc_zambretti_forecast(press, press_trend.get("diff"), wind_deg)
     
-    window_advice = evaluate_window_ventilation(temp_c, hum, temp_in, hum_in, rain_rate)
+    # 1. Qualità dell'Aria & Pollini CAMS
+    air_quality = forecast_service.fetch_air_quality()
+
+    # 2. Finestre con incrocio termico e Qualità Aria
+    window_advice = evaluate_window_ventilation(temp_c, hum, temp_in, hum_in, rain_rate, air_quality=air_quality)
     laundry_advice = evaluate_laundry_index(temp_c, hum, wind_spd, solar, rain_rate)
     humidex_info = calc_humidex(temp_c, dew_point)
     outdoor_advice = evaluate_outdoor_activity(
@@ -314,6 +319,24 @@ def build_analytics_context(latest: dict) -> dict:
     today_ext = get_today_extremes()
     yesterday_cmp = get_yesterday_same_time(temp_c)
     rain_totals = get_recent_rain_totals()
+    climate_comparisons = get_climate_comparisons()
+
+    # 3. Evapotraspirazione & Irrigazione Intelligente WH51
+    et_mm = calc_evapotranspiration(temp_c, hum, solar, wind_spd, today_ext.get("temp_min"), today_ext.get("temp_max"))
+    soil_ch1 = (latest.get("soil_moisture") or {}).get("ch1") or latest.get("soil_moisture_ch1")
+    smart_irrigation = evaluate_smart_irrigation(
+        soil_moisture_pct=soil_ch1,
+        temp_c=temp_c,
+        solar_rad=solar,
+        rain_forecast_24h_mm=0.0,
+        recent_rain_48h_mm=rain_totals.get("week_rain_mm", 0.0),
+        et_mm=et_mm
+    )
+
+    # 4. Solar Forecast & Nowcasting
+    aton_curr = aton_service.latest_data or get_latest_energy() or {}
+    solar_forecast = forecast_service.fetch_solar_forecast(aton_data=aton_curr)
+    rain_nowcast = forecast_service.build_rain_nowcasting_summary(latest)
 
     sun_info = calc_sun_ephemeris(settings.LATITUDE, settings.LONGITUDE)
     moon_info = calc_moon_phase()
@@ -337,7 +360,7 @@ def build_analytics_context(latest: dict) -> dict:
     tropical_nights = get_tropical_nights_stats()
     soil_summary = get_soil_moisture_summary()
 
-    return {
+    ctx = {
         "current_condition": current_cond,
         "zambretti": zambretti,
         "comfort": {
@@ -350,8 +373,14 @@ def build_analytics_context(latest: dict) -> dict:
         "today_extremes": today_ext,
         "yesterday_comparison": yesterday_cmp,
         "rain_totals": rain_totals,
+        "climate_comparisons": climate_comparisons,
         "tropical_nights": tropical_nights,
         "soil_summary": soil_summary,
+        "evapotranspiration_mm": et_mm,
+        "irrigation_advice": smart_irrigation,
+        "air_quality": air_quality,
+        "solar_forecast": solar_forecast,
+        "rain_nowcast": rain_nowcast,
         "sun_ephemeris": sun_info,
         "moon_phase": moon_info,
         "dew_point_c": dew_point,
@@ -359,6 +388,11 @@ def build_analytics_context(latest: dict) -> dict:
         "cross_check": cross_check,
         "beaufort": beaufort
     }
+
+    # 5. Generazione Pillole Dinamiche "Cosa devo sapere ora"
+    ctx["now_highlights"] = generate_now_highlights(latest, ctx, air_quality, solar_forecast, rain_nowcast, aton_data=aton_curr)
+
+    return ctx
 
 @app.get("/api/forecast")
 async def api_forecast():
@@ -369,6 +403,25 @@ async def api_forecast():
         "forecast": forecast_data,
         "cross_check": cross_check
     }
+
+@app.get("/api/air-quality")
+async def api_air_quality():
+    return forecast_service.fetch_air_quality()
+
+@app.get("/api/solar-forecast")
+async def api_solar_forecast():
+    aton_curr = aton_service.latest_data or get_latest_energy() or {}
+    return forecast_service.fetch_solar_forecast(aton_data=aton_curr)
+
+@app.get("/api/climate-summary")
+async def api_climate_summary():
+    return get_climate_comparisons()
+
+@app.get("/api/now-highlights")
+async def api_now_highlights():
+    latest = get_latest_reading() or {}
+    analytics_ctx = build_analytics_context(latest)
+    return {"highlights": analytics_ctx.get("now_highlights", [])}
 
 @app.get("/api/status")
 async def api_status():
@@ -385,12 +438,13 @@ async def api_live():
     if not latest:
         return {"message": "In attesa dei primi dati dalla stazione meteo", "status_info": get_station_status()}
     
-    # Sanitizzazione: rimuove payload raw e chiavi riservate
+    # Sanitizzazione rigorosa: rimuove payload raw, MAC, PASSKEY, credenziali e token
     clean_latest = dict(latest)
     clean_latest.pop("raw_data_json", None)
     clean_latest.pop("raw_payload", None)
     clean_latest.pop("station_mac", None)
     clean_latest.pop("PASSKEY", None)
+    clean_latest.pop("stationtype", None)
 
     status_info = get_station_status()
     clean_latest["status_info"] = status_info
@@ -1380,6 +1434,8 @@ async def records_page(request: Request):
     history = get_records_history(limit=30)
     tropical_stats = get_tropical_nights_stats()
     soil_summary = get_soil_moisture_summary()
+    climate_stats = get_climate_comparisons()
+    today_extremes = get_today_extremes()
     return templates.TemplateResponse(
         request=request,
         name="records.html",
@@ -1389,7 +1445,9 @@ async def records_page(request: Request):
             "records": records,
             "history": history,
             "tropical_stats": tropical_stats,
-            "soil_summary": soil_summary
+            "soil_summary": soil_summary,
+            "climate_stats": climate_stats,
+            "today_extremes": today_extremes
         }
     )
 

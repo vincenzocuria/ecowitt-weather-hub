@@ -9,6 +9,90 @@
     <a href="/api/export/records-csv" class="btn btn-gold" style="padding: 0.6rem 1.2rem;">📥 Esporta Record in Excel</a>
 </div>
 
+<!-- SEZIONE ESTREMI DI OGGI (GIORNALIERI) -->
+<div class="card" style="margin-top: 1.2rem; background: linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(14, 165, 233, 0.04) 100%); border-left: 4px solid #38bdf8;">
+    <div class="card-header" style="border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.8rem; margin-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <span style="font-size: 1.5rem;">📅</span>
+            <div>
+                <strong style="font-size: 1.1rem; color: #38bdf8;">Estremi Giornalieri di Oggi</strong>
+                <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Minime, massime ed escursione termica registrate nelle 24 ore odierne.</p>
+            </div>
+        </div>
+        <span class="badge badge-info" style="font-size: 0.8rem; padding: 4px 10px;">
+            Oggi {{ climate_stats.today_avg_temp or '--' }}°C media
+        </span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.8rem;">
+        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
+            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Minima Oggi</span>
+            <div style="font-size: 1.7rem; font-weight: 800; color: #38bdf8; margin-top: 4px;">{{ today_extremes.temp_min if today_extremes and today_extremes.temp_min is not none else '--' }}°C</div>
+            <span style="font-size: 0.75rem; color: var(--text-dim);">ore {{ today_extremes.temp_min_time or '--:--' }}</span>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
+            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Massima Oggi</span>
+            <div style="font-size: 1.7rem; font-weight: 800; color: #f87171; margin-top: 4px;">{{ today_extremes.temp_max if today_extremes and today_extremes.temp_max is not none else '--' }}°C</div>
+            <span style="font-size: 0.75rem; color: var(--text-dim);">ore {{ today_extremes.temp_max_time or '--:--' }}</span>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
+            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Escursione Termica</span>
+            <div style="font-size: 1.7rem; font-weight: 800; color: #eab308; margin-top: 4px;">Δ {{ today_extremes.temp_range if today_extremes and today_extremes.temp_range is not none else '--' }}°C</div>
+            <span style="font-size: 0.75rem; color: var(--text-dim);">delta giorno</span>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
+            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Raffica Max Oggi</span>
+            <div style="font-size: 1.7rem; font-weight: 800; color: #f59e0b; margin-top: 4px;">{{ today_extremes.max_gust if today_extremes and today_extremes.max_gust is not none else '--' }} <span style="font-size: 0.9rem; font-weight: normal;">km/h</span></div>
+            <span style="font-size: 0.75rem; color: var(--text-dim);">vento massimo</span>
+        </div>
+    </div>
+</div>
+
+<!-- SEZIONE CONFRONTI CLIMATICI & STATISTICHE STORICHE -->
+<div class="climate-comp-card">
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 0.8rem;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.5rem;">📊</span>
+            <div>
+                <strong style="font-size: 1.1rem; color: #818cf8;">Confronti Climatici & Medie Storiche</strong>
+                <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">{{ climate_stats.diff_30d_str }}</p>
+            </div>
+        </div>
+        <span class="badge" style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.4);">
+            {{ climate_stats.month_name }}
+        </span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.8rem;">
+        <div style="background: rgba(0,0,0,0.25); padding: 0.8rem; border-radius: 8px;">
+            <span style="font-size: 0.75rem; color: var(--text-dim);">Giorni Caldi &ge; 30°C:</span>
+            <div style="font-size: 1.4rem; font-weight: 800; color: #f59e0b; margin-top: 2px;">{{ climate_stats.days_above_30 }} gg</div>
+            <span style="font-size: 0.72rem; color: var(--text-dim);">nel mese di {{ climate_stats.month_name }}</span>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.25); padding: 0.8rem; border-radius: 8px;">
+            <span style="font-size: 0.75rem; color: var(--text-dim);">Giorni Roventi &ge; 35°C:</span>
+            <div style="font-size: 1.4rem; font-weight: 800; color: #ef4444; margin-top: 2px;">{{ climate_stats.days_above_35 }} gg</div>
+            <span style="font-size: 0.72rem; color: var(--text-dim);">caldo estremo diurno</span>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.25); padding: 0.8rem; border-radius: 8px;">
+            <span style="font-size: 0.75rem; color: var(--text-dim);">Giorni di Pioggia (&ge;1mm):</span>
+            <div style="font-size: 1.4rem; font-weight: 800; color: #38bdf8; margin-top: 2px;">{{ climate_stats.days_rain }} gg</div>
+            <span style="font-size: 0.72rem; color: var(--text-dim);">frequenza precipitazioni</span>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.25); padding: 0.8rem; border-radius: 8px;">
+            <span style="font-size: 0.75rem; color: var(--text-dim);">Media Ultimi 30 Giorni:</span>
+            <div style="font-size: 1.4rem; font-weight: 800; color: #a78bfa; margin-top: 2px;">{{ climate_stats.last_30d_avg_temp or '--' }}°C</div>
+            <span style="font-size: 0.72rem; color: var(--text-dim);">baseline storico DB</span>
+        </div>
+    </div>
+</div>
+
 <!-- SEZIONE NOTTI TROPICALI & CLIMATOLOGIA -->
 <div class="card" style="margin-top: 1.2rem; background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(245, 158, 11, 0.06) 50%, var(--bg-card) 100%); border-left: 4px solid #f97316;">
     <div class="card-header" style="border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.8rem; margin-bottom: 1rem;">
@@ -76,7 +160,7 @@
 </div>
 
 <!-- CATEGORIE RECORD -->
-<h2 style="font-size: 1.3rem; margin-top: 1.5rem; color: var(--accent);">📊 Record Assoluti in Vigore</h2>
+<h2 style="font-size: 1.3rem; margin-top: 1.5rem; color: var(--accent);">🏆 Record Storici Assoluti (All-Time)</h2>
 
 <div class="grid">
     {% for r in records %}

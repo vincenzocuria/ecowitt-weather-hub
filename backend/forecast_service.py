@@ -2,6 +2,7 @@ import os
 import json
 import time
 import logging
+import math
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, List
 import requests
@@ -56,6 +57,14 @@ ITALIAN_MONTHS = {
     7: "Lug", 8: "Ago", 9: "Set", 10: "Ott", 11: "Nov", 12: "Dic"
 }
 
+EAQI_INFO = {
+    1: {"label": "Molto Buona", "badge_class": "badge-success", "color": "#10b981", "icon": "🟢", "desc": "Aria pulita e ideale per ventilare ambienti e attività all'aperto."},
+    2: {"label": "Buona", "badge_class": "badge-success", "color": "#22c55e", "icon": "🟢", "desc": "Qualità dell'aria buona. Nessun rischio per la popolazione."},
+    3: {"label": "Moderata", "badge_class": "badge-warning", "color": "#f59e0b", "icon": "🟡", "desc": "Accettabile, ma soggetti ipersensibili potrebbero avvertire lievi fastidi."},
+    4: {"label": "Scadente", "badge_class": "badge-danger", "color": "#f97316", "icon": "🟠", "desc": "Qualità dell'aria scadente. Si consiglia di limitare l'apertura prolungata delle finestre."},
+    5: {"label": "Molto Scadente", "badge_class": "badge-danger", "color": "#ef4444", "icon": "🔴", "desc": "Inquinamento elevato. Finestre chiuse e uso purificatori consigliato."}
+}
+
 
 class ForecastService:
     def __init__(self, cache_ttl_seconds: int = 3600):
@@ -63,19 +72,34 @@ class ForecastService:
         self._cached_data: Optional[Dict[str, Any]] = None
         self._last_fetch_time: float = 0.0
         self._cache_file = os.path.join(settings.DATA_DIR, "forecast_cache.json")
+
+        self._cached_aqi: Optional[Dict[str, Any]] = None
+        self._last_aqi_fetch: float = 0.0
+        self._aqi_cache_file = os.path.join(settings.DATA_DIR, "air_quality_cache.json")
+
         self._load_disk_cache()
 
     def _load_disk_cache(self):
-        """Carica l'ultima previsione salvata su disco se disponibile e valida."""
+        """Carica l'ultima previsione e qualità aria salvate su disco se disponibili."""
         if os.path.exists(self._cache_file):
             try:
                 with open(self._cache_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     self._cached_data = data.get("data")
                     self._last_fetch_time = data.get("fetched_at", 0.0)
-                    logger.info("Caricata cache previsioni da disco con successo")
+                    logger.info("Caricata cache previsioni meteo da disco")
             except Exception as e:
                 logger.warning(f"Impossibile leggere forecast cache da disco: {e}")
+
+        if os.path.exists(self._aqi_cache_file):
+            try:
+                with open(self._aqi_cache_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self._cached_aqi = data.get("data")
+                    self._last_aqi_fetch = data.get("fetched_at", 0.0)
+                    logger.info("Caricata cache qualità dell'aria da disco")
+            except Exception as e:
+                logger.warning(f"Impossibile leggere AQI cache da disco: {e}")
 
     def _save_disk_cache(self):
         """Salva la cache in formato JSON su disco per persistenza ai riavvii."""
@@ -89,6 +113,18 @@ class ForecastService:
         except Exception as e:
             logger.warning(f"Errore nel salvataggio forecast cache su disco: {e}")
 
+    def _save_aqi_disk_cache(self):
+        """Salva la cache della qualità dell'aria su disco."""
+        try:
+            os.makedirs(settings.DATA_DIR, exist_ok=True)
+            with open(self._aqi_cache_file, "w", encoding="utf-8") as f:
+                json.dump({
+                    "fetched_at": self._last_aqi_fetch,
+                    "data": self._cached_aqi
+                }, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning(f"Errore nel salvataggio AQI cache su disco: {e}")
+
     def get_wmo_info(self, code: Optional[int]) -> Dict[str, str]:
         """Restituisce testo, icona e descrizione per un codice meteo WMO."""
         if code is None:
@@ -97,7 +133,7 @@ class ForecastService:
 
     def fetch_open_meteo(self, force: bool = False) -> Optional[Dict[str, Any]]:
         """
-        Scarica le previsioni meteo ad alta risoluzione da Open-Meteo per le coordinate configurate.
+        Scarica le previsioni meteo ad alta risoluzione e parametri solari da Open-Meteo.
         Implementa caching in memoria e su disco.
         """
         now = time.time()
@@ -112,9 +148,9 @@ class ForecastService:
             f"https://api.open-meteo.com/v1/forecast"
             f"?latitude={lat}&longitude={lon}&elevation={elev}"
             f"&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,"
-            f"precipitation_probability_max,windspeed_10m_max,uv_index_max"
+            f"precipitation_probability_max,windspeed_10m_max,uv_index_max,shortwave_radiation_sum,sunshine_duration"
             f"&hourly=temperature_2m,relativehumidity_2m,precipitation,precipitation_probability,"
-            f"weathercode,windspeed_10m"
+            f"weathercode,windspeed_10m,direct_radiation,diffuse_radiation,shortwave_radiation_instant"
             f"&timezone=auto&forecast_days=7"
         )
 
@@ -134,7 +170,6 @@ class ForecastService:
         except Exception as e:
             logger.error(f"Eccezione durante la richiesta a Open-Meteo: {e}")
 
-        # Se fallisce la rete, ritorna la cache esistente se presente
         return self._cached_data
 
     def _process_open_meteo_payload(self, raw: Dict[str, Any]) -> Dict[str, Any]:
@@ -150,6 +185,8 @@ class ForecastService:
         daily_prob = daily_raw.get("precipitation_probability_max", [])
         daily_wind = daily_raw.get("windspeed_10m_max", [])
         daily_uv = daily_raw.get("uv_index_max", [])
+        daily_rad_mj = daily_raw.get("shortwave_radiation_sum", [])
+        daily_sun_sec = daily_raw.get("sunshine_duration", [])
 
         today_dt = settings.now_local().date()
 
@@ -175,14 +212,12 @@ class ForecastService:
             prob_pct = int(daily_prob[i]) if i < len(daily_prob) and daily_prob[i] is not None else 0
             rain_mm = round(daily_precip[i], 1) if i < len(daily_precip) and daily_precip[i] is not None else 0.0
 
-            # FILTRO METEOROLOGICO REALISTICO:
-            # Se la probabilità di pioggia è trascurabile (< 20% e accumulo < 0.2mm) ma il modello
-            # restituisce un codice WMO di pioggia/pioviggine (es. 51-67, 80-81), correggi il codice
-            # verso parzialmente nuvoloso o sereno per evitare di mostrare nuvole di pioggia ingannevoli per l'1%.
             if code in (51, 53, 55, 56, 57, 61, 63, 65, 80, 81) and prob_pct < 20 and rain_mm < 0.2:
-                code = 2  # Parzialmente nuvoloso
+                code = 2
 
             w_info = self.get_wmo_info(code)
+            rad_mj = round(daily_rad_mj[i], 1) if i < len(daily_rad_mj) and daily_rad_mj[i] is not None else None
+            sun_hours = round(daily_sun_sec[i] / 3600.0, 1) if i < len(daily_sun_sec) and daily_sun_sec[i] is not None else None
 
             days_list.append({
                 "date": d_str,
@@ -198,9 +233,10 @@ class ForecastService:
                 "rain_prob_pct": prob_pct,
                 "wind_max_kmh": round(daily_wind[i], 1) if i < len(daily_wind) and daily_wind[i] is not None else 0.0,
                 "uv_max": round(daily_uv[i], 1) if i < len(daily_uv) and daily_uv[i] is not None else 0.0,
+                "radiation_mj_m2": rad_mj,
+                "sunshine_hours": sun_hours
             })
 
-        # Elabora le prossime 24-48 ore
         now_dt = settings.now_local().replace(tzinfo=None)
         hourly_times = hourly_raw.get("time", [])
         hourly_temps = hourly_raw.get("temperature_2m", [])
@@ -209,23 +245,28 @@ class ForecastService:
         hourly_probs = hourly_raw.get("precipitation_probability", [])
         hourly_codes = hourly_raw.get("weathercode", [])
         hourly_winds = hourly_raw.get("windspeed_10m", [])
+        hourly_direct_rad = hourly_raw.get("direct_radiation", [])
+        hourly_diffuse_rad = hourly_raw.get("diffuse_radiation", [])
 
         hours_list: List[Dict[str, Any]] = []
         for j in range(len(hourly_times)):
             t_str = hourly_times[j]
             try:
                 t_dt = datetime.strptime(t_str, "%Y-%m-%dT%H:%M")
-                # Prendi da 1 ora fa fino alle prossime 36 ore
                 diff_hours = (t_dt - now_dt).total_seconds() / 3600.0
-                if -1.0 <= diff_hours <= 36.0:
+                if -1.0 <= diff_hours <= 48.0:
                     code = hourly_codes[j] if j < len(hourly_codes) else None
                     prob_pct = int(hourly_probs[j]) if j < len(hourly_probs) and hourly_probs[j] is not None else 0
                     rain_mm = round(hourly_rains[j], 1) if j < len(hourly_rains) else 0.0
 
                     if code in (51, 53, 55, 56, 57, 61, 63, 65, 80, 81) and prob_pct < 20 and rain_mm < 0.2:
-                        code = 2  # Parzialmente nuvoloso
+                        code = 2
 
                     w_info = self.get_wmo_info(code)
+                    dir_r = hourly_direct_rad[j] if j < len(hourly_direct_rad) and hourly_direct_rad[j] is not None else 0.0
+                    dif_r = hourly_diffuse_rad[j] if j < len(hourly_diffuse_rad) and hourly_diffuse_rad[j] is not None else 0.0
+                    total_rad_w = round(dir_r + dif_r, 1)
+
                     hours_list.append({
                         "iso_time": t_str,
                         "hour_label": t_dt.strftime("%H:%M"),
@@ -235,6 +276,7 @@ class ForecastService:
                         "rain_mm": rain_mm,
                         "rain_prob_pct": prob_pct,
                         "wind_kmh": round(hourly_winds[j], 1) if j < len(hourly_winds) else 0.0,
+                        "solar_irradiance_w_m2": total_rad_w,
                         "weather_code": code,
                         "icon": w_info["icon"],
                         "condition": w_info["text"]
@@ -249,6 +291,349 @@ class ForecastService:
             "hourly_next_36h": hours_list,
             "raw_hourly": hourly_raw
         }
+
+    # ----------------- 4. QUALITÀ DELL'ARIA & POLLINI (COPERNICUS CAMS) -----------------
+
+    def fetch_air_quality(self, force: bool = False) -> Dict[str, Any]:
+        """
+        Scarica i dati di qualità dell'aria (EAQI, PM2.5, PM10, NO2, O3, CO, SO2)
+        e pollini (Graminacee, Betulla, Olivo, Ambrosia, Ontano, Artemisia) da Open-Meteo CAMS.
+        """
+        now = time.time()
+        if not force and self._cached_aqi and (now - self._last_aqi_fetch < self.cache_ttl):
+            return self._cached_aqi
+
+        lat = settings.LATITUDE
+        lon = settings.LONGITUDE
+
+        url = (
+            f"https://air-quality-api.open-meteo.com/v1/air-quality"
+            f"?latitude={lat}&longitude={lon}"
+            f"&current=european_aqi,us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,"
+            f"alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,olive_pollen,ragweed_pollen,dust"
+            f"&hourly=european_aqi,pm2_5,pm10,ozone,nitrogen_dioxide"
+            f"&timezone=auto"
+        )
+
+        try:
+            logger.info(f"Scaricamento Qualità dell'Aria & Pollini CAMS per lat={lat}, lon={lon}...")
+            resp = requests.get(url, timeout=8, headers={"User-Agent": "WeatherHub/1.0"})
+            if resp.status_code == 200:
+                raw_json = resp.json()
+                processed = self._process_air_quality_payload(raw_json)
+                self._cached_aqi = processed
+                self._last_aqi_fetch = now
+                self._save_aqi_disk_cache()
+                logger.info("Qualità dell'aria e pollini aggiornati con successo")
+                return self._cached_aqi
+            else:
+                logger.error(f"Errore HTTP da Air Quality API ({resp.status_code}): {resp.text[:200]}")
+        except Exception as e:
+            logger.error(f"Eccezione durante richiesta qualità dell'aria: {e}")
+
+        if self._cached_aqi:
+            return self._cached_aqi
+
+        return self._get_fallback_air_quality()
+
+    def _process_air_quality_payload(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+        """Elabora e struttura i dati di inquinanti e pollini per l'Hub."""
+        curr = raw.get("current", {})
+        
+        eaqi_val = curr.get("european_aqi")
+        if eaqi_val is None or eaqi_val <= 0:
+            eaqi_val = 1
+        elif eaqi_val > 5:
+            eaqi_val = 5
+
+        eaqi_meta = EAQI_INFO.get(int(eaqi_val), EAQI_INFO[1])
+
+        pm25 = curr.get("pm2_5")
+        pm10 = curr.get("pm10")
+        no2 = curr.get("nitrogen_dioxide")
+        o3 = curr.get("ozone")
+        co = curr.get("carbon_monoxide")
+        so2 = curr.get("sulphur_dioxide")
+
+        pollens = {
+            "grass": self._classify_pollen("Graminacee", curr.get("grass_pollen"), [0, 5, 25, 75]),
+            "olive": self._classify_pollen("Olivo", curr.get("olive_pollen"), [0, 10, 50, 150]),
+            "birch": self._classify_pollen("Betulla", curr.get("birch_pollen"), [0, 10, 50, 100]),
+            "ragweed": self._classify_pollen("Ambrosia", curr.get("ragweed_pollen"), [0, 5, 20, 50]),
+            "alder": self._classify_pollen("Ontano", curr.get("alder_pollen"), [0, 10, 50, 100]),
+            "mugwort": self._classify_pollen("Artemisia", curr.get("mugwort_pollen"), [0, 5, 20, 50]),
+        }
+
+        highest_pollen = max(pollens.values(), key=lambda p: p["severity_score"])
+
+        pm25_val = float(pm25) if pm25 is not None else 0.0
+        if pm25_val >= 35.0 or eaqi_val >= 4:
+            window_advice = "Qualità aria scadente: sconsigliato arieggiare o limitare a pochi minuti."
+            window_status = "poor"
+        elif highest_pollen["severity_score"] >= 3:
+            window_advice = f"Attenzione: concentrazione elevata di pollini ({highest_pollen['name']}). Limitare aerazione se allergici."
+            window_status = "pollen_high"
+        elif pm25_val < 15.0 and eaqi_val <= 2:
+            window_advice = "Aria pulita e salubre: ottimo momento per arieggiare casa."
+            window_status = "good"
+        else:
+            window_advice = "Qualità dell'aria nella norma."
+            window_status = "moderate"
+
+        return {
+            "source": "Copernicus Atmosphere Monitoring Service (CAMS)",
+            "updated_at": settings.now_local().strftime("%Y-%m-%d %H:%M"),
+            "eaqi": {
+                "value": int(eaqi_val),
+                "label": eaqi_meta["label"],
+                "badge_class": eaqi_meta["badge_class"],
+                "color": eaqi_meta["color"],
+                "icon": eaqi_meta["icon"],
+                "desc": eaqi_meta["desc"]
+            },
+            "pollutants": {
+                "pm2_5": {"val": round(pm25, 1) if pm25 is not None else None, "unit": "µg/m³", "label": "PM2.5 (Fine)"},
+                "pm10": {"val": round(pm10, 1) if pm10 is not None else None, "unit": "µg/m³", "label": "PM10 (Inalabile)"},
+                "no2": {"val": round(no2, 1) if no2 is not None else None, "unit": "µg/m³", "label": "Biossido di Azoto (NO₂)"},
+                "o3": {"val": round(o3, 1) if o3 is not None else None, "unit": "µg/m³", "label": "Ozono (O₃)"},
+                "co": {"val": round(co, 1) if co is not None else None, "unit": "µg/m³", "label": "Monossido di Carbonio (CO)"},
+                "so2": {"val": round(so2, 1) if so2 is not None else None, "unit": "µg/m³", "label": "Biossido di Zolfo (SO₂)"},
+            },
+            "pollens": pollens,
+            "dominant_pollen": highest_pollen,
+            "window_advice": window_advice,
+            "window_status": window_status
+        }
+
+    def _classify_pollen(self, name: str, val: Optional[float], thresholds: List[float]) -> Dict[str, Any]:
+        """Classifica i pollini in Assente, Basso, Medio, Alto, Molto Alto."""
+        if val is None or val < 0.1:
+            return {"name": name, "val": 0.0, "level": "Assente", "badge": "badge-neutral", "color": "#94a3b8", "severity_score": 0}
+        
+        v = float(val)
+        if v < thresholds[1]:
+            return {"name": name, "val": round(v, 1), "level": "Basso", "badge": "badge-success", "color": "#10b981", "severity_score": 1}
+        elif v < thresholds[2]:
+            return {"name": name, "val": round(v, 1), "level": "Medio", "badge": "badge-warning", "color": "#f59e0b", "severity_score": 2}
+        elif v < thresholds[3]:
+            return {"name": name, "val": round(v, 1), "level": "Alto", "badge": "badge-danger", "color": "#f97316", "severity_score": 3}
+        else:
+            return {"name": name, "val": round(v, 1), "level": "Molto Alto", "badge": "badge-danger", "color": "#ef4444", "severity_score": 4}
+
+    def _get_fallback_air_quality(self) -> Dict[str, Any]:
+        """Fallback in caso di assenza temporanea di rete."""
+        return {
+            "source": "Stima Locale",
+            "updated_at": settings.now_local().strftime("%Y-%m-%d %H:%M"),
+            "eaqi": {
+                "value": 1,
+                "label": "Buona (Stima)",
+                "badge_class": "badge-success",
+                "color": "#10b981",
+                "icon": "🟢",
+                "desc": "Aria in condizioni stabili."
+            },
+            "pollutants": {
+                "pm2_5": {"val": 8.0, "unit": "µg/m³", "label": "PM2.5"},
+                "pm10": {"val": 14.0, "unit": "µg/m³", "label": "PM10"},
+                "no2": {"val": 10.0, "unit": "µg/m³", "label": "NO₂"},
+                "o3": {"val": 45.0, "unit": "µg/m³", "label": "O₃"},
+                "co": {"val": 150.0, "unit": "µg/m³", "label": "CO"},
+                "so2": {"val": 2.0, "unit": "µg/m³", "label": "SO₂"},
+            },
+            "pollens": {
+                "grass": {"name": "Graminacee", "val": 0.0, "level": "Basso", "badge": "badge-success", "color": "#10b981", "severity_score": 1},
+                "olive": {"name": "Olivo", "val": 0.0, "level": "Basso", "badge": "badge-success", "color": "#10b981", "severity_score": 1},
+                "birch": {"name": "Betulla", "val": 0.0, "level": "Assente", "badge": "badge-neutral", "color": "#94a3b8", "severity_score": 0},
+                "ragweed": {"name": "Ambrosia", "val": 0.0, "level": "Assente", "badge": "badge-neutral", "color": "#94a3b8", "severity_score": 0},
+                "alder": {"name": "Ontano", "val": 0.0, "level": "Assente", "badge": "badge-neutral", "color": "#94a3b8", "severity_score": 0},
+                "mugwort": {"name": "Artemisia", "val": 0.0, "level": "Assente", "badge": "badge-neutral", "color": "#94a3b8", "severity_score": 0},
+            },
+            "dominant_pollen": {"name": "Graminacee", "val": 0.0, "level": "Basso", "severity_score": 1},
+            "window_advice": "Qualità dell'aria nella norma.",
+            "window_status": "good"
+        }
+
+    # ----------------- 7. PREVISIONE ENERGETICA FOTOVOLTAICO & BATTERIA -----------------
+
+    def fetch_solar_forecast(self, aton_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Calcola la produzione fotovoltaica stimata per Oggi e Domani (in kWh),
+        la curva di insolazione oraria, la finestra ideale per elettrodomestici,
+        l'orario stimato di batteria al 100% e il surplus previsto.
+        """
+        forecast = self.fetch_open_meteo()
+        kwp = settings.SOLAR_INSTALLED_KWP
+        pr = 0.80
+
+        today_est_kwh = 0.0
+        tomorrow_est_kwh = 0.0
+        tomorrow_peak_start = "11:00"
+        tomorrow_peak_end = "15:30"
+        est_surplus_kwh = 0.0
+
+        if forecast and forecast.get("daily"):
+            days = forecast["daily"]
+            if len(days) >= 1 and days[0].get("radiation_mj_m2") is not None:
+                rad_mj_today = days[0]["radiation_mj_m2"] or 18.0
+                today_est_kwh = round((rad_mj_today / 3.6) * kwp * pr, 1)
+
+            if len(days) >= 2 and days[1].get("radiation_mj_m2") is not None:
+                rad_mj_tom = days[1]["radiation_mj_m2"] or 18.0
+                tomorrow_est_kwh = round((rad_mj_tom / 3.6) * kwp * pr, 1)
+            else:
+                tomorrow_est_kwh = round(today_est_kwh * 0.95, 1)
+
+        if tomorrow_est_kwh <= 0.0:
+            month = settings.now_local().month
+            summer_months = {5: 24, 6: 28, 7: 28, 8: 26, 9: 20}
+            winter_months = {11: 10, 12: 8, 1: 9, 2: 12, 3: 16, 4: 20, 10: 14}
+            base = summer_months.get(month, winter_months.get(month, 18))
+            tomorrow_est_kwh = round(base * (kwp / 6.0), 1)
+            today_est_kwh = tomorrow_est_kwh
+
+        avg_house_daily_kwh = 9.0
+        est_surplus_kwh = max(0.0, round(tomorrow_est_kwh - avg_house_daily_kwh, 1))
+
+        if tomorrow_est_kwh >= 22.0:
+            battery_100_est = "12:15 - 13:00"
+        elif tomorrow_est_kwh >= 15.0:
+            battery_100_est = "13:30 - 14:30"
+        else:
+            battery_100_est = "Non garantito (giornata coperta)"
+
+        soc_now = aton_data.get("soc") if aton_data else None
+        p_solare_now = aton_data.get("p_solare") if aton_data else None
+
+        return {
+            "installed_kwp": kwp,
+            "today_est_kwh": today_est_kwh,
+            "tomorrow_est_kwh": tomorrow_est_kwh,
+            "tomorrow_range_str": f"{max(1.0, tomorrow_est_kwh - 2.0):.0f}-{tomorrow_est_kwh + 2.0:.0f} kWh",
+            "best_appliances_window": f"{tomorrow_peak_start} - {tomorrow_peak_end}",
+            "battery_100_est": battery_100_est,
+            "est_surplus_kwh": est_surplus_kwh,
+            "summary_text": f"☀️ Produzione stimata domani: {tomorrow_est_kwh:.1f} kWh. Finestra consigliata elettrodomestici: {tomorrow_peak_start}-{tomorrow_peak_end}.",
+            "live_soc": soc_now,
+            "live_solar_w": p_solare_now
+        }
+
+    # ----------------- 3. NOWCASTING RADAR & PRECIPITAZIONI -----------------
+
+    def build_rain_nowcasting_summary(self, current_reading: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Algoritmo di nowcasting pioggia a 0-6 ore che combina:
+        - Telemetria live della stazione (pioggia in corso, rain rate, trend barometrico)
+        - Previsioni orarie ad alta risoluzione Open-Meteo (prossime 6 ore)
+        - Calcolo tempi di arrivo stimati pioggia / rovesci.
+        """
+        current_rain_rate = current_reading.get("rain_rate_mm_hr", 0.0) if current_reading else 0.0
+
+        forecast = self.fetch_open_meteo()
+        hourly = forecast.get("hourly_next_36h", []) if forecast else []
+
+        now_dt = settings.now_local().replace(tzinfo=None)
+
+        max_prob_6h = 0
+        total_rain_6h = 0.0
+        first_rain_hour: Optional[Dict[str, Any]] = None
+
+        for h in hourly:
+            try:
+                h_dt = datetime.strptime(h["iso_time"], "%Y-%m-%dT%H:%M")
+                diff_h = (h_dt - now_dt).total_seconds() / 3600.0
+                if 0.0 <= diff_h <= 6.5:
+                    prob = h.get("rain_prob_pct", 0)
+                    r_mm = h.get("rain_mm", 0.0)
+                    if prob > max_prob_6h:
+                        max_prob_6h = prob
+                    total_rain_6h += r_mm
+                    if r_mm >= 0.3 and prob >= 40 and first_rain_hour is None:
+                        first_rain_hour = h
+            except Exception:
+                continue
+
+        if current_rain_rate and current_rain_rate > 0.2:
+            if current_rain_rate >= 15.0:
+                headline = f"⛈️ Nubifragio in corso ({current_rain_rate} mm/h)!"
+                desc = "Precipitazioni molto intense sulla stazione meteo."
+                status_class = "danger"
+                icon = "⛈️"
+            elif current_rain_rate >= 4.0:
+                headline = f"🌧️ Pioggia moderata/forte ({current_rain_rate} mm/h)"
+                desc = "Precipitazioni attive in corso."
+                status_class = "warning"
+                icon = "🌧️"
+            else:
+                headline = f"🌦️ Pioviggine / Pioggia debole ({current_rain_rate} mm/h)"
+                desc = "Deboli precipitazioni rilevate dai sensori."
+                status_class = "info"
+                icon = "🌦️"
+
+            return {
+                "active_rain": True,
+                "headline": headline,
+                "desc": desc,
+                "icon": icon,
+                "status_class": status_class,
+                "prob_next_6h": 100,
+                "rain_sum_next_6h": round(total_rain_6h, 1),
+                "radar_link": "/radar"
+            }
+
+        if first_rain_hour is not None:
+            try:
+                first_dt = datetime.strptime(first_rain_hour["iso_time"], "%Y-%m-%dT%H:%M")
+                min_until = max(15, int((first_dt - now_dt).total_seconds() / 60.0))
+                time_range_min = f"{max(15, min_until - 20)}-{min_until + 20}"
+
+                if first_rain_hour.get("weather_code") in (95, 96, 99, 82):
+                    headline = f"⛈️ Temporale / Cella in avvicinamento (tra ~{time_range_min} min)"
+                    desc = f"Attività convettiva o rovesci previsti intorno alle {first_rain_hour['hour_label']} (probabilità {first_rain_hour['rain_prob_pct']}%)."
+                    status_class = "danger"
+                    icon = "⛈️"
+                else:
+                    headline = f"🌧️ Pioggia prevista nella tua zona tra circa {time_range_min} minuti"
+                    desc = f"Inizio precipitazioni stimato intorno alle {first_rain_hour['hour_label']} (accumulo stimato: {first_rain_hour['rain_mm']} mm)."
+                    status_class = "warning"
+                    icon = "🌧️"
+
+                return {
+                    "active_rain": False,
+                    "headline": headline,
+                    "desc": desc,
+                    "icon": icon,
+                    "status_class": status_class,
+                    "prob_next_6h": max_prob_6h,
+                    "rain_sum_next_6h": round(total_rain_6h, 1),
+                    "radar_link": "/radar"
+                }
+            except Exception:
+                pass
+
+        if max_prob_6h >= 30 and total_rain_6h > 0.1:
+            headline = f"⛅ Possibilità di isolati piovaschi nelle prossime 6 ore ({max_prob_6h}%)"
+            desc = "Bassa probabilità di fenomeni isolati o locali."
+            status_class = "info"
+            icon = "🌦️"
+        else:
+            headline = "☀️ Niente pioggia nelle prossime 6 ore"
+            desc = "Condizioni asciutte e cielo stabile sulla tua zona."
+            status_class = "success"
+            icon = "☀️"
+
+        return {
+            "active_rain": False,
+            "headline": headline,
+            "desc": desc,
+            "icon": icon,
+            "status_class": status_class,
+            "prob_next_6h": max_prob_6h,
+            "rain_sum_next_6h": round(total_rain_6h, 1),
+            "radar_link": "/radar"
+        }
+
+    # ----------------- CROSS CHECK MODELLO VS STAZIONE -----------------
 
     def build_cross_check_summary(self, current_reading: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -273,7 +658,6 @@ class ForecastService:
                 "text": "Nessuna ora previsionale disponibile."
             }
 
-        # Cerca l'ora più vicina
         now_dt = settings.now_local().replace(tzinfo=None)
         closest_hour = hourly[0]
         min_diff = 999999
@@ -289,8 +673,6 @@ class ForecastService:
 
         station_temp = current_reading.get("temp_c")
         model_temp = closest_hour.get("temp_c")
-        station_rain = current_reading.get("rain_rate_mm_hr", 0.0) or 0.0
-        model_rain = closest_hour.get("rain_mm", 0.0) or 0.0
 
         if station_temp is None or model_temp is None:
             return {

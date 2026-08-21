@@ -183,10 +183,12 @@ def evaluate_window_ventilation(
     hum_out: Optional[float],
     temp_in: Optional[float],
     hum_in: Optional[float],
-    rain_rate: Optional[float] = 0.0
+    rain_rate: Optional[float] = 0.0,
+    air_quality: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
-    Determina se conviene aprire o chiudere le finestre confrontando clima interno ed esterno.
+    Determina se conviene aprire o chiudere le finestre confrontando clima interno ed esterno
+    e incrociando i dati di Qualità dell'Aria (PM2.5, PM10, AQI) e Pollini.
     """
     if rain_rate and rain_rate > 0.1:
         return {
@@ -197,16 +199,40 @@ def evaluate_window_ventilation(
             "desc": "Pioggia in corso all'esterno."
         }
 
+    # Verifica Qualità dell'Aria (CAMS)
+    aqi_warning = None
+    if air_quality:
+        eaqi_val = air_quality.get("eaqi", {}).get("value", 1)
+        pm25_val = air_quality.get("pollutants", {}).get("pm2_5", {}).get("val")
+        dominant_pollen = air_quality.get("dominant_pollen", {})
+        
+        if pm25_val is not None and pm25_val >= 35.0:
+            aqi_warning = f"Qualità aria scadente all'esterno (PM2.5: {pm25_val} µg/m³): sconsigliato arieggiare o limitare a brevissimo ricambio."
+        elif eaqi_val >= 4:
+            aqi_warning = "Inquinamento atmosferico elevato all'esterno: meglio tenere chiuso o usare purificatore d'aria."
+        elif dominant_pollen.get("severity_score", 0) >= 3:
+            aqi_warning = f"Allerta allergeni: concentrazione elevata di pollini ({dominant_pollen.get('name')})."
+
     if temp_out is None or temp_in is None:
         return {
             "status": "neutral",
             "icon": "🪟",
             "badge_class": "badge-neutral",
             "title": "Aerazione Normale",
-            "desc": "Sensori interni o esterni in attesa di sincronizzazione."
+            "desc": aqi_warning or "Sensori interni o esterni in attesa di sincronizzazione."
         }
 
     diff_temp = round(temp_out - temp_in, 1)
+
+    # Se c'è allerta aria scadente e fuori è più fresco, segnala il trade-off intelligente!
+    if aqi_warning and temp_out < temp_in - 1.0:
+        return {
+            "status": "close_aqi",
+            "icon": "🪟 ⚠️",
+            "badge_class": "badge-warning",
+            "title": "Arieggiare con Cautela",
+            "desc": f"Fuori fa più fresco ({temp_out}°C vs {temp_in}°C), ma {aqi_warning}"
+        }
 
     # ESTATE / AMBIENTE CALDO (> 23°C dentro)
     if temp_in >= 23.0:
@@ -966,5 +992,285 @@ def evaluate_indoor_comfort(
             "delta_text": delta_str,
             "diff_c": diff_val
         }
+
+
+# ---------------------------------------------------------------------------
+# 7. EVAPOTRASPIRAZIONE & IRRIGAZIONE INTELLIGENTE WH51
+# ---------------------------------------------------------------------------
+
+def calc_evapotranspiration(
+    temp_c: Optional[float],
+    humidity: Optional[float],
+    solar_rad: Optional[float] = None,
+    wind_kmh: Optional[float] = 5.0,
+    temp_min_c: Optional[float] = None,
+    temp_max_c: Optional[float] = None
+) -> float:
+    """
+    Stima l'Evapotraspirazione di Riferimento Giornaliera (ET₀ in mm/giorno)
+    usando il metodo standard FAO-56 / Hargreaves-Samani e radiazione solare.
+    """
+    if temp_c is None:
+        return 3.0
+    
+    t_mean = float(temp_c)
+    h = float(humidity) if humidity is not None else 50.0
+    w_ms = (float(wind_kmh) if wind_kmh is not None else 5.0) / 3.6
+    
+    # Se abbiamo la radiazione solare istantanea o giornaliera
+    if solar_rad is not None and solar_rad > 0:
+        # Conversione stimata radiazione W/m² in MJ/m²/giorno
+        # Un valore medio diurno di 400 W/m² corrisponde a ~17 MJ/m²/giorno
+        rad_mj = max(5.0, min(32.0, (solar_rad / 25.0)))
+    else:
+        # Metodo Hargreaves con delta termico giornaliero
+        t_max = temp_max_c if temp_max_c is not None else (t_mean + 5.0)
+        t_min = temp_min_c if temp_min_c is not None else (t_mean - 5.0)
+        delta_t = max(2.0, t_max - t_min)
+        # Radiazione extraterrestre stimata per lat ~39°N
+        ra = 30.0
+        rad_mj = 0.16 * math.sqrt(delta_t) * ra
+
+    # Formula Makkink / Priestley-Taylor semplificata per ET0
+    slope = 4098.0 * (0.6108 * math.exp((17.27 * t_mean) / (t_mean + 237.3))) / ((t_mean + 237.3) ** 2)
+    gamma = 0.067
+    
+    et0 = 0.7 * (slope / (slope + gamma)) * (rad_mj / 2.45)
+    
+    # Correzione per vento e deficit igrometrico
+    if h < 45.0:
+        et0 *= 1.15
+    elif h > 75.0:
+        et0 *= 0.85
+        
+    if w_ms > 4.0:
+        et0 *= 1.1
+
+    return round(max(0.5, min(9.5, et0)), 1)
+
+
+def evaluate_smart_irrigation(
+    soil_moisture_pct: Optional[float],
+    temp_c: Optional[float],
+    solar_rad: Optional[float] = None,
+    rain_forecast_24h_mm: float = 0.0,
+    recent_rain_48h_mm: float = 0.0,
+    et_mm: Optional[float] = None
+) -> Dict[str, Any]:
+    """
+    Sistema decisionale per l'irrigazione intelligente (Sensore WH51 + Meteo Predittivo):
+    Incrocia:
+    1. Umidità del suolo WH51 (%)
+    2. Evapotraspirazione stimata (mm/giorno)
+    3. Pioggia prevista nelle prossime 24h
+    4. Pioggia caduta nelle ultime 48h
+    """
+    if et_mm is None:
+        et_mm = calc_evapotranspiration(temp_c, 50.0, solar_rad)
+
+    # Se non c'è sensore WH51 collegato, usa stima agrometeo standard
+    has_sensor = soil_moisture_pct is not None
+    sm = float(soil_moisture_pct) if has_sensor else 40.0
+
+    # 1. PIOGGIA PREVISTA IMMINENTE
+    if rain_forecast_24h_mm >= 4.0:
+        return {
+            "has_sensor": has_sensor,
+            "soil_moisture_pct": round(sm, 1) if has_sensor else None,
+            "et_mm": et_mm,
+            "rain_forecast_24h_mm": round(rain_forecast_24h_mm, 1),
+            "status": "skip_rain",
+            "icon": "🌧️ 🛑",
+            "badge_class": "badge-info",
+            "title": "Irrigazione NON Necessaria",
+            "desc": f"Previsti {rain_forecast_24h_mm:.1f} mm di pioggia nelle prossime 24h: risparmia acqua, la natura irrigherà per te!",
+            "liters_sqm_rec": 0.0
+        }
+
+    # 2. PIOGGE RECENTI ABBONDANTI
+    if recent_rain_48h_mm >= 8.0:
+        return {
+            "has_sensor": has_sensor,
+            "soil_moisture_pct": round(sm, 1) if has_sensor else None,
+            "et_mm": et_mm,
+            "rain_forecast_24h_mm": round(rain_forecast_24h_mm, 1),
+            "status": "skip_recent",
+            "icon": "💧 🟢",
+            "badge_class": "badge-success",
+            "title": "Suolo Ben Idratato",
+            "desc": f"Accumulo recente di {recent_rain_48h_mm:.1f} mm nelle 48h. Riserva idrica del terreno ottimale.",
+            "liters_sqm_rec": 0.0
+        }
+
+    # 3. TERRENO UMIDO / OTTIMALE (>= 32%)
+    if sm >= 32.0:
+        return {
+            "has_sensor": has_sensor,
+            "soil_moisture_pct": round(sm, 1) if has_sensor else None,
+            "et_mm": et_mm,
+            "rain_forecast_24h_mm": round(rain_forecast_24h_mm, 1),
+            "status": "optimal",
+            "icon": "🌱 🟢",
+            "badge_class": "badge-success",
+            "title": "Umidità Ideale",
+            "desc": f"Umidità suolo al {sm:.0f}% (ET stimata: {et_mm} mm/die). Nessuna irrigazione richiesta oggi.",
+            "liters_sqm_rec": 0.0
+        }
+
+    # 4. TERRENO SECCO (<= 30%) SENZA PIOGGIA PREVISTA -> CONSIGLIO IRRIGAZIONE
+    rec_liters = round(max(2.0, min(6.0, et_mm * 0.9)), 1)
+    return {
+        "has_sensor": has_sensor,
+        "soil_moisture_pct": round(sm, 1) if has_sensor else None,
+        "et_mm": et_mm,
+        "rain_forecast_24h_mm": round(rain_forecast_24h_mm, 1),
+        "status": "water_needed",
+        "icon": "🌱 💧",
+        "badge_class": "badge-warning",
+        "title": "Irrigazione Consigliata",
+        "desc": f"Terreno secco ({sm:.0f}%), ET {et_mm} mm e pioggia assente. Consiglio: irrigare stasera circa {rec_liters} L/m².",
+        "liters_sqm_rec": rec_liters
+    }
+
+
+# ---------------------------------------------------------------------------
+# 8. GENERATORE INTELLIGENZA DINAMICA "COSA DEVO SAPERE ORA" (NOW HIGHLIGHTS)
+# ---------------------------------------------------------------------------
+
+def generate_now_highlights(
+    latest: Dict[str, Any],
+    analytics_ctx: Dict[str, Any],
+    air_quality: Optional[Dict[str, Any]] = None,
+    solar_forecast: Optional[Dict[str, Any]] = None,
+    nowcasting: Optional[Dict[str, Any]] = None,
+    aton_data: Optional[Dict[str, Any]] = None
+) -> List[Dict[str, Any]]:
+    """
+    Genera da 3 a 5 pillole sintetiche, intelligenti e azionabili in primo piano
+    per rispondere subito alla domanda: "Cosa devo sapere adesso?".
+    """
+    highlights = []
+
+    # 1. PILLOLA FINESTRE & AERAZIONE (con incrocio AQI)
+    window_info = analytics_ctx.get("comfort", {}).get("window", {})
+    w_status = window_info.get("status", "neutral")
+    w_icon = "🪟"
+    
+    if "open" in w_status:
+        highlights.append({
+            "category": "windows",
+            "icon": "🪟 🟢",
+            "title": window_info.get("title", "Apri le finestre"),
+            "subtitle": window_info.get("desc", "Ottimo per rinfrescare casa"),
+            "badge_class": "badge-success",
+            "action_text": "Aerazione"
+        })
+    elif "close" in w_status:
+        highlights.append({
+            "category": "windows",
+            "icon": "🪟 🔴",
+            "title": window_info.get("title", "Tieni le finestre chiuse"),
+            "subtitle": window_info.get("desc", "Mantieni fresco l'interno"),
+            "badge_class": "badge-danger",
+            "action_text": "Isolamento"
+        })
+    else:
+        highlights.append({
+            "category": "windows",
+            "icon": "🪟",
+            "title": "Aerazione Regolare",
+            "subtitle": window_info.get("desc", "Temperature interno/esterno simili"),
+            "badge_class": "badge-neutral",
+            "action_text": "Clima Casa"
+        })
+
+    # 2. PILLOLA NOWCASTING PIOGGIA
+    if nowcasting:
+        highlights.append({
+            "category": "rain_nowcast",
+            "icon": nowcasting.get("icon", "🌧️"),
+            "title": nowcasting.get("headline", "Meteo stabile"),
+            "subtitle": nowcasting.get("desc", "Monitoraggio radar live attivo"),
+            "badge_class": f"badge-{nowcasting.get('status_class', 'info')}",
+            "action_text": "Nowcasting"
+        })
+
+    # 3. PILLOLA ENERGIA & FOTOVOLTAICO / BATTERIA
+    if aton_data and aton_data.get("soc") is not None:
+        soc = int(aton_data.get("soc", 0))
+        p_sol = aton_data.get("p_solare", 0)
+        p_ut = aton_data.get("p_utenze", 0)
+        
+        if p_sol > p_ut and p_sol > 200:
+            e_title = f"⚡ Casa Autosufficiente (Surplus {(p_sol - p_ut):.0f} W)"
+            e_sub = f"Batteria al {soc}%. Ottimo momento per avviare elettrodomestici."
+            e_badge = "badge-success"
+            e_icon = "⚡ 🟢"
+        elif soc <= 20:
+            e_title = f"🔋 Batteria in Riserva ({soc}%)"
+            e_sub = "Prelievo da rete o ricarica minima."
+            e_badge = "badge-warning"
+            e_icon = "🔋 🟡"
+        else:
+            e_title = f"🔋 Batteria Aton al {soc}%"
+            e_sub = f"Produzione FV: {p_sol:.0f} W • Consumo casa: {p_ut:.0f} W."
+            e_badge = "badge-info"
+            e_icon = "🔋"
+
+        highlights.append({
+            "category": "energy",
+            "icon": e_icon,
+            "title": e_title,
+            "subtitle": e_sub,
+            "badge_class": e_badge,
+            "action_text": "Energia"
+        })
+    elif solar_forecast:
+        highlights.append({
+            "category": "energy_forecast",
+            "icon": "☀️ ⚡",
+            "title": f"Previsione FV Domani: {solar_forecast.get('tomorrow_est_kwh', 0)} kWh",
+            "subtitle": f"Finestra elettrodomestici consigliata: {solar_forecast.get('best_appliances_window', '11:00-15:00')}",
+            "badge_class": "badge-info",
+            "action_text": "Solar Forecast"
+        })
+
+    # 4. PILLOLA GIARDINO & IRRIGAZIONE WH51
+    irrigation = analytics_ctx.get("irrigation_advice")
+    if irrigation:
+        highlights.append({
+            "category": "irrigation",
+            "icon": irrigation.get("icon", "🌱"),
+            "title": irrigation.get("title", "Aiuola & Suolo"),
+            "subtitle": irrigation.get("desc", "Gestione idrica del terreno"),
+            "badge_class": irrigation.get("badge_class", "badge-neutral"),
+            "action_text": "Irrigazione"
+        })
+
+    # 5. PILLOLA QUALITÀ DELL'ARIA & POLLINI (se presente allerta o eccellente)
+    if air_quality:
+        eaqi = air_quality.get("eaqi", {})
+        dom_pollen = air_quality.get("dominant_pollen", {})
+        if eaqi.get("value", 1) >= 3:
+            highlights.append({
+                "category": "air_quality",
+                "icon": "🌬️ ⚠️",
+                "title": f"Qualità Aria {eaqi.get('label')}",
+                "subtitle": air_quality.get("window_advice", "Attenzione agli inquinanti"),
+                "badge_class": eaqi.get("badge_class", "badge-warning"),
+                "action_text": "Aria & CAMS"
+            })
+        elif dom_pollen.get("severity_score", 0) >= 3:
+            highlights.append({
+                "category": "pollen",
+                "icon": "🌾 ⚠️",
+                "title": f"Pollini Elevati: {dom_pollen.get('name')}",
+                "subtitle": f"Livello {dom_pollen.get('level')}. Cautela per soggetti allergici.",
+                "badge_class": "badge-warning",
+                "action_text": "Allergeni"
+            })
+
+    return highlights[:5]
+
 
 

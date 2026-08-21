@@ -57,6 +57,7 @@ class AlertEngine:
         self._last_washer_was_running: bool = False
         self._last_solar_appliance_alert: float = 0.0
         self.last_leak_alert: Dict[str, float] = {}
+        self.last_record_alert_by_key: Dict[str, float] = {}
 
         # Carica lo stato persistente da disco o DB
         self._load_state()
@@ -100,6 +101,7 @@ class AlertEngine:
                 "_last_washer_was_running": self._last_washer_was_running,
                 "_last_solar_appliance_alert": self._last_solar_appliance_alert,
                 "last_leak_alert": self.last_leak_alert,
+                "last_record_alert_by_key": self.last_record_alert_by_key,
             }
             tmp_path = self._state_file + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
@@ -148,6 +150,7 @@ class AlertEngine:
                 self._last_washer_was_running = data.get("_last_washer_was_running", self._last_washer_was_running)
                 self._last_solar_appliance_alert = data.get("_last_solar_appliance_alert", self._last_solar_appliance_alert)
                 self.last_leak_alert = data.get("last_leak_alert", self.last_leak_alert)
+                self.last_record_alert_by_key = data.get("last_record_alert_by_key", self.last_record_alert_by_key)
                 loaded_from_disk = True
                 logger.info("[ALERT-STATE] Cache stato allarmi caricata con successo da disco.")
             except Exception as e:
@@ -248,11 +251,11 @@ class AlertEngine:
             broken_records = check_and_update_records(current_data)
             if broken_records:
                 for rec in broken_records:
+                    key = rec["key"]
                     old_str = f" (precedente: {rec['old_value']} {rec['unit']})" if rec['old_value'] is not None else ""
                     msg = f"🏆 Nuovo record assoluto per '{rec['title']}': {rec['new_value']} {rec['unit']}{old_str}!"
                     logger.info(msg)
-                    if rec.get("should_notify", True) and (now - self.last_record_alert) >= (settings.RECORD_BROKEN_COOLDOWN_MIN * 60):
-                        self.last_record_alert = now
+                    if rec.get("should_notify", True) and self._should_send_record_alert(key, now):
                         self._save_state()
                         notifier.send_alert(
                             alert_type="record",
@@ -276,6 +279,16 @@ class AlertEngine:
 
         # 4. Controllo Batterie Sensori
         self._check_batteries(current_data, now)
+
+    def _should_send_record_alert(self, key: str, now: float) -> bool:
+        """Verifica se per una specifica chiave di record è trascorso il tempo di cooldown."""
+        last_time = self.last_record_alert_by_key.get(key, 0.0)
+        cooldown_sec = getattr(settings, "RECORD_BROKEN_COOLDOWN_MIN", 720) * 60
+        if (now - last_time) >= cooldown_sec:
+            self.last_record_alert_by_key[key] = now
+            self.last_record_alert = now
+            return True
+        return False
 
     def _check_water_leaks(self, data: Dict[str, Any], now: float):
         leaks = data.get("leak_sensors", {})

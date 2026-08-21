@@ -822,9 +822,167 @@ class TestEcowittHub(unittest.TestCase):
         finally:
             alert_engine.notifier.send_alert = original_send
 
+    def test_api_live_security_and_sanitization(self):
+        """Verifica che /api/live non esponga MAI credenziali, PASSKEY, MAC o dati raw."""
+        from fastapi.testclient import TestClient
+        from backend.main import app
+
+        save_reading({
+            "PASSKEY": "SECRET_MAC_KEY_12345",
+            "stationtype": "GW1100_TEST",
+            "raw_data_json": '{"PASSKEY": "SECRET_MAC_KEY_12345"}',
+            "raw_payload": "PASSKEY=SECRET_MAC_KEY_12345",
+            "station_mac": "AA:BB:CC:DD:EE:FF",
+            "temp_c": 24.5,
+            "humidity": 55.0,
+            "pressure_rel_hpa": 1014.2,
+            "wind_speed_kmh": 6.2,
+            "rain_rate_mm_hr": 0.0
+        })
+
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+        res = client.get("/api/live")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+
+        # Sicurezza
+        self.assertNotIn("PASSKEY", data)
+        self.assertNotIn("raw_data_json", data)
+        self.assertNotIn("raw_payload", data)
+        self.assertNotIn("station_mac", data)
+        self.assertNotIn("stationtype", data)
+        self.assertEqual(data.get("temp_c"), 24.5)
+        self.assertIn("analytics", data)
+        self.assertIn("now_highlights", data["analytics"])
+        self.assertIn("air_quality", data["analytics"])
+        self.assertIn("solar_forecast", data["analytics"])
+        self.assertIn("rain_nowcast", data["analytics"])
+
+    def test_air_quality_and_pollens_engine(self):
+        """Testa il motore di analisi qualità dell'aria EAQI e pollini CAMS."""
+        from backend.forecast_service import forecast_service
+        from backend.analytics import evaluate_window_ventilation
+
+        mock_raw = {
+            "current": {
+                "european_aqi": 2,
+                "pm2_5": 14.5,
+                "pm10": 22.0,
+                "nitrogen_dioxide": 18.0,
+                "ozone": 55.0,
+                "grass_pollen": 45.0,
+                "olive_pollen": 12.0
+            }
+        }
+        res = forecast_service._process_air_quality_payload(mock_raw)
+        self.assertEqual(res["eaqi"]["value"], 2)
+        self.assertEqual(res["eaqi"]["label"], "Buona")
+        self.assertEqual(res["pollutants"]["pm2_5"]["val"], 14.5)
+        self.assertIn("grass", res["pollens"])
+        self.assertEqual(res["pollens"]["grass"]["level"], "Alto")
+
+        # Test cross-check finestre con AQI degradato
+        bad_aqi = {
+            "eaqi": {"value": 4, "label": "Scadente"},
+            "pollutants": {"pm2_5": {"val": 38.0}},
+            "dominant_pollen": {"severity_score": 1, "name": "Nessuno"}
+        }
+        win_advice = evaluate_window_ventilation(
+            temp_out=21.0,
+            hum_out=50.0,
+            temp_in=25.0,
+            hum_in=50.0,
+            rain_rate=0.0,
+            air_quality=bad_aqi
+        )
+        self.assertEqual(win_advice["status"], "close_aqi")
+        self.assertIn("PM2.5", win_advice["desc"])
+
+    def test_evapotranspiration_and_smart_irrigation(self):
+        """Testa il calcolo di ET₀ e il consigliere d'irrigazione intelligente WH51."""
+        from backend.analytics import calc_evapotranspiration, evaluate_smart_irrigation
+
+        et0 = calc_evapotranspiration(temp_c=28.0, humidity=40.0, solar_rad=600.0, wind_kmh=12.0)
+        self.assertGreaterEqual(et0, 2.5)
+        self.assertLessEqual(et0, 8.5)
+
+        # 1. Pioggia prevista nelle 24h -> Non irrigare
+        adv_rain = evaluate_smart_irrigation(
+            soil_moisture_pct=22.0,
+            temp_c=28.0,
+            solar_rad=600.0,
+            rain_forecast_24h_mm=6.5,
+            recent_rain_48h_mm=0.0,
+            et_mm=et0
+        )
+        self.assertEqual(adv_rain["status"], "skip_rain")
+        self.assertEqual(adv_rain["liters_sqm_rec"], 0.0)
+
+        # 2. Terreno secco e nessuna pioggia -> Consiglia irrigazione
+        adv_water = evaluate_smart_irrigation(
+            soil_moisture_pct=20.0,
+            temp_c=30.0,
+            solar_rad=700.0,
+            rain_forecast_24h_mm=0.0,
+            recent_rain_48h_mm=0.0,
+            et_mm=et0
+        )
+        self.assertEqual(adv_water["status"], "water_needed")
+        self.assertGreater(adv_water["liters_sqm_rec"], 1.5)
+
+    def test_solar_forecast_and_battery_predictor(self):
+        """Testa la stima di produzione fotovoltaico e finestra elettrodomestici."""
+        from backend.forecast_service import forecast_service
+
+        res = forecast_service.fetch_solar_forecast(aton_data={"soc": 45, "p_solare": 1500, "p_utenze": 600})
+        self.assertGreater(res["tomorrow_est_kwh"], 5.0)
+        self.assertIn("11:00", res["best_appliances_window"])
+        self.assertIsNotNone(res["battery_100_est"])
+
+    def test_record_delta_threshold_and_cooldown(self):
+        """Testa che piccole variazioni e temperature notturne in calo non generino spam di record."""
+        from backend.database import check_and_update_records, get_all_records, get_connection
+        from backend.alert_engine import AlertEngine
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM weather_extremes WHERE record_key = 'temp_max'")
+        cursor.execute("DELETE FROM records_history WHERE record_key = 'temp_max'")
+        conn.commit()
+        conn.close()
+
+        # Imposta record base
+        check_and_update_records("temp_max", 38.0, "2026-08-10 14:00:00")
+        
+        # Incremento sotto soglia (0.05°C < 0.2°C) -> non deve aggiornare
+        upd_small = check_and_update_records("temp_max", 38.05, "2026-08-10 14:05:00")
+        self.assertFalse(upd_small["is_new"])
+
+        # Incremento significativo (38.5°C >= 38.2°C) -> deve aggiornare
+        upd_big = check_and_update_records("temp_max", 38.5, "2026-08-10 14:30:00")
+        self.assertTrue(upd_big["is_new"])
+
+        # Test cooldown per-key su AlertEngine
+        ae = AlertEngine()
+        ae.last_record_alert_by_key = {}
+        now_ts = 1000000.0
+        
+        # Primo alert su temp_min -> consentito
+        can_send_1 = ae._should_send_record_alert("temp_min", now_ts)
+        self.assertTrue(can_send_1)
+        
+        # Secondo alert su temp_min 5 minuti dopo -> bloccato da cooldown
+        can_send_2 = ae._should_send_record_alert("temp_min", now_ts + 300.0)
+        self.assertFalse(can_send_2)
+        
+        # Alert su temp_max -> consentito (chiave diversa)
+        can_send_3 = ae._should_send_record_alert("temp_max", now_ts + 300.0)
+        self.assertTrue(can_send_3)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

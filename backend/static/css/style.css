@@ -6835,6 +6835,278 @@ body {
     }
 }
 
+/* ==========================================================================
+   HOME & WEATHER INTELLIGENCE HUB EXTENSIONS
+   ========================================================================== */
+
+/* 1. SEZIONE "COSA DEVO SAPERE ORA" (NOW INTELLIGENCE) */
+.now-intelligence-hero {
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.9) 100%);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: var(--radius-lg);
+    padding: 1.1rem 1.25rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(16px);
+    margin-bottom: 0.5rem;
+}
+
+.now-intelligence-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.85rem;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.now-intelligence-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -0.01em;
+}
+
+.now-intelligence-title span.pulse-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    background: #38bdf8;
+    border-radius: 50%;
+    box-shadow: 0 0 10px #38bdf8;
+    animation: pulseGlow 2s infinite ease-in-out;
+}
+
+.now-pills-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+}
+
+.now-pill {
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 0.9rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.now-pill:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(56, 189, 248, 0.3);
+    transform: translateY(-2px);
+}
+
+.now-pill-icon {
+    font-size: 1.45rem;
+    line-height: 1;
+    padding: 6px;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 10px;
+}
+
+.now-pill-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.now-pill-action {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    margin-bottom: 2px;
+}
+
+.now-pill-title {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.25;
+    margin-bottom: 3px;
+}
+
+.now-pill-sub {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    line-height: 1.35;
+}
+
+/* 2. NOWCASTING RADAR BANNER */
+.nowcasting-radar-banner {
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.12) 0%, rgba(30, 58, 138, 0.15) 100%);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    border-radius: var(--radius-md);
+    padding: 0.9rem 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.25rem;
+}
+
+.nowcasting-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.nowcasting-radar-icon {
+    font-size: 2rem;
+}
+
+.nowcasting-headline {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: #fff;
+}
+
+.nowcasting-sub {
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    margin-top: 2px;
+}
+
+/* 3. QUALITÀ DELL'ARIA & POLLINI */
+.aqi-summary-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.pollutants-mini-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.pollutant-tile {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 6px 8px;
+    text-align: center;
+}
+
+.pollutant-tile .label {
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+}
+
+.pollutant-tile .val {
+    font-size: 0.92rem;
+    font-weight: 800;
+    color: #fff;
+    margin-top: 2px;
+}
+
+.pollens-bar-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.pollen-card-item {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 8px;
+    padding: 6px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.pollen-card-item .p-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.pollen-card-item .p-badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+
+/* 4. PREVISIONE FOTOVOLTAICO & SURPLUS */
+.solar-forecast-hero {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.05) 100%);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+    margin-bottom: 1.25rem;
+}
+
+.solar-fc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.solar-fc-item {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    text-align: center;
+}
+
+.solar-fc-item .fc-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    font-weight: 700;
+}
+
+.solar-fc-item .fc-value {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #f59e0b;
+    margin: 4px 0;
+}
+
+.solar-fc-item .fc-sub {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* 5. CONFRONTI CLIMATICI RECORD */
+.climate-comp-card {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.05) 100%);
+    border-left: 4px solid #6366f1;
+    border-radius: var(--radius-md);
+    padding: 1.1rem;
+    margin-bottom: 1.25rem;
+}
+
+.climate-stat-pill {
+    display: inline-block;
+    padding: 4px 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin: 3px 0;
+}
+
 
 
 

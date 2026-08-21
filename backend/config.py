@@ -51,9 +51,12 @@ class Settings:
     RAIN_FORECAST_ALERT_ENABLED: bool = os.getenv("RAIN_FORECAST_ALERT_ENABLED", "true").lower() in ("true", "1", "yes")
     RAIN_FORECAST_PROB_THRESHOLD: int = int(os.getenv("RAIN_FORECAST_PROB_THRESHOLD", "60"))
     RAIN_FORECAST_COOLDOWN_MIN: int = int(os.getenv("RAIN_FORECAST_COOLDOWN_MIN", "180"))
-    RECORD_BROKEN_COOLDOWN_MIN: int = int(os.getenv("RECORD_BROKEN_COOLDOWN_MIN", "1"))
+    RECORD_BROKEN_COOLDOWN_MIN: int = int(os.getenv("RECORD_BROKEN_COOLDOWN_MIN", "720")) # 12h per evitare spam
     ANOMALY_ALERT_COOLDOWN_MIN: int = int(os.getenv("ANOMALY_ALERT_COOLDOWN_MIN", "60"))
     STORM_ALERT_COOLDOWN_MIN: int = int(os.getenv("STORM_ALERT_COOLDOWN_MIN", "240"))  # Cooldown burrasca: 4h per evitare spam durante depressioni stazionarie
+    
+    # Impianto Fotovoltaico (Potenza Nominale kWp per Previsione Energetica)
+    SOLAR_INSTALLED_KWP: float = float(os.getenv("SOLAR_INSTALLED_KWP", "6.0"))
     
     # Nome Stazione & Località
     STATION_NAME: str = os.getenv("STATION_NAME", "Ecowitt Weather Hub")

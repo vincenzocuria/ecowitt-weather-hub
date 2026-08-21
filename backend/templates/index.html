@@ -23,6 +23,40 @@
 </div>
 {% endif %}
 
+<!-- 🧠 SEZIONE INTELLIGENZA DOMESTICA: COSA DEVO SAPERE ORA -->
+<div class="now-intelligence-hero" id="now_intelligence_section">
+    <div class="now-intelligence-header">
+        <div class="now-intelligence-title">
+            <span class="pulse-dot"></span>
+            <span>🧠 Cosa devi sapere adesso</span>
+        </div>
+        <span style="font-size: 0.76rem; color: var(--text-dim);">Live Weather & Home Intelligence</span>
+    </div>
+    <div class="now-pills-grid" id="now_pills_container">
+        {% if analytics and analytics.now_highlights %}
+            {% for pill in analytics.now_highlights %}
+            <div class="now-pill">
+                <div class="now-pill-icon">{{ pill.icon }}</div>
+                <div class="now-pill-content">
+                    <div class="now-pill-action">{{ pill.action_text }}</div>
+                    <div class="now-pill-title">{{ pill.title }}</div>
+                    <div class="now-pill-sub">{{ pill.subtitle }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="now-pill">
+                <div class="now-pill-icon">🌤️</div>
+                <div class="now-pill-content">
+                    <div class="now-pill-action">Meteo</div>
+                    <div class="now-pill-title">Analisi in tempo reale</div>
+                    <div class="now-pill-sub">Tutti i parametri nella norma.</div>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
 <!-- DASHBOARD TABS NAVIGATION -->
 <div class="dashboard-tabs-wrapper">
     <div class="dashboard-tabs-nav" id="dashboard_tabs">
@@ -220,6 +254,20 @@
             </span>
         </div>
         {% endif %}
+
+        <!-- 🌧️ NOWCASTING RADAR DINAMICO & CELLE PRECIPITATIVE -->
+        <div class="nowcasting-radar-banner" id="nowcasting_radar_banner">
+            <div class="nowcasting-content">
+                <span class="nowcasting-radar-icon" id="nowcasting_icon">{{ analytics.rain_nowcast.icon if analytics and analytics.rain_nowcast else '🌧️' }}</span>
+                <div>
+                    <div class="nowcasting-headline" id="nowcasting_headline">{{ analytics.rain_nowcast.headline if analytics and analytics.rain_nowcast else 'Monitoraggio Nowcasting attivo' }}</div>
+                    <div class="nowcasting-sub" id="nowcasting_desc">{{ analytics.rain_nowcast.desc if analytics and analytics.rain_nowcast else 'Analisi radar Doppler e trend barometrico locale.' }}</div>
+                </div>
+            </div>
+            <a href="/radar" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; border-color: rgba(56, 189, 248, 0.4); color: #38bdf8; text-decoration: none; padding: 6px 12px;">
+                🗺️ <span>Apri Radar Doppler Animato</span>
+            </a>
+        </div>
 
         <!-- SCROLL / GRID PREVISIONI 7 GIORNI -->
         {% if forecast and forecast.daily %}
@@ -499,6 +547,76 @@
                     <div class="item"><span>🌱 Sensori Umidità Terreno:</span> <span style="color: var(--text-muted); font-size: 0.85rem;">In attesa di WH51</span></div>
                 {% endif %}
                 </div>
+
+                <!-- 🌱 CONSIGLIO IRRIGAZIONE INTELLIGENTE (ET + PIOGGIA PREVISTA) -->
+                {% if analytics and analytics.irrigation_advice %}
+                <div class="divider"></div>
+                <div class="smart-irrigation-card" style="background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 8px; padding: 8px 10px; margin-top: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 0.82rem; font-weight: 700; color: #34d399;">{{ analytics.irrigation_advice.icon }} {{ analytics.irrigation_advice.title }}</span>
+                        <span style="font-size: 0.75rem; color: var(--text-dim);">ET: <strong>{{ analytics.evapotranspiration_mm }} mm/die</strong></span>
+                    </div>
+                    <p style="font-size: 0.78rem; color: var(--text); margin: 4px 0 0 0; line-height: 1.35;">{{ analytics.irrigation_advice.desc }}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 7. QUALITÀ DELL'ARIA & POLLINI CAMS -->
+        <div class="card">
+            <div class="card-header">
+                <span>🌬️ Qualità dell'Aria & Pollini</span>
+                <span class="aqi-summary-badge {{ analytics.air_quality.eaqi.badge_class if analytics and analytics.air_quality else 'badge-success' }}" id="aqi_badge">
+                    {{ analytics.air_quality.eaqi.icon if analytics and analytics.air_quality else '🟢' }} {{ analytics.air_quality.eaqi.label if analytics and analytics.air_quality else 'Buona' }}
+                </span>
+            </div>
+
+            <!-- PARTICOLATO & INQUINANTI (CAMS) -->
+            <div class="pollutants-mini-grid">
+                <div class="pollutant-tile">
+                    <div class="label">PM2.5</div>
+                    <div class="val" id="pm25_val">{{ analytics.air_quality.pollutants.pm2_5.val if analytics and analytics.air_quality and analytics.air_quality.pollutants.pm2_5.val is not none else '--' }} <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span></div>
+                </div>
+                <div class="pollutant-tile">
+                    <div class="label">PM10</div>
+                    <div class="val" id="pm10_val">{{ analytics.air_quality.pollutants.pm10.val if analytics and analytics.air_quality and analytics.air_quality.pollutants.pm10.val is not none else '--' }} <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span></div>
+                </div>
+                <div class="pollutant-tile">
+                    <div class="label">NO₂</div>
+                    <div class="val" id="no2_val">{{ analytics.air_quality.pollutants.no2.val if analytics and analytics.air_quality and analytics.air_quality.pollutants.no2.val is not none else '--' }} <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span></div>
+                </div>
+                <div class="pollutant-tile">
+                    <div class="label">O₃</div>
+                    <div class="val" id="o3_val">{{ analytics.air_quality.pollutants.o3.val if analytics and analytics.air_quality and analytics.air_quality.pollutants.o3.val is not none else '--' }} <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span></div>
+                </div>
+            </div>
+
+            <!-- ALLERGENI POLLINI -->
+            <div class="pollens-bar-grid">
+                {% if analytics and analytics.air_quality and analytics.air_quality.pollens %}
+                    {% for p_key, p_info in analytics.air_quality.pollens.items() %}
+                    <div class="pollen-card-item">
+                        <span class="p-name">{{ p_info.name }}</span>
+                        <span class="p-badge {{ p_info.badge }}">{{ p_info.level }}</span>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="pollen-card-item">
+                        <span class="p-name">Graminacee</span>
+                        <span class="p-badge badge-success">Basso</span>
+                    </div>
+                    <div class="pollen-card-item">
+                        <span class="p-name">Olivo</span>
+                        <span class="p-badge badge-success">Basso</span>
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="item-list" style="margin-top: 10px;">
+                <div class="item">
+                    <span>💡 Suggerimento Aerazione:</span>
+                    <strong id="aqi_advice_text" style="color: #38bdf8;">{{ analytics.air_quality.window_advice if analytics and analytics.air_quality else 'Aria salubre.' }}</strong>
+                </div>
             </div>
         </div>
     </div>
@@ -519,6 +637,50 @@
      TAB 2: ENERGIA & SMART HOME
      ========================================================================== -->
 <div class="dashboard-tab-pane" id="pane_energy_home">
+
+    <!-- ☀️ PREVISIONE PRODUZIONE FOTOVOLTAICO & ACCUMULO DOMANI -->
+    <div class="solar-forecast-hero" id="solar_forecast_section">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 2rem;">☀️</span>
+                <div>
+                    <h3 style="margin: 0; font-size: 1.15rem; font-weight: 800; color: #fff;">Previsione Produzione Fotovoltaico Domani</h3>
+                    <p style="margin: 2px 0 0 0; font-size: 0.82rem; color: var(--text-dim);">
+                        Modello solare Open-Meteo • Impianto nominale {{ analytics.solar_forecast.installed_kwp if analytics and analytics.solar_forecast else '6.0' }} kWp
+                    </p>
+                </div>
+            </div>
+            <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4); padding: 4px 10px; font-weight: 700;">
+                ⚡ Solar AI Predictor
+            </span>
+        </div>
+
+        <div class="solar-fc-grid">
+            <div class="solar-fc-item">
+                <div class="fc-label">Stima Produzione Domani</div>
+                <div class="fc-value" id="solar_fc_kwh">{{ analytics.solar_forecast.tomorrow_range_str if analytics and analytics.solar_forecast else '20-25 kWh' }}</div>
+                <div class="fc-sub">Energia rinnovabile attesa</div>
+            </div>
+
+            <div class="solar-fc-item">
+                <div class="fc-label">Batteria 100% Prevista</div>
+                <div class="fc-value" style="color: #34d399;" id="battery_100_est">{{ analytics.solar_forecast.battery_100_est if analytics and analytics.solar_forecast else '12:45' }}</div>
+                <div class="fc-sub">Carica completa accumulatore</div>
+            </div>
+
+            <div class="solar-fc-item">
+                <div class="fc-label">Fascia Elettrodomestici</div>
+                <div class="fc-value" style="color: #38bdf8; font-size: 1.3rem;" id="appliances_window_est">{{ analytics.solar_forecast.best_appliances_window if analytics and analytics.solar_forecast else '11:00 - 15:30' }}</div>
+                <div class="fc-sub">Massima resa autoconsumo</div>
+            </div>
+
+            <div class="solar-fc-item">
+                <div class="fc-label">Surplus FV Previsto</div>
+                <div class="fc-value" style="color: #a78bfa;" id="surplus_fc_kwh">+{{ analytics.solar_forecast.est_surplus_kwh if analytics and analytics.solar_forecast else '6.5' }} <span style="font-size: 0.9rem;">kWh</span></div>
+                <div class="fc-sub">Disponibile per carichi/rete</div>
+            </div>
+        </div>
+    </div>
 
     <!-- SEZIONE ENERGIA & ACCUMULATORE ATON GREEN STORAGE -->
     <div class="energy-hero" id="energy_section">
