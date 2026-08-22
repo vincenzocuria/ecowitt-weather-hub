@@ -338,14 +338,14 @@
         {% if tuya_devices %}
         <div class="tuya-devices-list" id="tuya_devices_container">
             {% for dev in tuya_devices %}
-            <div class="tuya-device-row {% if not dev.enabled %}is-disabled{% endif %}" id="tuya_row_{{ dev.id }}">
+            <div class="tuya-device-row {% if dev.get('enabled') is false %}is-disabled{% endif %}" id="tuya_row_{{ dev.id }}">
                 <div class="tuya-device-left">
-                    <span class="tuya-device-icon">{{ dev.icon }}</span>
+                    <span class="tuya-device-icon">{{ dev.icon or '📱' }}</span>
                     <div class="tuya-device-info">
                         <div class="tuya-device-name-line">
-                            <strong class="tuya-dev-name" id="tuya_name_disp_{{ dev.id }}">{{ dev.name }}</strong>
-                            <span class="badge-tag" style="font-size: 0.7rem;">{{ dev.type_label }}</span>
-                            {% if dev.is_on is not none %}
+                            <strong class="tuya-dev-name" id="tuya_name_disp_{{ dev.id }}">{{ dev.name or 'Dispositivo' }}</strong>
+                            <span class="badge-tag" style="font-size: 0.7rem;">{{ dev.type_label or 'Smart Life' }}</span>
+                            {% if dev.get('is_on') is not none %}
                             <span class="badge-tag {% if dev.is_on %}tag-on{% else %}tag-off{% endif %}" id="tuya_state_tag_{{ dev.id }}">
                                 {% if dev.is_on %}🟢 ON{% else %}⚪ OFF{% endif %}
                             </span>
@@ -353,10 +353,10 @@
                         </div>
                         <div class="tuya-device-meta">
                             <span>Modello: {{ dev.product_name or dev.model or 'Generico' }}</span> • <span style="font-family: monospace; font-size: 0.75rem; color: var(--text-dim);">ID: {{ dev.id }}</span>
-                            {% if dev.power_w > 0 %}
+                            {% if dev.get('power_w') and dev.power_w > 0 %}
                             • <strong style="color: #38bdf8;">⚡ {{ dev.power_w }} W</strong>
                             {% endif %}
-                            {% if dev.battery_pct is not none %}
+                            {% if dev.get('battery_pct') is not none %}
                             • <span style="color: #10b981;">🔋 {{ dev.battery_pct }}%</span>
                             {% endif %}
                         </div>
@@ -366,13 +366,13 @@
                 <div class="tuya-device-actions">
                     <!-- Toggle Visibilità Switch -->
                     <label class="tuya-toggle-label" title="Attiva o disattiva il dispositivo nella Dashboard">
-                        <input type="checkbox" class="tuya-switch-input" id="tuya_toggle_{{ dev.id }}" {% if dev.enabled %}checked{% endif %} onchange="updateTuyaDeviceConfig('{{ dev.id }}', this.checked)">
+                        <input type="checkbox" class="tuya-switch-input" id="tuya_toggle_{{ dev.id }}" {% if dev.get('enabled') is not false %}checked{% endif %} onchange="updateTuyaDeviceConfig('{{ dev.id }}', this.checked)">
                         <span class="tuya-switch-slider"></span>
-                        <span class="tuya-switch-text" id="tuya_text_{{ dev.id }}">{% if dev.enabled %}Attivo{% else %}Disattivato{% endif %}</span>
+                        <span class="tuya-switch-text" id="tuya_text_{{ dev.id }}">{% if dev.get('enabled') is not false %}Attivo{% else %}Disattivato{% endif %}</span>
                     </label>
 
                     <!-- Test rapido ON/OFF se presa o luce -->
-                    {% if dev.is_on is not none %}
+                    {% if dev.get('is_on') is not none %}
                     <button type="button" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="testToggleTuya('{{ dev.id }}')">
                         ⚡ Toggle ON/OFF
                     </button>

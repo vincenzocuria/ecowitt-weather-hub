@@ -4,6 +4,7 @@ import sys
 import io
 import csv
 import json
+import time
 import asyncio
 import logging
 
@@ -2016,6 +2017,7 @@ async def settings_page(request: Request):
             "thinq_enabled": settings.LG_THINQ_ENABLED,
             "climate_config": climate_cfg,
             "climate_devices": climate_devs,
+            "irrigation_config": get_irrigation_automations_config(),
             "smartthings_enabled": settings.SMARTTHINGS_ENABLED,
             "tuya_enabled": settings.TUYA_ENABLED,
             "tuya_summary": tuya_sum,
