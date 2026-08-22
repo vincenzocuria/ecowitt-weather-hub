@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import asyncio
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -69,6 +70,9 @@ class AlertEngine:
         self.last_fridge_door_alert: float = 0.0
         self.last_fridge_away_alert: float = 0.0
         self.last_fridge_solar_alert: float = 0.0
+        self.last_hail_alert: float = 0.0
+        self.last_grid_overload_alert: float = 0.0
+        self.last_grid_critical_shed_alert: float = 0.0
 
         # Carica lo stato persistente da disco o DB
         self._load_state()
@@ -122,6 +126,9 @@ class AlertEngine:
                 "last_fridge_door_alert": self.last_fridge_door_alert,
                 "last_fridge_away_alert": self.last_fridge_away_alert,
                 "last_fridge_solar_alert": self.last_fridge_solar_alert,
+                "last_hail_alert": self.last_hail_alert,
+                "last_grid_overload_alert": self.last_grid_overload_alert,
+                "last_grid_critical_shed_alert": self.last_grid_critical_shed_alert,
             }
             tmp_path = self._state_file + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
@@ -180,6 +187,9 @@ class AlertEngine:
                 self.last_fridge_door_alert = data.get("last_fridge_door_alert", self.last_fridge_door_alert)
                 self.last_fridge_away_alert = data.get("last_fridge_away_alert", self.last_fridge_away_alert)
                 self.last_fridge_solar_alert = data.get("last_fridge_solar_alert", self.last_fridge_solar_alert)
+                self.last_hail_alert = data.get("last_hail_alert", self.last_hail_alert)
+                self.last_grid_overload_alert = data.get("last_grid_overload_alert", self.last_grid_overload_alert)
+                self.last_grid_critical_shed_alert = data.get("last_grid_critical_shed_alert", self.last_grid_critical_shed_alert)
                 loaded_from_disk = True
                 logger.info("[ALERT-STATE] Cache stato allarmi caricata con successo da disco.")
             except Exception as e:
@@ -396,6 +406,31 @@ class AlertEngine:
                     priority="urgent",
                     extra_data={"rain_rate": str(rain_rate)}
                 )
+
+        # C2. Allarme Rischio Grandine & Temporale Violento (Severe Hail & Storm Guard)
+        lightning = data.get("lightning", {})
+        dist_km = lightning.get("distance_km")
+        if dist_km is None:
+            dist_km = data.get("lightning_distance_km")
+        
+        is_severe_hail_risk = (
+            (rain_rate is not None and rain_rate >= 40.0) or
+            (rain_rate is not None and rain_rate >= 25.0 and dist_km is not None and dist_km <= 6.0 and gust is not None and gust >= 35.0)
+        )
+        if is_severe_hail_risk:
+            if (now - self.last_hail_alert) >= 2700:  # Cooldown 45 min
+                self.last_hail_alert = now
+                self._save_state()
+                dist_str = f"a {dist_km} km" if dist_km is not None else "in prossimità"
+                gust_str = f" con raffiche a {int(gust)} km/h" if gust else ""
+                notifier.send_alert(
+                    alert_type="hail_warning",
+                    title="🚨 ALLARME METEO: Rischio Grandine & Nubifragio!",
+                    message=f"Intensità pioggia estrema ({rain_rate} mm/h) con fulmini {dist_str}{gust_str}. Metti subito l'auto al riparo e chiudi finestre e balconi!",
+                    priority="urgent",
+                    extra_data={"rain_rate": str(rain_rate), "distance_km": str(dist_km)}
+                )
+                logger.warning(f"[SEVERE-WEATHER] Allarme grandine inviato: rain_rate={rain_rate}, lightning_dist={dist_km}, gust={gust}")
 
         # D. Sbalzo Termico Repentino (Crollo o Impennata in 1h)
         temp = data.get("temp_c")
@@ -897,7 +932,59 @@ class AlertEngine:
         """Valuta le condizioni energetiche per invio allarmi istantanei."""
         now = time.time()
         
-        # 1. Allarme Consumo Elettrico Elevato (Prevenzione distacco contatore)
+        # 1. Protezione Sovraccarico Prelievo da Rete (Contratto 4.5 kW)
+        p_rete = energy_data.get("p_rete")
+        if p_rete is None:
+            p_rete = energy_data.get("p_rete_in", 0.0) or 0.0
+        p_rete = float(p_rete)
+
+        # A. Soglia Critica Scatto Imminente Contatore (>= 4900 W)
+        if p_rete >= 4900.0:
+            if (now - self.last_grid_critical_shed_alert) >= 300:  # Cooldown 5 min
+                self.last_grid_critical_shed_alert = now
+                self._save_state()
+                kw = round(p_rete / 1000.0, 2)
+                
+                # Load Shedding automatico sui climatizzatori LG (se presenti e accesi)
+                shed_action_txt = ""
+                if settings.LG_THINQ_ENABLED:
+                    try:
+                        from backend.thinq_service import thinq_service
+                        active_acs = [d for d in thinq_service.get_cached_devices() if d.get("device_type") == "DEVICE_AIR_CONDITIONER" and d.get("is_on")]
+                        if active_acs:
+                            first_ac = active_acs[0]
+                            first_id = first_ac.get("device_id") or first_ac.get("deviceId")
+                            first_name = first_ac.get("alias", "Climatizzatore")
+                            # Spegnimento d'emergenza anti-blackout
+                            asyncio.create_task(thinq_service.control_device(first_id, {"power": False}))
+                            shed_action_txt = f" 🤖 Anti-Blackout: {first_name} spento temporaneamente per alleggerire la linea."
+                            logger.warning(f"[LOAD-SHEDDER] Anti-blackout: spento {first_name} per sovraccarico rete a {kw} kW")
+                    except Exception as e_shed:
+                        logger.error(f"[LOAD-SHEDDER] Errore esecuzione shedding: {e_shed}")
+
+                notifier.send_alert(
+                    alert_type="grid_overload_critical",
+                    title="🚨 RISCHIO DISTACCO CONTATORE (4.5 kW)!",
+                    message=f"Prelievo da rete a {kw} kW ({int(p_rete)} W)! Superata la soglia di sicurezza del contratto da 4.5 kW: rischio scatto imminente.{shed_action_txt}",
+                    priority="urgent",
+                    extra_data={"p_rete": str(p_rete), "contract_kw": "4.5"}
+                )
+
+        # B. Soglia Attenzione / Warning (>= 4500 W e < 4900 W)
+        elif p_rete >= 4500.0:
+            if (now - self.last_grid_overload_alert) >= 900:  # Cooldown 15 min
+                self.last_grid_overload_alert = now
+                self._save_state()
+                kw = round(p_rete / 1000.0, 2)
+                notifier.send_alert(
+                    alert_type="grid_overload_warning",
+                    title="⚡ Prelievo Rete al Limite (4.5 kW)",
+                    message=f"Prelievo elettrico a {kw} kW ({int(p_rete)} W): stai assorbendo il 100% della potenza contrattuale. Evita di avviare altri carichi pesanti.",
+                    priority="high",
+                    extra_data={"p_rete": str(p_rete), "contract_kw": "4.5"}
+                )
+
+        # 2. Allarme Consumo Elettrico Totale Elevato Casa
         p_utenze = energy_data.get("p_utenze") or 0.0
         if p_utenze >= settings.ENERGY_HIGH_CONSUMPTION_W:
             if (now - self.last_high_consumption_alert) >= (settings.ENERGY_HIGH_CONSUMPTION_COOLDOWN_MIN * 60):
@@ -906,9 +993,9 @@ class AlertEngine:
                 kw = round(p_utenze / 1000.0, 2)
                 notifier.send_alert(
                     alert_type="energy_high",
-                    title="⚡ Consumo Elettrico Elevato!",
-                    message=f"La casa sta assorbendo {kw} kW ({int(p_utenze)} W). Verifica i carichi per evitare distacchi.",
-                    priority="urgent",
+                    title="⚡ Consumo Casa Elevato!",
+                    message=f"La casa sta assorbendo {kw} kW ({int(p_utenze)} W complessivi).",
+                    priority="normal",
                     extra_data={"p_utenze": str(p_utenze)}
                 )
 
