@@ -224,6 +224,27 @@ def init_db():
             updated_at TEXT NOT NULL
         )
     """)
+
+    # 11. Storico e Auto-Apprendimento Efficienza / Percolazione Vaso Irrigazione
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS irrigation_learning_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cycle_start_time TEXT NOT NULL,
+            cycle_end_time TEXT,
+            duration_sec REAL NOT NULL,
+            duration_min REAL NOT NULL,
+            start_moisture REAL NOT NULL,
+            peak_moisture REAL,
+            peak_time TEXT,
+            lag_minutes REAL,
+            delta_moisture REAL,
+            k_efficiency REAL,
+            temp_c REAL,
+            et_mm REAL,
+            status TEXT DEFAULT 'monitoring',
+            created_at TEXT NOT NULL
+        )
+    """)
     
     conn.commit()
     conn.close()
@@ -2264,14 +2285,14 @@ def save_climate_automations_config(config_dict: Dict[str, Any]) -> Dict[str, An
 DEFAULT_IRRIGATION_CONFIG: Dict[str, Any] = {
     "master_enabled": True,
     "mode": "auto",  # 'auto' (avvio/arresto autonomo), 'notify' (solo notifica), 'disabled'
-    "crop_profile": "tomatoes_zucchini",  # Profilo agrometeo: 'tomatoes_zucchini' (Orto Pomodori e Zucchine), 'lawn' (Prato), 'custom'
-    "crop_label": "Aiuola Orto: Pomodori & Zucchine 🍅🥒",
+    "crop_profile": "planter_pot",  # 'planter_pot' (Grande Vaso / Fioriera Pomodori & Zucchine), 'garden_bed', 'lawn'
+    "crop_label": "Grande Vaso / Fioriera (Pomodori & Zucchine) 🪴🍅🥒",
     "target_device_id": "bfeb96waen2hlkvg",  # ID valvola Tuya principale o 'auto'
     "soil_moisture_channel": "ch1",  # Canale sensore Ecowitt WH51
-    "soil_dry_threshold": 48.0,  # Se umidità <= 48% -> terreno sotto la soglia ideale per pomodori/zucchine
+    "soil_dry_threshold": 48.0,  # Se umidità <= 48% -> terreno sotto la soglia ideale nel vaso
     "soil_target_threshold": 70.0,  # Soglia massima di sicurezza di stop (anti-ristagno/palude)
-    "duration_minutes": 10,  # Dose controllata a micro-impulsi (10 min): previene allagamenti e rispetta i tempi di percolazione
-    "max_safety_duration_min": 18,  # Chiusura forzata di sicurezza max (18 min)
+    "duration_minutes": 2.0,  # Dose controllata micro-impulso vaso: 1.5 - 2.0 min (~1.0 L)
+    "max_safety_duration_min": 4.0,  # Chiusura forzata di sicurezza max (4 min per evitare allagamento del vaso)
     "morning_start_hour": 6,  # Finestra oraria alba/mattino inizio (06:00)
     "morning_end_hour": 8,  # Finestra oraria alba/mattino fine (08:00)
     "evening_start_hour": 21,  # Finestra oraria tramonto/sera inizio (21:00)
@@ -2280,7 +2301,11 @@ DEFAULT_IRRIGATION_CONFIG: Dict[str, Any] = {
     "skip_recent_rain_mm": 5.0,  # Soglia pioggia caduta 24-48h per skip
     "skip_wind_gust_kmh": 35.0,  # Soglia raffica vento per posticipo
     "frost_guard_temp_c": 3.0,  # Blocco sotto questa temp per antigelo
-    "cooldown_hours": 12.0  # Ore minime di attesa/percolazione tra due cicli per assorbimento uniforme
+    "cooldown_hours": 8.0,  # Ore minime di attesa/percolazione tra due cicli per il vaso
+    "adaptive_learning_enabled": True,  # Auto-apprendimento curva di risposta del vaso
+    "learned_k_efficiency": 12.0,  # Guadagno % umidità appreso per ogni minuto di irrigazione
+    "learned_lag_minutes": 25.0,  # Tempo medio di percolazione misurato (minuti per raggiungere il picco)
+    "total_cycles_learned": 0
 }
 
 def get_irrigation_automations_config() -> Dict[str, Any]:
@@ -2329,12 +2354,12 @@ def save_irrigation_automations_config(config_dict: Dict[str, Any]) -> Dict[str,
                 pass
         if "duration_minutes" in config_dict:
             try:
-                current["duration_minutes"] = max(1, min(120, int(config_dict["duration_minutes"])))
+                current["duration_minutes"] = max(0.5, min(120.0, float(config_dict["duration_minutes"])))
             except (ValueError, TypeError):
                 pass
         if "max_safety_duration_min" in config_dict:
             try:
-                current["max_safety_duration_min"] = max(5, min(180, int(config_dict["max_safety_duration_min"])))
+                current["max_safety_duration_min"] = max(1.0, min(180.0, float(config_dict["max_safety_duration_min"])))
             except (ValueError, TypeError):
                 pass
         if "morning_start_hour" in config_dict:
@@ -2382,6 +2407,18 @@ def save_irrigation_automations_config(config_dict: Dict[str, Any]) -> Dict[str,
                 current["cooldown_hours"] = max(1.0, min(72.0, float(config_dict["cooldown_hours"])))
             except (ValueError, TypeError):
                 pass
+        if "adaptive_learning_enabled" in config_dict:
+            current["adaptive_learning_enabled"] = bool(config_dict["adaptive_learning_enabled"])
+        if "learned_k_efficiency" in config_dict:
+            try:
+                current["learned_k_efficiency"] = float(config_dict["learned_k_efficiency"])
+            except (ValueError, TypeError):
+                pass
+        if "learned_lag_minutes" in config_dict:
+            try:
+                current["learned_lag_minutes"] = float(config_dict["learned_lag_minutes"])
+            except (ValueError, TypeError):
+                pass
 
     now_iso = datetime.now(timezone.utc).isoformat()
     json_str = json.dumps(current, ensure_ascii=False)
@@ -2396,4 +2433,143 @@ def save_irrigation_automations_config(config_dict: Dict[str, Any]) -> Dict[str,
     conn.commit()
     conn.close()
     return current
+
+# --- AUTO-APPRENDIMENTO & PERCOLAZIONE VASO ---
+
+def log_irrigation_cycle_start(duration_min: float, start_moisture: float, temp_c: Optional[float] = None, et_mm: Optional[float] = None) -> int:
+    """Registra l'avvio di un ciclo per monitorare la curva di percolazione."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO irrigation_learning_history 
+        (cycle_start_time, duration_sec, duration_min, start_moisture, peak_moisture, peak_time, temp_c, et_mm, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'monitoring', ?)
+    """, (now_iso, float(duration_min) * 60.0, float(duration_min), float(start_moisture), float(start_moisture), now_iso, temp_c, et_mm, now_iso))
+    cycle_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return cycle_id
+
+def update_irrigation_cycle_sample(cycle_id: int, current_moisture: float):
+    """Aggiorna il picco di umidità durante la finestra di percolazione."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT peak_moisture FROM irrigation_learning_history WHERE id = ?", (cycle_id,))
+    row = cursor.fetchone()
+    if row:
+        prev_peak = float(row["peak_moisture"] or 0.0)
+        if current_moisture > prev_peak:
+            cursor.execute("""
+                UPDATE irrigation_learning_history 
+                SET peak_moisture = ?, peak_time = ?
+                WHERE id = ?
+            """, (float(current_moisture), now_iso, cycle_id))
+            conn.commit()
+    conn.close()
+
+def finalize_irrigation_cycle(cycle_id: int, current_moisture: float) -> Optional[Dict[str, Any]]:
+    """Conclude il ciclo di apprendimento, calcola delta, efficienza K e tempo di risposta (lag)."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM irrigation_learning_history WHERE id = ?", (cycle_id,))
+    row = cursor.fetchone()
+    if not row or row["status"] == "completed":
+        conn.close()
+        return None
+
+    start_m = float(row["start_moisture"])
+    peak_m = float(max(row["peak_moisture"] or start_m, current_moisture))
+    duration_min = max(0.5, float(row["duration_min"]))
+    delta_m = round(peak_m - start_m, 2)
+    k_eff = round(delta_m / duration_min, 2) if delta_m > 0 else 0.0
+
+    # Calcola il lag di percolazione in minuti
+    lag_min = 20.0
+    try:
+        t_start = datetime.fromisoformat(row["cycle_start_time"].replace("Z", "+00:00"))
+        t_peak = datetime.fromisoformat((row["peak_time"] or now_iso).replace("Z", "+00:00"))
+        lag_min = round(max(1.0, (t_peak - t_start).total_seconds() / 60.0), 1)
+    except Exception:
+        pass
+
+    cursor.execute("""
+        UPDATE irrigation_learning_history 
+        SET cycle_end_time = ?, peak_moisture = ?, lag_minutes = ?, delta_moisture = ?, k_efficiency = ?, status = 'completed'
+        WHERE id = ?
+    """, (now_iso, peak_m, lag_min, delta_m, k_eff, cycle_id))
+    conn.commit()
+    conn.close()
+
+    # Aggiorna il modello di apprendimento (Exponential Moving Average) nella configurazione
+    if delta_m > 0 and k_eff > 0:
+        cfg = get_irrigation_automations_config()
+        old_k = float(cfg.get("learned_k_efficiency", 12.0))
+        old_lag = float(cfg.get("learned_lag_minutes", 25.0))
+        count = int(cfg.get("total_cycles_learned", 0)) + 1
+        
+        alpha = 0.35  # Peso per il nuovo ciclo
+        new_k = round(old_k * (1 - alpha) + k_eff * alpha, 2)
+        new_lag = round(old_lag * (1 - alpha) + lag_min * alpha, 1)
+
+        cfg["learned_k_efficiency"] = new_k
+        cfg["learned_lag_minutes"] = new_lag
+        cfg["total_cycles_learned"] = count
+        save_irrigation_automations_config(cfg)
+
+    return {
+        "cycle_id": cycle_id,
+        "start_moisture": start_m,
+        "peak_moisture": peak_m,
+        "delta_moisture": delta_m,
+        "k_efficiency": k_eff,
+        "lag_minutes": lag_min,
+        "duration_min": duration_min
+    }
+
+def get_irrigation_learning_summary() -> Dict[str, Any]:
+    """Restituisce il sommario dell'auto-apprendimento per il vaso."""
+    cfg = get_irrigation_automations_config()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM irrigation_learning_history 
+        ORDER BY id DESC LIMIT 10
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+
+    cycles = []
+    for r in rows:
+        cycles.append({
+            "id": r["id"],
+            "start_time": to_local_datetime_str(r["cycle_start_time"]),
+            "duration_min": r["duration_min"],
+            "start_moisture": r["start_moisture"],
+            "peak_moisture": r["peak_moisture"],
+            "lag_minutes": r["lag_minutes"],
+            "delta_moisture": r["delta_moisture"],
+            "k_efficiency": r["k_efficiency"],
+            "status": r["status"]
+        })
+
+    k_eff = float(cfg.get("learned_k_efficiency", 12.0))
+    lag_min = float(cfg.get("learned_lag_minutes", 25.0))
+    dry_th = float(cfg.get("soil_dry_threshold", 48.0))
+    target_th = float(cfg.get("soil_target_threshold", 70.0))
+
+    # Stima del fabbisogno in minuti per colmare il deficit tipico nel vaso
+    target_deficit = max(5.0, target_th - dry_th)
+    suggested_pulse = round(max(1.0, min(3.5, target_deficit / max(2.0, k_eff))), 1)
+
+    return {
+        "adaptive_learning_enabled": cfg.get("adaptive_learning_enabled", True),
+        "learned_k_efficiency": k_eff,
+        "learned_lag_minutes": lag_min,
+        "total_cycles_learned": cfg.get("total_cycles_learned", len([c for c in cycles if c["status"] == "completed"])),
+        "suggested_pulse_minutes": suggested_pulse,
+        "recent_cycles": cycles
+    }
 

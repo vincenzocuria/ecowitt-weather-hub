@@ -1057,13 +1057,13 @@ def evaluate_smart_irrigation(
     recent_rain_48h_mm: float = 0.0,
     et_mm: Optional[float] = None,
     dry_threshold: float = 48.0,
-    target_threshold: float = 75.0,
-    crop_label: str = "Pomodori & Zucchine 🍅🥒"
+    target_threshold: float = 70.0,
+    crop_label: str = "Grande Vaso (Pomodori & Zucchine) 🪴🍅🥒"
 ) -> Dict[str, Any]:
     """
     Sistema decisionale per l'irrigazione intelligente agrometeo (WH51 + Meteo Predittivo):
-    Calibrato per ortaggi ad alto fabbisogno idrico (Pomodori e Zucchine):
-    1. Umidità del suolo WH51 (Soglia secco: 48%, Target: 75%)
+    Calibrato per piante in vaso/fioriera ad alto fabbisogno idrico (Pomodori e Zucchine):
+    1. Umidità del suolo WH51 (Soglia secco: 48%, Stop Sicurezza: 70%)
     2. Evapotraspirazione stimata (mm/giorno)
     3. Pioggia prevista nelle prossime 24h
     4. Pioggia caduta nelle ultime 48h
@@ -1087,7 +1087,7 @@ def evaluate_smart_irrigation(
             "icon": "🌧️ 🛑",
             "badge_class": "badge-info",
             "title": "Irrigazione Sospesa (Pioggia)",
-            "desc": f"Previsti {rain_forecast_24h_mm:.1f} mm di pioggia nelle 24h: l'orto riceverà acqua naturale a sufficienza.",
+            "desc": f"Previsti {rain_forecast_24h_mm:.1f} mm di pioggia nelle 24h: il vaso riceverà acqua naturale a sufficienza.",
             "liters_sqm_rec": 0.0
         }
 
@@ -1102,8 +1102,8 @@ def evaluate_smart_irrigation(
             "status": "skip_recent",
             "icon": "💧 🟢",
             "badge_class": "badge-success",
-            "title": "Suolo Ben Idratato",
-            "desc": f"Accumulo recente di {recent_rain_48h_mm:.1f} mm nelle 48h. Riserva idrica dell'orto ottimale.",
+            "title": "Vaso Ben Idratato",
+            "desc": f"Accumulo recente di {recent_rain_48h_mm:.1f} mm nelle 48h. Riserva idrica del vaso ottimale.",
             "liters_sqm_rec": 0.0
         }
 
@@ -1118,13 +1118,13 @@ def evaluate_smart_irrigation(
             "status": "optimal",
             "icon": "🌱 🟢",
             "badge_class": "badge-success",
-            "title": "Umidità Ideale Orto",
-            "desc": f"Umidità aiuola {crop_label} al {sm:.0f}% (soglia minima: {dry_threshold:.0f}%, target: {target_threshold:.0f}%). Nessuna irrigazione necessaria.",
+            "title": "Umidità Ideale Vaso",
+            "desc": f"Umidità del vaso ({crop_label}) al {sm:.0f}% (soglia minima: {dry_threshold:.0f}%, target: {target_threshold:.0f}%). Nessuna irrigazione necessaria.",
             "liters_sqm_rec": 0.0
         }
 
     # 4. TERRENO SECCO (< dry_threshold) SENZA PIOGGIA PREVISTA -> CONSIGLIO IRRIGAZIONE
-    rec_liters = round(max(3.0, min(8.0, et_mm * 1.2)), 1)
+    rec_liters = round(max(1.0, min(3.0, et_mm * 0.5)), 1)
     return {
         "has_sensor": has_sensor,
         "soil_moisture_pct": round(sm, 1) if has_sensor else None,
@@ -1132,10 +1132,10 @@ def evaluate_smart_irrigation(
         "rain_forecast_24h_mm": round(rain_forecast_24h_mm, 1),
         "crop_label": crop_label,
         "status": "water_needed",
-        "icon": "🍅 💧",
+        "icon": "🪴 💧",
         "badge_class": "badge-warning",
-        "title": "Irrigazione Necessaria",
-        "desc": f"Umidità suolo al {sm:.0f}% (sotto la soglia di sicurezza del {dry_threshold:.0f}% per {crop_label}). Consiglio: irrigare stasera circa {rec_liters} L/m².",
+        "title": "Irrigazione Vaso Consigliata",
+        "desc": f"Umidità vaso al {sm:.0f}% (sotto la soglia del {dry_threshold:.0f}% per {crop_label}). Consiglio: micro-dose di 1.5–2 min (~{rec_liters} L).",
         "liters_sqm_rec": rec_liters
     }
 

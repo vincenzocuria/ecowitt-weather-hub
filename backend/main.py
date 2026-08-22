@@ -38,6 +38,7 @@ from backend.database import (
     get_tropical_nights_stats, get_soil_moisture_summary,
     get_climate_automations_config, save_climate_automations_config,
     get_irrigation_automations_config, save_irrigation_automations_config,
+    get_irrigation_learning_summary, log_irrigation_cycle_start,
     to_local_datetime_str, DB_PATH
 )
 from backend.analytics import (
@@ -1258,19 +1259,20 @@ async def api_get_irrigation_status():
         "et_mm": et_mm,
         "rain_forecast_24h_mm": fc_rain,
         "recent_rain_48h_mm": recent_rain,
-        "advice": advice
+        "advice": advice,
+        "learning_summary": get_irrigation_learning_summary()
     }
 
 @app.post("/api/irrigation/start")
 async def api_irrigation_start(request: Request):
-    """Avvia un ciclo di irrigazione manuale con durata personalizzata (default 15 min)."""
+    """Avvia un ciclo di irrigazione manuale / test con durata personalizzata (default 2 min)."""
     try:
         payload = await request.json()
     except Exception:
         payload = {}
     
     cfg = get_irrigation_automations_config()
-    duration_min = int(payload.get("duration_minutes") or cfg.get("duration_minutes", 15))
+    duration_min = float(payload.get("duration_minutes") or cfg.get("duration_minutes", 2.0))
     target_id = payload.get("device_id") or cfg.get("target_device_id", "bfeb96waen2hlkvg")
 
     tuya_summary = tuya_service.get_summary() if settings.TUYA_ENABLED else {}
@@ -1285,7 +1287,7 @@ async def api_irrigation_start(request: Request):
         return JSONResponse(status_code=404, content={"error": "Nessuna elettrovalvola Tuya rilevata o configurata."})
 
     dev_id = valve_dev.get("id")
-    res = await tuya_service.open_irrigation(dev_id, duration_minutes=duration_min)
+    res = await tuya_service.open_irrigation(dev_id, duration_minutes=int(max(1, round(duration_min))))
     if res.get("success"):
         now = time.time()
         engine.is_irrigating = True
@@ -1293,15 +1295,26 @@ async def api_irrigation_start(request: Request):
         engine.last_irrigation_start_time = now
         engine.irrigation_planned_duration_min = duration_min
         engine.irrigation_active_device_id = dev_id
+        
+        # Registra ciclo di test per apprendimento percolazione
+        latest_w = get_latest_reading() or {}
+        soil_ch = cfg.get("soil_moisture_channel", "ch1")
+        soil_pct = (latest_w.get("soil_moisture") or {}).get(soil_ch)
+        if soil_pct is not None:
+            et_mm = calc_evapotranspiration(latest_w.get("temp_c"), latest_w.get("humidity", 50.0), latest_w.get("solar_radiation"))
+            cid = log_irrigation_cycle_start(duration_min, float(soil_pct), latest_w.get("temp_c"), et_mm)
+            engine.active_learning_cycle_id = cid
+            engine.learning_monitoring_until = now + (60 * 60) # 60 minuti di monitoraggio percolazione
+
         engine._save_state()
         notifier.send_alert(
             alert_type="irrigation_manual_start",
-            title=f"💧 Irrigazione Avviata Manualmente ({duration_min} min)",
-            message=f"Elettrovalvola '{valve_dev.get('name')}' aperta per {duration_min} minuti. Chiusura automatica programmata.",
+            title=f"💧 Irrigazione Vaso Avviata ({duration_min:.1f} min)",
+            message=f"Elettrovalvola '{valve_dev.get('name')}' aperta per micro-dose di {duration_min:.1f} minuti. Monitoraggio apprendimento attivo.",
             priority="normal",
             extra_data={"device_id": dev_id, "duration_min": str(duration_min)}
         )
-        return {"status": "ok", "message": f"Irrigazione avviata per {duration_min} minuti.", "result": res}
+        return {"status": "ok", "message": f"Irrigazione vaso avviata per {duration_min:.1f} minuti. Apprendimento attivo.", "result": res}
     else:
         return JSONResponse(status_code=500, content={"error": "Impossibile aprire la valvola Tuya.", "details": res})
 
