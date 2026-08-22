@@ -2264,16 +2264,18 @@ def save_climate_automations_config(config_dict: Dict[str, Any]) -> Dict[str, An
 DEFAULT_IRRIGATION_CONFIG: Dict[str, Any] = {
     "master_enabled": True,
     "mode": "auto",  # 'auto' (avvio/arresto autonomo), 'notify' (solo notifica), 'disabled'
+    "crop_profile": "tomatoes_zucchini",  # Profilo agrometeo: 'tomatoes_zucchini' (Orto Pomodori e Zucchine), 'lawn' (Prato), 'custom'
+    "crop_label": "Aiuola Orto: Pomodori & Zucchine 🍅🥒",
     "target_device_id": "bfeb96waen2hlkvg",  # ID valvola Tuya principale o 'auto'
     "soil_moisture_channel": "ch1",  # Canale sensore Ecowitt WH51
-    "soil_dry_threshold": 30.0,  # Se umidità <= soglia (%) -> terreno secco
-    "soil_target_threshold": 65.0,  # Se umidità >= soglia (%) -> terreno sufficientemente irrigato
-    "duration_minutes": 15,  # Durata standard ciclo (minuti)
+    "soil_dry_threshold": 48.0,  # Se umidità <= 48% -> terreno secco per pomodori/zucchine (fabbisogno idrico elevato)
+    "soil_target_threshold": 75.0,  # Se umidità >= 75% -> terreno ottimamente idratato in profondità
+    "duration_minutes": 18,  # Durata ciclo aiuola (minuti)
     "max_safety_duration_min": 35,  # Chiusura forzata di sicurezza max (minuti)
-    "morning_start_hour": 6,  # Finestra oraria alba/mattino inizio
-    "morning_end_hour": 8,  # Finestra oraria alba/mattino fine
-    "evening_start_hour": 21,  # Finestra oraria tramonto/sera inizio
-    "evening_end_hour": 23,  # Finestra oraria tramonto/sera fine
+    "morning_start_hour": 6,  # Finestra oraria alba/mattino inizio (06:00)
+    "morning_end_hour": 8,  # Finestra oraria alba/mattino fine (08:00)
+    "evening_start_hour": 21,  # Finestra oraria tramonto/sera inizio (21:00)
+    "evening_end_hour": 23,  # Finestra oraria tramonto/sera fine (23:00)
     "skip_rain_forecast_mm": 3.0,  # Soglia pioggia prevista 24h per skip
     "skip_recent_rain_mm": 5.0,  # Soglia pioggia caduta 24-48h per skip
     "skip_wind_gust_kmh": 35.0,  # Soglia raffica vento per posticipo
@@ -2307,6 +2309,10 @@ def save_irrigation_automations_config(config_dict: Dict[str, Any]) -> Dict[str,
             current["master_enabled"] = bool(config_dict["master_enabled"])
         if "mode" in config_dict and config_dict["mode"] in ("auto", "notify", "disabled"):
             current["mode"] = str(config_dict["mode"])
+        if "crop_profile" in config_dict and config_dict["crop_profile"]:
+            current["crop_profile"] = str(config_dict["crop_profile"])
+        if "crop_label" in config_dict and config_dict["crop_label"]:
+            current["crop_label"] = str(config_dict["crop_label"])
         if "target_device_id" in config_dict and config_dict["target_device_id"]:
             current["target_device_id"] = str(config_dict["target_device_id"]).strip()
         if "soil_moisture_channel" in config_dict and config_dict["soil_moisture_channel"]:

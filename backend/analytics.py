@@ -1055,12 +1055,15 @@ def evaluate_smart_irrigation(
     solar_rad: Optional[float] = None,
     rain_forecast_24h_mm: float = 0.0,
     recent_rain_48h_mm: float = 0.0,
-    et_mm: Optional[float] = None
+    et_mm: Optional[float] = None,
+    dry_threshold: float = 48.0,
+    target_threshold: float = 75.0,
+    crop_label: str = "Pomodori & Zucchine 🍅🥒"
 ) -> Dict[str, Any]:
     """
-    Sistema decisionale per l'irrigazione intelligente (Sensore WH51 + Meteo Predittivo):
-    Incrocia:
-    1. Umidità del suolo WH51 (%)
+    Sistema decisionale per l'irrigazione intelligente agrometeo (WH51 + Meteo Predittivo):
+    Calibrato per ortaggi ad alto fabbisogno idrico (Pomodori e Zucchine):
+    1. Umidità del suolo WH51 (Soglia secco: 48%, Target: 75%)
     2. Evapotraspirazione stimata (mm/giorno)
     3. Pioggia prevista nelle prossime 24h
     4. Pioggia caduta nelle ultime 48h
@@ -1070,65 +1073,69 @@ def evaluate_smart_irrigation(
 
     # Se non c'è sensore WH51 collegato, usa stima agrometeo standard
     has_sensor = soil_moisture_pct is not None
-    sm = float(soil_moisture_pct) if has_sensor else 40.0
+    sm = float(soil_moisture_pct) if has_sensor else 55.0
 
     # 1. PIOGGIA PREVISTA IMMINENTE
-    if rain_forecast_24h_mm >= 4.0:
+    if rain_forecast_24h_mm >= 3.0:
         return {
             "has_sensor": has_sensor,
             "soil_moisture_pct": round(sm, 1) if has_sensor else None,
             "et_mm": et_mm,
             "rain_forecast_24h_mm": round(rain_forecast_24h_mm, 1),
+            "crop_label": crop_label,
             "status": "skip_rain",
             "icon": "🌧️ 🛑",
             "badge_class": "badge-info",
-            "title": "Irrigazione NON Necessaria",
-            "desc": f"Previsti {rain_forecast_24h_mm:.1f} mm di pioggia nelle prossime 24h: risparmia acqua, la natura irrigherà per te!",
+            "title": "Irrigazione Sospesa (Pioggia)",
+            "desc": f"Previsti {rain_forecast_24h_mm:.1f} mm di pioggia nelle 24h: l'orto riceverà acqua naturale a sufficienza.",
             "liters_sqm_rec": 0.0
         }
 
     # 2. PIOGGE RECENTI ABBONDANTI
-    if recent_rain_48h_mm >= 8.0:
+    if recent_rain_48h_mm >= 6.0:
         return {
             "has_sensor": has_sensor,
             "soil_moisture_pct": round(sm, 1) if has_sensor else None,
             "et_mm": et_mm,
             "rain_forecast_24h_mm": round(rain_forecast_24h_mm, 1),
+            "crop_label": crop_label,
             "status": "skip_recent",
             "icon": "💧 🟢",
             "badge_class": "badge-success",
             "title": "Suolo Ben Idratato",
-            "desc": f"Accumulo recente di {recent_rain_48h_mm:.1f} mm nelle 48h. Riserva idrica del terreno ottimale.",
+            "desc": f"Accumulo recente di {recent_rain_48h_mm:.1f} mm nelle 48h. Riserva idrica dell'orto ottimale.",
             "liters_sqm_rec": 0.0
         }
 
-    # 3. TERRENO UMIDO / OTTIMALE (>= 32%)
-    if sm >= 32.0:
+    # 3. TERRENO UMIDO / OTTIMALE (>= dry_threshold)
+    if sm >= dry_threshold:
         return {
             "has_sensor": has_sensor,
             "soil_moisture_pct": round(sm, 1) if has_sensor else None,
             "et_mm": et_mm,
             "rain_forecast_24h_mm": round(rain_forecast_24h_mm, 1),
+            "crop_label": crop_label,
             "status": "optimal",
             "icon": "🌱 🟢",
             "badge_class": "badge-success",
-            "title": "Umidità Ideale",
-            "desc": f"Umidità suolo al {sm:.0f}% (ET stimata: {et_mm} mm/die). Nessuna irrigazione richiesta oggi.",
+            "title": "Umidità Ideale Orto",
+            "desc": f"Umidità aiuola {crop_label} al {sm:.0f}% (soglia minima: {dry_threshold:.0f}%, target: {target_threshold:.0f}%). Nessuna irrigazione necessaria.",
             "liters_sqm_rec": 0.0
         }
 
-    # 4. TERRENO SECCO (<= 30%) SENZA PIOGGIA PREVISTA -> CONSIGLIO IRRIGAZIONE
-    rec_liters = round(max(2.0, min(6.0, et_mm * 0.9)), 1)
+    # 4. TERRENO SECCO (< dry_threshold) SENZA PIOGGIA PREVISTA -> CONSIGLIO IRRIGAZIONE
+    rec_liters = round(max(3.0, min(8.0, et_mm * 1.2)), 1)
     return {
         "has_sensor": has_sensor,
         "soil_moisture_pct": round(sm, 1) if has_sensor else None,
         "et_mm": et_mm,
         "rain_forecast_24h_mm": round(rain_forecast_24h_mm, 1),
+        "crop_label": crop_label,
         "status": "water_needed",
-        "icon": "🌱 💧",
+        "icon": "🍅 💧",
         "badge_class": "badge-warning",
-        "title": "Irrigazione Consigliata",
-        "desc": f"Terreno secco ({sm:.0f}%), ET {et_mm} mm e pioggia assente. Consiglio: irrigare stasera circa {rec_liters} L/m².",
+        "title": "Irrigazione Necessaria",
+        "desc": f"Umidità suolo al {sm:.0f}% (sotto la soglia di sicurezza del {dry_threshold:.0f}% per {crop_label}). Consiglio: irrigare stasera circa {rec_liters} L/m².",
         "liters_sqm_rec": rec_liters
     }
 

@@ -358,13 +358,17 @@ def build_analytics_context(latest: dict) -> dict:
     # 3. Evapotraspirazione & Irrigazione Intelligente WH51
     et_mm = calc_evapotranspiration(temp_c, hum, solar, wind_spd, today_ext.get("temp_min"), today_ext.get("temp_max"))
     soil_ch1 = (latest.get("soil_moisture") or {}).get("ch1") or latest.get("soil_moisture_ch1")
+    irr_cfg = get_irrigation_automations_config()
     smart_irrigation = evaluate_smart_irrigation(
         soil_moisture_pct=soil_ch1,
         temp_c=temp_c,
         solar_rad=solar,
         rain_forecast_24h_mm=0.0,
         recent_rain_48h_mm=rain_totals.get("week_rain_mm", 0.0),
-        et_mm=et_mm
+        et_mm=et_mm,
+        dry_threshold=float(irr_cfg.get("soil_dry_threshold", 48.0)),
+        target_threshold=float(irr_cfg.get("soil_target_threshold", 75.0)),
+        crop_label=str(irr_cfg.get("crop_label", "Aiuola Orto: Pomodori & Zucchine 🍅🥒"))
     )
 
     # 4. Solar Forecast & Nowcasting
@@ -1234,7 +1238,10 @@ async def api_get_irrigation_status():
         solar_rad=latest_w.get("solar_radiation"),
         rain_forecast_24h_mm=fc_rain,
         recent_rain_48h_mm=recent_rain,
-        et_mm=et_mm
+        et_mm=et_mm,
+        dry_threshold=float(cfg.get("soil_dry_threshold", 48.0)),
+        target_threshold=float(cfg.get("soil_target_threshold", 75.0)),
+        crop_label=str(cfg.get("crop_label", "Aiuola Orto: Pomodori & Zucchine 🍅🥒"))
     )
 
     is_open = valve_dev.get("is_on") is True or valve_dev.get("work_state") in ("watering", "spray", "manual", "auto", "running") if valve_dev else False

@@ -1011,14 +1011,17 @@ async function loadIrrigationSmartStatus(rawId) {
         const descEl = document.getElementById('irrigation-smart-desc');
         if (descEl && data.advice) {
             const adv = data.advice;
+            const crop = adv.crop_label || (data.config ? data.config.crop_label : 'Pomodori & Zucchine 🍅🥒');
             const sm = data.soil_moisture_pct !== null ? `${data.soil_moisture_pct}%` : 'N/D';
             const rf = data.rain_forecast_24h_mm || 0;
             const et = data.et_mm || 0;
+            const dryThresh = data.config ? data.config.soil_dry_threshold : 48;
             descEl.innerHTML = `
-                <strong>${adv.icon} ${adv.title}</strong><br>
-                ${adv.desc}<br>
-                <small style="color: var(--text-dim); margin-top: 4px; display: inline-block;">
-                    🌱 Sensore WH51: <strong>${sm}</strong> • ☀️ ET: <strong>${et} mm/die</strong> • 🌧️ Pioggia 24h: <strong>${rf} mm</strong>
+                <div style="font-weight: 700; color: #38bdf8; margin-bottom: 2px;">${adv.icon} ${adv.title}</div>
+                <div style="font-size: 0.82rem; color: #f1f5f9; margin-bottom: 6px;">${adv.desc}</div>
+                <small style="color: var(--text-dim); display: block; line-height: 1.5;">
+                    🪴 Coltura: <strong style="color: #38bdf8;">${crop}</strong><br>
+                    🌱 Umidità WH51: <strong>${sm}</strong> (Min: ${dryThresh}% • Target: 75%) • ☀️ ET: <strong>${et} mm/die</strong> • 🌧️ Pioggia 24h: <strong>${rf} mm</strong>
                 </small>
             `;
         }

@@ -1622,7 +1622,8 @@ class AlertEngine:
                 return
 
             # Sub-caso A2: Terreno saturo / Target raggiunto da sensore WH51
-            target_sat = float(cfg.get("soil_target_threshold", 65.0))
+            target_sat = float(cfg.get("soil_target_threshold", 75.0))
+            crop_label = cfg.get("crop_label", "Aiuola Orto: Pomodori & Zucchine 🍅🥒")
             if soil_moisture is not None and soil_moisture >= target_sat and elapsed_min >= 3.0:
                 await tuya_service.close_irrigation(dev_id)
                 self.is_irrigating = False
@@ -1631,7 +1632,7 @@ class AlertEngine:
                 notifier.send_alert(
                     alert_type="irrigation_soil_saturated",
                     title=f"🌱 Suolo Ottimamente Idratato: {soil_moisture:.0f}%",
-                    message=f"Il sensore terreno ha raggiunto la soglia ottimale ({soil_moisture:.0f}%). Valvola '{dev_name}' chiusa dopo {elapsed_min} minuti.",
+                    message=f"Il sensore terreno ha raggiunto la soglia ottimale ({soil_moisture:.0f}%) per {crop_label}. Valvola '{dev_name}' chiusa dopo {elapsed_min} minuti.",
                     priority="normal",
                     extra_data={"device_id": dev_id, "soil_moisture": str(soil_moisture)}
                 )
@@ -1639,7 +1640,7 @@ class AlertEngine:
                 return
 
             # Sub-caso A3: Timeout Programmato o Limite Massimo di Sicurezza
-            planned_min = float(self.irrigation_planned_duration_min or cfg.get("duration_minutes", 15))
+            planned_min = float(self.irrigation_planned_duration_min or cfg.get("duration_minutes", 18))
             max_safety_min = float(cfg.get("max_safety_duration_min", 35))
             limit_min = min(planned_min, max_safety_min)
 
@@ -1651,9 +1652,9 @@ class AlertEngine:
                 notifier.send_alert(
                     alert_type="irrigation_auto_stop",
                     title=f"💧 Ciclo Irrigazione Concluso: {dev_name}",
-                    message=f"Ciclo di {int(elapsed_min)} minuti terminato con successo. Elettrovalvola chiusa in totale sicurezza.",
+                    message=f"Ciclo di {int(limit_min)} minuti per {crop_label} terminato con successo. Elettrovalvola chiusa in totale sicurezza.",
                     priority="normal",
-                    extra_data={"device_id": dev_id, "duration_min": str(int(elapsed_min))}
+                    extra_data={"device_id": dev_id, "elapsed_min": str(elapsed_min)}
                 )
                 logger.info(f"[IRRIGATION-AUTO] Ciclo completato: {dev_name} chiuso dopo {elapsed_min}m")
                 return
@@ -1666,16 +1667,16 @@ class AlertEngine:
         # =========================================================================
 
         # 1. Controllo Antigelo (Frost Guard)
-        frost_temp = float(cfg.get("frost_guard_temp_c", 3.0))
-        if temp_c is not None and temp_c <= frost_temp:
-            if (now - self.last_irrigation_frost_alert) >= 43200:  # 12h cooldown
+        frost_limit = float(cfg.get("frost_guard_temp_c", 3.0))
+        if temp_c is not None and temp_c <= frost_limit:
+            if (now - self.last_irrigation_frost_alert) >= 86400:  # 24h cooldown
                 self.last_irrigation_frost_alert = now
                 self._save_state()
                 notifier.send_alert(
                     alert_type="irrigation_frost_guard",
                     title="❄️ Protezione Antigelo: Irrigazione Bloccata",
-                    message=f"Temperatura esterna a {temp_c}°C (sotto i {frost_temp}°C). Irrigazione disattivata per preservare le tubature e le radici dal gelo.",
-                    priority="normal",
+                    message=f"Temperatura esterna a {temp_c:.1f}°C (sotto i {frost_limit:.1f}°C). Irrigazione disattivata per preservare le tubature e le radici dal gelo.",
+                    priority="high",
                     extra_data={"temp_c": str(temp_c)}
                 )
             return
@@ -1718,10 +1719,11 @@ class AlertEngine:
                 )
             return
 
-        # 4. Controllo Umidità Suolo (WH51)
-        dry_thresh = float(cfg.get("soil_dry_threshold", 30.0))
+        # 4. Controllo Umidità Suolo (WH51 per Pomodori e Zucchine)
+        crop_label = cfg.get("crop_label", "Aiuola Orto: Pomodori & Zucchine 🍅🥒")
+        dry_thresh = float(cfg.get("soil_dry_threshold", 48.0))
         if soil_moisture is not None and soil_moisture > dry_thresh:
-            # Il terreno è già sufficientemente umido
+            # Il terreno è già sufficientemente umido per i pomodori e le zucchine
             return
 
         # 5. Controllo Finestre Orarie Ottimali (Alba o Tramonto)
@@ -1742,12 +1744,12 @@ class AlertEngine:
             return
 
         # 7. Calcolo Durata Dinamica in base a ET e Secchezza
-        base_duration = int(cfg.get("duration_minutes", 15))
+        base_duration = int(cfg.get("duration_minutes", 18))
         duration = base_duration
-        if et_mm >= 5.0 or (soil_moisture is not None and soil_moisture <= 15.0):
-            duration = min(25, int(base_duration * 1.3))
-        elif et_mm <= 2.5 and (soil_moisture is not None and soil_moisture >= 25.0):
-            duration = max(8, int(base_duration * 0.8))
+        if et_mm >= 5.0 or (soil_moisture is not None and soil_moisture <= 30.0):
+            duration = min(30, int(base_duration * 1.3))
+        elif et_mm <= 2.5 and (soil_moisture is not None and soil_moisture >= 42.0):
+            duration = max(10, int(base_duration * 0.8))
 
         mode = cfg.get("mode", "auto")
         sm_txt = f"{soil_moisture:.0f}%" if soil_moisture is not None else "non rilevata"
@@ -1764,21 +1766,21 @@ class AlertEngine:
                 self._save_state()
                 notifier.send_alert(
                     alert_type="irrigation_auto_start",
-                    title=f"🌱 Irrigazione Avviata: {dev_name}",
-                    message=f"Umidità suolo al {sm_txt} (ET {et_mm} mm/die, pioggia assente). Avviato ciclo intelligente di {duration} minuti per il giardino.",
+                    title=f"🍅🥒 Irrigazione Orto Avviata: {crop_label}",
+                    message=f"Umidità suolo al {sm_txt} (sotto la soglia di sicurezza del {dry_thresh:.0f}%). Avviato ciclo intelligente di {duration} minuti per pomodori e zucchine.",
                     priority="normal",
                     extra_data={"device_id": dev_id, "duration_min": str(duration), "soil_moisture": sm_txt}
                 )
-                logger.info(f"[IRRIGATION-AUTO] Avvio autonomo ciclo {duration}m per {dev_name} (suolo: {sm_txt})")
+                logger.info(f"[IRRIGATION-AUTO] Avvio autonomo ciclo {duration}m per {crop_label} ({dev_name}, suolo: {sm_txt})")
         elif mode == "notify":
             self.last_irrigation_start_time = now
             self._save_state()
             notifier.send_alert(
                 alert_type="irrigation_advice",
-                title="💧 Suggerimento Irrigazione Giardino",
-                message=f"Terreno secco ({sm_txt}) e meteo favorevole nella finestra ottimale. Consiglio di irrigare stasera per circa {duration} minuti.",
+                title=f"🍅🥒 Suggerimento Irrigazione {crop_label}",
+                message=f"Umidità aiuola al {sm_txt} (sotto la soglia ideale del {dry_thresh:.0f}%). Meteo favorevole: consiglio di irrigare per circa {duration} minuti.",
                 priority="normal",
-                extra_data={"device_id": dev_id, "duration_min": str(duration), "soil_moisture": sm_txt}
+                extra_data={"duration_min": str(duration), "soil_moisture": sm_txt}
             )
             logger.info(f"[IRRIGATION-AUTO] Notifica consiglio inviata (suolo: {sm_txt})")
 
