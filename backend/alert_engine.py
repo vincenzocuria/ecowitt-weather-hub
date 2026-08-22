@@ -60,12 +60,15 @@ class AlertEngine:
         self.last_leak_alert: Dict[str, float] = {}
         self.last_record_alert_by_key: Dict[str, float] = {}
 
-        # Climate Automations states (LG ThinQ)
+        # Climate & Fridge Automations states (LG ThinQ)
         self.last_climate_away_alert: float = 0.0
         self.last_climate_runtime_alert: Dict[str, float] = {}
         self.last_climate_night_alert: Dict[str, float] = {}
         self.last_climate_solar_alert: Dict[str, float] = {}
         self.last_climate_battery_alert: Dict[str, float] = {}
+        self.last_fridge_door_alert: float = 0.0
+        self.last_fridge_away_alert: float = 0.0
+        self.last_fridge_solar_alert: float = 0.0
 
         # Carica lo stato persistente da disco o DB
         self._load_state()
@@ -116,6 +119,9 @@ class AlertEngine:
                 "last_climate_night_alert": self.last_climate_night_alert,
                 "last_climate_solar_alert": self.last_climate_solar_alert,
                 "last_climate_battery_alert": self.last_climate_battery_alert,
+                "last_fridge_door_alert": self.last_fridge_door_alert,
+                "last_fridge_away_alert": self.last_fridge_away_alert,
+                "last_fridge_solar_alert": self.last_fridge_solar_alert,
             }
             tmp_path = self._state_file + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
@@ -171,6 +177,9 @@ class AlertEngine:
                 self.last_climate_night_alert = data.get("last_climate_night_alert", self.last_climate_night_alert)
                 self.last_climate_solar_alert = data.get("last_climate_solar_alert", self.last_climate_solar_alert)
                 self.last_climate_battery_alert = data.get("last_climate_battery_alert", self.last_climate_battery_alert)
+                self.last_fridge_door_alert = data.get("last_fridge_door_alert", self.last_fridge_door_alert)
+                self.last_fridge_away_alert = data.get("last_fridge_away_alert", self.last_fridge_away_alert)
+                self.last_fridge_solar_alert = data.get("last_fridge_solar_alert", self.last_fridge_solar_alert)
                 loaded_from_disk = True
                 logger.info("[ALERT-STATE] Cache stato allarmi caricata con successo da disco.")
             except Exception as e:
@@ -1345,6 +1354,58 @@ class AlertEngine:
                             priority="normal",
                             extra_data={"soc": str(soc)}
                         )
+
+        # =========================================================================
+        # 6. ALLARMI & AUTOMAZIONI FRIGORIFERO SMART LG THINQ
+        # =========================================================================
+        fridges = [d for d in climate_devices if d.get("device_type") == "DEVICE_REFRIGERATOR"]
+        for fr in fridges:
+            fr_id = fr.get("device_id") or fr.get("deviceId")
+            fr_alias = fr.get("alias", "Frigorifero")
+            door_open = fr.get("door_open", False)
+            door_open_since = fr.get("door_open_since")
+            express_mode = fr.get("express_mode", False)
+
+            # A. Allarme Porta Frigo Rimasta Aperta (> 2 min)
+            if door_open and door_open_since:
+                open_duration_sec = now - door_open_since
+                if open_duration_sec >= 120 and (now - self.last_fridge_door_alert) >= 600:  # 2 min aperto, cooldown 10 min
+                    self.last_fridge_door_alert = now
+                    self._save_state()
+                    notifier.send_alert(
+                        alert_type="fridge_door_open",
+                        title=f"🚪 Porta {fr_alias} Rimasta Aperta!",
+                        message=f"⚠️ La porta del {fr_alias} è aperta da oltre 2 minuti ({int(open_duration_sec // 60)} min). Chiudila per non deteriorare gli alimenti.",
+                        priority="high",
+                        extra_data={"device_id": fr_id, "duration_sec": str(int(open_duration_sec))}
+                    )
+                    logger.warning(f"[FRIDGE-GUARD] Porta {fr_alias} aperta da {int(open_duration_sec)}s -> allarme inviato.")
+
+            # B. Allarme Uscita di Casa con Porta Frigo Aperta
+            if is_present is False and door_open:
+                if (now - self.last_fridge_away_alert) >= 900:  # Cooldown 15 min
+                    self.last_fridge_away_alert = now
+                    self._save_state()
+                    notifier.send_alert(
+                        alert_type="fridge_door_away",
+                        title=f"🚨 ALLARME: {fr_alias} Aperto all'Uscita!",
+                        message=f"🚪 [URGENTE] Sei uscito di casa ma la porta del {fr_alias} risulta ancora APERTA! Rientra o avvisa chi è in casa per richiuderla.",
+                        priority="urgent",
+                        extra_data={"device_id": fr_id}
+                    )
+                    logger.warning(f"[FRIDGE-GUARD] Vincenzo away ma {fr_alias} ha la porta APERTA! Allarme urgente inviato.")
+
+            # C. Sinergia Solare Aton: Express Cool a Costo Zero
+            if p_solare >= 2200 and soc >= 95 and not express_mode and (now - self.last_fridge_solar_alert) >= 14400:  # Cooldown 4h
+                self.last_fridge_solar_alert = now
+                self._save_state()
+                notifier.send_alert(
+                    alert_type="fridge_solar_opportunity",
+                    title="☀️ Frigorifero & Surplus Solare",
+                    message=f"Surplus fotovoltaico a {int(p_solare)} W e batteria al {int(soc)}%: puoi attivare Express Cool sul {fr_alias} per accumulare freddo gratis!",
+                    priority="normal",
+                    extra_data={"p_solare": str(int(p_solare)), "soc": str(int(soc))}
+                )
 
 engine = AlertEngine()
 

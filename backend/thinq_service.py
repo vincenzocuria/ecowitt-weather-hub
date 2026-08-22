@@ -184,8 +184,56 @@ class LGThinQService:
                         "last_updated": now_str,
                         "raw_status": status_raw
                     }
+                elif device_type == "DEVICE_REFRIGERATOR":
+                    # Scheda tecnica Frigorifero Smart LG ThinQ
+                    temp_list = status_raw.get("temperature", [])
+                    target_temp = 4
+                    unit = "C"
+                    if isinstance(temp_list, list) and temp_list:
+                        target_temp = temp_list[0].get("targetTemperature", 4)
+                        unit = temp_list[0].get("unit", "C")
+                    elif isinstance(temp_list, dict):
+                        target_temp = temp_list.get("targetTemperature", 4)
+                        unit = temp_list.get("unit", "C")
+                    
+                    express_mode = status_raw.get("refrigeration", {}).get("expressMode", False)
+                    
+                    door_statuses = status_raw.get("doorStatus", [])
+                    door_open = False
+                    if isinstance(door_statuses, list):
+                        door_open = any(d.get("doorState") == "OPEN" for d in door_statuses)
+                    elif isinstance(door_statuses, dict):
+                        door_open = (door_statuses.get("doorState") == "OPEN")
+
+                    prev_dev = self.devices_cache.get(device_id, {})
+                    prev_door_open = prev_dev.get("door_open", False)
+                    prev_door_since = prev_dev.get("door_open_since")
+                    if door_open:
+                        door_open_since = prev_door_since if (prev_door_open and prev_door_since) else time.time()
+                    else:
+                        door_open_since = None
+
+                    self.devices_cache[device_id] = {
+                        "device_id": device_id,
+                        "deviceId": device_id,
+                        "alias": alias or "Frigorifero",
+                        "model_name": model_name,
+                        "device_type": device_type,
+                        "is_online": True if status_raw else False,
+                        "is_on": express_mode,  # Attivo se express mode attiva
+                        "target_temp": target_temp,
+                        "unit": unit,
+                        "min_temp": 0,
+                        "max_temp": 6,
+                        "express_mode": express_mode,
+                        "door_open": door_open,
+                        "door_open_since": door_open_since,
+                        "door_statuses": door_statuses,
+                        "last_updated": now_str,
+                        "raw_status": status_raw
+                    }
                 else:
-                    # Altri dispositivi (es. lavatrice, frigo)
+                    # Altri dispositivi (es. lavatrice)
                     self.devices_cache[device_id] = {
                         "device_id": device_id,
                         "deviceId": device_id,
@@ -296,6 +344,27 @@ class LGThinQService:
                 results.append({"power_save": ps, "result": res})
                 if cached_dev:
                     cached_dev["power_save"] = ps
+
+            # 7. Frigorifero: Express Mode (Express Cool / Freeze)
+            is_fridge = cached_dev and cached_dev.get("device_type") == "DEVICE_REFRIGERATOR"
+            if "express_mode" in command or "expressMode" in command or (is_fridge and "power" in command):
+                exp_val = bool(command.get("express_mode", command.get("expressMode", command.get("power"))))
+                payload = {"refrigeration": {"expressMode": exp_val}}
+                res = await self.api.async_post_device_control(device_id=device_id, payload=payload)
+                results.append({"express_mode": exp_val, "result": res})
+                if cached_dev:
+                    cached_dev["express_mode"] = exp_val
+                    cached_dev["is_on"] = exp_val
+
+            # 8. Frigorifero: Target Temperature (0°C - 6°C)
+            if is_fridge and ("target_temp" in command or "temperature" in command):
+                t_val = int(round(float(command.get("target_temp", command.get("temperature")))))
+                t_val = max(0, min(6, t_val))
+                payload = {"temperature": {"targetTemperature": t_val, "locationName": "FRIDGE"}}
+                res = await self.api.async_post_device_control(device_id=device_id, payload=payload)
+                results.append({"target_temp": t_val, "result": res})
+                if cached_dev:
+                    cached_dev["target_temp"] = t_val
 
             # Aggiorna timestamp
             if cached_dev:

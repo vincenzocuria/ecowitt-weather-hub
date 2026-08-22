@@ -524,6 +524,62 @@ function renderTuyaDetail(dev) {
 // 2. Dettaglio LG ThinQ Climatizzatori
 function renderThinQDetail(dev) {
     const raw = dev.raw || {};
+    const devType = raw.device_type || 'DEVICE_AIR_CONDITIONER';
+
+    // RENDER DETTAGLIO FRIGORIFERO LG THINQ
+    if (devType === 'DEVICE_REFRIGERATOR') {
+        const doorOpen = dev.door_open || raw.door_open || false;
+        const expressMode = dev.express_mode || raw.express_mode || false;
+        const targetTemp = dev.temp_set !== null && dev.temp_set !== undefined ? dev.temp_set : (raw.target_temp || 4);
+
+        return `
+            <div class="modal-quick-state-card ${doorOpen ? 'state-card-off' : (expressMode ? 'state-card-on' : 'state-card-off')}" style="${doorOpen ? 'background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4);' : ''}">
+                <div class="state-card-info">
+                    <span class="state-indicator-dot ${doorOpen ? 'dot-off pulse' : (expressMode ? 'dot-on pulse' : 'dot-off')}" style="${doorOpen ? 'background: #ef4444; box-shadow: 0 0 10px #ef4444;' : ''}"></span>
+                    <span class="state-text" style="${doorOpen ? 'color: #f87171; font-weight: 700;' : ''}">
+                        ${doorOpen ? '⚠️ PORTA APERTA' : '🟢 Porta Chiusa'} ${expressMode ? '• Express Cool ATTIVO ❄️' : ''}
+                    </span>
+                </div>
+                <button type="button" class="btn ${expressMode ? 'btn-danger' : 'btn-primary'}" onclick="toggleThinQFridgeExpress('${dev.raw_id}', ${!expressMode})">
+                    ${expressMode ? 'Disattiva Express' : 'Attiva Express Cool ❄️'}
+                </button>
+            </div>
+
+            <div class="clima-dial-wrap" style="margin-top: 1.25rem;">
+                <div class="clima-temps-row" style="justify-content: center;">
+                    <div class="clima-temp-box" style="flex: 1 1 220px; max-width: 300px;">
+                        <span class="clima-sub">Temperatura Target Vano Frigo</span>
+                        <div class="clima-target-ctrl">
+                            <button type="button" class="btn-step" onclick="setThinQFridgeTemp('${dev.raw_id}', ${targetTemp - 1})">-</button>
+                            <span class="clima-target-val">${targetTemp}°C</span>
+                            <button type="button" class="btn-step" onclick="setThinQFridgeTemp('${dev.raw_id}', ${targetTemp + 1})">+</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+                <div class="telemetry-card">
+                    <span class="tel-label">Sensore Porta</span>
+                    <span class="tel-val ${doorOpen ? 'text-danger' : 'text-success'}">${doorOpen ? 'Aperta ⚠️' : 'Chiusa 🟢'}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">Raffreddamento Rapido</span>
+                    <span class="tel-val ${expressMode ? 'text-accent' : ''}">${expressMode ? 'Express ON ❄️' : 'Disattivato'}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">Range Target</span>
+                    <span class="tel-val">0°C - 6°C</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">Modello Elettrodomestico</span>
+                    <span class="tel-val" style="font-size: 0.85rem;">${raw.model_name || 'LG Smart Fridge'}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    // RENDER DETTAGLIO CLIMATIZZATORE LG THINQ
     const isOn = dev.is_on;
     const curTemp = dev.temp_current !== null ? `${dev.temp_current}°C` : '--';
     const targetTemp = dev.temp_set !== null ? dev.temp_set : 24.0;
@@ -762,6 +818,43 @@ async function setThinQFan(rawId, speed) {
         setTimeout(fetchDevicesData, 1000);
     } catch (e) {
         showToast('Errore impostazione ventilazione clima', 'danger');
+    }
+}
+
+async function toggleThinQFridgeExpress(rawId, newState) {
+    try {
+        const resp = await fetch(`/api/thinq/device/${rawId}/control`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({express_mode: newState})
+        });
+        if (resp.ok) {
+            showToast(newState ? '❄️ Express Cool attivato!' : 'Express Cool disattivato', 'success');
+            setTimeout(fetchDevicesData, 1000);
+        } else {
+            showToast('Errore invio comando frigorifero', 'danger');
+        }
+    } catch (e) {
+        showToast('Errore comunicazione frigorifero: ' + e.message, 'danger');
+    }
+}
+
+async function setThinQFridgeTemp(rawId, newTemp) {
+    if (newTemp < 0 || newTemp > 6) return;
+    try {
+        const resp = await fetch(`/api/thinq/device/${rawId}/control`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({target_temp: newTemp})
+        });
+        if (resp.ok) {
+            showToast(`Temperatura target frigo impostata a ${newTemp}°C`, 'success');
+            setTimeout(fetchDevicesData, 1000);
+        } else {
+            showToast('Errore impostazione temperatura frigo', 'danger');
+        }
+    } catch (e) {
+        showToast('Errore comunicazione frigorifero: ' + e.message, 'danger');
     }
 }
 

@@ -181,18 +181,29 @@ class TestEcowittHub(unittest.TestCase):
     def test_thinq_service_state_management(self):
         from backend.thinq_service import LGThinQService
         svc = LGThinQService()
-        # Mock device cache
-        svc.devices_cache["test-ac-1"] = {
-            "device_id": "test-ac-1",
-            "alias": "Camera da letto",
-            "model_name": "RAC_056905_WW",
-            "device_type": "DEVICE_AIR_CONDITIONER",
-            "power": "POWER_ON",
-            "is_on": True,
-            "current_temp": 28.5,
-            "target_temp": 26.0,
-            "mode": "COOL",
-            "fan_speed": "LOW"
+        # Hermetic mock device cache
+        svc.devices_cache = {
+            "test-ac-1": {
+                "device_id": "test-ac-1",
+                "alias": "Camera da letto",
+                "model_name": "RAC_056905_WW",
+                "device_type": "DEVICE_AIR_CONDITIONER",
+                "power": "POWER_ON",
+                "is_on": True,
+                "current_temp": 28.5,
+                "target_temp": 26.0,
+                "mode": "COOL",
+                "fan_speed": "LOW"
+            },
+            "test-fridge-1": {
+                "device_id": "test-fridge-1",
+                "alias": "FRIGORIFERO",
+                "model_name": "2GLRETRECF__F",
+                "device_type": "DEVICE_REFRIGERATOR",
+                "target_temp": 4,
+                "express_mode": False,
+                "door_open": False
+            }
         }
         dev = svc.get_cached_device("test-ac-1")
         self.assertIsNotNone(dev)
@@ -200,8 +211,13 @@ class TestEcowittHub(unittest.TestCase):
         self.assertTrue(dev["is_on"])
         self.assertEqual(dev["target_temp"], 26.0)
 
+        fridge = svc.get_cached_device("test-fridge-1")
+        self.assertIsNotNone(fridge)
+        self.assertEqual(fridge["target_temp"], 4)
+        self.assertFalse(fridge["door_open"])
+
         all_devs = svc.get_cached_devices()
-        self.assertEqual(len(all_devs), 1)
+        self.assertEqual(len(all_devs), 2)
 
     def test_smartthings_service_parsing_and_synergy(self):
         from backend.smartthings_service import SmartThingsService
