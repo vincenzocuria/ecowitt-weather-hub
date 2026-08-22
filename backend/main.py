@@ -36,6 +36,7 @@ from backend.database import (
     delete_alert_log, clear_all_alert_logs, get_alerts_stats,
     get_tropical_nights_stats, get_soil_moisture_summary,
     get_climate_automations_config, save_climate_automations_config,
+    get_irrigation_automations_config, save_irrigation_automations_config,
     to_local_datetime_str, DB_PATH
 )
 from backend.analytics import (
@@ -82,6 +83,26 @@ async def watchdog_worker():
                         latest_e,
                         st_sum.get("presence") if st_sum else None
                     )
+
+            # Automazioni Irrigazione Intelligente (WH51 + Tuya SOP10 + Meteo Predittivo)
+            if settings.TUYA_ENABLED:
+                fc_rain = 0.0
+                try:
+                    fc_data = forecast_service.fetch_open_meteo() or {}
+                    fc_rain = float(fc_data.get("rain_24h_sum", 0.0) or 0.0)
+                except Exception:
+                    pass
+                recent_rain_mm = 0.0
+                try:
+                    recent_r = get_recent_rain_totals() or {}
+                    recent_rain_mm = float(recent_r.get("rain_48h", 0.0) or 0.0)
+                except Exception:
+                    pass
+                await engine.evaluate_smart_irrigation_automations(
+                    weather_data=latest_w,
+                    forecast_rain_24h_mm=fc_rain,
+                    recent_rain_48h_mm=recent_rain_mm
+                )
         except Exception as e:
             logger.error(f"Errore nel watchdog worker: {e}")
         await asyncio.sleep(60)
@@ -1151,6 +1172,168 @@ async def api_tuya_config(device_id: str, request: Request):
     await tuya_service.set_device_enabled(device_id, enabled, custom_name)
     return {"status": "ok", "device_id": device_id, "enabled": enabled, "custom_name": custom_name}
 
+# --- SMART IRRIGATION ENDPOINTS ---
+
+@app.get("/api/irrigation/config")
+async def api_get_irrigation_config():
+    """Restituisce la configurazione attuale dell'irrigazione intelligente."""
+    cfg = get_irrigation_automations_config()
+    return {"config": cfg}
+
+@app.post("/api/irrigation/config")
+async def api_save_irrigation_config(request: Request):
+    """Salva la configurazione dell'irrigazione intelligente."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    updated = save_irrigation_automations_config(payload)
+    return {"status": "ok", "config": updated}
+
+@app.get("/api/irrigation/status")
+async def api_get_irrigation_status():
+    """Restituisce lo stato decisionale e operativo in tempo reale dell'irrigazione."""
+    cfg = get_irrigation_automations_config()
+    latest_w = get_latest_reading() or {}
+    tuya_summary = tuya_service.get_summary() if settings.TUYA_ENABLED else {}
+    all_tuya = tuya_summary.get("all_devices") or tuya_summary.get("devices") or []
+    
+    target_id = cfg.get("target_device_id", "bfeb96waen2hlkvg")
+    valve_dev = None
+    if target_id and target_id != "auto":
+        valve_dev = next((d for d in all_tuya if d.get("id") == target_id), None)
+    if not valve_dev:
+        valve_dev = next((d for d in all_tuya if d.get("category") == "sfkzq" or d.get("type") == "irrigation"), None)
+
+    # Parametri agrometeo
+    soil_ch = cfg.get("soil_moisture_channel", "ch1")
+    soil_data = latest_w.get("soil_moisture") or {}
+    soil_pct = soil_data.get(soil_ch)
+    if soil_pct is None and soil_data:
+        soil_pct = next(iter(soil_data.values()), None)
+
+    fc_rain = 0.0
+    try:
+        fc_data = forecast_service.fetch_open_meteo() or {}
+        fc_rain = float(fc_data.get("rain_24h_sum", 0.0) or 0.0)
+    except Exception:
+        pass
+
+    recent_rain = 0.0
+    try:
+        rr = get_recent_rain_totals() or {}
+        recent_rain = float(rr.get("rain_48h", 0.0) or 0.0)
+    except Exception:
+        pass
+
+    et_mm = calc_evapotranspiration(latest_w.get("temp_c"), latest_w.get("humidity", 50.0), latest_w.get("solar_radiation"))
+    advice = evaluate_smart_irrigation(
+        soil_moisture_pct=soil_pct,
+        temp_c=latest_w.get("temp_c"),
+        solar_rad=latest_w.get("solar_radiation"),
+        rain_forecast_24h_mm=fc_rain,
+        recent_rain_48h_mm=recent_rain,
+        et_mm=et_mm
+    )
+
+    is_open = valve_dev.get("is_on") is True or valve_dev.get("work_state") in ("watering", "spray", "manual", "auto", "running") if valve_dev else False
+
+    return {
+        "config": cfg,
+        "valve_device": valve_dev,
+        "valve_is_open": is_open,
+        "is_irrigating": engine.is_irrigating,
+        "irrigation_started_at": engine.irrigation_started_at,
+        "planned_duration_min": engine.irrigation_planned_duration_min,
+        "soil_moisture_pct": soil_pct,
+        "soil_channel": soil_ch,
+        "et_mm": et_mm,
+        "rain_forecast_24h_mm": fc_rain,
+        "recent_rain_48h_mm": recent_rain,
+        "advice": advice
+    }
+
+@app.post("/api/irrigation/start")
+async def api_irrigation_start(request: Request):
+    """Avvia un ciclo di irrigazione manuale con durata personalizzata (default 15 min)."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    
+    cfg = get_irrigation_automations_config()
+    duration_min = int(payload.get("duration_minutes") or cfg.get("duration_minutes", 15))
+    target_id = payload.get("device_id") or cfg.get("target_device_id", "bfeb96waen2hlkvg")
+
+    tuya_summary = tuya_service.get_summary() if settings.TUYA_ENABLED else {}
+    all_tuya = tuya_summary.get("all_devices") or tuya_summary.get("devices") or []
+    valve_dev = None
+    if target_id and target_id != "auto":
+        valve_dev = next((d for d in all_tuya if d.get("id") == target_id), None)
+    if not valve_dev:
+        valve_dev = next((d for d in all_tuya if d.get("category") == "sfkzq" or d.get("type") == "irrigation"), None)
+
+    if not valve_dev:
+        return JSONResponse(status_code=404, content={"error": "Nessuna elettrovalvola Tuya rilevata o configurata."})
+
+    dev_id = valve_dev.get("id")
+    res = await tuya_service.open_irrigation(dev_id, duration_minutes=duration_min)
+    if res.get("success"):
+        now = time.time()
+        engine.is_irrigating = True
+        engine.irrigation_started_at = now
+        engine.last_irrigation_start_time = now
+        engine.irrigation_planned_duration_min = duration_min
+        engine.irrigation_active_device_id = dev_id
+        engine._save_state()
+        notifier.send_alert(
+            alert_type="irrigation_manual_start",
+            title=f"💧 Irrigazione Avviata Manualmente ({duration_min} min)",
+            message=f"Elettrovalvola '{valve_dev.get('name')}' aperta per {duration_min} minuti. Chiusura automatica programmata.",
+            priority="normal",
+            extra_data={"device_id": dev_id, "duration_min": str(duration_min)}
+        )
+        return {"status": "ok", "message": f"Irrigazione avviata per {duration_min} minuti.", "result": res}
+    else:
+        return JSONResponse(status_code=500, content={"error": "Impossibile aprire la valvola Tuya.", "details": res})
+
+@app.post("/api/irrigation/stop")
+async def api_irrigation_stop(request: Request):
+    """Arresta immediatamente l'irrigazione."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    
+    cfg = get_irrigation_automations_config()
+    target_id = payload.get("device_id") or engine.irrigation_active_device_id or cfg.get("target_device_id", "bfeb96waen2hlkvg")
+
+    tuya_summary = tuya_service.get_summary() if settings.TUYA_ENABLED else {}
+    all_tuya = tuya_summary.get("all_devices") or tuya_summary.get("devices") or []
+    valve_dev = None
+    if target_id and target_id != "auto":
+        valve_dev = next((d for d in all_tuya if d.get("id") == target_id), None)
+    if not valve_dev:
+        valve_dev = next((d for d in all_tuya if d.get("category") == "sfkzq" or d.get("type") == "irrigation"), None)
+
+    if not valve_dev:
+        return JSONResponse(status_code=404, content={"error": "Nessuna elettrovalvola Tuya rilevata."})
+
+    dev_id = valve_dev.get("id")
+    res = await tuya_service.close_irrigation(dev_id)
+    now = time.time()
+    engine.is_irrigating = False
+    engine.last_irrigation_stop_time = now
+    engine._save_state()
+    notifier.send_alert(
+        alert_type="irrigation_manual_stop",
+        title=f"🛑 Irrigazione Arrestata",
+        message=f"Elettrovalvola '{valve_dev.get('name')}' chiusa con successo.",
+        priority="normal",
+        extra_data={"device_id": dev_id}
+    )
+    return {"status": "ok", "message": "Valvola chiusa.", "result": res}
+
 # --- Unified Devices Hub Endpoints ---
 def build_devices_catalog() -> Dict[str, Any]:
     """Genera l'elenco normalizzato e aggregato di tutti i dispositivi smart (Tuya, LG ThinQ, SmartThings, Aton Solar)."""
@@ -1181,6 +1364,13 @@ def build_devices_catalog() -> Dict[str, Any]:
                 status_parts.append(str(c_state).capitalize())
             else:
                 status_parts.append("Pronta")
+        elif c_type == "irrigation":
+            if dev.get("is_on") is True or dev.get("work_state") in ("watering", "spray", "manual", "auto", "running"):
+                status_parts.append("In Irrigazione 💧")
+            else:
+                status_parts.append("In Standby / Pronta")
+            if dev.get("battery_pct") is not None:
+                status_parts.append(f"🔋 {dev.get('battery_pct')}%")
         elif dev.get("is_on") is True:
             p_w = dev.get("power_w", 0.0) or 0.0
             if p_w > 0:

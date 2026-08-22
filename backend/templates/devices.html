@@ -128,6 +128,20 @@
                                 <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="controlTuyaCurtain('{{ dev.raw_id }}', 'stop')">⏸️ Stop</button>
                                 <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="controlTuyaCurtain('{{ dev.raw_id }}', 'close')">🔽 Chiudi</button>
                             </div>
+                        {% elif dev.category == 'irrigation' %}
+                            <div style="display: flex; gap: 6px; width: 100%; align-items: center; justify-content: space-between;" onclick="event.stopPropagation();">
+                                <span class="metric-tag {% if dev.is_on %}tag-power{% else %}tag-dim{% endif %}">
+                                    {% if dev.is_on %}💧 Irrigazione ON{% else %}💤 In Standby{% endif %}
+                                </span>
+                                {% if dev.battery_pct is not none %}
+                                    <span class="metric-tag tag-batt">🔋 {{ dev.battery_pct }}%</span>
+                                {% endif %}
+                                {% if dev.is_on %}
+                                    <button type="button" class="btn btn-outline" style="padding: 3px 8px; font-size: 0.72rem; border-color: #ef4444; color: #ef4444;" onclick="stopIrrigation('{{ dev.raw_id }}')">🛑 Ferma</button>
+                                {% else %}
+                                    <button type="button" class="btn btn-outline" style="padding: 3px 8px; font-size: 0.72rem; border-color: #10b981; color: #10b981;" onclick="startIrrigation(15, '{{ dev.raw_id }}')">💧 Irriga 15m</button>
+                                {% endif %}
+                            </div>
                         {% elif dev.category == 'appliances' %}
                             <span class="metric-tag tag-info">{{ dev.status_text }}</span>
                         {% elif dev.category == 'energy' %}
@@ -459,6 +473,69 @@ function renderTuyaDetail(dev) {
                 </div>
             </div>
         `;
+        return html;
+    }
+
+    if (cType === 'irrigation') {
+        const isWatering = isOn || (raw.work_state === 'watering' || raw.work_state === 'spray' || raw.work_state === 'manual' || raw.work_state === 'auto');
+        const battPct = dev.battery_pct !== null && dev.battery_pct !== undefined ? `${dev.battery_pct}%` : (raw.battery_pct !== null ? `${raw.battery_pct}%` : '--');
+        const wDelay = raw.weather_delay || 'cancel';
+        html += `
+            <div class="modal-quick-state-card ${isWatering ? 'state-card-on' : 'state-card-off'}" style="${isWatering ? 'background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.4);' : ''}">
+                <div class="state-card-info">
+                    <span class="state-indicator-dot ${isWatering ? 'dot-on pulse' : 'dot-off'}" style="${isWatering ? 'background: #10b981; box-shadow: 0 0 10px #10b981;' : ''}"></span>
+                    <span class="state-text">Valvola: <strong>${isWatering ? 'In Irrigazione 💧' : 'Chiusa / Standby 💤'}</strong></span>
+                </div>
+                ${isWatering ? `
+                    <button type="button" class="btn btn-danger" onclick="stopIrrigation('${dev.raw_id}')">
+                        🛑 Chiudi Valvola
+                    </button>
+                ` : `
+                    <button type="button" class="btn btn-success" onclick="startIrrigation(15, '${dev.raw_id}')">
+                        💧 Avvia (15 min)
+                    </button>
+                `}
+            </div>
+
+            <!-- Box Durate Rapide -->
+            <div style="margin-top: 1rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem;">
+                <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.75rem; text-transform: uppercase; font-weight: 600;">Avvio Manuale Programmato</div>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
+                    <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(5, '${dev.raw_id}')">⏱️ 5m</button>
+                    <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(10, '${dev.raw_id}')">⏱️ 10m</button>
+                    <button type="button" class="btn btn-action-primary" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(15, '${dev.raw_id}')">💧 15m</button>
+                    <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(30, '${dev.raw_id}')">⏱️ 30m</button>
+                </div>
+            </div>
+
+            <!-- Telemetria & Sensore WH51 -->
+            <div class="modal-telemetry-grid" style="margin-top: 1rem;">
+                <div class="telemetry-card">
+                    <span class="tel-label">Batteria Valvola</span>
+                    <span class="tel-val text-success">🔋 ${battPct}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">Ritardo Meteo HW</span>
+                    <span class="tel-val">${wDelay === 'cancel' ? 'Nessuno' : wDelay}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">Stato Connessione</span>
+                    <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Gateway BLE 🟢' : 'Offline 🔴'}</span>
+                </div>
+            </div>
+
+            <!-- Box Automazione Intelligente WH51 -->
+            <div id="irrigation-smart-advice-box" style="margin-top: 1rem; background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 12px; padding: 1rem;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-weight: 700; font-size: 0.88rem; color: #38bdf8;">🧠 Decisione Agrometeo WH51</span>
+                    <span class="badge-tag" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">Smart Active</span>
+                </div>
+                <p id="irrigation-smart-desc" style="font-size: 0.82rem; color: var(--text); margin: 0.5rem 0 0 0; line-height: 1.4;">
+                    Caricamento stato sensore terreno e previsioni pioggia...
+                </p>
+            </div>
+        `;
+        setTimeout(() => loadIrrigationSmartStatus(dev.raw_id), 100);
         return html;
     }
 
@@ -885,6 +962,68 @@ async function sendTuyaCommand(rawId, commands) {
         setTimeout(fetchDevicesData, 1000);
     } catch (e) {
         showToast('Errore invio comando', 'danger');
+    }
+}
+
+async function startIrrigation(durationMinutes = 15, rawId = null) {
+    try {
+        const resp = await fetch('/api/irrigation/start', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({duration_minutes: durationMinutes, device_id: rawId})
+        });
+        const res = await resp.json();
+        if (resp.ok) {
+            showToast(`💧 Irrigazione avviata per ${durationMinutes} min`, 'success');
+            setTimeout(fetchDevicesData, 1000);
+        } else {
+            showToast('Errore avvio irrigazione: ' + (res.error || 'Errore server'), 'danger');
+        }
+    } catch (e) {
+        showToast('Errore connessione avvio irrigazione: ' + e.message, 'danger');
+    }
+}
+
+async function stopIrrigation(rawId = null) {
+    try {
+        const resp = await fetch('/api/irrigation/stop', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({device_id: rawId})
+        });
+        const res = await resp.json();
+        if (resp.ok) {
+            showToast('🛑 Irrigazione arrestata', 'info');
+            setTimeout(fetchDevicesData, 1000);
+        } else {
+            showToast('Errore arresto irrigazione: ' + (res.error || 'Errore server'), 'danger');
+        }
+    } catch (e) {
+        showToast('Errore connessione arresto irrigazione: ' + e.message, 'danger');
+    }
+}
+
+async function loadIrrigationSmartStatus(rawId) {
+    try {
+        const resp = await fetch('/api/irrigation/status');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const descEl = document.getElementById('irrigation-smart-desc');
+        if (descEl && data.advice) {
+            const adv = data.advice;
+            const sm = data.soil_moisture_pct !== null ? `${data.soil_moisture_pct}%` : 'N/D';
+            const rf = data.rain_forecast_24h_mm || 0;
+            const et = data.et_mm || 0;
+            descEl.innerHTML = `
+                <strong>${adv.icon} ${adv.title}</strong><br>
+                ${adv.desc}<br>
+                <small style="color: var(--text-dim); margin-top: 4px; display: inline-block;">
+                    🌱 Sensore WH51: <strong>${sm}</strong> • ☀️ ET: <strong>${et} mm/die</strong> • 🌧️ Pioggia 24h: <strong>${rf} mm</strong>
+                </small>
+            `;
+        }
+    } catch (e) {
+        console.error('Errore loadIrrigationSmartStatus:', e);
     }
 }
 

@@ -157,11 +157,22 @@ class TuyaService:
                 temp_set = float(status_dict["temp_set"])
 
         # Irrigazione ('sfkzq')
-        if category == "sfkzq":
+        if category == "sfkzq" or meta.get("type") == "irrigation":
             if "battery_percentage" in status_dict:
                 battery_pct = int(status_dict["battery_percentage"])
             work_state = status_dict.get("work_state", "idle")
             weather_delay = status_dict.get("weather_delay", "cancel")
+            if is_on is None:
+                if "switch" in status_dict:
+                    is_on = bool(status_dict["switch"])
+                elif "switch_1" in status_dict:
+                    is_on = bool(status_dict["switch_1"])
+                elif "switch_spray" in status_dict:
+                    is_on = bool(status_dict["switch_spray"])
+                elif work_state and str(work_state).lower() in ("watering", "spray", "manual", "auto", "running", "working"):
+                    is_on = True
+                elif work_state and str(work_state).lower() in ("idle", "closed", "off", "standby"):
+                    is_on = False
 
         # Persiana / Tenda / Tapparella
         cat_lower = category.lower()
@@ -418,6 +429,62 @@ class TuyaService:
         """Imposta il target di temperatura per un termostato Tuya."""
         commands = [{"code": "temp_set", "value": int(temp_c)}]
         return await self.send_command(device_id, commands)
+
+    async def open_irrigation(self, device_id: str, duration_minutes: int = 15) -> Dict[str, Any]:
+        """Apre l'elettrovalvola per l'irrigazione inviando i comandi switch / countdown."""
+        dev = self.device_statuses.get(device_id)
+        raw_status = dev.get("raw_status", {}) if dev else {}
+
+        # 1. Trova codice switch compatibile
+        switch_code = "switch_1" if "switch_1" in raw_status else ("switch" if "switch" in raw_status else "switch_spray")
+        commands = [{"code": switch_code, "value": True}]
+
+        # 2. Se supportato countdown nativo Tuya (in secondi o minuti)
+        if "countdown_1" in raw_status:
+            commands.append({"code": "countdown_1", "value": int(duration_minutes * 60)})
+        elif "countdown" in raw_status:
+            commands.append({"code": "countdown", "value": int(duration_minutes * 60)})
+
+        res = await self.send_command(device_id, commands)
+        if not res.get("success"):
+            # Fallback con solo switch
+            res = await self.send_command(device_id, [{"code": "switch_1", "value": True}])
+            if not res.get("success"):
+                res = await self.send_command(device_id, [{"code": "switch", "value": True}])
+
+        if dev and res.get("success"):
+            dev["is_on"] = True
+            dev["work_state"] = "watering"
+            self._save_cache()
+
+        return res
+
+    async def close_irrigation(self, device_id: str) -> Dict[str, Any]:
+        """Chiude immediatamente l'elettrovalvola per l'irrigazione."""
+        dev = self.device_statuses.get(device_id)
+        raw_status = dev.get("raw_status", {}) if dev else {}
+
+        switch_code = "switch_1" if "switch_1" in raw_status else ("switch" if "switch" in raw_status else "switch_spray")
+        commands = [{"code": switch_code, "value": False}]
+
+        res = await self.send_command(device_id, commands)
+        if not res.get("success"):
+            res = await self.send_command(device_id, [{"code": "switch_1", "value": False}])
+            if not res.get("success"):
+                res = await self.send_command(device_id, [{"code": "switch", "value": False}])
+
+        if dev and res.get("success"):
+            dev["is_on"] = False
+            dev["work_state"] = "idle"
+            self._save_cache()
+
+        return res
+
+    async def set_irrigation_weather_delay(self, device_id: str, delay_str: str = "24h") -> Dict[str, Any]:
+        """Imposta il ritardo meteo hardware (24h, 48h, 72h, cancel) per la valvola."""
+        commands = [{"code": "weather_delay", "value": delay_str}]
+        res = await self.send_command(device_id, commands)
+        return res
 
     async def sync_single_device(self, device_id: str) -> None:
         """Aggiorna lo stato di un singolo dispositivo."""

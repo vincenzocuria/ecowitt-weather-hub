@@ -74,6 +74,17 @@ class AlertEngine:
         self.last_grid_overload_alert: float = 0.0
         self.last_grid_critical_shed_alert: float = 0.0
 
+        # Smart Irrigation states (WH51 + Tuya)
+        self.last_irrigation_start_time: float = 0.0
+        self.last_irrigation_stop_time: float = 0.0
+        self.last_irrigation_skip_alert: float = 0.0
+        self.last_irrigation_wind_alert: float = 0.0
+        self.last_irrigation_frost_alert: float = 0.0
+        self.is_irrigating: bool = False
+        self.irrigation_started_at: float = 0.0
+        self.irrigation_planned_duration_min: int = 15
+        self.irrigation_active_device_id: Optional[str] = None
+
         # Carica lo stato persistente da disco o DB
         self._load_state()
 
@@ -129,6 +140,15 @@ class AlertEngine:
                 "last_hail_alert": self.last_hail_alert,
                 "last_grid_overload_alert": self.last_grid_overload_alert,
                 "last_grid_critical_shed_alert": self.last_grid_critical_shed_alert,
+                "last_irrigation_start_time": self.last_irrigation_start_time,
+                "last_irrigation_stop_time": self.last_irrigation_stop_time,
+                "last_irrigation_skip_alert": self.last_irrigation_skip_alert,
+                "last_irrigation_wind_alert": self.last_irrigation_wind_alert,
+                "last_irrigation_frost_alert": self.last_irrigation_frost_alert,
+                "is_irrigating": self.is_irrigating,
+                "irrigation_started_at": self.irrigation_started_at,
+                "irrigation_planned_duration_min": self.irrigation_planned_duration_min,
+                "irrigation_active_device_id": self.irrigation_active_device_id,
             }
             tmp_path = self._state_file + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
@@ -190,6 +210,15 @@ class AlertEngine:
                 self.last_hail_alert = data.get("last_hail_alert", self.last_hail_alert)
                 self.last_grid_overload_alert = data.get("last_grid_overload_alert", self.last_grid_overload_alert)
                 self.last_grid_critical_shed_alert = data.get("last_grid_critical_shed_alert", self.last_grid_critical_shed_alert)
+                self.last_irrigation_start_time = data.get("last_irrigation_start_time", self.last_irrigation_start_time)
+                self.last_irrigation_stop_time = data.get("last_irrigation_stop_time", self.last_irrigation_stop_time)
+                self.last_irrigation_skip_alert = data.get("last_irrigation_skip_alert", self.last_irrigation_skip_alert)
+                self.last_irrigation_wind_alert = data.get("last_irrigation_wind_alert", self.last_irrigation_wind_alert)
+                self.last_irrigation_frost_alert = data.get("last_irrigation_frost_alert", self.last_irrigation_frost_alert)
+                self.is_irrigating = data.get("is_irrigating", self.is_irrigating)
+                self.irrigation_started_at = data.get("irrigation_started_at", self.irrigation_started_at)
+                self.irrigation_planned_duration_min = data.get("irrigation_planned_duration_min", self.irrigation_planned_duration_min)
+                self.irrigation_active_device_id = data.get("irrigation_active_device_id", self.irrigation_active_device_id)
                 loaded_from_disk = True
                 logger.info("[ALERT-STATE] Cache stato allarmi caricata con successo da disco.")
             except Exception as e:
@@ -1496,7 +1525,266 @@ class AlertEngine:
                     extra_data={"p_solare": str(int(p_solare)), "soc": str(int(soc))}
                 )
 
+    # =========================================================================
+    # 7. AUTOMAZIONI IRRIGAZIONE INTELLIGENTE (WH51 + TUYA + METEO PREDITTIVO)
+    # =========================================================================
+    async def evaluate_smart_irrigation_automations(
+        self,
+        weather_data: Dict[str, Any],
+        forecast_rain_24h_mm: float = 0.0,
+        recent_rain_48h_mm: float = 0.0
+    ):
+        """
+        Sistema di decisione e attuazione per l'irrigazione intelligente in tutti gli scenari meteo:
+        - WH51 (Umidità terreno)
+        - Previsioni pioggia Open-Meteo & Pioggia recente
+        - Vento e raffiche (Wind drift)
+        - Protezione Antigelo
+        - Finestre ideali (Alba/Tramonto) ed Evapotraspirazione (ET)
+        - Watchdog di sicurezza per chiusura forzata (Auto-Off)
+        """
+        from backend.database import get_irrigation_automations_config
+        from backend.tuya_service import tuya_service
+        from backend.analytics import calc_evapotranspiration
+
+        if not settings.TUYA_ENABLED:
+            return
+
+        cfg = get_irrigation_automations_config()
+        if not cfg.get("master_enabled", True) or cfg.get("mode") == "disabled":
+            return
+
+        now = time.time()
+        current_hour = datetime.now(settings.get_tz()).hour
+
+        # 1. Individuazione Elettrovalvola Tuya (sfkzq / irrigation)
+        tuya_summary = tuya_service.get_summary()
+        all_tuya = tuya_summary.get("all_devices") or tuya_summary.get("devices") or []
+        
+        target_id = cfg.get("target_device_id", "bfeb96waen2hlkvg")
+        valve_dev = None
+        if target_id and target_id != "auto":
+            valve_dev = next((d for d in all_tuya if d.get("id") == target_id), None)
+        if not valve_dev:
+            valve_dev = next((d for d in all_tuya if d.get("category") == "sfkzq" or d.get("type") == "irrigation"), None)
+
+        if not valve_dev:
+            return
+
+        dev_id = valve_dev.get("id")
+        dev_name = valve_dev.get("name", "Elettrovalvola Irrigazione")
+        is_valve_open = valve_dev.get("is_on") is True or valve_dev.get("work_state") in ("watering", "spray", "manual", "auto", "running")
+
+        # 2. Parametri Meteo e Sensore Terreno WH51
+        temp_c = weather_data.get("temp_c")
+        rain_rate = float(weather_data.get("rain_rate_mm_hr") or 0.0)
+        daily_rain = float(weather_data.get("daily_rain_mm") or 0.0)
+        wind_gust = float(weather_data.get("wind_gust_kmh") or 0.0)
+        wind_speed = float(weather_data.get("wind_speed_kmh") or 0.0)
+        solar_rad = weather_data.get("solar_radiation")
+
+        soil_channel = cfg.get("soil_moisture_channel", "ch1")
+        soil_dict = weather_data.get("soil_moisture") or {}
+        soil_moisture = soil_dict.get(soil_channel)
+        if soil_moisture is None and soil_dict:
+            # Fallback al primo canale disponibile se ch1 non c'è
+            soil_moisture = next(iter(soil_dict.values()), None)
+
+        et_mm = calc_evapotranspiration(temp_c, weather_data.get("humidity", 50.0), solar_rad)
+
+        # =========================================================================
+        # SCENARIO A: WATCHDOG DI SICUREZZA CON VALVOLA APERTA (ACTIVE WATERING)
+        # =========================================================================
+        if is_valve_open or self.is_irrigating:
+            if not self.is_irrigating:
+                self.is_irrigating = True
+                self.irrigation_started_at = now
+                self.irrigation_active_device_id = dev_id
+                self._save_state()
+
+            elapsed_sec = now - self.irrigation_started_at
+            elapsed_min = round(elapsed_sec / 60.0, 1)
+
+            # Sub-caso A1: Pioggia intensa durante l'irrigazione -> Chiusura Immediata
+            if rain_rate >= 0.5 or self.is_raining:
+                await tuya_service.close_irrigation(dev_id)
+                self.is_irrigating = False
+                self.last_irrigation_stop_time = now
+                self._save_state()
+                notifier.send_alert(
+                    alert_type="irrigation_rain_shutoff",
+                    title="🌧️ Irrigazione Interrotta: Pioggia in Corso!",
+                    message=f"La stazione ha rilevato l'inizio della pioggia ({rain_rate:.1f} mm/h). L'elettrovalvola '{dev_name}' è stata chiusa immediatamente per non sprecare acqua.",
+                    priority="high",
+                    extra_data={"device_id": dev_id, "elapsed_min": str(elapsed_min)}
+                )
+                logger.info(f"[IRRIGATION-AUTO] Chiusura immediata per pioggia ({dev_name})")
+                return
+
+            # Sub-caso A2: Terreno saturo / Target raggiunto da sensore WH51
+            target_sat = float(cfg.get("soil_target_threshold", 65.0))
+            if soil_moisture is not None and soil_moisture >= target_sat and elapsed_min >= 3.0:
+                await tuya_service.close_irrigation(dev_id)
+                self.is_irrigating = False
+                self.last_irrigation_stop_time = now
+                self._save_state()
+                notifier.send_alert(
+                    alert_type="irrigation_soil_saturated",
+                    title=f"🌱 Suolo Ottimamente Idratato: {soil_moisture:.0f}%",
+                    message=f"Il sensore terreno ha raggiunto la soglia ottimale ({soil_moisture:.0f}%). Valvola '{dev_name}' chiusa dopo {elapsed_min} minuti.",
+                    priority="normal",
+                    extra_data={"device_id": dev_id, "soil_moisture": str(soil_moisture)}
+                )
+                logger.info(f"[IRRIGATION-AUTO] Chiusura target suolo raggiunto ({soil_moisture}%)")
+                return
+
+            # Sub-caso A3: Timeout Programmato o Limite Massimo di Sicurezza
+            planned_min = float(self.irrigation_planned_duration_min or cfg.get("duration_minutes", 15))
+            max_safety_min = float(cfg.get("max_safety_duration_min", 35))
+            limit_min = min(planned_min, max_safety_min)
+
+            if elapsed_min >= limit_min:
+                await tuya_service.close_irrigation(dev_id)
+                self.is_irrigating = False
+                self.last_irrigation_stop_time = now
+                self._save_state()
+                notifier.send_alert(
+                    alert_type="irrigation_auto_stop",
+                    title=f"💧 Ciclo Irrigazione Concluso: {dev_name}",
+                    message=f"Ciclo di {int(elapsed_min)} minuti terminato con successo. Elettrovalvola chiusa in totale sicurezza.",
+                    priority="normal",
+                    extra_data={"device_id": dev_id, "duration_min": str(int(elapsed_min))}
+                )
+                logger.info(f"[IRRIGATION-AUTO] Ciclo completato: {dev_name} chiuso dopo {elapsed_min}m")
+                return
+
+            # Valvola in corso regolare
+            return
+
+        # =========================================================================
+        # SCENARIO B: VALVOLA CHIUSA - VALUTAZIONE BLOCCHI METEO & AVVIO INTELLIGENTE
+        # =========================================================================
+
+        # 1. Controllo Antigelo (Frost Guard)
+        frost_temp = float(cfg.get("frost_guard_temp_c", 3.0))
+        if temp_c is not None and temp_c <= frost_temp:
+            if (now - self.last_irrigation_frost_alert) >= 43200:  # 12h cooldown
+                self.last_irrigation_frost_alert = now
+                self._save_state()
+                notifier.send_alert(
+                    alert_type="irrigation_frost_guard",
+                    title="❄️ Protezione Antigelo: Irrigazione Bloccata",
+                    message=f"Temperatura esterna a {temp_c}°C (sotto i {frost_temp}°C). Irrigazione disattivata per preservare le tubature e le radici dal gelo.",
+                    priority="normal",
+                    extra_data={"temp_c": str(temp_c)}
+                )
+            return
+
+        # 2. Controllo Pioggia e Pioggia Prevista (Smart Rain Skip)
+        skip_rain_fc = float(cfg.get("skip_rain_forecast_mm", 3.0))
+        skip_recent_r = float(cfg.get("skip_recent_rain_mm", 5.0))
+
+        if rain_rate > 0.0 or self.is_raining:
+            return  # Sta piovendo
+
+        if daily_rain >= skip_recent_r or recent_rain_48h_mm >= skip_recent_r:
+            return  # Ha piovuto recentemente in modo abbondante
+
+        if forecast_rain_24h_mm >= skip_rain_fc:
+            if (now - self.last_irrigation_skip_alert) >= 43200:  # 12h cooldown
+                self.last_irrigation_skip_alert = now
+                self._save_state()
+                notifier.send_alert(
+                    alert_type="irrigation_skip_rain",
+                    title="🌧️ Salto Irrigazione: Pioggia Prevista",
+                    message=f"Previsti {forecast_rain_24h_mm:.1f} mm di precipitazioni nelle prossime 24h. Irrigazione sospesa per massimo risparmio idrico!",
+                    priority="normal",
+                    extra_data={"forecast_rain_mm": str(forecast_rain_24h_mm)}
+                )
+            return
+
+        # 3. Controllo Vento Forte (Wind Drift Guard)
+        skip_wind = float(cfg.get("skip_wind_gust_kmh", 35.0))
+        if wind_gust >= skip_wind or wind_speed >= 28.0:
+            if (now - self.last_irrigation_wind_alert) >= 14400:  # 4h cooldown
+                self.last_irrigation_wind_alert = now
+                self._save_state()
+                notifier.send_alert(
+                    alert_type="irrigation_skip_wind",
+                    title="💨 Vento Forte: Irrigazione Rinviata",
+                    message=f"Raffiche di vento a {wind_gust:.1f} km/h (soglia {skip_wind} km/h). Irrigazione posticipata per evitare la dispersione aerea dell'acqua.",
+                    priority="normal",
+                    extra_data={"wind_gust_kmh": str(wind_gust)}
+                )
+            return
+
+        # 4. Controllo Umidità Suolo (WH51)
+        dry_thresh = float(cfg.get("soil_dry_threshold", 30.0))
+        if soil_moisture is not None and soil_moisture > dry_thresh:
+            # Il terreno è già sufficientemente umido
+            return
+
+        # 5. Controllo Finestre Orarie Ottimali (Alba o Tramonto)
+        m_start = int(cfg.get("morning_start_hour", 6))
+        m_end = int(cfg.get("morning_end_hour", 8))
+        e_start = int(cfg.get("evening_start_hour", 21))
+        e_end = int(cfg.get("evening_end_hour", 23))
+
+        in_morning_window = (m_start <= current_hour < m_end)
+        in_evening_window = (e_start <= current_hour < e_end)
+
+        if not (in_morning_window or in_evening_window):
+            return
+
+        # 6. Controllo Cooldown tra Cicli (default 12 ore)
+        cooldown_sec = float(cfg.get("cooldown_hours", 12.0)) * 3600.0
+        if (now - self.last_irrigation_start_time) < cooldown_sec:
+            return
+
+        # 7. Calcolo Durata Dinamica in base a ET e Secchezza
+        base_duration = int(cfg.get("duration_minutes", 15))
+        duration = base_duration
+        if et_mm >= 5.0 or (soil_moisture is not None and soil_moisture <= 15.0):
+            duration = min(25, int(base_duration * 1.3))
+        elif et_mm <= 2.5 and (soil_moisture is not None and soil_moisture >= 25.0):
+            duration = max(8, int(base_duration * 0.8))
+
+        mode = cfg.get("mode", "auto")
+        sm_txt = f"{soil_moisture:.0f}%" if soil_moisture is not None else "non rilevata"
+
+        # 8. Esecuzione Azione (Auto o Notifica)
+        if mode == "auto":
+            res = await tuya_service.open_irrigation(dev_id, duration_minutes=duration)
+            if res.get("success"):
+                self.is_irrigating = True
+                self.irrigation_started_at = now
+                self.last_irrigation_start_time = now
+                self.irrigation_planned_duration_min = duration
+                self.irrigation_active_device_id = dev_id
+                self._save_state()
+                notifier.send_alert(
+                    alert_type="irrigation_auto_start",
+                    title=f"🌱 Irrigazione Avviata: {dev_name}",
+                    message=f"Umidità suolo al {sm_txt} (ET {et_mm} mm/die, pioggia assente). Avviato ciclo intelligente di {duration} minuti per il giardino.",
+                    priority="normal",
+                    extra_data={"device_id": dev_id, "duration_min": str(duration), "soil_moisture": sm_txt}
+                )
+                logger.info(f"[IRRIGATION-AUTO] Avvio autonomo ciclo {duration}m per {dev_name} (suolo: {sm_txt})")
+        elif mode == "notify":
+            self.last_irrigation_start_time = now
+            self._save_state()
+            notifier.send_alert(
+                alert_type="irrigation_advice",
+                title="💧 Suggerimento Irrigazione Giardino",
+                message=f"Terreno secco ({sm_txt}) e meteo favorevole nella finestra ottimale. Consiglio di irrigare stasera per circa {duration} minuti.",
+                priority="normal",
+                extra_data={"device_id": dev_id, "duration_min": str(duration), "soil_moisture": sm_txt}
+            )
+            logger.info(f"[IRRIGATION-AUTO] Notifica consiglio inviata (suolo: {sm_txt})")
+
+
 engine = AlertEngine()
+
 
 
 

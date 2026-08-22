@@ -215,6 +215,15 @@ def init_db():
             updated_at TEXT NOT NULL
         )
     """)
+
+    # 10. Configurazione Automazioni Intelligenti Irrigazione (WH51 + Tuya)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS irrigation_automations_config (
+            key TEXT PRIMARY KEY,
+            value_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
     
     conn.commit()
     conn.close()
@@ -2248,3 +2257,137 @@ def save_climate_automations_config(config_dict: Dict[str, Any]) -> Dict[str, An
     conn.commit()
     conn.close()
     return current
+
+
+# ----------------- CONFIGURAZIONE AUTOMAZIONI IRRIGAZIONE INTELLIGENTE -----------------
+
+DEFAULT_IRRIGATION_CONFIG: Dict[str, Any] = {
+    "master_enabled": True,
+    "mode": "auto",  # 'auto' (avvio/arresto autonomo), 'notify' (solo notifica), 'disabled'
+    "target_device_id": "bfeb96waen2hlkvg",  # ID valvola Tuya principale o 'auto'
+    "soil_moisture_channel": "ch1",  # Canale sensore Ecowitt WH51
+    "soil_dry_threshold": 30.0,  # Se umidità <= soglia (%) -> terreno secco
+    "soil_target_threshold": 65.0,  # Se umidità >= soglia (%) -> terreno sufficientemente irrigato
+    "duration_minutes": 15,  # Durata standard ciclo (minuti)
+    "max_safety_duration_min": 35,  # Chiusura forzata di sicurezza max (minuti)
+    "morning_start_hour": 6,  # Finestra oraria alba/mattino inizio
+    "morning_end_hour": 8,  # Finestra oraria alba/mattino fine
+    "evening_start_hour": 21,  # Finestra oraria tramonto/sera inizio
+    "evening_end_hour": 23,  # Finestra oraria tramonto/sera fine
+    "skip_rain_forecast_mm": 3.0,  # Soglia pioggia prevista 24h per skip
+    "skip_recent_rain_mm": 5.0,  # Soglia pioggia caduta 24-48h per skip
+    "skip_wind_gust_kmh": 35.0,  # Soglia raffica vento per posticipo
+    "frost_guard_temp_c": 3.0,  # Blocco sotto questa temp per antigelo
+    "cooldown_hours": 12.0  # Ore minime di attesa tra due cicli automatici
+}
+
+def get_irrigation_automations_config() -> Dict[str, Any]:
+    """Restituisce le preferenze salvate per l'irrigazione intelligente."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT value_json FROM irrigation_automations_config WHERE key = 'main'")
+    row = cursor.fetchone()
+    conn.close()
+
+    cfg = DEFAULT_IRRIGATION_CONFIG.copy()
+    if row and row["value_json"]:
+        try:
+            saved = json.loads(row["value_json"])
+            cfg.update(saved)
+        except Exception:
+            pass
+    return cfg
+
+def save_irrigation_automations_config(config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Salva le preferenze dell'irrigazione intelligente su SQLite con validazione."""
+    current = get_irrigation_automations_config()
+    
+    if isinstance(config_dict, dict):
+        if "master_enabled" in config_dict:
+            current["master_enabled"] = bool(config_dict["master_enabled"])
+        if "mode" in config_dict and config_dict["mode"] in ("auto", "notify", "disabled"):
+            current["mode"] = str(config_dict["mode"])
+        if "target_device_id" in config_dict and config_dict["target_device_id"]:
+            current["target_device_id"] = str(config_dict["target_device_id"]).strip()
+        if "soil_moisture_channel" in config_dict and config_dict["soil_moisture_channel"]:
+            current["soil_moisture_channel"] = str(config_dict["soil_moisture_channel"]).strip()
+        if "soil_dry_threshold" in config_dict:
+            try:
+                current["soil_dry_threshold"] = max(5.0, min(80.0, float(config_dict["soil_dry_threshold"])))
+            except (ValueError, TypeError):
+                pass
+        if "soil_target_threshold" in config_dict:
+            try:
+                current["soil_target_threshold"] = max(20.0, min(95.0, float(config_dict["soil_target_threshold"])))
+            except (ValueError, TypeError):
+                pass
+        if "duration_minutes" in config_dict:
+            try:
+                current["duration_minutes"] = max(1, min(120, int(config_dict["duration_minutes"])))
+            except (ValueError, TypeError):
+                pass
+        if "max_safety_duration_min" in config_dict:
+            try:
+                current["max_safety_duration_min"] = max(5, min(180, int(config_dict["max_safety_duration_min"])))
+            except (ValueError, TypeError):
+                pass
+        if "morning_start_hour" in config_dict:
+            try:
+                current["morning_start_hour"] = max(0, min(23, int(config_dict["morning_start_hour"])))
+            except (ValueError, TypeError):
+                pass
+        if "morning_end_hour" in config_dict:
+            try:
+                current["morning_end_hour"] = max(0, min(23, int(config_dict["morning_end_hour"])))
+            except (ValueError, TypeError):
+                pass
+        if "evening_start_hour" in config_dict:
+            try:
+                current["evening_start_hour"] = max(0, min(23, int(config_dict["evening_start_hour"])))
+            except (ValueError, TypeError):
+                pass
+        if "evening_end_hour" in config_dict:
+            try:
+                current["evening_end_hour"] = max(0, min(23, int(config_dict["evening_end_hour"])))
+            except (ValueError, TypeError):
+                pass
+        if "skip_rain_forecast_mm" in config_dict:
+            try:
+                current["skip_rain_forecast_mm"] = max(0.0, min(50.0, float(config_dict["skip_rain_forecast_mm"])))
+            except (ValueError, TypeError):
+                pass
+        if "skip_recent_rain_mm" in config_dict:
+            try:
+                current["skip_recent_rain_mm"] = max(0.0, min(50.0, float(config_dict["skip_recent_rain_mm"])))
+            except (ValueError, TypeError):
+                pass
+        if "skip_wind_gust_kmh" in config_dict:
+            try:
+                current["skip_wind_gust_kmh"] = max(5.0, min(100.0, float(config_dict["skip_wind_gust_kmh"])))
+            except (ValueError, TypeError):
+                pass
+        if "frost_guard_temp_c" in config_dict:
+            try:
+                current["frost_guard_temp_c"] = max(-5.0, min(15.0, float(config_dict["frost_guard_temp_c"])))
+            except (ValueError, TypeError):
+                pass
+        if "cooldown_hours" in config_dict:
+            try:
+                current["cooldown_hours"] = max(1.0, min(72.0, float(config_dict["cooldown_hours"])))
+            except (ValueError, TypeError):
+                pass
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    json_str = json.dumps(current, ensure_ascii=False)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO irrigation_automations_config (key, value_json, updated_at)
+        VALUES ('main', ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at
+    """, (json_str, now_iso))
+    conn.commit()
+    conn.close()
+    return current
+
