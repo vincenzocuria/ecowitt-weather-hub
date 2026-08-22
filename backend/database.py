@@ -2208,9 +2208,33 @@ def get_climate_automations_config() -> Dict[str, Any]:
     return cfg
 
 def save_climate_automations_config(config_dict: Dict[str, Any]) -> Dict[str, Any]:
-    """Salva le preferenze delle automazioni climatizzatori su SQLite."""
+    """Salva le preferenze delle automazioni climatizzatori su SQLite con validazione e sanitizzazione."""
     current = get_climate_automations_config()
-    current.update(config_dict)
+    
+    if isinstance(config_dict, dict):
+        if "master_enabled" in config_dict:
+            current["master_enabled"] = bool(config_dict["master_enabled"])
+        if "away_action" in config_dict and config_dict["away_action"] in ("off", "notify", "disabled"):
+            current["away_action"] = str(config_dict["away_action"])
+        if "away_delay_min" in config_dict:
+            try:
+                current["away_delay_min"] = max(1, min(120, int(config_dict["away_delay_min"])))
+            except (ValueError, TypeError):
+                pass
+        if "max_runtime_action" in config_dict and config_dict["max_runtime_action"] in ("off", "notify", "disabled"):
+            current["max_runtime_action"] = str(config_dict["max_runtime_action"])
+        if "max_runtime_hours" in config_dict:
+            try:
+                current["max_runtime_hours"] = max(1.0, min(24.0, float(config_dict["max_runtime_hours"])))
+            except (ValueError, TypeError):
+                pass
+        if "night_cooling_action" in config_dict and config_dict["night_cooling_action"] in ("off", "notify", "disabled"):
+            current["night_cooling_action"] = str(config_dict["night_cooling_action"])
+        if "solar_preconditioning_action" in config_dict and config_dict["solar_preconditioning_action"] in ("on", "notify", "disabled"):
+            current["solar_preconditioning_action"] = str(config_dict["solar_preconditioning_action"])
+        if "battery_guard_action" in config_dict and config_dict["battery_guard_action"] in ("off", "notify", "disabled"):
+            current["battery_guard_action"] = str(config_dict["battery_guard_action"])
+
     now_iso = datetime.now(timezone.utc).isoformat()
     json_str = json.dumps(current, ensure_ascii=False)
 

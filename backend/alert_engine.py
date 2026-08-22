@@ -1125,7 +1125,9 @@ class AlertEngine:
         soc = float(energy_data.get("soc") or 0.0)
         is_present = presence_data.get("is_present") if presence_data else None
 
-        active_climates = [d for d in climate_devices if d.get("is_on")]
+        # Separa condizionatori (gestione climatica) dal frigorifero
+        all_ac_units = [d for d in climate_devices if d.get("device_type") == "DEVICE_AIR_CONDITIONER"]
+        active_climates = [d for d in all_ac_units if d.get("is_on")]
 
         # =========================================================================
         # 1. SCENARIO USCITA DI CASA / PARTENZA (Presenza Vincenzo S26 Ultra)
@@ -1285,7 +1287,7 @@ class AlertEngine:
         if solar_action != "disabled" and p_solare >= solar_surplus_w and soc >= solar_min_soc:
             # Condizioni estive diurne (ore 10:00 - 18:00)
             if 10 <= current_hour <= 18 and (is_present is True or is_present is None):
-                for dev in climate_devices:
+                for dev in all_ac_units:
                     dev_id = dev.get("device_id") or dev.get("deviceId")
                     alias = dev.get("alias", "Climatizzatore")
                     is_on = dev.get("is_on", False)
