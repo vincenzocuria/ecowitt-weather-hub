@@ -2268,10 +2268,10 @@ DEFAULT_IRRIGATION_CONFIG: Dict[str, Any] = {
     "crop_label": "Aiuola Orto: Pomodori & Zucchine 🍅🥒",
     "target_device_id": "bfeb96waen2hlkvg",  # ID valvola Tuya principale o 'auto'
     "soil_moisture_channel": "ch1",  # Canale sensore Ecowitt WH51
-    "soil_dry_threshold": 48.0,  # Se umidità <= 48% -> terreno secco per pomodori/zucchine (fabbisogno idrico elevato)
-    "soil_target_threshold": 75.0,  # Se umidità >= 75% -> terreno ottimamente idratato in profondità
-    "duration_minutes": 18,  # Durata ciclo aiuola (minuti)
-    "max_safety_duration_min": 35,  # Chiusura forzata di sicurezza max (minuti)
+    "soil_dry_threshold": 48.0,  # Se umidità <= 48% -> terreno sotto la soglia ideale per pomodori/zucchine
+    "soil_target_threshold": 70.0,  # Soglia massima di sicurezza di stop (anti-ristagno/palude)
+    "duration_minutes": 10,  # Dose controllata a micro-impulsi (10 min): previene allagamenti e rispetta i tempi di percolazione
+    "max_safety_duration_min": 18,  # Chiusura forzata di sicurezza max (18 min)
     "morning_start_hour": 6,  # Finestra oraria alba/mattino inizio (06:00)
     "morning_end_hour": 8,  # Finestra oraria alba/mattino fine (08:00)
     "evening_start_hour": 21,  # Finestra oraria tramonto/sera inizio (21:00)
@@ -2280,7 +2280,7 @@ DEFAULT_IRRIGATION_CONFIG: Dict[str, Any] = {
     "skip_recent_rain_mm": 5.0,  # Soglia pioggia caduta 24-48h per skip
     "skip_wind_gust_kmh": 35.0,  # Soglia raffica vento per posticipo
     "frost_guard_temp_c": 3.0,  # Blocco sotto questa temp per antigelo
-    "cooldown_hours": 12.0  # Ore minime di attesa tra due cicli automatici
+    "cooldown_hours": 12.0  # Ore minime di attesa/percolazione tra due cicli per assorbimento uniforme
 }
 
 def get_irrigation_automations_config() -> Dict[str, Any]:

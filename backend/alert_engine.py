@@ -1640,8 +1640,8 @@ class AlertEngine:
                 return
 
             # Sub-caso A3: Timeout Programmato o Limite Massimo di Sicurezza
-            planned_min = float(self.irrigation_planned_duration_min or cfg.get("duration_minutes", 18))
-            max_safety_min = float(cfg.get("max_safety_duration_min", 35))
+            planned_min = float(self.irrigation_planned_duration_min or cfg.get("duration_minutes", 10))
+            max_safety_min = float(cfg.get("max_safety_duration_min", 18))
             limit_min = min(planned_min, max_safety_min)
 
             if elapsed_min >= limit_min:
@@ -1744,12 +1744,12 @@ class AlertEngine:
             return
 
         # 7. Calcolo Durata Dinamica in base a ET e Secchezza
-        base_duration = int(cfg.get("duration_minutes", 18))
+        base_duration = int(cfg.get("duration_minutes", 10))
         duration = base_duration
         if et_mm >= 5.0 or (soil_moisture is not None and soil_moisture <= 30.0):
-            duration = min(30, int(base_duration * 1.3))
+            duration = min(14, int(base_duration * 1.25))
         elif et_mm <= 2.5 and (soil_moisture is not None and soil_moisture >= 42.0):
-            duration = max(10, int(base_duration * 0.8))
+            duration = max(7, int(base_duration * 0.75))
 
         mode = cfg.get("mode", "auto")
         sm_txt = f"{soil_moisture:.0f}%" if soil_moisture is not None else "non rilevata"
