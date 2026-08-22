@@ -35,6 +35,7 @@ from backend.database import (
     get_unread_alerts_count, mark_alert_as_read, mark_all_alerts_as_read,
     delete_alert_log, clear_all_alert_logs, get_alerts_stats,
     get_tropical_nights_stats, get_soil_moisture_summary,
+    get_climate_automations_config, save_climate_automations_config,
     to_local_datetime_str, DB_PATH
 )
 from backend.analytics import (
@@ -70,6 +71,17 @@ async def watchdog_worker():
             an_ctx = build_analytics_context(latest_w)
             st_sum = smartthings_service.get_summary(latest_e, an_ctx.get("drying_index") if an_ctx else None)
             engine.evaluate_smartthings_automations(st_sum, latest_w, latest_e)
+
+            # Automazioni Climatizzatori LG ThinQ (Spegnimento/Accensione Autonoma & Notifiche)
+            if settings.LG_THINQ_ENABLED:
+                thinq_devs = thinq_service.get_cached_devices()
+                if thinq_devs:
+                    await engine.evaluate_climate_automations(
+                        thinq_devs,
+                        latest_w,
+                        latest_e,
+                        st_sum.get("presence") if st_sum else None
+                    )
         except Exception as e:
             logger.error(f"Errore nel watchdog worker: {e}")
         await asyncio.sleep(60)
@@ -979,6 +991,68 @@ async def api_thinq_sync():
     devices = await thinq_service.fetch_all_devices()
     return {"status": "synced", "connected": thinq_service.is_connected, "devices": devices}
 
+# --- LG ThinQ Climate Automations Endpoints ---
+@app.get("/api/climate/automations/config")
+async def api_get_climate_automations_config():
+    """Restituisce la configurazione attuale delle automazioni intelligenti climatizzatori."""
+    cfg = get_climate_automations_config()
+    devices = thinq_service.get_cached_devices() if settings.LG_THINQ_ENABLED else []
+    return {
+        "config": cfg,
+        "thinq_enabled": settings.LG_THINQ_ENABLED,
+        "thinq_connected": thinq_service.is_connected,
+        "devices": devices
+    }
+
+@app.post("/api/climate/automations/config")
+async def api_save_climate_automations_config(request: Request):
+    """Salva le preferenze delle automazioni dei climatizzatori."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    saved = save_climate_automations_config(payload)
+    return {"status": "success", "config": saved}
+
+@app.post("/api/climate/automations/test-action")
+async def api_test_climate_automation(request: Request):
+    """Invia una notifica di test per verificare la ricezione su Web Push e ntfy."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    scenario = payload.get("scenario", "away")
+    
+    if scenario == "away":
+        notifier.send_alert(
+            alert_type="climate_away_reminder",
+            title="🧪 TEST: Clima Acceso all'Uscita",
+            message="🚗 [TEST] Sei uscito di casa ma il climatizzatore 'Soggiorno' è rimasto ACCESO (24°C). Se non c'è nessuno a casa puoi spegnerlo da qui.",
+            priority="normal"
+        )
+    elif scenario == "night":
+        notifier.send_alert(
+            alert_type="climate_night_cooling",
+            title="🧪 TEST: Free Cooling Notturno",
+            message="🌙 [TEST] All'esterno la temperatura è scesa a 21.5°C (più fresco della stanza a 25.0°C). Puoi spegnere il clima e aprire le finestre a costo zero.",
+            priority="normal"
+        )
+    elif scenario == "solar":
+        notifier.send_alert(
+            alert_type="climate_solar_opportunity",
+            title="🧪 TEST: Pre-Raffrescamento Solare",
+            message="☀️ [TEST] Surplus solare a 2400 W e batteria al 95%: momento ideale per avviare il climatizzatore gratis!",
+            priority="normal"
+        )
+    elif scenario == "runtime":
+        notifier.send_alert(
+            alert_type="climate_runtime_warning",
+            title="🧪 TEST: Max Runtime Guard",
+            message="⏱️ [TEST] Il climatizzatore 'Camera' è acceso da oltre 5 ore (Temp stanza: 24.5°C).",
+            priority="normal"
+        )
+    return {"status": "sent", "scenario": scenario}
+
 # --- Samsung SmartThings Endpoints ---
 @app.get("/api/smartthings/summary")
 async def api_smartthings_summary():
@@ -1703,6 +1777,8 @@ async def settings_page(request: Request):
     soil_moist = latest.get("soil_moisture") or {}
     detected_sensors = get_detected_sensors(raw, soil_moist, aliases)
     tuya_sum = tuya_service.get_summary()
+    climate_cfg = get_climate_automations_config()
+    climate_devs = thinq_service.get_cached_devices() if settings.LG_THINQ_ENABLED else []
     return templates.TemplateResponse(
         request=request,
         name="settings.html",
@@ -1714,6 +1790,8 @@ async def settings_page(request: Request):
             "aton_sn": settings.ATON_SN,
             "aton_enabled": settings.ATON_ENABLED,
             "thinq_enabled": settings.LG_THINQ_ENABLED,
+            "climate_config": climate_cfg,
+            "climate_devices": climate_devs,
             "smartthings_enabled": settings.SMARTTHINGS_ENABLED,
             "tuya_enabled": settings.TUYA_ENABLED,
             "tuya_summary": tuya_sum,

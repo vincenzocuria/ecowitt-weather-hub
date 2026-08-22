@@ -388,9 +388,10 @@ class TestEcowittHub(unittest.TestCase):
         res_set = client.get("/settings")
         self.assertEqual(res_set.status_code, 200)
         self.assertIn("Impostazioni & Centro di Controllo", res_set.text)
-        self.assertIn("Database SQLite & Manutenzione", res_set.text)
+        self.assertIn("Database SQLite", res_set.text)
         self.assertIn("Personalizzazione Nomi Sensori", res_set.text)
         self.assertIn("Notifiche Push", res_set.text)
+        self.assertIn("Clima Smart", res_set.text)
 
     def test_sqlite_wal_mode_and_stats(self):
         from backend.database import get_connection, get_database_stats
@@ -978,6 +979,23 @@ class TestEcowittHub(unittest.TestCase):
         # Alert su temp_max -> consentito (chiave diversa)
         can_send_3 = ae._should_send_record_alert("temp_max", now_ts + 300.0)
         self.assertTrue(can_send_3)
+
+    def test_climate_automations_config(self):
+        from backend.database import get_climate_automations_config, save_climate_automations_config
+        cfg = get_climate_automations_config()
+        self.assertIn("master_enabled", cfg)
+        self.assertIn("away_action", cfg)
+
+        saved = save_climate_automations_config({"away_action": "notify", "max_runtime_hours": 6})
+        self.assertEqual(saved["max_runtime_hours"], 6)
+
+        from fastapi.testclient import TestClient
+        from backend.main import app
+        from backend.config import settings
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN})
+        resp = client.get("/api/climate/automations/config")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("config", resp.json())
 
 
 if __name__ == "__main__":

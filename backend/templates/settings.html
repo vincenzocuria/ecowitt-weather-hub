@@ -41,6 +41,13 @@
         <span class="settings-tab-badge badge-tuya">{{ tuya_summary.enabled_devices_count }}</span>
         {% endif %}
     </button>
+    <button type="button" class="settings-tab-btn" data-tab="climate" onclick="switchSettingsTab('climate', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">❄️</span>
+        <span>Clima Smart</span>
+        {% if climate_config and climate_config.master_enabled %}
+        <span class="settings-tab-badge" style="background: rgba(56, 189, 248, 0.25); color: #38bdf8;">Auto</span>
+        {% endif %}
+    </button>
     <button type="button" class="settings-tab-btn" data-tab="database" onclick="switchSettingsTab('database', this)" role="tab" aria-selected="false">
         <span class="settings-tab-icon">🗄️</span>
         <span>Database & Backup</span>
@@ -379,6 +386,194 @@
             Nessun dispositivo Tuya rilevato. Verifica le credenziali Client ID e Secret nel file di configurazione.
         </div>
         {% endif %}
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- TAB: CLIMATIZZAZIONE INTELLIGENTE & CONTROLLO AUTONOMO (LG THINQ) -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-climate" role="tabpanel">
+    <!-- MASTER SWITCH & STATUS CARD -->
+    <div class="card" style="border: 1px solid rgba(56, 189, 248, 0.35); background: linear-gradient(145deg, rgba(56, 189, 248, 0.08), var(--card-bg)); margin-bottom: 1.25rem;">
+        <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.35rem;">❄️</span>
+                <div>
+                    <strong style="font-size: 1.05rem;">Controllo Autonomo & Intelligenza Climatizzatori (LG ThinQ)</strong>
+                    <div style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Gestione proattiva di accensione, spegnimento e notifiche intelligenti incrociate con meteo ed energia</div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                {% if thinq_enabled %}
+                <span class="sub-badge badge-live">LG ThinQ Connesso</span>
+                {% else %}
+                <span class="sub-badge" style="background: rgba(239, 68, 68, 0.2); color: #f87171;">ThinQ Non Attivo</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div style="padding: 0.75rem 0; display: flex; flex-direction: column; gap: 1rem;">
+            <!-- MASTER TOGGLE ROW -->
+            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.25); border-radius: 12px; padding: 1rem 1.2rem; border: 1px solid rgba(255,255,255,0.06); flex-wrap: wrap; gap: 0.75rem;">
+                <div>
+                    <strong style="font-size: 1rem; color: #fff;">🧠 Interruttore Generale Automazioni Clima</strong>
+                    <p style="font-size: 0.84rem; color: var(--text-dim); margin-top: 3px; max-width: 550px;">
+                        Abilita o sospende tutte le azioni autonome (Auto-OFF / Auto-ON) e le relative notifiche sui condizionatori con un solo interruttore (utile se sei in partenza o vacanza).
+                    </p>
+                </div>
+                <label class="tuya-toggle-label">
+                    <input type="checkbox" class="tuya-switch-input" id="climate_master_enabled" {% if climate_config.master_enabled %}checked{% endif %} onchange="toggleClimateMaster(this.checked)">
+                    <span class="tuya-switch-slider"></span>
+                    <span class="tuya-switch-text" id="climate_master_text">{% if climate_config.master_enabled %}Attivo{% else %}Disattivato{% endif %}</span>
+                </label>
+            </div>
+
+            <!-- STATUS BAR & FEEDBACK -->
+            <div id="climate_save_feedback" style="display: none; padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.88rem;"></div>
+
+            <!-- CARDS DEGLI SCENARI INTELLIGENTI -->
+            <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem;">
+                
+                <!-- SCENARIO 1: USCITA DI CASA / PARTENZA -->
+                <div class="climate-scenario-card">
+                    <div class="climate-scenario-head">
+                        <span class="climate-scenario-icon">🚗</span>
+                        <div>
+                            <strong style="color: #fff; font-size: 0.95rem;">Uscita di Casa / Partenza (Vincenzo Away)</strong>
+                            <div class="climate-scenario-desc">Rileva quando esci con smartphone S26 Ultra se uno o più climatizzatori sono rimasti accesi.</div>
+                        </div>
+                    </div>
+                    <div class="climate-scenario-body">
+                        <label class="climate-select-label">Azione all'Uscita:</label>
+                        <select class="climate-select-ctrl" id="climate_away_action">
+                            <option value="notify" {% if climate_config.away_action == 'notify' %}selected{% endif %}>🔔 Solo Notifica (Consigliato: in casa ci sono gli altri)</option>
+                            <option value="off" {% if climate_config.away_action == 'off' %}selected{% endif %}>🤖 Auto-Spegnimento Ritardato (Spegne i clima se sei fuori)</option>
+                            <option value="disabled" {% if climate_config.away_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
+                        </select>
+                        <div class="climate-sub-setting" style="margin-top: 0.6rem;">
+                            <label style="font-size: 0.8rem; color: var(--text-dim);">Ritardo spegnimento dopo l'uscita:</label>
+                            <select class="climate-select-ctrl" id="climate_away_delay_min" style="margin-top: 3px;">
+                                <option value="5" {% if climate_config.away_delay_min == 5 %}selected{% endif %}>5 Minuti</option>
+                                <option value="10" {% if climate_config.away_delay_min == 10 or not climate_config.away_delay_min %}selected{% endif %}>10 Minuti (Default)</option>
+                                <option value="15" {% if climate_config.away_delay_min == 15 %}selected{% endif %}>15 Minuti</option>
+                                <option value="30" {% if climate_config.away_delay_min == 30 %}selected{% endif %}>30 Minuti</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SCENARIO 2: MAX RUNTIME / DIMENTICANZA -->
+                <div class="climate-scenario-card">
+                    <div class="climate-scenario-head">
+                        <span class="climate-scenario-icon">⏱️</span>
+                        <div>
+                            <strong style="color: #fff; font-size: 0.95rem;">Dimenticanza / Acceso da Troppo Tempo</strong>
+                            <div class="climate-scenario-desc">Protezione contro ore continuative di funzionamento ininterrotto.</div>
+                        </div>
+                    </div>
+                    <div class="climate-scenario-body">
+                        <label class="climate-select-label">Azione a Tempo Limite:</label>
+                        <select class="climate-select-ctrl" id="climate_max_runtime_action">
+                            <option value="notify" {% if climate_config.max_runtime_action == 'notify' %}selected{% endif %}>🔔 Solo Notifica di Promemoria</option>
+                            <option value="off" {% if climate_config.max_runtime_action == 'off' %}selected{% endif %}>🤖 Auto-Spegnimento di Sicurezza</option>
+                            <option value="disabled" {% if climate_config.max_runtime_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
+                        </select>
+                        <div class="climate-sub-setting" style="margin-top: 0.6rem;">
+                            <label style="font-size: 0.8rem; color: var(--text-dim);">Soglia ore continuative accensione:</label>
+                            <select class="climate-select-ctrl" id="climate_max_runtime_hours" style="margin-top: 3px;">
+                                <option value="2" {% if climate_config.max_runtime_hours == 2 %}selected{% endif %}>Dopo 2 Ore</option>
+                                <option value="3" {% if climate_config.max_runtime_hours == 3 %}selected{% endif %}>Dopo 3 Ore</option>
+                                <option value="4" {% if climate_config.max_runtime_hours == 4 %}selected{% endif %}>Dopo 4 Ore</option>
+                                <option value="5" {% if climate_config.max_runtime_hours == 5 or not climate_config.max_runtime_hours %}selected{% endif %}>Dopo 5 Ore (Consigliato)</option>
+                                <option value="6" {% if climate_config.max_runtime_hours == 6 %}selected{% endif %}>Dopo 6 Ore</option>
+                                <option value="8" {% if climate_config.max_runtime_hours == 8 %}selected{% endif %}>Dopo 8 Ore</option>
+                                <option value="10" {% if climate_config.max_runtime_hours == 10 %}selected{% endif %}>Dopo 10 Ore</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SCENARIO 3: FREE COOLING NOTTURNO -->
+                <div class="climate-scenario-card">
+                    <div class="climate-scenario-head">
+                        <span class="climate-scenario-icon">🌙</span>
+                        <div>
+                            <strong style="color: #fff; font-size: 0.95rem;">Free Cooling Notturno (Fresco all'Esterno)</strong>
+                            <div class="climate-scenario-desc">Di notte (23:00 - 07:00), confronta la temperatura esterna con la stanza.</div>
+                        </div>
+                    </div>
+                    <div class="climate-scenario-body">
+                        <label class="climate-select-label">Azione se Fuori è più Fresco:</label>
+                        <select class="climate-select-ctrl" id="climate_night_cooling_action">
+                            <option value="notify" {% if climate_config.night_cooling_action == 'notify' %}selected{% endif %}>🔔 Solo Notifica (Consiglia di aprire finestre e spegnere)</option>
+                            <option value="off" {% if climate_config.night_cooling_action == 'off' %}selected{% endif %}>🤖 Auto-Spegnimento Notturno</option>
+                            <option value="disabled" {% if climate_config.night_cooling_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
+                        </select>
+                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.6rem; line-height: 1.4;">
+                            ℹ️ Si attiva solo se la temperatura esterna è inferiore a quella interna di almeno 1.5°C e non piove. Durante le Notti Tropicali l'avviso viene soppresso automaticamente.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SCENARIO 4: PRE-RAFFRESCAMENTO SOLARE ATON -->
+                <div class="climate-scenario-card">
+                    <div class="climate-scenario-head">
+                        <span class="climate-scenario-icon">☀️</span>
+                        <div>
+                            <strong style="color: #fff; font-size: 0.95rem;">Pre-Cooling Solare Gratuito (Aton Storage)</strong>
+                            <div class="climate-scenario-desc">Avvia il raffrescamento a costo zero quando c'è forte surplus solare.</div>
+                        </div>
+                    </div>
+                    <div class="climate-scenario-body">
+                        <label class="climate-select-label">Azione con Surplus Solare:</label>
+                        <select class="climate-select-ctrl" id="climate_solar_action">
+                            <option value="notify" {% if climate_config.solar_preconditioning_action == 'notify' %}selected{% endif %}>🔔 Solo Notifica Opportunità a Costo Zero</option>
+                            <option value="on" {% if climate_config.solar_preconditioning_action == 'on' %}selected{% endif %}>🤖 Auto-Accensione Solare (Avvia a 25°C)</option>
+                            <option value="disabled" {% if climate_config.solar_preconditioning_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
+                        </select>
+                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.6rem; line-height: 1.4;">
+                            ℹ️ Condizioni: Produzione solare &ge; 1800 W, Batteria Aton &ge; 80% e temperatura ambiente calda (&ge; 26°C).
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SCENARIO 5: PROTEZIONE BATTERIA SCARICA -->
+                <div class="climate-scenario-card">
+                    <div class="climate-scenario-head">
+                        <span class="climate-scenario-icon">🔋</span>
+                        <div>
+                            <strong style="color: #fff; font-size: 0.95rem;">Protezione Batteria Aton & Prelievo Rete</strong>
+                            <div class="climate-scenario-desc">Evita consumi elevati a pagamento dalla rete quando la batteria è scarica.</div>
+                        </div>
+                    </div>
+                    <div class="climate-scenario-body">
+                        <label class="climate-select-label">Azione con Batteria Bassa:</label>
+                        <select class="climate-select-ctrl" id="climate_battery_guard_action">
+                            <option value="notify" {% if climate_config.battery_guard_action == 'notify' %}selected{% endif %}>🔔 Solo Notifica di Prelievo Rete</option>
+                            <option value="off" {% if climate_config.battery_guard_action == 'off' %}selected{% endif %}>🤖 Auto-Spegnimento Batteria Scarica (SoC &le; 20%)</option>
+                            <option value="disabled" {% if climate_config.battery_guard_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
+                        </select>
+                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.6rem; line-height: 1.4;">
+                            ℹ️ Si attiva la sera/notte se la batteria di accumulo scende sotto il 20% e uno o più climatizzatori risultano in funzione.
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- PULSANTI SALVATAGGIO & TEST -->
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.5rem; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 1rem;">
+                <button type="button" class="btn btn-primary" onclick="saveClimateSettings()" style="padding: 0.65rem 1.35rem; font-size: 0.92rem; font-weight: 700;">
+                    💾 Salva Impostazioni Clima
+                </button>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-outline btn-sm" onclick="testClimateNotification('away')">🧪 Test Avviso Uscita</button>
+                    <button type="button" class="btn btn-outline btn-sm" onclick="testClimateNotification('night')">🧪 Test Free Cooling</button>
+                    <button type="button" class="btn btn-outline btn-sm" onclick="testClimateNotification('solar')">🧪 Test Solare</button>
+                </div>
+            </div>
+
+        </div>
     </div>
 </div>
 
@@ -744,6 +939,63 @@
     color: var(--text);
 }
 
+/* CLIMATE AUTOMATIONS STYLES */
+.climate-scenario-card {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    transition: all 0.2s ease;
+}
+.climate-scenario-card:hover {
+    border-color: rgba(56, 189, 248, 0.3);
+    background: rgba(0, 0, 0, 0.35);
+}
+.climate-scenario-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+.climate-scenario-icon {
+    font-size: 1.6rem;
+    line-height: 1;
+}
+.climate-scenario-desc {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-top: 3px;
+    line-height: 1.4;
+}
+.climate-scenario-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: auto;
+}
+.climate-select-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text);
+}
+.climate-select-ctrl {
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.85rem;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+.climate-select-ctrl:focus {
+    border-color: var(--accent);
+}
+
 @media (max-width: 600px) {
     .push-action-btn {
         flex: 1 1 100%;
@@ -804,8 +1056,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let initialTab = 'notifications';
     const hash = window.location.hash.replace('#', '').toLowerCase();
     
-    // Mappa vecchi hash se necessario
-    const validTabs = ['notifications', 'alarms', 'sensors', 'tuya', 'database', 'system'];
+    // Mappa tab valide
+    const validTabs = ['notifications', 'alarms', 'sensors', 'tuya', 'climate', 'database', 'system'];
     if (hash && validTabs.includes(hash)) {
         initialTab = hash;
     } else {
@@ -957,6 +1209,89 @@ async function syncTuyaDevicesNow() {
             msgEl.style.color = '#ef4444';
             msgEl.innerText = `❌ Errore sincronizzazione: ${e.message}`;
         }
+    }
+}
+
+// =========================================================================
+// CLIMATE AUTOMATIONS MANAGEMENT (LG THINQ)
+// =========================================================================
+function toggleClimateMaster(isEnabled) {
+    const textEl = document.getElementById('climate_master_text');
+    if (textEl) textEl.innerText = isEnabled ? 'Attivo' : 'Disattivato';
+}
+
+async function saveClimateSettings() {
+    const feedbackEl = document.getElementById('climate_save_feedback');
+    const masterEnabled = document.getElementById('climate_master_enabled')?.checked ?? true;
+    const awayAction = document.getElementById('climate_away_action')?.value || 'notify';
+    const awayDelayMin = parseInt(document.getElementById('climate_away_delay_min')?.value || '10');
+    const maxRuntimeAction = document.getElementById('climate_max_runtime_action')?.value || 'notify';
+    const maxRuntimeHours = parseFloat(document.getElementById('climate_max_runtime_hours')?.value || '5');
+    const nightCoolingAction = document.getElementById('climate_night_cooling_action')?.value || 'notify';
+    const solarAction = document.getElementById('climate_solar_action')?.value || 'notify';
+    const batteryGuardAction = document.getElementById('climate_battery_guard_action')?.value || 'notify';
+
+    const payload = {
+        master_enabled: masterEnabled,
+        away_action: awayAction,
+        away_delay_min: awayDelayMin,
+        max_runtime_action: maxRuntimeAction,
+        max_runtime_hours: maxRuntimeHours,
+        night_cooling_action: nightCoolingAction,
+        solar_preconditioning_action: solarAction,
+        battery_guard_action: batteryGuardAction
+    };
+
+    if (feedbackEl) {
+        feedbackEl.style.display = 'block';
+        feedbackEl.style.background = 'rgba(56, 189, 248, 0.15)';
+        feedbackEl.style.color = '#38bdf8';
+        feedbackEl.style.border = '1px solid rgba(56, 189, 248, 0.3)';
+        feedbackEl.innerText = 'Salvataggio preferenze clima in corso...';
+    }
+
+    try {
+        const resp = await fetch('/api/climate/automations/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const res = await resp.json();
+        if (resp.ok) {
+            if (feedbackEl) {
+                feedbackEl.style.background = 'rgba(16, 185, 129, 0.15)';
+                feedbackEl.style.color = '#10b981';
+                feedbackEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                feedbackEl.innerText = '✅ Impostazioni Clima Intelligente salvate con successo!';
+                setTimeout(() => { feedbackEl.style.display = 'none'; }, 4000);
+            }
+        } else {
+            throw new Error(res.message || 'Errore salvataggio');
+        }
+    } catch (e) {
+        if (feedbackEl) {
+            feedbackEl.style.background = 'rgba(239, 68, 68, 0.15)';
+            feedbackEl.style.color = '#ef4444';
+            feedbackEl.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            feedbackEl.innerText = '❌ Errore durante il salvataggio: ' + e.message;
+        }
+    }
+}
+
+async function testClimateNotification(scenario) {
+    try {
+        const resp = await fetch('/api/climate/automations/test-action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scenario: scenario })
+        });
+        if (resp.ok) {
+            alert('🧪 Notifica push di prova inviata con successo per scenario: ' + scenario.toUpperCase() + '!');
+        } else {
+            alert('Errore invio notifica test (HTTP ' + resp.status + ')');
+        }
+    } catch (e) {
+        alert('Errore di connessione: ' + e.message);
     }
 }
 </script>

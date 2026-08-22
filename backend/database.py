@@ -206,6 +206,15 @@ def init_db():
             updated_at TEXT NOT NULL
         )
     """)
+
+    # 9. Configurazione Automazioni Intelligenti Climatizzatori (LG ThinQ)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS climate_automations_config (
+            key TEXT PRIMARY KEY,
+            value_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
     
     conn.commit()
     conn.close()
@@ -2156,3 +2165,62 @@ def get_soil_moisture_summary() -> Dict[str, Any]:
     }
 
 
+# ----------------- GESTIONE AUTOMAZIONI CLIMATIZZATORI (LG THINQ) -----------------
+
+DEFAULT_CLIMATE_AUTOMATIONS_CONFIG: Dict[str, Any] = {
+    "master_enabled": True,
+    # 1. Uscita di casa: 'off' (spegnimento automatico), 'notify' (solo notifica per presenza altri), 'disabled'
+    "away_action": "notify",
+    "away_delay_min": 10,
+    # 2. Max Runtime / Dimenticanza: 'off', 'notify', 'disabled'
+    "max_runtime_action": "notify",
+    "max_runtime_hours": 5,
+    # 3. Free cooling notturno: 'off', 'notify', 'disabled'
+    "night_cooling_action": "notify",
+    "night_start_hour": 23,
+    "night_end_hour": 7,
+    "night_temp_diff": 1.5,
+    # 4. Pre-cooling solare Aton: 'on', 'notify', 'disabled'
+    "solar_preconditioning_action": "notify",
+    "solar_surplus_w": 1800,
+    "solar_min_soc": 80,
+    "solar_target_temp": 25.0,
+    # 5. Protezione batteria scarica / rete: 'off', 'notify', 'disabled'
+    "battery_guard_action": "notify",
+    "battery_min_soc": 20
+}
+
+def get_climate_automations_config() -> Dict[str, Any]:
+    """Restituisce le preferenze salvate per le automazioni dei climatizzatori."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT value_json FROM climate_automations_config WHERE key = 'main'")
+    row = cursor.fetchone()
+    conn.close()
+
+    cfg = DEFAULT_CLIMATE_AUTOMATIONS_CONFIG.copy()
+    if row and row["value_json"]:
+        try:
+            saved = json.loads(row["value_json"])
+            cfg.update(saved)
+        except Exception:
+            pass
+    return cfg
+
+def save_climate_automations_config(config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Salva le preferenze delle automazioni climatizzatori su SQLite."""
+    current = get_climate_automations_config()
+    current.update(config_dict)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    json_str = json.dumps(current, ensure_ascii=False)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO climate_automations_config (key, value_json, updated_at)
+        VALUES ('main', ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at
+    """, (json_str, now_iso))
+    conn.commit()
+    conn.close()
+    return current

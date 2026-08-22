@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time
 import json
 import uuid
 from datetime import datetime
@@ -148,6 +149,15 @@ class LGThinQService:
                     
                     power_save = status_raw.get("powerSave", {}).get("powerSaveEnabled", False)
 
+                    prev_dev = self.devices_cache.get(device_id, {})
+                    prev_on = prev_dev.get("is_on", False)
+                    prev_since = prev_dev.get("power_on_since")
+                    
+                    if is_on:
+                        power_on_since = prev_since if (prev_on and prev_since) else time.time()
+                    else:
+                        power_on_since = None
+
                     self.devices_cache[device_id] = {
                         "device_id": device_id,
                         "deviceId": device_id,
@@ -157,6 +167,7 @@ class LGThinQService:
                         "is_online": True if status_raw else False,
                         "power": op_mode,
                         "is_on": is_on,
+                        "power_on_since": power_on_since,
                         "current_temp": current_temp,
                         "target_temp": target_temp,
                         "unit": unit,
@@ -227,6 +238,11 @@ class LGThinQService:
                 if cached_dev:
                     cached_dev["power"] = p_val
                     cached_dev["is_on"] = (p_val == "POWER_ON")
+                    if p_val == "POWER_ON":
+                        if not cached_dev.get("power_on_since"):
+                            cached_dev["power_on_since"] = time.time()
+                    else:
+                        cached_dev["power_on_since"] = None
 
             # 2. Modalità (Job Mode: COOL, HEAT, DRY, FAN, AUTO)
             if "mode" in command:

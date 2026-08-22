@@ -54,10 +54,18 @@ class AlertEngine:
 
         # SmartThings & Leak states
         self._last_presence_is_present: Optional[bool] = None
+        self._presence_away_timestamp: Optional[float] = None
         self._last_washer_was_running: bool = False
         self._last_solar_appliance_alert: float = 0.0
         self.last_leak_alert: Dict[str, float] = {}
         self.last_record_alert_by_key: Dict[str, float] = {}
+
+        # Climate Automations states (LG ThinQ)
+        self.last_climate_away_alert: float = 0.0
+        self.last_climate_runtime_alert: Dict[str, float] = {}
+        self.last_climate_night_alert: Dict[str, float] = {}
+        self.last_climate_solar_alert: Dict[str, float] = {}
+        self.last_climate_battery_alert: Dict[str, float] = {}
 
         # Carica lo stato persistente da disco o DB
         self._load_state()
@@ -98,10 +106,16 @@ class AlertEngine:
                 "last_maintenance_date": self.last_maintenance_date,
                 "_was_battery_full": self._was_battery_full,
                 "_last_presence_is_present": self._last_presence_is_present,
+                "_presence_away_timestamp": self._presence_away_timestamp,
                 "_last_washer_was_running": self._last_washer_was_running,
                 "_last_solar_appliance_alert": self._last_solar_appliance_alert,
                 "last_leak_alert": self.last_leak_alert,
                 "last_record_alert_by_key": self.last_record_alert_by_key,
+                "last_climate_away_alert": self.last_climate_away_alert,
+                "last_climate_runtime_alert": self.last_climate_runtime_alert,
+                "last_climate_night_alert": self.last_climate_night_alert,
+                "last_climate_solar_alert": self.last_climate_solar_alert,
+                "last_climate_battery_alert": self.last_climate_battery_alert,
             }
             tmp_path = self._state_file + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
@@ -147,10 +161,16 @@ class AlertEngine:
                 self.last_maintenance_date = data.get("last_maintenance_date", self.last_maintenance_date)
                 self._was_battery_full = data.get("_was_battery_full", self._was_battery_full)
                 self._last_presence_is_present = data.get("_last_presence_is_present", self._last_presence_is_present)
+                self._presence_away_timestamp = data.get("_presence_away_timestamp", self._presence_away_timestamp)
                 self._last_washer_was_running = data.get("_last_washer_was_running", self._last_washer_was_running)
                 self._last_solar_appliance_alert = data.get("_last_solar_appliance_alert", self._last_solar_appliance_alert)
                 self.last_leak_alert = data.get("last_leak_alert", self.last_leak_alert)
                 self.last_record_alert_by_key = data.get("last_record_alert_by_key", self.last_record_alert_by_key)
+                self.last_climate_away_alert = data.get("last_climate_away_alert", self.last_climate_away_alert)
+                self.last_climate_runtime_alert = data.get("last_climate_runtime_alert", self.last_climate_runtime_alert)
+                self.last_climate_night_alert = data.get("last_climate_night_alert", self.last_climate_night_alert)
+                self.last_climate_solar_alert = data.get("last_climate_solar_alert", self.last_climate_solar_alert)
+                self.last_climate_battery_alert = data.get("last_climate_battery_alert", self.last_climate_battery_alert)
                 loaded_from_disk = True
                 logger.info("[ALERT-STATE] Cache stato allarmi caricata con successo da disco.")
             except Exception as e:
@@ -1065,6 +1085,266 @@ class AlertEngine:
                     priority="normal",
                     extra_data={"p_solare": str(p_sol), "soc": str(soc_val)}
                 )
+
+    async def evaluate_climate_automations(
+        self,
+        climate_devices: List[Dict[str, Any]],
+        weather_data: Dict[str, Any],
+        energy_data: Dict[str, Any],
+        presence_data: Optional[Dict[str, Any]]
+    ):
+        """
+        Motore di Intelligenza Clima: valuta regole autonome e notifiche per LG ThinQ.
+        Configurazione gestita dinamicamente da SQLite (climate_automations_config).
+        """
+        if not settings.LG_THINQ_ENABLED or not climate_devices:
+            return
+
+        from backend.database import get_climate_automations_config
+        from backend.thinq_service import thinq_service
+
+        cfg = get_climate_automations_config()
+        if not cfg.get("master_enabled", True):
+            return
+
+        now = time.time()
+        now_dt = settings.now_local()
+        current_hour = now_dt.hour
+        temp_out = weather_data.get("temp_c")
+        rain_rate = weather_data.get("rain_rate_mm_hr", 0.0) or 0.0
+        p_solare = float(energy_data.get("p_solare") or 0.0)
+        soc = float(energy_data.get("soc") or 0.0)
+        is_present = presence_data.get("is_present") if presence_data else None
+
+        active_climates = [d for d in climate_devices if d.get("is_on")]
+
+        # =========================================================================
+        # 1. SCENARIO USCITA DI CASA / PARTENZA (Presenza Vincenzo S26 Ultra)
+        # =========================================================================
+        away_action = cfg.get("away_action", "notify")  # 'off', 'notify', 'disabled'
+        away_delay_min = int(cfg.get("away_delay_min", 10))
+
+        if away_action != "disabled" and is_present is False and active_climates:
+            if self._presence_away_timestamp is None:
+                self._presence_away_timestamp = now
+                self._save_state()
+
+            away_elapsed_min = (now - self._presence_away_timestamp) / 60.0
+            
+            if (now - self.last_climate_away_alert) >= 3600:  # Cooldown 1h per avviso uscita
+                if away_action == "off" and away_elapsed_min >= away_delay_min:
+                    # Spegnimento automatico dei climatizzatori rimasti accesi
+                    turned_off_names = []
+                    for dev in active_climates:
+                        dev_id = dev.get("device_id") or dev.get("deviceId")
+                        alias = dev.get("alias", "Climatizzatore")
+                        await thinq_service.control_device(dev_id, {"power": False})
+                        turned_off_names.append(alias)
+                    
+                    self.last_climate_away_alert = now
+                    self._save_state()
+                    names_str = ", ".join(turned_off_names)
+                    notifier.send_alert(
+                        alert_type="climate_auto_off",
+                        title="🤖 Clima Spento in Autonomia (Uscita Casa)",
+                        message=f"Sei fuori casa da oltre {int(away_elapsed_min)} min: {names_str} spento automaticamente per evitare sprechi.",
+                        priority="high",
+                        extra_data={"action": "auto_off", "devices": names_str}
+                    )
+                    logger.info(f"[CLIMATE-AUTO] Spegnimento autonomo eseguito per uscita casa: {names_str}")
+
+                elif away_action == "notify" and away_elapsed_min >= 2:
+                    # Solo notifica (perché ci potrebbero essere altre persone in casa)
+                    names_list = []
+                    for dev in active_climates:
+                        alias = dev.get("alias", "Clima")
+                        curr_t = dev.get("current_temp")
+                        t_str = f"{curr_t}°C" if curr_t else ""
+                        names_list.append(f"{alias} ({t_str})" if t_str else alias)
+                    
+                    self.last_climate_away_alert = now
+                    self._save_state()
+                    names_str = ", ".join(names_list)
+                    notifier.send_alert(
+                        alert_type="climate_away_reminder",
+                        title="🚗 Uscita di Casa: Climatizzatore Acceso",
+                        message=f"Sei uscito ma {names_str} è rimasto in funzione. Se in casa non c'è nessuno, puoi spegnerlo dal pannello.",
+                        priority="normal",
+                        extra_data={"action": "notify_away", "devices": names_str}
+                    )
+                    logger.info(f"[CLIMATE-NOTIFY] Inviata notifica clima acceso per uscita Vincenzo: {names_str}")
+
+        elif is_present is True:
+            self._presence_away_timestamp = None
+
+        # =========================================================================
+        # 2. SCENARIO DIMENTICANZA / MAX RUNTIME GUARD
+        # =========================================================================
+        runtime_action = cfg.get("max_runtime_action", "notify")  # 'off', 'notify', 'disabled'
+        max_runtime_hours = float(cfg.get("max_runtime_hours", 5))
+
+        if runtime_action != "disabled":
+            for dev in active_climates:
+                dev_id = dev.get("device_id") or dev.get("deviceId")
+                alias = dev.get("alias", "Climatizzatore")
+                p_since = dev.get("power_on_since")
+                
+                if p_since:
+                    hours_on = (now - p_since) / 3600.0
+                    if hours_on >= max_runtime_hours:
+                        last_alert = self.last_climate_runtime_alert.get(dev_id, 0.0)
+                        if (now - last_alert) >= (max_runtime_hours * 1800):  # Cooldown
+                            self.last_climate_runtime_alert[dev_id] = now
+                            self._save_state()
+                            h_rounded = round(hours_on, 1)
+                            curr_t = dev.get("current_temp")
+                            target_t = dev.get("target_temp")
+                            t_info = f" (Stanza: {curr_t}°C, Setpoint: {target_t}°C)" if curr_t else ""
+
+                            if runtime_action == "off":
+                                await thinq_service.control_device(dev_id, {"power": False})
+                                notifier.send_alert(
+                                    alert_type="climate_auto_off",
+                                    title=f"🤖 Spegnimento Autonomo: {alias}",
+                                    message=f"Il climatizzatore '{alias}' era acceso ininterrottamente da {h_rounded} ore{t_info}. Spento per prevenire dimenticanze.",
+                                    priority="high",
+                                    extra_data={"device_id": dev_id, "runtime_hours": str(h_rounded)}
+                                )
+                                logger.info(f"[CLIMATE-AUTO] Spegnimento max runtime per {alias} ({h_rounded}h)")
+                            elif runtime_action == "notify":
+                                notifier.send_alert(
+                                    alert_type="climate_runtime_warning",
+                                    title=f"⏱️ Clima Acceso da {h_rounded} Ore: {alias}",
+                                    message=f"Il climatizzatore '{alias}' è in funzione da oltre {h_rounded} ore{t_info}. Ricordati di spegnerlo se la stanza è a temperatura.",
+                                    priority="normal",
+                                    extra_data={"device_id": dev_id, "runtime_hours": str(h_rounded)}
+                                )
+
+        # =========================================================================
+        # 3. SCENARIO FREE COOLING NOTTURNO (Fuori fresco, Dentro caldo/clima in cool)
+        # =========================================================================
+        night_action = cfg.get("night_cooling_action", "notify")  # 'off', 'notify', 'disabled'
+        night_start = int(cfg.get("night_start_hour", 23))
+        night_end = int(cfg.get("night_end_hour", 7))
+        night_diff = float(cfg.get("night_temp_diff", 1.5))
+
+        is_night_window = (current_hour >= night_start or current_hour < night_end)
+
+        if night_action != "disabled" and is_night_window and temp_out is not None and rain_rate == 0.0 and not self.is_raining:
+            for dev in active_climates:
+                dev_id = dev.get("device_id") or dev.get("deviceId")
+                alias = dev.get("alias", "Climatizzatore")
+                mode = dev.get("mode", "COOL")
+                curr_in = dev.get("current_temp") or weather_data.get("temp_in_c")
+
+                # Se il clima è in raffrescamento e fuori fa fresco (e non è notte tropicale >= 20°C)
+                if mode in ("COOL", "AUTO") and curr_in is not None and temp_out < 24.0:
+                    if temp_out <= (curr_in - night_diff):
+                        last_alert = self.last_climate_night_alert.get(dev_id, 0.0)
+                        if (now - last_alert) >= 14400:  # Cooldown 4h
+                            self.last_climate_night_alert[dev_id] = now
+                            self._save_state()
+                            diff_t = round(curr_in - temp_out, 1)
+
+                            if night_action == "off":
+                                await thinq_service.control_device(dev_id, {"power": False})
+                                notifier.send_alert(
+                                    alert_type="climate_night_cooling",
+                                    title=f"🌙 Free Cooling Notturno: {alias} Spento",
+                                    message=f"All'esterno la temperatura è scesa a {temp_out}°C ({diff_t}°C più fresco della stanza a {curr_in}°C). Clima spento in autonomia: apri le finestre per rinfrescare a costo zero!",
+                                    priority="normal",
+                                    extra_data={"temp_out": str(temp_out), "temp_in": str(curr_in)}
+                                )
+                                logger.info(f"[CLIMATE-AUTO] Free cooling spegnimento autonomo {alias}")
+                            elif night_action == "notify":
+                                notifier.send_alert(
+                                    alert_type="climate_night_cooling",
+                                    title=f"🌙 Rinfresca all'Esterno: {alias}",
+                                    message=f"All'esterno la temperatura è scesa a {temp_out}°C ({diff_t}°C più fresco della stanza a {curr_in}°C). Puoi spegnere il clima '{alias}' e aprire le finestre per dormire con aria fresca naturale.",
+                                    priority="normal",
+                                    extra_data={"temp_out": str(temp_out), "temp_in": str(curr_in)}
+                                )
+
+        # =========================================================================
+        # 4. SCENARIO PRE-COOLING SOLARE ATON (Surplus Fotovoltaico Gratuito)
+        # =========================================================================
+        solar_action = cfg.get("solar_preconditioning_action", "notify")  # 'on', 'notify', 'disabled'
+        solar_surplus_w = float(cfg.get("solar_surplus_w", 1800))
+        solar_min_soc = float(cfg.get("solar_min_soc", 80))
+        solar_target_t = float(cfg.get("solar_target_temp", 25.0))
+
+        if solar_action != "disabled" and p_solare >= solar_surplus_w and soc >= solar_min_soc:
+            # Condizioni estive diurne (ore 10:00 - 18:00)
+            if 10 <= current_hour <= 18 and (is_present is True or is_present is None):
+                for dev in climate_devices:
+                    dev_id = dev.get("device_id") or dev.get("deviceId")
+                    alias = dev.get("alias", "Climatizzatore")
+                    is_on = dev.get("is_on", False)
+                    curr_in = dev.get("current_temp") or 26.0
+
+                    if not is_on and curr_in >= 26.0:
+                        last_alert = self.last_climate_solar_alert.get(dev_id, 0.0)
+                        if (now - last_alert) >= 10800:  # Cooldown 3h
+                            self.last_climate_solar_alert[dev_id] = now
+                            self._save_state()
+
+                            if solar_action == "on":
+                                await thinq_service.control_device(dev_id, {
+                                    "power": True,
+                                    "mode": "COOL",
+                                    "target_temp": solar_target_t
+                                })
+                                notifier.send_alert(
+                                    alert_type="climate_solar_auto_on",
+                                    title=f"☀️ Pre-Raffrescamento Solare: {alias}",
+                                    message=f"Forte surplus fotovoltaico ({int(p_solare)} W, Batteria al {int(soc)}%): {alias} avviato in raffrescamento a {solar_target_t}°C a costo zero prima del picco pomeridiano.",
+                                    priority="normal",
+                                    extra_data={"p_solare": str(p_solare), "soc": str(soc)}
+                                )
+                                logger.info(f"[CLIMATE-AUTO] Pre-cooling solare auto ON per {alias}")
+                            elif solar_action == "notify":
+                                notifier.send_alert(
+                                    alert_type="climate_solar_opportunity",
+                                    title=f"☀️ Climatizzazione a Costo Zero: {alias}",
+                                    message=f"Produzione solare abbondante ({int(p_solare)} W) e accumulatore al {int(soc)}%: momento ideale per accendere {alias} gratis ed evitare il surriscaldamento.",
+                                    priority="normal",
+                                    extra_data={"p_solare": str(p_solare), "soc": str(soc)}
+                                )
+
+        # =========================================================================
+        # 5. SCENARIO PROTEZIONE BATTERIA SCARICA / PRELIEVO RETE
+        # =========================================================================
+        battery_action = cfg.get("battery_guard_action", "notify")  # 'off', 'notify', 'disabled'
+        battery_min_soc = float(cfg.get("battery_min_soc", 20))
+
+        if battery_action != "disabled" and p_solare < 100 and soc <= battery_min_soc and active_climates:
+            for dev in active_climates:
+                dev_id = dev.get("device_id") or dev.get("deviceId")
+                alias = dev.get("alias", "Climatizzatore")
+                last_alert = self.last_climate_battery_alert.get(dev_id, 0.0)
+                
+                if (now - last_alert) >= 7200:  # Cooldown 2h
+                    self.last_climate_battery_alert[dev_id] = now
+                    self._save_state()
+
+                    if battery_action == "off":
+                        await thinq_service.control_device(dev_id, {"power": False})
+                        notifier.send_alert(
+                            alert_type="climate_battery_guard",
+                            title=f"🔋 Protezione Batteria Aton: {alias} Spento",
+                            message=f"Batteria di accumulo al {int(soc)}% e produzione solare assente: {alias} spento per evitare prelievi costosi dalla rete.",
+                            priority="high",
+                            extra_data={"soc": str(soc)}
+                        )
+                        logger.info(f"[CLIMATE-AUTO] Battery guard auto OFF per {alias}")
+                    elif battery_action == "notify":
+                        notifier.send_alert(
+                            alert_type="climate_battery_guard",
+                            title=f"🔋 Batteria Bassa con Clima Attivo: {alias}",
+                            message=f"Batteria Aton scesa al {int(soc)}% e fotovoltaico assente. {alias} sta prelevando energia a pagamento dalla rete elettrica.",
+                            priority="normal",
+                            extra_data={"soc": str(soc)}
+                        )
 
 engine = AlertEngine()
 
