@@ -71,6 +71,71 @@
     </div>
 </div>
 
+<!-- 🛡️ STATO UFFICIALE PROTEZIONE CIVILE CALABRIA & NAZIONALE -->
+{% if civil_protection_enabled and civil_protection and civil_protection.status == 'success' %}
+<div class="cp-alert-card cp-border-{{ civil_protection.today.level | lower }}" style="margin-bottom: 1.5rem;">
+    <div class="cp-card-header">
+        <div class="cp-title-wrap">
+            <span style="font-size: 1.35rem;">🛡️</span>
+            <div>
+                <h3>Allertamento Protezione Civile • Quadro Istituzionale</h3>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 3px;">
+                    <span class="cp-zone-pill">📍 {{ civil_protection.zone_name }}</span>
+                    <span class="cp-meta-date">Ultimo Bollettino DPC: {{ civil_protection.bulletin_date_str }}</span>
+                </div>
+            </div>
+        </div>
+        <div>
+            <a href="{{ civil_protection.today.preview_url if civil_protection.today.preview_url else '#' }}" target="_blank" class="cp-detail-btn" style="text-decoration: none;">
+                <span>🗺️</span> Mappa Bollettino Ufficiale ↗
+            </a>
+        </div>
+    </div>
+
+    <div class="cp-days-grid">
+        <!-- OGGI -->
+        <div class="cp-day-pill">
+            <div class="cp-day-top">
+                <span class="cp-day-label">📅 Oggi</span>
+                <span class="status-pill {{ civil_protection.today.badge_class }}">
+                    {{ civil_protection.today.icon }} {{ civil_protection.today.label }}
+                </span>
+            </div>
+            <div style="font-size: 0.84rem; color: #e2e8f0; line-height: 1.45;">
+                {{ civil_protection.today.overall_text }}
+            </div>
+            {% if civil_protection.today.active_hazards %}
+            <div class="cp-hazards-list">
+                {% for h in civil_protection.today.active_hazards %}
+                <span class="cp-hazard-chip">⚠️ {{ h }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- DOMANI -->
+        <div class="cp-day-pill">
+            <div class="cp-day-top">
+                <span class="cp-day-label">📅 Domani</span>
+                <span class="status-pill {{ civil_protection.tomorrow.badge_class }}">
+                    {{ civil_protection.tomorrow.icon }} {{ civil_protection.tomorrow.label }}
+                </span>
+            </div>
+            <div style="font-size: 0.84rem; color: #e2e8f0; line-height: 1.45;">
+                {{ civil_protection.tomorrow.overall_text }}
+            </div>
+            {% if civil_protection.tomorrow.active_hazards %}
+            <div class="cp-hazards-list">
+                {% for h in civil_protection.tomorrow.active_hazards %}
+                <span class="cp-hazard-chip">⚠️ {{ h }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- BARRA RICERCA & FILTRI AVANZATI -->
 <div class="card" style="margin-bottom: 1.5rem; padding: 1rem 1.25rem;">
     <div style="display: flex; flex-direction: column; gap: 0.9rem;">
@@ -89,6 +154,9 @@
                 </button>
                 <button id="filter-btn-unread" class="filter-chip" onclick="filterAlerts('unread')">
                     Non lette (<span id="unread-filter-count">{{ unread_count }}</span>)
+                </button>
+                <button class="filter-chip" data-category="civil_protection" onclick="filterCategory('civil_protection', this)">
+                    🛡️ Prot. Civile
                 </button>
                 <button class="filter-chip" data-category="storms" onclick="filterCategory('lightning,storm,wind_spike', this)">
                     ⚡ Temporali & Vento

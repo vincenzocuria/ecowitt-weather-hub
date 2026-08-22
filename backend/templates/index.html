@@ -225,6 +225,71 @@
         </div>
     </div>
 
+    <!-- 🛡️ ALLERTE METEO UFFICIALI PROTEZIONE CIVILE CALABRIA & DPC -->
+    {% if civil_protection_enabled and civil_protection and civil_protection.status == 'success' %}
+    <div class="cp-alert-card cp-border-{{ civil_protection.today.level | lower }}" id="cp_alert_card">
+        <div class="cp-card-header">
+            <div class="cp-title-wrap">
+                <span style="font-size: 1.35rem;">🛡️</span>
+                <div>
+                    <h3>Protezione Civile • Allerte Meteo Ufficiali</h3>
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 3px;">
+                        <span class="cp-zone-pill" id="cp_zone_name">📍 {{ civil_protection.zone_name }}</span>
+                        <span class="cp-meta-date" id="cp_bulletin_date">Bollettino del {{ civil_protection.bulletin_date_str }}</span>
+                    </div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <button type="button" class="cp-detail-btn" onclick="openCivilProtectionModal()">
+                    <span>🗺️</span> Mappa & Dettagli Ufficiali
+                </button>
+            </div>
+        </div>
+
+        <div class="cp-days-grid">
+            <!-- OGGI -->
+            <div class="cp-day-pill" id="cp_today_box">
+                <div class="cp-day-top">
+                    <span class="cp-day-label">📅 Oggi</span>
+                    <span class="status-pill {{ civil_protection.today.badge_class }}" id="cp_today_badge">
+                        {{ civil_protection.today.icon }} {{ civil_protection.today.label }}
+                    </span>
+                </div>
+                <div style="font-size: 0.84rem; color: #e2e8f0; line-height: 1.45;" id="cp_today_desc">
+                    {{ civil_protection.today.overall_text }}
+                </div>
+                {% if civil_protection.today.active_hazards %}
+                <div class="cp-hazards-list" id="cp_today_hazards">
+                    {% for h in civil_protection.today.active_hazards %}
+                    <span class="cp-hazard-chip">⚠️ {{ h }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- DOMANI -->
+            <div class="cp-day-pill" id="cp_tomorrow_box">
+                <div class="cp-day-top">
+                    <span class="cp-day-label">📅 Domani</span>
+                    <span class="status-pill {{ civil_protection.tomorrow.badge_class }}" id="cp_tomorrow_badge">
+                        {{ civil_protection.tomorrow.icon }} {{ civil_protection.tomorrow.label }}
+                    </span>
+                </div>
+                <div style="font-size: 0.84rem; color: #e2e8f0; line-height: 1.45;" id="cp_tomorrow_desc">
+                    {{ civil_protection.tomorrow.overall_text }}
+                </div>
+                {% if civil_protection.tomorrow.active_hazards %}
+                <div class="cp-hazards-list" id="cp_tomorrow_hazards">
+                    {% for h in civil_protection.tomorrow.active_hazards %}
+                    <span class="cp-hazard-chip">⚠️ {{ h }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- PREVISIONI IBRIDE 7 GIORNI (OPEN-METEO + CROSS-CHECK LOCALE) -->
     <div class="forecast-section">
         <div class="forecast-header">
@@ -1539,6 +1604,168 @@
                 <button type="button" class="btn btn-secondary" onclick="closeHouseConsumptionModal()">Chiudi</button>
                 <button type="button" class="btn btn-primary" id="house-modal-refresh-btn" onclick="fetchAndRenderHouseBreakdown(true)">
                     <span>🔄</span> Aggiorna ora
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODALE DETTAGLI & MAPPA PROTEZIONE CIVILE -->
+<div id="cp-modal-backdrop" class="device-modal-backdrop" onclick="closeCivilProtectionModal(event)">
+    <div class="device-modal-dialog cp-modal-dialog" onclick="event.stopPropagation()">
+        <div class="device-modal-header">
+            <div class="modal-title-group">
+                <div class="modal-icon-badge" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.35); color: #10b981;">
+                    🛡️
+                </div>
+                <div>
+                    <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: #fff;">Bollettino Ufficiale Protezione Civile</h3>
+                    <div class="modal-device-meta" id="cp-modal-meta">
+                        Zona: {{ civil_protection.zone_name if civil_protection else 'Calabria' }} • Comune: {{ civil_protection.municipality if civil_protection else 'Corigliano-Rossano' }}
+                    </div>
+                </div>
+            </div>
+            <button type="button" class="modal-close-btn" onclick="closeCivilProtectionModal()" title="Chiudi">&times;</button>
+        </div>
+
+        <div class="device-modal-body" id="cp-modal-body">
+            <!-- TABS OGGI / DOMANI NELLA MODALE -->
+            <div style="display: flex; gap: 8px; margin-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.5rem;">
+                <button type="button" class="btn btn-sm btn-primary" id="cp_tab_btn_today" onclick="switchCpModalTab('today')">
+                    📅 Oggi ({{ civil_protection.today.short_label if civil_protection else 'Oggi' }})
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary" id="cp_tab_btn_tomorrow" onclick="switchCpModalTab('tomorrow')">
+                    📅 Domani ({{ civil_protection.tomorrow.short_label if civil_protection else 'Domani' }})
+                </button>
+            </div>
+
+            <!-- CONTENUTO OGGI -->
+            <div id="cp_tab_pane_today">
+                <div style="background: rgba(0,0,0,0.2); padding: 0.9rem 1.1rem; border-radius: 10px; margin-bottom: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <strong style="color: #fff; font-size: 0.95rem;">Stato Allerta Globale:</strong>
+                        <span class="status-pill {{ civil_protection.today.badge_class if civil_protection else 'badge-success' }}" id="cp_modal_today_badge">
+                            {{ civil_protection.today.icon if civil_protection else '🟢' }} {{ civil_protection.today.label if civil_protection else 'Verde' }}
+                        </span>
+                    </div>
+                    <p style="margin: 0; font-size: 0.85rem; color: #cbd5e1; line-height: 1.45;" id="cp_modal_today_text">
+                        {{ civil_protection.today.overall_text if civil_protection else 'Assenza di fenomeni significativi' }}
+                    </p>
+                </div>
+
+                <!-- TABELLA RISCHI DETTAGLIATI -->
+                <table class="cp-risk-table">
+                    <thead>
+                        <tr>
+                            <th>Tipologia Rischio</th>
+                            <th>Livello Criticità</th>
+                            <th>Descrizione Fenomeno</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cp_modal_today_table">
+                        {% if civil_protection and civil_protection.today and civil_protection.today.risks %}
+                        <tr>
+                            <td><strong>⛈️ Temporali</strong></td>
+                            <td><span class="status-pill {{ civil_protection.today.risks.temporali.badge_class }}">{{ civil_protection.today.risks.temporali.label }}</span></td>
+                            <td style="color: var(--text-dim);">{{ civil_protection.today.risks.temporali.text }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>🌧️ Idrogeologico</strong></td>
+                            <td><span class="status-pill {{ civil_protection.today.risks.idrogeologico.badge_class }}">{{ civil_protection.today.risks.idrogeologico.label }}</span></td>
+                            <td style="color: var(--text-dim);">{{ civil_protection.today.risks.idrogeologico.text }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>🌊 Idraulico</strong></td>
+                            <td><span class="status-pill {{ civil_protection.today.risks.idraulico.badge_class }}">{{ civil_protection.today.risks.idraulico.label }}</span></td>
+                            <td style="color: var(--text-dim);">{{ civil_protection.today.risks.idraulico.text }}</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+
+                <!-- ANTEPRIMA MAPPA OGGI -->
+                {% if civil_protection and civil_protection.today.preview_url %}
+                <div class="cp-preview-img-wrap">
+                    <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 6px;">🗺️ Mappa Ufficiale Criticità Nazionale & Regionale (Oggi):</div>
+                    <a href="{{ civil_protection.today.preview_url }}" target="_blank" title="Clicca per ingrandire la mappa">
+                        <img src="{{ civil_protection.today.preview_url }}" alt="Mappa Criticità Protezione Civile Oggi" class="cp-preview-img" id="cp_img_today" loading="lazy">
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- CONTENUTO DOMANI -->
+            <div id="cp_tab_pane_tomorrow" style="display: none;">
+                <div style="background: rgba(0,0,0,0.2); padding: 0.9rem 1.1rem; border-radius: 10px; margin-bottom: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <strong style="color: #fff; font-size: 0.95rem;">Stato Allerta Globale (Domani):</strong>
+                        <span class="status-pill {{ civil_protection.tomorrow.badge_class if civil_protection else 'badge-success' }}" id="cp_modal_tomorrow_badge">
+                            {{ civil_protection.tomorrow.icon if civil_protection else '🟢' }} {{ civil_protection.tomorrow.label if civil_protection else 'Verde' }}
+                        </span>
+                    </div>
+                    <p style="margin: 0; font-size: 0.85rem; color: #cbd5e1; line-height: 1.45;" id="cp_modal_tomorrow_text">
+                        {{ civil_protection.tomorrow.overall_text if civil_protection else 'Assenza di fenomeni significativi' }}
+                    </p>
+                </div>
+
+                <!-- TABELLA RISCHI DETTAGLIATI DOMANI -->
+                <table class="cp-risk-table">
+                    <thead>
+                        <tr>
+                            <th>Tipologia Rischio</th>
+                            <th>Livello Criticità</th>
+                            <th>Descrizione Fenomeno</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cp_modal_tomorrow_table">
+                        {% if civil_protection and civil_protection.tomorrow and civil_protection.tomorrow.risks %}
+                        <tr>
+                            <td><strong>⛈️ Temporali</strong></td>
+                            <td><span class="status-pill {{ civil_protection.tomorrow.risks.temporali.badge_class }}">{{ civil_protection.tomorrow.risks.temporali.label }}</span></td>
+                            <td style="color: var(--text-dim);">{{ civil_protection.tomorrow.risks.temporali.text }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>🌧️ Idrogeologico</strong></td>
+                            <td><span class="status-pill {{ civil_protection.tomorrow.risks.idrogeologico.badge_class }}">{{ civil_protection.tomorrow.risks.idrogeologico.label }}</span></td>
+                            <td style="color: var(--text-dim);">{{ civil_protection.tomorrow.risks.idrogeologico.text }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>🌊 Idraulico</strong></td>
+                            <td><span class="status-pill {{ civil_protection.tomorrow.risks.idraulico.badge_class }}">{{ civil_protection.tomorrow.risks.idraulico.label }}</span></td>
+                            <td style="color: var(--text-dim);">{{ civil_protection.tomorrow.risks.idraulico.text }}</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+
+                <!-- ANTEPRIMA MAPPA DOMANI -->
+                {% if civil_protection and civil_protection.tomorrow.preview_url %}
+                <div class="cp-preview-img-wrap">
+                    <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 6px;">🗺️ Mappa Ufficiale Criticità Nazionale & Regionale (Domani):</div>
+                    <a href="{{ civil_protection.tomorrow.preview_url }}" target="_blank" title="Clicca per ingrandire la mappa">
+                        <img src="{{ civil_protection.tomorrow.preview_url }}" alt="Mappa Criticità Protezione Civile Domani" class="cp-preview-img" id="cp_img_tomorrow" loading="lazy">
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- NORME DI AUTOPROTEZIONE -->
+            <div style="background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 10px; padding: 0.9rem 1.1rem; margin-top: 1rem;">
+                <strong style="color: #38bdf8; font-size: 0.88rem;">💡 Norme di Autoprotezione Civile:</strong>
+                <ul style="margin: 6px 0 0 1.2rem; font-size: 0.8rem; color: var(--text-dim); line-height: 1.45;">
+                    <li>In caso di <strong>Temporali e Piogge Intense</strong>, evitare di sostare nei locali seminterrati e non mettersi alla guida se non strettamente necessario.</li>
+                    <li>Prestare massima attenzione in prossimità di sottopassi, alvei fluviali e versanti montani soggetti a colate o frane.</li>
+                    <li>Seguire sempre le direttive del Sindaco e dei canali ufficiali della Protezione Civile locale.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="device-modal-footer">
+            <span class="modal-live-ticker"><span class="pulse-dot"></span> <span id="cp-modal-ticker-text">Fonte: Dipartimento Protezione Civile / ARPACAL</span></span>
+            <div class="modal-footer-btns">
+                <button type="button" class="btn btn-secondary" onclick="closeCivilProtectionModal()">Chiudi</button>
+                <button type="button" class="btn btn-primary" id="cp-modal-refresh-btn" onclick="refreshCivilProtectionLive(true)">
+                    <span>🔄</span> Aggiorna Bollettino
                 </button>
             </div>
         </div>

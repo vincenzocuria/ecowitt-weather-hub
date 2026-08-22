@@ -119,6 +119,30 @@
             </div>
         </div>
     </div>
+
+    <!-- SEZIONE PROTEZIONE CIVILE & ALLERTE METEO -->
+    <div class="card" style="margin-top: 1.5rem; border: 1px solid rgba(16, 185, 129, 0.3); background: linear-gradient(145deg, rgba(16, 185, 129, 0.05), var(--card-bg));">
+        <div class="card-header" style="border-bottom: 1px solid rgba(16, 185, 129, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.25rem;">🛡️</span>
+                <strong>Allerte Ufficiali Protezione Civile (Calabria & Nazionale)</strong>
+            </div>
+            <span class="status-pill badge-live">Attivo • DPC / ARPACAL</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 1rem; padding: 0.75rem 0;">
+            <p style="color: var(--text); font-size: 0.92rem; line-height: 1.55; margin: 0;">
+                Il sistema monitora quotidianamente i Bollettini di Criticità Idrogeologica e Idraulica emessi dal Dipartimento Nazionale della Protezione Civile e dal Centro Funzionale Decentrato Regionale (ARPACAL per la Calabria), notificando tempestivamente codici Gialli, Arancioni o Rossi per oggi e per domani.
+            </p>
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
+                <a href="/api/civil_protection" target="_blank" class="btn btn-outline btn-sm" style="text-decoration: none;">
+                    📄 Visualizza JSON Bollettino
+                </a>
+                <button type="button" class="btn btn-primary btn-sm" onclick="testCivilProtectionAlert()">
+                    🧪 Simula Notifica Protezione Civile
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- ========================================================================= -->
@@ -166,6 +190,12 @@
                     </tr>
                 </thead>
                 <tbody>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🛡️ Allerta Protezione Civile</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🛡️</span></td>
+                        <td>Bollettino di Criticità DPC/ARPACAL con Codice Giallo, Arancione o Rosso per la zona locale</td>
+                        <td><span class="badge-tag urgent">Urgente</span></td>
+                    </tr>
                     <tr class="alarm-rule-row">
                         <td><strong>⚡ Temporale / Fulmini</strong></td>
                         <td style="text-align: center;"><span style="font-size: 1.2rem;">⚡</span></td>
@@ -581,29 +611,78 @@
 <!-- TAB 5: DATABASE SQLITE & MANUTENZIONE -->
 <!-- ========================================================================= -->
 <div class="settings-tab-pane" id="pane-database" role="tabpanel">
-    <div class="card">
-        <div class="card-header" style="justify-content: space-between; align-items: center;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.25rem;">🗄️</span>
-                <strong>Database SQLite Locale & Manutenzione</strong>
+    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <!-- STATISTICHE E MANUTENZIONE BASE -->
+        <div class="card">
+            <div class="card-header" style="justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.25rem;">🗄️</span>
+                    <strong>Database SQLite Locale & Manutenzione</strong>
+                </div>
+                <span class="sub-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">WAL Mode Attivo</span>
             </div>
-            <span class="sub-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">WAL Mode Attivo</span>
+            <div class="item-list">
+                <div class="item"><span>Dimensione Database su Disco:</span> <strong id="db_size_val">{{ db_stats.db_size_mb if db_stats else '--' }} MB</strong></div>
+                <div class="item"><span>Letture Meteo Campionate:</span> <strong id="db_weather_cnt">{{ db_stats.weather_records_count if db_stats else '--' }}</strong></div>
+                <div class="item"><span>Letture Energetiche Inverter Aton:</span> <strong id="db_energy_cnt">{{ db_stats.energy_records_count if db_stats else '--' }}</strong></div>
+                <div class="item"><span>Politica Retention Storico:</span> <strong>Raw 60gg + Downsampling Orario/Giorno</strong></div>
+            </div>
+            <div style="display: flex; gap: 0.6rem; margin-top: 1.2rem; flex-wrap: wrap;">
+                <a href="/api/system/backup" class="btn btn-gold" style="flex: 1 1 160px; text-align: center; text-decoration: none;" download>
+                    💾 Scarica Backup DB (.db)
+                </a>
+                <button type="button" class="btn btn-primary" style="flex: 1 1 160px;" onclick="triggerDbMaintenance()">
+                    🧹 Ottimizza Database Ora
+                </button>
+            </div>
+            <div id="db_maintenance_result" style="font-size: 0.85rem; color: #38bdf8; margin-top: 0.75rem; display: none;"></div>
         </div>
-        <div class="item-list">
-            <div class="item"><span>Dimensione Database su Disco:</span> <strong id="db_size_val">{{ db_stats.db_size_mb if db_stats else '--' }} MB</strong></div>
-            <div class="item"><span>Letture Meteo Campionate:</span> <strong id="db_weather_cnt">{{ db_stats.weather_records_count if db_stats else '--' }}</strong></div>
-            <div class="item"><span>Letture Energetiche Inverter Aton:</span> <strong id="db_energy_cnt">{{ db_stats.energy_records_count if db_stats else '--' }}</strong></div>
-            <div class="item"><span>Politica Retention Storico:</span> <strong>Raw 60gg + Downsampling Orario/Giorno</strong></div>
+
+        <!-- BACKFILL ARCHIVIO STORICO & RICALCOLO ALBO DEI RECORD -->
+        <div class="card" style="border: 1px solid rgba(56, 189, 248, 0.3); background: linear-gradient(145deg, rgba(56, 189, 248, 0.04), var(--card-bg));">
+            <div class="card-header" style="justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(56, 189, 248, 0.15); padding-bottom: 0.8rem;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.25rem;">⏳</span>
+                    <div>
+                        <strong>Sincronizzazione Storico Pluriennale (ICORIG10)</strong>
+                        <div style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Recupera lo storico 2022–oggi da Weather Underground & ricalcola l'Albo dei Record</div>
+                    </div>
+                </div>
+                <span id="backfill-status-pill" class="status-pill badge-neutral">Pronto</span>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0;">
+                <p style="font-size: 0.9rem; color: var(--text); line-height: 1.55; margin: 0;">
+                    La stazione meteo <strong>ICORIG10</strong> ha trasmesso oltre 4 anni di dati continuativi dal <strong>9 Luglio 2022</strong>.
+                    Puoi avviare il download automatico in background per popolare grafici annuali, climatologia e calcolare gli estremi assoluti reali.
+                </p>
+
+                <!-- BARRA DI AVANZAMENTO -->
+                <div id="backfill-progress-container" style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--card-border); border-radius: 10px; padding: 0.85rem; display: none;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.4rem;">
+                        <span id="backfill-status-msg" style="color: #38bdf8; font-weight: 600;">Download in corso...</span>
+                        <strong id="backfill-pct-label" style="color: #fff;">0%</strong>
+                    </div>
+                    <div style="width: 100%; height: 10px; background: rgba(255,255,255,0.08); border-radius: 5px; overflow: hidden;">
+                        <div id="backfill-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #38bdf8, #10b981); transition: width 0.3s ease;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--text-dim); margin-top: 0.4rem;">
+                        <span id="backfill-days-info">Giorni: 0 / 0</span>
+                        <span id="backfill-records-info">Record inseriti: 0</span>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center;">
+                    <button type="button" id="btn-start-backfill" class="btn btn-primary" style="flex: 1 1 200px;" onclick="startHistoryBackfill()">
+                        🚀 Avvia Backfill Completo (2022–Oggi)
+                    </button>
+                    <button type="button" id="btn-recalc-records" class="btn btn-outline" style="flex: 1 1 200px;" onclick="recalculateRecordsNow()">
+                        🏆 Ricalcola Solo Albo dei Record
+                    </button>
+                </div>
+                <div id="backfill-action-feedback" style="font-size: 0.85rem; display: none; padding: 0.6rem 0.85rem; border-radius: 8px;"></div>
+            </div>
         </div>
-        <div style="display: flex; gap: 0.6rem; margin-top: 1.2rem; flex-wrap: wrap;">
-            <a href="/api/system/backup" class="btn btn-gold" style="flex: 1 1 160px; text-align: center; text-decoration: none;" download>
-                💾 Scarica Backup DB (.db)
-            </a>
-            <button type="button" class="btn btn-primary" style="flex: 1 1 160px;" onclick="triggerDbMaintenance()">
-                🧹 Ottimizza Database Ora
-            </button>
-        </div>
-        <div id="db_maintenance_result" style="font-size: 0.85rem; color: #38bdf8; margin-top: 0.75rem; display: none;"></div>
     </div>
 </div>
 
@@ -1294,5 +1373,146 @@ async function testClimateNotification(scenario) {
         alert('Errore di connessione: ' + e.message);
     }
 }
+
+// =========================================================================
+// HISTORICAL BACKFILL & RECORD REBUILD
+// =========================================================================
+let backfillPollTimer = null;
+
+async function checkBackfillStatus() {
+    try {
+        const resp = await fetch('/api/system/history-backfill/status');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        
+        const pillEl = document.getElementById('backfill-status-pill');
+        const containerEl = document.getElementById('backfill-progress-container');
+        const msgEl = document.getElementById('backfill-status-msg');
+        const pctEl = document.getElementById('backfill-pct-label');
+        const barEl = document.getElementById('backfill-progress-bar');
+        const daysEl = document.getElementById('backfill-days-info');
+        const recsEl = document.getElementById('backfill-records-info');
+        const startBtn = document.getElementById('btn-start-backfill');
+
+        if (data.is_running) {
+            if (pillEl) {
+                pillEl.className = 'status-pill badge-live';
+                pillEl.innerText = 'In Corso';
+            }
+            if (containerEl) containerEl.style.display = 'block';
+            if (msgEl) msgEl.innerText = data.status_message || 'Download in corso...';
+            if (pctEl) pctEl.innerText = `${data.progress_pct}%`;
+            if (barEl) barEl.style.width = `${data.progress_pct}%`;
+            if (daysEl) daysEl.innerText = `Giorni: ${data.processed_days} / ${data.total_days}`;
+            if (recsEl) recsEl.innerText = `Record inseriti: ${data.records_inserted}`;
+            if (startBtn) {
+                startBtn.disabled = true;
+                startBtn.innerText = '⏳ Backfill in corso...';
+            }
+            
+            if (!backfillPollTimer) {
+                backfillPollTimer = setInterval(checkBackfillStatus, 1500);
+            }
+        } else {
+            if (backfillPollTimer) {
+                clearInterval(backfillPollTimer);
+                backfillPollTimer = null;
+            }
+            if (pillEl) {
+                pillEl.className = 'status-pill badge-neutral';
+                pillEl.innerText = 'Pronto';
+            }
+            if (startBtn) {
+                startBtn.disabled = false;
+                startBtn.innerText = '🚀 Avvia Backfill Completo (2022–Oggi)';
+            }
+            if (data.progress_pct >= 100.0 && containerEl) {
+                containerEl.style.display = 'block';
+                if (msgEl) msgEl.innerText = data.status_message || 'Completato con successo!';
+                if (pctEl) pctEl.innerText = '100%';
+                if (barEl) barEl.style.width = '100%';
+                if (daysEl) daysEl.innerText = `Giorni: ${data.processed_days} / ${data.total_days}`;
+                if (recsEl) recsEl.innerText = `Record inseriti: ${data.records_inserted}`;
+            }
+        }
+    } catch (e) {
+        console.error('Errore check status backfill:', e);
+    }
+}
+
+async function startHistoryBackfill() {
+    const feedbackEl = document.getElementById('backfill-action-feedback');
+    const startBtn = document.getElementById('btn-start-backfill');
+    
+    if (!confirm("Vuoi avviare il backfill storico dal 2022 a oggi?\nIl processo viene eseguito in background e potrebbe richiedere circa 2-3 minuti.")) {
+        return;
+    }
+
+    if (startBtn) {
+        startBtn.disabled = true;
+        startBtn.innerText = 'Avvio in corso...';
+    }
+
+    try {
+        const resp = await fetch('/api/system/history-backfill/start', { method: 'POST' });
+        const data = await resp.json();
+        if (feedbackEl) {
+            feedbackEl.style.display = 'block';
+            feedbackEl.style.background = 'rgba(56, 189, 248, 0.15)';
+            feedbackEl.style.color = '#38bdf8';
+            feedbackEl.innerText = data.message || 'Processo avviato con successo.';
+        }
+        checkBackfillStatus();
+    } catch (e) {
+        if (feedbackEl) {
+            feedbackEl.style.display = 'block';
+            feedbackEl.style.background = 'rgba(239, 68, 68, 0.15)';
+            feedbackEl.style.color = '#ef4444';
+            feedbackEl.innerText = 'Errore di avvio: ' + e.message;
+        }
+        if (startBtn) {
+            startBtn.disabled = false;
+            startBtn.innerText = '🚀 Avvia Backfill Completo (2022–Oggi)';
+        }
+    }
+}
+
+async function recalculateRecordsNow() {
+    const feedbackEl = document.getElementById('backfill-action-feedback');
+    const recalcBtn = document.getElementById('btn-recalc-records');
+
+    if (recalcBtn) {
+        recalcBtn.disabled = true;
+        recalcBtn.innerText = 'Calcolo in corso...';
+    }
+
+    try {
+        const resp = await fetch('/api/system/history-backfill/recalculate-records', { method: 'POST' });
+        const data = await resp.json();
+        if (feedbackEl) {
+            feedbackEl.style.display = 'block';
+            feedbackEl.style.background = 'rgba(16, 185, 129, 0.15)';
+            feedbackEl.style.color = '#10b981';
+            feedbackEl.innerText = '✅ ' + (data.message || 'Albo dei Record ricalcolato con successo!');
+            setTimeout(() => { feedbackEl.style.display = 'none'; }, 5000);
+        }
+    } catch (e) {
+        if (feedbackEl) {
+            feedbackEl.style.display = 'block';
+            feedbackEl.style.background = 'rgba(239, 68, 68, 0.15)';
+            feedbackEl.style.color = '#ef4444';
+            feedbackEl.innerText = '❌ Errore: ' + e.message;
+        }
+    } finally {
+        if (recalcBtn) {
+            recalcBtn.disabled = false;
+            recalcBtn.innerText = '🏆 Ricalcola Solo Albo dei Record';
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    checkBackfillStatus();
+});
 </script>
 {% endblock %}

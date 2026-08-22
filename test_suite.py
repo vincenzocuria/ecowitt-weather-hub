@@ -1013,6 +1013,47 @@ class TestEcowittHub(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn("config", resp.json())
 
+    def test_civil_protection_service(self):
+        from backend.civil_protection_service import (
+            civil_protection_service, _parse_alert_level, _point_in_polygon, ALERT_SEVERITY
+        )
+        
+        # Test helper livello di allerta
+        self.assertEqual(_parse_alert_level("Assenza di fenomeni"), "VERDE")
+        self.assertEqual(_parse_alert_level("ORDINARIA CRITICITA' PER RISCHIO TEMPORALI / ALLERTA GIALLA"), "GIALLA")
+        self.assertEqual(_parse_alert_level("MODERATA CRITICITA' / ALLERTA ARANCIONE"), "ARANCIONE")
+        self.assertEqual(_parse_alert_level("ELEVATA CRITICITA' / ALLERTA ROSSA"), "ROSSA")
+
+        # Test point in polygon
+        poly = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]
+        self.assertTrue(_point_in_polygon(5.0, 5.0, poly))
+        self.assertFalse(_point_in_polygon(15.0, 5.0, poly))
+
+        # Test fetch_alerts
+        data = civil_protection_service.fetch_alerts()
+        self.assertIn("status", data)
+        self.assertIn("today", data)
+        self.assertIn("tomorrow", data)
+        self.assertIn("zone_name", data)
+        self.assertIn(data["today"]["level"], ["VERDE", "GIALLA", "ARANCIONE", "ROSSA"])
+
+        # Test API endpoints
+        from fastapi.testclient import TestClient
+        from backend.main import app
+        from backend.config import settings
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN})
+        
+        resp = client.get("/api/civil_protection")
+        self.assertEqual(resp.status_code, 200)
+        json_resp = resp.json()
+        self.assertEqual(json_resp["status"], "success")
+        self.assertIn("today", json_resp)
+
+        # Test test-alert civil protection
+        resp_test = client.post("/api/test-alert?alert_type=civil_protection")
+        self.assertEqual(resp_test.status_code, 200)
+        self.assertEqual(resp_test.json()["status"], "sent")
+
 
 if __name__ == "__main__":
     unittest.main()

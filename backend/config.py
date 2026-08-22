@@ -140,6 +140,13 @@ class Settings:
     AUTH_TOKEN: str = os.getenv("AUTH_TOKEN", "")
     AUTH_COOKIE_NAME: str = "hub_auth_token"
 
+    # Protezione Civile & Allerte Meteo Ufficiali (Calabria & Nazionale)
+    CIVIL_PROTECTION_ENABLED: bool = os.getenv("CIVIL_PROTECTION_ENABLED", "true").lower() in ("true", "1", "yes")
+    CIVIL_PROTECTION_ALERT_PUSH_ENABLED: bool = os.getenv("CIVIL_PROTECTION_ALERT_PUSH_ENABLED", "true").lower() in ("true", "1", "yes")
+    CIVIL_PROTECTION_MIN_ALERT_LEVEL: str = os.getenv("CIVIL_PROTECTION_MIN_ALERT_LEVEL", "GIALLA").upper() # GIALLA, ARANCIONE, ROSSA
+    CIVIL_PROTECTION_ZONE_OVERRIDE: str = os.getenv("CIVIL_PROTECTION_ZONE_OVERRIDE", "") # Es. "Versante Jonico Settentrionale"
+    CIVIL_PROTECTION_POLL_INTERVAL_MIN: int = int(os.getenv("CIVIL_PROTECTION_POLL_INTERVAL_MIN", "60"))
+
 settings = Settings()
 
 

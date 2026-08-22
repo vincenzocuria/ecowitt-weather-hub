@@ -464,6 +464,11 @@ function startDashboardPolling() {
                         updateTuyaUI(data.tuya);
                     }
 
+                    // Protezione Civile
+                    if (d.civil_protection) {
+                        updateCivilProtectionWidget(d.civil_protection);
+                    }
+
                     // Pill Notte Tropicale
                     const tropPill = document.getElementById('hero_tropical_pill');
                     if (tropPill && a.today_extremes) {
@@ -1089,6 +1094,20 @@ async function testPushNotification() {
             btn.disabled = false;
             btn.innerText = '🚀 Invia Notifica di Test';
         }
+    }
+}
+
+async function testCivilProtectionAlert() {
+    try {
+        const res = await fetch('/api/test-alert?alert_type=civil_protection', { method: 'POST' });
+        const data = await res.json();
+        let msg = `🛡️ Notifica Protezione Civile di prova inviata!\n• Dispositivi PWA registrati: ${data.devices_notified || 0}`;
+        if (data.ntfy_topic) {
+            msg += `\n• Canale ntfy: '${data.ntfy_topic}'`;
+        }
+        alert(msg);
+    } catch (e) {
+        alert('Errore invio notifica Protezione Civile: ' + e.message);
     }
 }
 
@@ -2057,6 +2076,109 @@ async function toggleDeviceFromHouseModal(ecosystem, rawId, currentState) {
         }
     } catch (e) {
         console.warn('Errore toggle da modale consumi:', e);
+    }
+}
+
+// =========================================================================
+// GESTIONE WIDGET E MODALE PROTEZIONE CIVILE CALABRIA & DPC
+// =========================================================================
+let currentCpData = null;
+
+function updateCivilProtectionWidget(cp) {
+    if (!cp || cp.status !== 'success') return;
+    currentCpData = cp;
+
+    const card = document.getElementById('cp_alert_card');
+    if (card && cp.today) {
+        card.className = `cp-alert-card cp-border-${(cp.today.level || 'verde').toLowerCase()}`;
+    }
+
+    const zoneEl = document.getElementById('cp_zone_name');
+    if (zoneEl && cp.zone_name) zoneEl.innerText = `📍 ${cp.zone_name}`;
+
+    const dateEl = document.getElementById('cp_bulletin_date');
+    if (dateEl && cp.bulletin_date_str) dateEl.innerText = `Bollettino del ${cp.bulletin_date_str}`;
+
+    // Oggi
+    const tBadge = document.getElementById('cp_today_badge');
+    if (tBadge && cp.today) {
+        tBadge.className = `status-pill ${cp.today.badge_class || 'badge-success'}`;
+        tBadge.innerText = `${cp.today.icon || '🟢'} ${cp.today.label || 'Verde'}`;
+    }
+    const tDesc = document.getElementById('cp_today_desc');
+    if (tDesc && cp.today) tDesc.innerText = cp.today.overall_text || 'Assenza di fenomeni significativi';
+
+    // Domani
+    const tomBadge = document.getElementById('cp_tomorrow_badge');
+    if (tomBadge && cp.tomorrow) {
+        tomBadge.className = `status-pill ${cp.tomorrow.badge_class || 'badge-success'}`;
+        tomBadge.innerText = `${cp.tomorrow.icon || '🟢'} ${cp.tomorrow.label || 'Verde'}`;
+    }
+    const tomDesc = document.getElementById('cp_tomorrow_desc');
+    if (tomDesc && cp.tomorrow) tomDesc.innerText = cp.tomorrow.overall_text || 'Assenza di fenomeni significativi';
+}
+
+function openCivilProtectionModal() {
+    const backdrop = document.getElementById('cp-modal-backdrop');
+    if (backdrop) {
+        backdrop.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeCivilProtectionModal(e) {
+    if (e && e.target && e.target.id !== 'cp-modal-backdrop') return;
+    const backdrop = document.getElementById('cp-modal-backdrop');
+    if (backdrop) {
+        backdrop.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+}
+
+function switchCpModalTab(tab) {
+    const paneToday = document.getElementById('cp_tab_pane_today');
+    const paneTomorrow = document.getElementById('cp_tab_pane_tomorrow');
+    const btnToday = document.getElementById('cp_tab_btn_today');
+    const btnTomorrow = document.getElementById('cp_tab_btn_tomorrow');
+
+    if (tab === 'today') {
+        if (paneToday) paneToday.style.display = 'block';
+        if (paneTomorrow) paneTomorrow.style.display = 'none';
+        if (btnToday) { btnToday.className = 'btn btn-sm btn-primary'; }
+        if (btnTomorrow) { btnTomorrow.className = 'btn btn-sm btn-secondary'; }
+    } else {
+        if (paneToday) paneToday.style.display = 'none';
+        if (paneTomorrow) paneTomorrow.style.display = 'block';
+        if (btnToday) { btnToday.className = 'btn btn-sm btn-secondary'; }
+        if (btnTomorrow) { btnTomorrow.className = 'btn btn-sm btn-primary'; }
+    }
+}
+
+async function refreshCivilProtectionLive(showFeedback = false) {
+    const refreshBtn = document.getElementById('cp-modal-refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = '<span>⏳</span> Aggiornamento...';
+    }
+    try {
+        const res = await fetch('/api/civil_protection/refresh', { method: 'POST' });
+        if (res.ok) {
+            const data = await res.json();
+            updateCivilProtectionWidget(data);
+            if (showFeedback && typeof showToast === 'function') {
+                showToast('Bollettino Protezione Civile aggiornato con successo!', 'success');
+            }
+        }
+    } catch (e) {
+        console.error('Errore refresh Protezione Civile:', e);
+        if (showFeedback && typeof showToast === 'function') {
+            showToast('Errore durante l\'aggiornamento del bollettino', 'error');
+        }
+    } finally {
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = '<span>🔄</span> Aggiorna Bollettino';
+        }
     }
 }
 

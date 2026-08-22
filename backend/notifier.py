@@ -123,7 +123,8 @@ class NotificationService:
         title: str,
         message: str,
         priority: str = "high",
-        extra_data: Optional[Dict[str, str]] = None
+        extra_data: Optional[Dict[str, str]] = None,
+        tags: Optional[List[str]] = None
     ):
         """
         Invia notifiche push via Web Push nativo (PWA) e via ntfy.sh (se attivo),
@@ -141,14 +142,14 @@ class NotificationService:
         # 2. ntfy.sh (invio JSON compatibile al 100% con caratteri UTF-8, emoji e formattazione)
         if settings.ENABLE_NTFY and settings.NTFY_TOPIC:
             try:
-                tags = self._get_tags(alert_type).split(",")
+                ntfy_tags = tags if tags else self._get_tags(alert_type).split(",")
                 prio_val = 5 if priority == "urgent" else (4 if priority == "high" else 3)
                 ntfy_payload = {
                     "topic": settings.NTFY_TOPIC,
                     "title": title,
                     "message": message,
                     "priority": prio_val,
-                    "tags": tags
+                    "tags": ntfy_tags
                 }
                 # Icona personalizzata per ntfy
                 icon_url = self.get_icon_url_for_alert(alert_type)
@@ -210,7 +211,8 @@ class NotificationService:
             "battery_low": f"{cdn_base}/Battery/3D/battery_3d.png",
             "uv_extreme": f"{cdn_base}/Sun/3D/sun_3d.png",
             "anomaly": f"{cdn_base}/Warning/3D/warning_3d.png",
-            "leak": f"{cdn_base}/Droplet/3D/droplet_3d.png"
+            "leak": f"{cdn_base}/Droplet/3D/droplet_3d.png",
+            "civil_protection": f"{cdn_base}/Shield/3D/shield_3d.png"
         }
         return icons_map.get(alert_type, f"{cdn_base}/Sun%20behind%20cloud/3D/sun_behind_cloud_3d.png")
 
@@ -235,7 +237,8 @@ class NotificationService:
             "wind_spike": "wind_blowing_face,warning",
             "uv_extreme": "sunglasses,fire",
             "battery_low": "battery,warning",
-            "digest": "coffee,sunrise,partly_sunny"
+            "digest": "coffee,sunrise,partly_sunny",
+            "civil_protection": "warning,shield,rotating_light"
         }
         return mapping.get(alert_type, "loudspeaker")
 

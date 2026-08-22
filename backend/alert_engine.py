@@ -87,6 +87,10 @@ class AlertEngine:
         self.active_learning_cycle_id: Optional[int] = None
         self.learning_monitoring_until: float = 0.0
 
+        # Protezione Civile states
+        self.last_notified_cp_key: str = ""
+        self._last_cp_check_time: float = 0.0
+
         # Carica lo stato persistente da disco o DB
         self._load_state()
 
@@ -153,6 +157,7 @@ class AlertEngine:
                 "irrigation_active_device_id": self.irrigation_active_device_id,
                 "active_learning_cycle_id": self.active_learning_cycle_id,
                 "learning_monitoring_until": self.learning_monitoring_until,
+                "last_notified_cp_key": self.last_notified_cp_key,
             }
             tmp_path = self._state_file + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
@@ -225,6 +230,7 @@ class AlertEngine:
                 self.irrigation_active_device_id = data.get("irrigation_active_device_id", self.irrigation_active_device_id)
                 self.active_learning_cycle_id = data.get("active_learning_cycle_id", self.active_learning_cycle_id)
                 self.learning_monitoring_until = data.get("learning_monitoring_until", self.learning_monitoring_until)
+                self.last_notified_cp_key = data.get("last_notified_cp_key", self.last_notified_cp_key)
                 loaded_from_disk = True
                 logger.info("[ALERT-STATE] Cache stato allarmi caricata con successo da disco.")
             except Exception as e:
@@ -848,6 +854,75 @@ class AlertEngine:
         except Exception as e:
             logger.error(f"Errore controllo previsioni pioggia: {e}")
 
+    def check_civil_protection_alerts(self):
+        """
+        Controlla periodicamente se la Protezione Civile ha emesso una nuova allerta (Gialla, Arancione, Rossa)
+        per la zona della stazione e invia notifiche Web Push & ntfy.
+        """
+        if not settings.CIVIL_PROTECTION_ENABLED or not settings.CIVIL_PROTECTION_ALERT_PUSH_ENABLED:
+            return
+
+        now = time.time()
+        # Cooldown per non verificare più di una volta ogni 15 minuti
+        if getattr(self, "_last_cp_check_time", 0.0) and (now - self._last_cp_check_time < 900):
+            return
+        self._last_cp_check_time = now
+
+        try:
+            from backend.civil_protection_service import civil_protection_service, ALERT_SEVERITY
+            data = civil_protection_service.fetch_alerts()
+            if not data or data.get("status") != "success":
+                return
+
+            min_sev = ALERT_SEVERITY.get(settings.CIVIL_PROTECTION_MIN_ALERT_LEVEL, 1)
+            bulletin_id = data.get("bulletin_id", "")
+            zone_name = data.get("zone_name", "Tua Zona")
+            
+            today = data.get("today", {})
+            tomorrow = data.get("tomorrow", {})
+            
+            # Chiave univoca dell'ultimo bollettino e stato notificato
+            current_alert_key = f"{bulletin_id}_{today.get('level')}_{tomorrow.get('level')}"
+            if getattr(self, "last_notified_cp_key", "") == current_alert_key:
+                return
+
+            # Controlla se c'è almeno un'allerta sopra la soglia minima per oggi o domani
+            send_alert = False
+            alert_msgs = []
+
+            if today.get("severity", 0) >= min_sev:
+                send_alert = True
+                haz = ", ".join(today.get("active_hazards", [])) or today.get("label", "")
+                alert_msgs.append(f"📅 OGGI: {today.get('icon')} {today.get('label')} [{haz}]")
+
+            if tomorrow.get("severity", 0) >= min_sev:
+                send_alert = True
+                haz_tom = ", ".join(tomorrow.get("active_hazards", [])) or tomorrow.get("label", "")
+                alert_msgs.append(f"📅 DOMANI: {tomorrow.get('icon')} {tomorrow.get('label')} [{haz_tom}]")
+
+            if send_alert:
+                title = f"⚠️ Allerta Protezione Civile - {zone_name}"
+                body = f"Nuovo Bollettino Ufficiale emesso:\n" + "\n".join(alert_msgs)
+                
+                # Invia Web Push, ntfy e registra nel DB storico
+                notifier.send_alert(
+                    alert_type="civil_protection",
+                    title=title,
+                    message=body,
+                    priority="urgent" if max(today.get("severity", 0), tomorrow.get("severity", 0)) >= 2 else "high",
+                    tags=["warning", "rotating_light"]
+                )
+
+                self.last_notified_cp_key = current_alert_key
+                self._save_state()
+                logger.info(f"[CIVIL-PROTECTION] Notifica allerta inviata per bollettino {bulletin_id} ({zone_name})")
+            else:
+                self.last_notified_cp_key = current_alert_key
+                self._save_state()
+
+        except Exception as e:
+            logger.warning(f"[CIVIL-PROTECTION] Errore verifica allerta: {e}")
+
     def check_daily_digest(self):
         """
         Controlla se è l'ora di inviare il riepilogo del mattino 'Buongiorno Meteo'.
@@ -940,13 +1015,32 @@ class AlertEngine:
         if soil_summary.get("has_sensors") and soil_summary.get("avg_moisture") is not None:
             soil_line = f"🌱 Terreno: Umidità {soil_summary['avg_moisture']}% ({soil_summary['status_text']})"
 
+        # Riga Allerta Protezione Civile
+        civ_line = ""
+        if settings.CIVIL_PROTECTION_ENABLED:
+            try:
+                from backend.civil_protection_service import civil_protection_service
+                civ_data = civil_protection_service.fetch_alerts()
+                if civ_data and civ_data.get("status") == "success":
+                    t_info = civ_data.get("today", {})
+                    lvl = t_info.get("level", "VERDE")
+                    z_name = civ_data.get("zone_name", "Calabria")
+                    if lvl != "VERDE":
+                        hazards = ", ".join(t_info.get("active_hazards", [])) or t_info.get("label", "")
+                        civ_line = f"⚠️ Prot. Civile ({z_name}): {t_info.get('icon', '🟡')} {t_info.get('short_label', 'Allerta')} ({hazards})"
+                    else:
+                        civ_line = f"🛡️ Prot. Civile: 🟢 Nessuna Allerta per oggi ({z_name})"
+            except Exception as e:
+                logger.warning(f"Errore recupero allerta PC per daily digest: {e}")
+
         lines = [
             f"🌅 {forecast['icon']} {forecast['text']}",
             f"🌡️ {cur_txt} • {min_txt}",
             tropical_line,
             f"☀️ Alba: {sun['sunrise']} • Tramonto: {sun['sunset']} ({sun['daylight_duration']} di luce)",
             f"{laundry['icon']} Panni: {laundry['title']} ({laundry['time_estimate']})",
-            soil_line
+            soil_line,
+            civ_line
         ]
 
         title = "☕ Buongiorno Meteo!"

@@ -48,10 +48,12 @@ from backend.analytics import (
     calc_evapotranspiration, evaluate_smart_irrigation, generate_now_highlights
 )
 from backend.forecast_service import forecast_service
+from backend.civil_protection_service import civil_protection_service
 from backend.aton_service import aton_service
 from backend.thinq_service import thinq_service
 from backend.smartthings_service import smartthings_service
 from backend.tuya_service import tuya_service
+from backend.history_importer import history_importer
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -64,6 +66,7 @@ async def watchdog_worker():
         try:
             engine.check_offline_watchdog()
             engine.check_rain_forecast()
+            engine.check_civil_protection_alerts()
             engine.check_daily_digest()
             engine.check_evening_energy_digest()
             engine.check_nightly_maintenance()
@@ -443,6 +446,18 @@ async def api_forecast():
         "cross_check": cross_check
     }
 
+@app.get("/api/civil-protection")
+@app.get("/api/civil_protection")
+async def api_civil_protection(refresh: bool = False):
+    """Restituisce lo stato delle allerte meteo ufficiali della Protezione Civile per oggi e domani."""
+    return civil_protection_service.fetch_alerts(force_refresh=refresh)
+
+@app.post("/api/civil-protection/refresh")
+@app.post("/api/civil_protection/refresh")
+async def api_civil_protection_refresh():
+    """Forza il download e l'aggiornamento del bollettino della Protezione Civile."""
+    return civil_protection_service.fetch_alerts(force_refresh=True)
+
 @app.get("/api/air-quality")
 async def api_air_quality():
     return forecast_service.fetch_air_quality()
@@ -500,6 +515,8 @@ async def api_live():
     clean_latest["smartthings_enabled"] = settings.SMARTTHINGS_ENABLED
     clean_latest["tuya"] = tuya_service.get_summary()
     clean_latest["tuya_enabled"] = settings.TUYA_ENABLED
+    if settings.CIVIL_PROTECTION_ENABLED:
+        clean_latest["civil_protection"] = civil_protection_service.fetch_alerts()
     return clean_latest
 
 
@@ -710,11 +727,23 @@ async def api_push_status():
 @app.post("/api/test-alert")
 @app.get("/api/test-alert")
 async def api_test_alert(alert_type: str = "record"):
+    if alert_type == "civil_protection":
+        title = f"⚠️ Test Allerta Protezione Civile - {settings.LOCATION_NAME}"
+        message = f"🛡️ [TEST] Allerta Arancione per Rischio Temporali e Idrogeologico per la giornata di domani."
+        tags = ["warning", "rotating_light"]
+        priority = "urgent"
+    else:
+        title = "🔔 Test Notifiche Weather Hub"
+        message = "Se leggi questo messaggio, le Notifiche Push PWA (iOS/Android/PC) e ntfy funzionano alla perfezione!"
+        tags = ["bell"]
+        priority = "high"
+
     notifier.send_alert(
         alert_type=alert_type,
-        title="🔔 Test Notifiche Weather Hub",
-        message="Se leggi questo messaggio, le Notifiche Push PWA (iOS/Android/PC) e ntfy funzionano alla perfezione!",
-        priority="high"
+        title=title,
+        message=message,
+        priority=priority,
+        tags=tags
     )
     return {
         "status": "sent",
@@ -752,6 +781,36 @@ async def api_system_maintenance(retention_days: int = Query(60, ge=7, le=365)):
     """Esegue manualmente la compattazione e il downsampling dello storico > retention_days."""
     res = perform_database_maintenance(retention_days=retention_days)
     return res
+
+# --- BACKFILL STORICO DA WEATHER UNDERGROUND (ICORIG10) & RICALCOLO RECORD ---
+@app.get("/api/system/history-backfill/status")
+async def api_history_backfill_status():
+    """Restituisce lo stato in tempo reale del processo di backfill storico."""
+    return history_importer.get_status()
+
+@app.post("/api/system/history-backfill/start")
+async def api_history_backfill_start(
+    background_tasks: BackgroundTasks,
+    station_id: str = Query("ICORIG10"),
+    concurrency: int = Query(4, ge=1, le=8)
+):
+    """Avvia il recupero asincrono dell'intero archivio storico pluriennale da Weather Underground."""
+    status = history_importer.get_status()
+    if status.get("is_running"):
+        return JSONResponse({"status": "already_running", "message": "Importazione già in corso.", "details": status})
+
+    background_tasks.add_task(history_importer.run_full_backfill, station_id=station_id, concurrency=concurrency)
+    return {"status": "started", "message": f"Backfill storico avviato per stazione {station_id}.", "initial_status": history_importer.get_status()}
+
+@app.post("/api/system/history-backfill/recalculate-records")
+async def api_history_backfill_recalculate():
+    """Ricalcola istantaneamente l'Albo dei Record e gli estremi assoluti dal database attuale."""
+    updated_count = history_importer.rebuild_records_and_extremes()
+    return {
+        "status": "success",
+        "message": f"Albo dei Record ricalcolato con successo ({updated_count} record aggiornati).",
+        "records": get_all_records()
+    }
 
 # --- GESTIONE ALIAS SENSORI PERSONALIZZATI ---
 @app.get("/api/sensors/aliases")
@@ -1730,6 +1789,8 @@ async def dashboard_page(request: Request):
             "tuya_enabled": settings.TUYA_ENABLED,
             "sensor_aliases": get_sensor_aliases(),
             "db_stats": get_database_stats(),
+            "civil_protection": civil_protection_service.fetch_alerts() if settings.CIVIL_PROTECTION_ENABLED else None,
+            "civil_protection_enabled": settings.CIVIL_PROTECTION_ENABLED,
             "ntfy_topic": settings.NTFY_TOPIC
         }
     )
@@ -1896,6 +1957,8 @@ async def alerts_page(request: Request):
             "unread_count": unread_count,
             "total_count": stats.get("total_count", len(alerts)),
             "stats": stats,
+            "civil_protection": civil_protection_service.fetch_alerts() if settings.CIVIL_PROTECTION_ENABLED else None,
+            "civil_protection_enabled": settings.CIVIL_PROTECTION_ENABLED,
             "ntfy_topic": settings.NTFY_TOPIC
         }
     )
