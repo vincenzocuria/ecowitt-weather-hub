@@ -47,6 +47,7 @@
         {% if climate_config and climate_config.master_enabled %}
         <span class="settings-tab-badge" style="background: rgba(56, 189, 248, 0.25); color: #38bdf8;">Auto</span>
         {% endif %}
+    </button>
     <button type="button" class="settings-tab-btn" data-tab="homeassistant" onclick="switchSettingsTab('homeassistant', this)" role="tab" aria-selected="false">
         <span class="settings-tab-icon">🏠</span>
         <span>Home Assistant</span>
@@ -737,6 +738,9 @@
                     <button type="button" class="btn btn-outline btn-sm" onclick="testClimateNotification('solar')">🧪 Test Solare</button>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
 
 <!-- ========================================================================= -->
 <!-- TAB: HOME ASSISTANT (HUB DOMOTICO LOCALE UNIFICATO) -->
