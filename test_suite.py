@@ -379,6 +379,26 @@ class TestEcowittHub(unittest.TestCase):
         self.assertFalse(parsed_standby["is_running"])
         self.assertEqual(parsed_standby["job_state_label"], "In Standby / Pronto")
 
+        # 5. Caso con sanitize (Igienizzazione ad alta temperatura)
+        mock_dw_sanitize = {
+            "components": {
+                "main": {
+                    "dishwasherOperatingState": {
+                        "dishwasherJobState": {"value": "sanitize"},
+                        "machineState": {"value": "run"},
+                        "remainingTime": {"value": 25}
+                    },
+                    "samsungce.dishwasherCycle": {
+                        "dishwasherCycle": {"value": "sanitize"}
+                    }
+                }
+            }
+        }
+        parsed_san = st.parse_dishwasher_data(mock_dw_sanitize, dw_info)
+        self.assertTrue(parsed_san["is_running"])
+        self.assertIn("Sanitize", parsed_san["job_state_label"])
+        self.assertIn("Igienizzante", parsed_san["cycle_name"])
+
         # 5. Riconoscimento automatico in get_summary tramite capability anche con nome generico
         generic_dev = {"deviceId": "test-generic-dw", "label": "Cucina Samsung Smart"}
         st.devices = [generic_dev]
@@ -712,12 +732,23 @@ class TestEcowittHub(unittest.TestCase):
     def test_house_breakdown_api(self):
         from fastapi.testclient import TestClient
         from backend.main import app
+        from backend.aton_service import aton_service
+
+        # Imposta dati energetici mock per Aton
+        aton_service.latest_data = {
+            "p_utenze": 650.0,
+            "p_solare": 1200.0,
+            "p_batteria": -550.0,
+            "p_rete": 0.0,
+            "soc": 85.0
+        }
 
         client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
         res = client.get("/api/energy/house-breakdown")
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertIn("total_house_w", data)
+        self.assertEqual(data["total_house_w"], 650.0)
         self.assertIn("monitored_power_w", data)
         self.assertIn("unmonitored_power_w", data)
         self.assertIn("monitored_pct", data)
@@ -726,6 +757,38 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIn("standby_devices", data)
         self.assertIsInstance(data["active_consumers"], list)
         self.assertIsInstance(data["standby_devices"], list)
+
+    def test_devices_deduplication(self):
+        from backend.routers.devices import build_devices_catalog
+        from backend.homeassistant_service import homeassistant_service
+        from backend.tuya_service import tuya_service
+
+        # Simula presenza dello stesso dispositivo sia in Tuya che in Home Assistant
+        tuya_service.raw_devices = [
+            {"id": "test_valve_shared", "name": "Valvola Irrigazione Orto", "category": "sfkzq"}
+        ]
+        tuya_service.device_statuses = {
+            "test_valve_shared": {
+                "id": "test_valve_shared",
+                "name": "Valvola Irrigazione Orto",
+                "category": "sfkzq",
+                "type": "irrigation",
+                "is_on": False,
+                "enabled": True
+            }
+        }
+        homeassistant_service.entities = {
+            "valve.test_valve_shared": {
+                "entity_id": "valve.test_valve_shared",
+                "state": "closed",
+                "attributes": {"friendly_name": "Valvola Orto HA"}
+            }
+        }
+
+        catalog = build_devices_catalog()
+        valve_devices = [d for d in catalog["devices"] if "test_valve_shared" in d.get("raw_id", "") or "test_valve_shared" in d.get("id", "")]
+        # Deve essere presente esattamente 1 volta grazie alla deduplicazione intelligente
+        self.assertEqual(len(valve_devices), 1, "La valvola condivisa tra Tuya e HA deve essere deduplicata")
 
     def test_tropical_nights_and_soil_moisture(self):
         from backend.database import (

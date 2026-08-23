@@ -757,8 +757,20 @@ def build_devices_catalog() -> Dict[str, Any]:
 
     # 5. Home Assistant (Hub Domotico Locale)
     if settings.HASS_ENABLED and homeassistant_service.enabled:
+        existing_tuya_ids = {str(d.get("raw_id", "")) for d in devices if d.get("ecosystem") == "tuya"}
         for hd in homeassistant_service.get_catalog_devices():
-            devices.append(hd)
+            h_raw = str(hd.get("raw_id", ""))
+            is_dup = False
+            for t_id in existing_tuya_ids:
+                mapped_ent = homeassistant_service.find_entity_by_tuya_id(t_id)
+                if mapped_ent and mapped_ent == h_raw:
+                    is_dup = True
+                    break
+                if t_id and t_id in h_raw:
+                    is_dup = True
+                    break
+            if not is_dup:
+                devices.append(hd)
 
     # 6. Applica eventuali alias/nomi personalizzati salvati dall'utente
     try:

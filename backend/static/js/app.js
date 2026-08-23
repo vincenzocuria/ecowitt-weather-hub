@@ -707,6 +707,12 @@ function startDashboardPolling() {
                 if (gSub && s.bought_today_kwh !== undefined) {
                     gSub.innerHTML = `Acquistata oggi: <strong>${s.bought_today_kwh} kWh</strong>`;
                 }
+
+                // Aggiorna anche la scheda consumi integrata nella dashboard
+                const dashBreakdownSection = document.getElementById('dash_consumption_breakdown_section');
+                if (dashBreakdownSection && typeof fetchAndRenderDashboardBreakdown === 'function') {
+                    fetchAndRenderDashboardBreakdown(false);
+                }
             })
             .catch(() => {});
     }
@@ -1685,6 +1691,10 @@ function switchDashboardTab(tabId) {
             try {
                 window.quickChartInstance.resize();
             } catch (e) {}
+        } else if (cleanId === 'energy_home' || cleanId === 'energy-home') {
+            if (typeof fetchAndRenderDashboardBreakdown === 'function') {
+                fetchAndRenderDashboardBreakdown(false);
+            }
         }
     }
 }
@@ -2073,8 +2083,11 @@ async function toggleDeviceFromHouseModal(ecosystem, rawId, currentState) {
             endpoint = `/api/thinq/device/${rawId}/control`;
             body = { power: targetState };
         } else if (ecosystem === 'smartthings') {
-            endpoint = `/api/smartthings/device/${rawId}/toggle`;
-            body = { state: targetState ? 'on' : 'off' };
+            endpoint = `/api/smartthings/device/${rawId}/command`;
+            body = { capability: 'switch', command: targetState ? 'on' : 'off' };
+        } else if (ecosystem === 'homeassistant') {
+            endpoint = `/api/tuya/device/${rawId}/toggle`;
+            body = { state: targetState };
         }
 
         if (!endpoint) return;
@@ -2086,11 +2099,162 @@ async function toggleDeviceFromHouseModal(ecosystem, rawId, currentState) {
         });
 
         if (resp.ok) {
-            // Ricarica immediata della ripartizione
-            setTimeout(() => { fetchAndRenderHouseBreakdown(false); }, 400);
+            // Ricarica immediata della ripartizione sia nel modale che nella dashboard
+            setTimeout(() => {
+                fetchAndRenderHouseBreakdown(false);
+                fetchAndRenderDashboardBreakdown(false);
+            }, 400);
         }
     } catch (e) {
         console.warn('Errore toggle da modale consumi:', e);
+    }
+}
+
+// =========================================================================
+// GESTIONE SCHEDA CONSUMI INTEGRATA NEL TAB ENERGIA DELLA DASHBOARD
+// =========================================================================
+
+async function fetchAndRenderDashboardBreakdown(forceSpinner = false) {
+    const listEl = document.getElementById('dash_active_consumers_list');
+    const refreshBtn = document.getElementById('dash_breakdown_refresh_btn');
+    if (!listEl) return;
+
+    if (forceSpinner && (!listEl.children.length || listEl.querySelector('.modal-loading-placeholder'))) {
+        listEl.innerHTML = `
+            <div class="modal-loading-placeholder" style="padding: 1.5rem; text-align: center;">
+                <div class="spinner"></div>
+                <p style="margin-top: 0.5rem; color: var(--text-dim); font-size: 0.85rem;">Rilevamento assorbimenti carichi in tempo reale...</p>
+            </div>
+        `;
+    }
+
+    if (refreshBtn) refreshBtn.classList.add('loading');
+
+    try {
+        const resp = await fetch('/api/energy/house-breakdown');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        renderDashboardBreakdown(data);
+    } catch (err) {
+        console.error('Errore recupero ripartizione consumi dashboard:', err);
+    } finally {
+        if (refreshBtn) refreshBtn.classList.remove('loading');
+    }
+}
+
+function renderDashboardBreakdown(d) {
+    const totalW = Math.round(d.total_house_w || 0);
+    const monW = Math.round(d.monitored_power_w || 0);
+    const unmonW = Math.round(d.unmonitored_power_w || 0);
+    const monPct = d.monitored_pct || 0;
+    const unmonPct = d.unmonitored_pct || 0;
+    const todayKwh = d.total_house_kwh || '0.0';
+
+    // Aggiorna KPI in cima alla sezione
+    const totalTop = document.getElementById('dash_breakdown_total_top');
+    if (totalTop) totalTop.innerText = `${totalW} W`;
+
+    const kpiTotalW = document.getElementById('dash_kpi_total_w');
+    if (kpiTotalW) kpiTotalW.innerText = `${totalW} W`;
+
+    const kpiTotalKwh = document.getElementById('dash_kpi_total_kwh');
+    if (kpiTotalKwh) kpiTotalKwh.innerText = `Oggi: ${todayKwh} kWh`;
+
+    const kpiMonW = document.getElementById('dash_kpi_monitored_w');
+    if (kpiMonW) kpiMonW.innerText = `${monW} W`;
+
+    const kpiMonPct = document.getElementById('dash_kpi_monitored_pct');
+    if (kpiMonPct) kpiMonPct.innerText = `${monPct}% del totale`;
+
+    const kpiUnmonW = document.getElementById('dash_kpi_unmonitored_w');
+    if (kpiUnmonW) kpiUnmonW.innerText = `${unmonW} W`;
+
+    const kpiUnmonPct = document.getElementById('dash_kpi_unmonitored_pct');
+    if (kpiUnmonPct) kpiUnmonPct.innerText = `${unmonPct}% non monitorato`;
+
+    // Aggiorna barre di ripartizione
+    const progMon = document.getElementById('dash_prog_monitored');
+    if (progMon) progMon.style.width = `${monPct}%`;
+
+    const progUnmon = document.getElementById('dash_prog_unmonitored');
+    if (progUnmon) progUnmon.style.width = `${unmonPct}%`;
+
+    // Rendering lista consumatori attivi
+    const listEl = document.getElementById('dash_active_consumers_list');
+    if (!listEl) return;
+
+    const activeList = d.active_consumers || [];
+
+    if (activeList.length === 0) {
+        listEl.innerHTML = `
+            <div class="empty-consumers-box" style="padding: 1.5rem; text-align: center; background: rgba(255,255,255,0.02); border-radius: 10px; border: 1px dashed rgba(255,255,255,0.1);">
+                <span class="empty-icon" style="font-size: 2rem;">🔌</span>
+                <p style="margin: 0.5rem 0 0.25rem 0; font-weight: 600; color: #fff;">Nessun dispositivo smart con assorbimento elevato al momento.</p>
+                <small style="color: var(--text-dim);">Il carico attuale di ${totalW} W corrisponde a utenze fisse e standby di base.</small>
+            </div>
+        `;
+    } else {
+        listEl.innerHTML = activeList.map(c => {
+            const pW = c.power_w !== undefined ? Math.round(c.power_w * 10) / 10 : 0;
+            const pct = c.percent_of_total || 0;
+
+            let powerBadge = '';
+            if (pW > 0) {
+                powerBadge = `<span class="consumer-power-tag high-power">⚡ <strong>${pW}</strong> W</span>`;
+            } else if (c.is_running) {
+                powerBadge = `<span class="consumer-power-tag running-app">🫧 In Funzione</span>`;
+            } else if (c.is_on) {
+                powerBadge = `<span class="consumer-power-tag active-state">🟢 Acceso</span>`;
+            }
+
+            let telemetryLine = '';
+            if (c.voltage_v || c.current_a) {
+                telemetryLine = `<span class="consumer-va-chip">⚡ ${c.voltage_v || 230} V • ${c.current_a || 0} A</span>`;
+            }
+
+            let toggleBtn = '';
+            if (c.can_toggle) {
+                toggleBtn = `
+                    <button type="button" class="consumer-toggle-btn ${c.is_on ? 'btn-turn-off' : 'btn-turn-on'}"
+                            onclick="toggleDeviceFromHouseModal('${c.ecosystem}', '${c.raw_id}', ${c.is_on})"
+                            title="${c.is_on ? 'Spegni dispositivo' : 'Accendi dispositivo'}">
+                        ${c.is_on ? 'Spegni' : 'Accendi'}
+                    </button>
+                `;
+            }
+
+            return `
+                <div class="consumer-card ${pW > 100 ? 'consumer-card-high' : ''}">
+                    <div class="consumer-card-main">
+                        <div class="consumer-icon-wrap">
+                            <span class="consumer-icon">${c.icon || '🔌'}</span>
+                        </div>
+                        <div class="consumer-info">
+                            <div class="consumer-title-row">
+                                <span class="consumer-name">${c.name}</span>
+                                ${powerBadge}
+                            </div>
+                            <div class="consumer-sub-row">
+                                <span class="consumer-category">${c.category_label || 'Dispositivo Smart'}</span>
+                                <span class="consumer-status-desc">${c.status_text || ''}</span>
+                            </div>
+                            ${telemetryLine ? `<div class="consumer-telemetry-row">${telemetryLine}</div>` : ''}
+                        </div>
+                    </div>
+
+                    ${pct > 0 ? `
+                        <div class="consumer-meter-wrap">
+                            <div class="consumer-meter-bar">
+                                <div class="consumer-meter-fill" style="width: ${Math.min(100, Math.max(3, pct))}%;"></div>
+                            </div>
+                            <span class="consumer-meter-label">${pct}% del carico casa</span>
+                        </div>
+                    ` : ''}
+
+                    ${toggleBtn ? `<div class="consumer-action-row">${toggleBtn}</div>` : ''}
+                </div>
+            `;
+        }).join('');
     }
 }
 

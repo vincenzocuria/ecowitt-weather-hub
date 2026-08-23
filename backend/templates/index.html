@@ -844,10 +844,10 @@
                 <div class="node-content">
                     <span class="node-label">Rete Elettrica</span>
                     <div class="node-value" id="p_rete_val">
-                        {% if energy_latest.p_rete is defined %}
-                            {% if energy_latest.p_rete_in > 0 or energy_latest.p_rete > 0 %}
-                                Prelevati: {{ (energy_latest.p_rete_in or energy_latest.p_rete) | int }} <span class="unit">W</span>
-                            {% elif energy_latest.p_rete_out > 0 %}
+                        {% if energy_latest and energy_latest.p_rete is defined %}
+                            {% if (energy_latest.p_rete_in is defined and energy_latest.p_rete_in > 0) or (energy_latest.p_rete is defined and energy_latest.p_rete > 0) %}
+                                Prelevati: {{ ((energy_latest.p_rete_in if energy_latest.p_rete_in is defined else None) or energy_latest.p_rete) | int }} <span class="unit">W</span>
+                            {% elif energy_latest.p_rete_out is defined and energy_latest.p_rete_out > 0 %}
                                 Immessa: {{ energy_latest.p_rete_out | int }} <span class="unit">W</span>
                             {% else %}
                                 0 <span class="unit">W (Autosufficiente)</span>
@@ -898,6 +898,72 @@
                 <div class="stat-text">
                     <span class="stat-label">Rete AC</span>
                     <span id="grid_ac_val">{{ energy_latest.grid_v or '240' }}V • {{ energy_latest.grid_hz or '50.0' }}Hz</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SEZIONE DETTAGLIO CONSUMI CASA LIVE & MONITORAGGIO CARICHI -->
+    <div class="smart-appliances-hero house-consumption-hero" id="dash_consumption_breakdown_section" style="margin-top: 1.25rem;">
+        <div class="appliances-header">
+            <div class="appliances-title-group">
+                <span class="appliances-header-icon" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.35); color: #38bdf8;">⚡</span>
+                <div>
+                    <h2>Ripartizione Consumi Domestici in Tempo Reale</h2>
+                    <div class="appliances-sub-header">
+                        Misuratore Aton Storage • Prese Smart Tuya Metering • Elettrodomestici & Clima
+                    </div>
+                </div>
+            </div>
+            <div class="appliances-header-badges">
+                <span class="presence-badge badge-present" id="dash_breakdown_badge" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8;">
+                    ⚡ Carico Totale: <strong id="dash_breakdown_total_top" style="margin-left: 4px;">{{ energy_latest.p_utenze | int if energy_latest and energy_latest.p_utenze is defined else '0' }} W</strong>
+                </span>
+                <div class="climate-status-badge" id="dash_breakdown_refresh_btn" onclick="fetchAndRenderDashboardBreakdown(true)" title="Aggiorna ora i consumi">
+                    <span class="pulse-dot"></span> <span id="dash_breakdown_status_text">Live</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI CONSUMI & BARRA PERCENTUALI -->
+        <div class="consumption-overview-card" style="margin-bottom: 1rem;">
+            <div class="consumption-kpis-grid">
+                <div class="cons-kpi-item">
+                    <span class="cons-kpi-label">Carico Casa (Aton)</span>
+                    <strong class="cons-kpi-val" id="dash_kpi_total_w">{{ energy_latest.p_utenze | int if energy_latest and energy_latest.p_utenze is defined else '--' }} W</strong>
+                    <span class="cons-kpi-sub" id="dash_kpi_total_kwh">Oggi: {{ energy_summary.total_house_kwh or '0.0' }} kWh</span>
+                </div>
+                <div class="cons-kpi-item">
+                    <span class="cons-kpi-label">Carichi Smart Rilevati</span>
+                    <strong class="cons-kpi-val" style="color: #38bdf8;" id="dash_kpi_monitored_w">-- W</strong>
+                    <span class="cons-kpi-sub" id="dash_kpi_monitored_pct">--% del totale</span>
+                </div>
+                <div class="cons-kpi-item">
+                    <span class="cons-kpi-label">Carico di Fondo / Standby</span>
+                    <strong class="cons-kpi-val" style="color: #94a3b8;" id="dash_kpi_unmonitored_w">-- W</strong>
+                    <span class="cons-kpi-sub" id="dash_kpi_unmonitored_pct">--% non monitorato</span>
+                </div>
+            </div>
+
+            <!-- BARRA PROGRESSO CARICHI VISUALE -->
+            <div class="consumption-progress-wrap" style="margin-top: 0.85rem;">
+                <div class="consumption-progress-bar">
+                    <div class="prog-fill prog-monitored" id="dash_prog_monitored" style="width: 0%;" title="Carichi Monitorati"></div>
+                    <div class="prog-fill prog-unmonitored" id="dash_prog_unmonitored" style="width: 100%;" title="Carico di Fondo / Standby"></div>
+                </div>
+                <div class="prog-legend">
+                    <span class="leg-item"><span class="leg-dot dot-monitored"></span> Dispositivi Smart Attivi</span>
+                    <span class="leg-item"><span class="leg-dot dot-unmonitored"></span> Carichi Fissi / Standby Casa</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- GRIGLIA CONSUMATORI ATTIVI -->
+        <div id="dash_consumers_container">
+            <div class="consumers-list" id="dash_active_consumers_list">
+                <div class="modal-loading-placeholder" style="padding: 1.5rem; text-align: center;">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 0.5rem; color: var(--text-dim); font-size: 0.85rem;">Rilevamento assorbimenti carichi in tempo reale...</p>
                 </div>
             </div>
         </div>
