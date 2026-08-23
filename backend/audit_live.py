@@ -5,6 +5,9 @@ import time
 import asyncio
 from datetime import datetime, timezone
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 # Ensure project root is on sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -154,8 +157,29 @@ async def run_audit():
         results["tuya"] = {"status": "ERROR ❌", "error": str(e)}
         print(f"   ❌ Errore Tuya: {e}")
 
-    # 6. Device Scheduler
-    print("\n6. Controllo Device Scheduler & Timer...")
+    # 6. Home Assistant (Hub Domotico Locale)
+    print("\n6. Controllo Home Assistant Locale (Porta 8123)...")
+    try:
+        from backend.homeassistant_service import homeassistant_service
+        is_ok = await homeassistant_service.check_connection()
+        ha_states = await homeassistant_service.fetch_states()
+        ha_catalog = homeassistant_service.get_catalog_devices()
+        results["homeassistant"] = {
+            "enabled": homeassistant_service.enabled,
+            "connected": is_ok,
+            "raw_entities_count": len(ha_states),
+            "catalog_devices_count": len(ha_catalog),
+            "devices": []
+        }
+        print(f"   🏠 Home Assistant OK: Connesso={is_ok}, {len(ha_states)} Entità totali, {len(ha_catalog)} Dispositivi controllabili")
+        for hd in ha_catalog:
+            print(f"      - [{hd.get('category').upper()}] {hd.get('icon')} {hd.get('name')} -> Stato: {hd.get('status_text')} (Power: {hd.get('power_w')} W)")
+    except Exception as e:
+        results["homeassistant"] = {"status": "ERROR ❌", "error": str(e)}
+        print(f"   ❌ Errore Home Assistant: {e}")
+
+    # 7. Device Scheduler
+    print("\n7. Controllo Device Scheduler & Timer...")
     try:
         from backend.device_scheduler import device_scheduler
         scheds = device_scheduler.get_schedules()
@@ -170,8 +194,8 @@ async def run_audit():
         results["scheduler"] = {"status": "ERROR ❌", "error": str(e)}
         print(f"   ❌ Errore Scheduler: {e}")
 
-    # 7. Catalogo Globale Dispositivi Aggregato
-    print("\n7. Verifica Catalogo Globale Dispositivi Aggregato (/api/devices/all)...")
+    # 8. Catalogo Globale Dispositivi Aggregato
+    print("\n8. Verifica Catalogo Globale Dispositivi Aggregato (/api/devices/all)...")
     try:
         from backend.routers.devices import build_devices_catalog
         catalog = build_devices_catalog()
