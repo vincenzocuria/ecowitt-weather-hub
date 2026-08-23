@@ -21,6 +21,7 @@ from backend.database import (
 from backend.analytics import calc_evapotranspiration, evaluate_smart_irrigation
 from backend.forecast_service import forecast_service
 from backend.aton_service import aton_service
+from backend.homeassistant_service import homeassistant_service
 from backend.device_scheduler import device_scheduler
 
 logger = logging.getLogger("weather_hub")
@@ -727,7 +728,12 @@ def build_devices_catalog() -> Dict[str, Any]:
             "raw": e_latest
         })
 
-    # 5. Associa eventuali timer/programmazioni attive a ciascun dispositivo
+    # 5. Home Assistant (Hub Domotico Locale)
+    if settings.HASS_ENABLED and homeassistant_service.enabled:
+        for hd in homeassistant_service.get_catalog_devices():
+            devices.append(hd)
+
+    # 6. Associa eventuali timer/programmazioni attive a ciascun dispositivo
     try:
         active_schedules = device_scheduler.get_schedules()
     except Exception:
@@ -897,5 +903,53 @@ async def api_import_tuya_cloud_keys():
     """Scarica e salva permanentemente in locale tutte le local_key dei dispositivi dal Cloud Tuya."""
     res = await tuya_service.import_keys_from_cloud()
     return res
+
+# --- HOME ASSISTANT API (Hub Domotico Locale) ---
+
+@router.get("/api/homeassistant/status")
+async def api_get_homeassistant_status():
+    """Restituisce lo stato di connessione e presenza di Home Assistant locale."""
+    is_ok = await homeassistant_service.check_connection()
+    return {
+        "enabled": homeassistant_service.enabled,
+        "is_connected": is_ok,
+        "url": settings.HASS_URL,
+        "entities_count": len(homeassistant_service.entities),
+        "error": homeassistant_service.sync_error
+    }
+
+@router.get("/api/homeassistant/states")
+async def api_get_homeassistant_states():
+    """Recupera tutti gli stati attuali delle entità di Home Assistant."""
+    states = await homeassistant_service.fetch_states()
+    return {"states": states, "count": len(states)}
+
+@router.post("/api/homeassistant/device/{entity_id}/toggle")
+async def api_homeassistant_toggle_device(entity_id: str, request: Request):
+    """Accende o spegne un'entità Home Assistant."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    target_state = payload.get("state", True)
+    res = await homeassistant_service.toggle_device(entity_id, target_state)
+    return res
+
+@router.post("/api/homeassistant/service")
+async def api_homeassistant_call_service(request: Request):
+    """Chiama un servizio generico Home Assistant (es. light.turn_on, climate.set_temperature)."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Payload JSON non valido"}, status_code=400)
+    domain = body.get("domain")
+    service = body.get("service")
+    entity_id = body.get("entity_id")
+    data = body.get("data") or {}
+    if not domain or not service or not entity_id:
+        return JSONResponse({"error": "domain, service e entity_id sono obbligatori"}, status_code=400)
+    res = await homeassistant_service.call_service(domain, service, entity_id, data)
+    return res
+
 
 

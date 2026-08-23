@@ -135,6 +135,14 @@ class DeviceScheduler:
                     if not is_success:
                         error_msg = "Comando SmartThings non riuscito"
 
+                elif ecosystem in ("homeassistant", "hass"):
+                    from backend.homeassistant_service import homeassistant_service
+                    res = await homeassistant_service.toggle_device(device_id, target_state)
+                    is_success = bool(res.get("success"))
+                    result = res
+                    if not is_success:
+                        error_msg = res.get("error") or "Comando Home Assistant non riuscito"
+
                 else:
                     error_msg = f"Ecosistema '{ecosystem}' non supportato"
 

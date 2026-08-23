@@ -47,6 +47,10 @@
         {% if climate_config and climate_config.master_enabled %}
         <span class="settings-tab-badge" style="background: rgba(56, 189, 248, 0.25); color: #38bdf8;">Auto</span>
         {% endif %}
+    <button type="button" class="settings-tab-btn" data-tab="homeassistant" onclick="switchSettingsTab('homeassistant', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">🏠</span>
+        <span>Home Assistant</span>
+        <span class="settings-tab-badge" style="background: rgba(34, 197, 94, 0.25); color: #4ade80;">LAN ⚡</span>
     </button>
     <button type="button" class="settings-tab-btn" data-tab="database" onclick="switchSettingsTab('database', this)" role="tab" aria-selected="false">
         <span class="settings-tab-icon">🗄️</span>
@@ -734,9 +738,75 @@
                 </div>
             </div>
 
+<!-- ========================================================================= -->
+<!-- TAB: HOME ASSISTANT (HUB DOMOTICO LOCALE UNIFICATO) -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-homeassistant" role="tabpanel">
+    <div class="card" style="border: 1px solid rgba(34, 197, 94, 0.35); background: linear-gradient(145deg, rgba(34, 197, 94, 0.05), var(--card-bg));">
+        <div class="card-header" style="border-bottom: 1px solid rgba(34, 197, 94, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.35rem;">🏠</span>
+                <div>
+                    <strong>Home Assistant • Hub Domotico Locale</strong>
+                    <div style="font-size: 0.78rem; color: var(--text-dim);">Esecuzione locale su QNAP NAS (Porta 8123)</div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <a href="http://192.168.1.250:8123" target="_blank" class="btn btn-sm btn-primary" style="text-decoration: none;">
+                    🚀 Apri Home Assistant ↗
+                </a>
+            </div>
         </div>
+
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem; line-height: 1.5;">
+            Home Assistant gira come container nativo sul tuo NAS QNAP con accesso completo alla rete di casa (<strong>Network Host</strong>). Rileva e comanda in automatico tutti i dispositivi (Tuya, Shelly, Sonoff, Zigbee, Matter, ecc.) in locale senza alcun bisogno di cloud o API key a pagamento.
+        </p>
+
+        <!-- STATO DEL SERVIZIO -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem;">
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 10px; padding: 0.85rem 1rem;">
+                <span style="font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase;">Indirizzo Web UI</span>
+                <div style="font-size: 0.95rem; font-weight: 700; color: #38bdf8; margin-top: 2px;">
+                    <a href="http://192.168.1.250:8123" target="_blank" style="color: inherit; text-decoration: none;">http://192.168.1.250:8123</a>
+                </div>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 10px; padding: 0.85rem 1rem;">
+                <span style="font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase;">Stato Container NAS</span>
+                <div style="font-size: 0.95rem; font-weight: 700; color: #4ade80; margin-top: 2px;" id="hass_container_status">
+                    🟢 Attivo su QNAP
+                </div>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 10px; padding: 0.85rem 1rem;">
+                <span style="font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase;">Collegamento Weather Hub</span>
+                <div style="font-size: 0.95rem; font-weight: 700; color: {% if hass_has_token %}#4ade80{% else %}#f59e0b{% endif %}; margin-top: 2px;" id="hass_link_status">
+                    {% if hass_has_token %}🟢 Token Configurato{% else %}🟡 In attesa del Token{% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- GUIDA CONFIGURAZIONE RAPIDA TOKEN -->
+        <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--card-border); border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1.25rem;">
+            <strong style="color: var(--text); font-size: 0.9rem; display: block; margin-bottom: 0.4rem;">
+                ⚡ Come collegare Home Assistant al Weather Hub in 2 passi:
+            </strong>
+            <ol style="margin: 0; padding-left: 1.2rem; font-size: 0.83rem; color: var(--text-muted); line-height: 1.6;">
+                <li>Apri <strong><a href="http://192.168.1.250:8123" target="_blank" style="color: #38bdf8;">Home Assistant (http://192.168.1.250:8123)</a></strong> e completa la creazione del tuo utente amministratore.</li>
+                <li>Vai sul tuo <strong>Profilo Utente</strong> (in basso a sinistra su HA) ➔ scorri in fondo su <strong>"Token di accesso di lunga durata"</strong> ➔ clicca <strong>"Crea Token"</strong> e copialo nel file <code>.env</code> (parametro <code>HASS_TOKEN=...</code>).</li>
+            </ol>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <button type="button" class="btn btn-outline" onclick="checkHassStatus()" id="btn_check_hass">
+                🔄 Sincronizza Entità Home Assistant
+            </button>
+            <a href="/devices" class="btn btn-primary" style="text-decoration: none;">
+                💡 Vai alla Centrale Dispositivi ↗
+            </a>
+        </div>
+        <div id="hass_check_msg" style="font-size: 0.82rem; margin-top: 0.75rem; display: none;"></div>
     </div>
 </div>
+
 
 <!-- ========================================================================= -->
 <!-- TAB 5: DATABASE SQLITE & MANUTENZIONE -->
@@ -1588,6 +1658,47 @@ async function importTuyaCloudKeys() {
     } finally {
         btn.disabled = false;
         btn.innerText = '📥 Importa da Cloud';
+    }
+}
+
+// =========================================================================
+// GESTIONE HOME ASSISTANT (HUB LOCALE)
+// =========================================================================
+
+async function checkHassStatus() {
+    const btn = document.getElementById('btn_check_hass');
+    const msgEl = document.getElementById('hass_check_msg');
+    btn.disabled = true;
+    btn.innerText = '⏳ Verifica in corso...';
+    if (msgEl) {
+        msgEl.style.display = 'block';
+        msgEl.style.color = '#38bdf8';
+        msgEl.innerText = 'Interrogazione Home Assistant su http://192.168.1.250:8123...';
+    }
+
+    try {
+        const resp = await fetch('/api/homeassistant/status');
+        const data = await resp.json();
+        if (msgEl) {
+            if (data.is_connected) {
+                msgEl.style.color = '#10b981';
+                msgEl.innerHTML = `✅ <strong>Home Assistant Connesso con Successo!</strong> (${data.entities_count} entità sincronizzate)`;
+            } else if (!data.enabled) {
+                msgEl.style.color = '#eab308';
+                msgEl.innerHTML = `ℹ️ Home Assistant è attivo su <a href="http://192.168.1.250:8123" target="_blank" style="color:#38bdf8;">http://192.168.1.250:8123</a>. Genera il Token sul tuo Profilo HA e impostalo per abilitare il controllo integrato.`;
+            } else {
+                msgEl.style.color = '#ef4444';
+                msgEl.innerText = `❌ Errore connessione: ${data.error || 'Server non raggiungibile o token non valido'}`;
+            }
+        }
+    } catch (e) {
+        if (msgEl) {
+            msgEl.style.color = '#ef4444';
+            msgEl.innerText = '❌ Errore chiamata: ' + e.message;
+        }
+    } finally {
+        btn.disabled = false;
+        btn.innerText = '🔄 Sincronizza Entità Home Assistant';
     }
 }
 

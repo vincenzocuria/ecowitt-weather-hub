@@ -153,6 +153,12 @@ class Settings:
     CIVIL_PROTECTION_ZONE_OVERRIDE: str = os.getenv("CIVIL_PROTECTION_ZONE_OVERRIDE", "") # Es. "Versante Jonico Settentrionale"
     CIVIL_PROTECTION_POLL_INTERVAL_MIN: int = int(os.getenv("CIVIL_PROTECTION_POLL_INTERVAL_MIN", "60"))
 
+    # Configurazione Home Assistant (Hub Domotico Locale)
+    HASS_ENABLED: bool = os.getenv("HASS_ENABLED", "true").lower() in ("true", "1", "yes")
+    HASS_URL: str = os.getenv("HASS_URL", "http://192.168.1.250:8123").rstrip("/")
+    HASS_TOKEN: str = os.getenv("HASS_TOKEN", "")
+    HASS_POLL_INTERVAL_SEC: int = int(os.getenv("HASS_POLL_INTERVAL_SEC", "15"))
+
 settings = Settings()
 
 
