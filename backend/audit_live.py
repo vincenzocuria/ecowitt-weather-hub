@@ -99,29 +99,25 @@ async def run_audit():
     try:
         from backend.smartthings_service import smartthings_service
         st_summary = smartthings_service.get_summary()
+        w = st_summary.get("washer")
+        dw = st_summary.get("dishwasher")
+        p = st_summary.get("presence")
+        
         results["smartthings"] = {
             "enabled": settings.SMARTTHINGS_ENABLED,
-            "appliances_count": len(st_summary.get("appliances", [])),
-            "presence_count": len(st_summary.get("presence", [])),
-            "appliances": [],
-            "presence": []
+            "connected": st_summary.get("is_connected"),
+            "washer": w,
+            "dishwasher": dw,
+            "presence": p
         }
-        for app in st_summary.get("appliances", []):
-            a_info = {
-                "name": app.get("label") or app.get("name"),
-                "type": app.get("device_type"),
-                "state": app.get("state_label"),
-                "power_w": app.get("power_w")
-            }
-            results["smartthings"]["appliances"].append(a_info)
-            print(f"   🫧 SmartThings [{a_info['name']}]: {a_info['state']} ({a_info['type']})")
-        for p in st_summary.get("presence", []):
-            results["smartthings"]["presence"].append({
-                "name": p.get("name"),
-                "is_home": p.get("is_home"),
-                "battery": p.get("battery_pct")
-            })
-            print(f"   📍 Presenza [{p.get('name')}]: {'In Casa 🟢' if p.get('is_home') else 'Fuori Casa ⚪'} (Batteria {p.get('battery_pct')}%)")
+        if w:
+            print(f"   🫧 Lavatrice: {w.get('state_label')} (Running: {w.get('is_running')})")
+        if dw:
+            print(f"   🍽️ Lavastoviglie: {dw.get('state_label')} (Running: {dw.get('is_running')})")
+        if p:
+            print(f"   📍 Presenza [{p.get('name')}]: {p.get('presence_label')}")
+        if not w and not dw and not p:
+            print("   ⚪ Nessun elettrodomestico SmartThings attualmente in esecuzione o rilevato.")
     except Exception as e:
         results["smartthings"] = {"status": "ERROR ❌", "error": str(e)}
         print(f"   ❌ Errore SmartThings: {e}")

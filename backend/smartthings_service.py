@@ -489,11 +489,13 @@ class SmartThingsService:
         other_devices: List[Dict[str, Any]] = []
 
         for dev in self.devices:
+            if not isinstance(dev, dict):
+                continue
             dev_id = dev.get("deviceId")
             lbl = (dev.get("label") or dev.get("name") or "").lower()
             dev_type = (dev.get("deviceTypeName") or dev.get("type") or "").lower()
             status = self.device_statuses.get(dev_id)
-            if not status:
+            if not status or not isinstance(status, dict):
                 continue
 
             main_comp = status.get("components", {}).get("main", {})
