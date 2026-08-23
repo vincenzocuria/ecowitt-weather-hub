@@ -1111,6 +1111,21 @@ async function testCivilProtectionAlert() {
     }
 }
 
+async function sendTestDailyDigest() {
+    try {
+        const res = await fetch('/api/daily-digest/send', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'sent') {
+            alert('☕ Notifica Buongiorno Meteo inviata con successo!');
+        } else {
+            alert(`Stato invio: ${data.status || 'OK'}`);
+        }
+    } catch (e) {
+        alert('Errore invio Buongiorno Meteo: ' + e.message);
+    }
+}
+
+
 // Ascolta messaggi Push in foreground dal Service Worker
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', (event) => {

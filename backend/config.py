@@ -90,11 +90,14 @@ class Settings:
     DAILY_DIGEST_HOUR: int = int(os.getenv("DAILY_DIGEST_HOUR", "8"))
     DAILY_DIGEST_MINUTE: int = int(os.getenv("DAILY_DIGEST_MINUTE", "0"))
 
+    # Configurazione Ingestione Stazione Ecowitt (Validazione PASSKEY opzionale)
+    ECOWITT_STATION_PASSKEY: str = os.getenv("ECOWITT_STATION_PASSKEY", "")
+
     # Configurazione Accumulatore Aton Green Storage
     ATON_ENABLED: bool = os.getenv("ATON_ENABLED", "true").lower() in ("true", "1", "yes")
-    ATON_USERNAME: str = os.getenv("ATON_USERNAME", "Curia")
-    ATON_PASSWORD: str = os.getenv("ATON_PASSWORD", "calabro")
-    ATON_SN: str = os.getenv("ATON_SN", "R21MY00735F")
+    ATON_USERNAME: str = os.getenv("ATON_USERNAME", "")
+    ATON_PASSWORD: str = os.getenv("ATON_PASSWORD", "")
+    ATON_SN: str = os.getenv("ATON_SN", "")
     ATON_POLL_INTERVAL_SEC: int = int(os.getenv("ATON_POLL_INTERVAL_SEC", "20"))
 
     # Soglie Allarmi Energetici
@@ -124,8 +127,8 @@ class Settings:
 
     # Configurazione Tuya / Smart Life
     TUYA_ENABLED: bool = os.getenv("TUYA_ENABLED", "true").lower() in ("true", "1", "yes")
-    TUYA_CLIENT_ID: str = os.getenv("TUYA_CLIENT_ID", "fe7rmdm3pm8e5kt8wkhr")
-    TUYA_SECRET: str = os.getenv("TUYA_SECRET", "e64e1072681a4ec7bbfccf10fc2a4a59")
+    TUYA_CLIENT_ID: str = os.getenv("TUYA_CLIENT_ID", "")
+    TUYA_SECRET: str = os.getenv("TUYA_SECRET", "")
     TUYA_REGION: str = os.getenv("TUYA_REGION", "eu")
     TUYA_POLL_INTERVAL_SEC: int = int(os.getenv("TUYA_POLL_INTERVAL_SEC", "30"))
 

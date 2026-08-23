@@ -14,6 +14,63 @@ def get_station_tz(tz_name: Optional[str] = None) -> Any:
     return settings.get_tz()
 
 # ---------------------------------------------------------------------------
+# FORMULE METEOROLOGICHE FONDAMENTALI & CONVERSIONI
+# ---------------------------------------------------------------------------
+
+def calc_dew_point(temp_c: Optional[float], humidity: Optional[float]) -> Optional[float]:
+    """Punto di rugiada (Formula di Magnus-Tetens standard)."""
+    if temp_c is None or humidity is None or humidity <= 0:
+        return None
+    try:
+        a = 17.27
+        b = 237.7
+        alpha = ((a * float(temp_c)) / (b + float(temp_c))) + math.log(float(humidity) / 100.0)
+        dp = (b * alpha) / (a - alpha)
+        return round(dp, 1)
+    except Exception:
+        return None
+
+def calc_apparent_temp(temp_c: Optional[float], humidity: Optional[float], wind_kmh: Optional[float]) -> Optional[float]:
+    """
+    Temperatura Percepita (Sensazione Termica):
+    - Wind Chill (se T <= 10°C e Vento >= 5 km/h)
+    - Heat Index / Umidità (se T >= 26°C)
+    - Altrimenti temperatura reale
+    """
+    if temp_c is None:
+        return None
+    t = float(temp_c)
+    w = float(wind_kmh) if wind_kmh is not None else 0.0
+    h = float(humidity) if humidity is not None else 50.0
+
+    # Wind Chill
+    if t <= 10.0 and w >= 4.8:
+        wc = 13.12 + (0.6215 * t) - (11.37 * (w ** 0.16)) + (0.3965 * t * (w ** 0.16))
+        return round(wc, 1)
+    
+    # Heat Index (Steadman / Rothfusz)
+    if t >= 26.0 and h >= 40.0:
+        tf = (t * 9.0 / 5.0) + 32.0
+        hi = -42.379 + 2.04901523*tf + 10.14333127*h - 0.22475541*tf*h - 0.00683783*tf*tf - 0.05481717*h*h + 0.00122874*tf*tf*h + 0.00085282*tf*h*h - 0.00000199*tf*tf*h*h
+        hi_c = (hi - 32.0) * 5.0 / 9.0
+        return round(hi_c, 1)
+
+    return round(t, 1)
+
+def deg_to_compass(deg: Optional[float]) -> str:
+    """Converte i gradi angolari (0-360°) nella rosa dei venti a 16 punti."""
+    if deg is None:
+        return "--"
+    try:
+        d = float(deg)
+        val = int((d / 22.5) + 0.5)
+        dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+        return f"{int(d)}° ({dirs[val % 16]})"
+    except Exception:
+        return f"{deg}°"
+
+
+# ---------------------------------------------------------------------------
 # 1. ALGORITMO DI ZAMBRETTI (Nowcasting Locale a 6-12 Ore)
 # ---------------------------------------------------------------------------
 # Negretti & Zambra (1915) - Formula barometrica classica per stazioni meteo

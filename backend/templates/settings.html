@@ -83,9 +83,9 @@
                 <button id="btn-test-alert" class="btn btn-outline push-action-btn" onclick="testPushNotification()">
                     🧪 Prova Notifica Istantanea
                 </button>
-                <a href="/api/daily-digest/send" class="btn btn-outline push-action-btn" target="_blank" title="Invia ora l'anteprima del digest Buongiorno Meteo">
+                <button class="btn btn-outline push-action-btn" onclick="sendTestDailyDigest()" title="Invia ora l'anteprima del digest Buongiorno Meteo">
                     ☕ Test Buongiorno Meteo
-                </a>
+                </button>
                 <a href="https://ntfy.sh/{{ ntfy_topic }}" target="_blank" class="btn btn-outline push-action-btn" title="Canale ntfy.sh parallelo per smartwatch o domotica">
                     📡 Canale ntfy.sh ({{ ntfy_topic }})
                 </a>
