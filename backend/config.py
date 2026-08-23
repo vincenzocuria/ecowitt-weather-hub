@@ -123,6 +123,9 @@ class Settings:
     # Configurazione Samsung SmartThings
     SMARTTHINGS_ENABLED: bool = os.getenv("SMARTTHINGS_ENABLED", "true").lower() in ("true", "1", "yes")
     SMARTTHINGS_PAT: str = os.getenv("SMARTTHINGS_PAT", os.getenv("SAMSUNG_PAT", ""))
+    SMARTTHINGS_REFRESH_TOKEN: str = os.getenv("SMARTTHINGS_REFRESH_TOKEN", "")
+    SMARTTHINGS_CLIENT_ID: str = os.getenv("SMARTTHINGS_CLIENT_ID", "")
+    SMARTTHINGS_CLIENT_SECRET: str = os.getenv("SMARTTHINGS_CLIENT_SECRET", "")
     SMARTTHINGS_POLL_INTERVAL_SEC: int = int(os.getenv("SMARTTHINGS_POLL_INTERVAL_SEC", "180"))
 
     # Configurazione Tuya / Smart Life

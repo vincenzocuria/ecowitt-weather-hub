@@ -330,7 +330,7 @@ def get_station_status() -> Dict[str, Any]:
     """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT timestamp FROM weather_records ORDER BY id DESC LIMIT 1")
+    cursor.execute("SELECT timestamp FROM weather_records ORDER BY timestamp DESC, id DESC LIMIT 1")
     row = cursor.fetchone()
     conn.close()
 
@@ -439,7 +439,7 @@ def save_reading(data: Dict[str, Any]) -> int:
 def get_latest_reading() -> Optional[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM weather_records ORDER BY id DESC LIMIT 1")
+    cursor.execute("SELECT * FROM weather_records ORDER BY timestamp DESC, id DESC LIMIT 1")
     row = cursor.fetchone()
     conn.close()
     if not row:
@@ -1510,7 +1510,7 @@ def save_energy_reading(data: Dict[str, Any]) -> int:
 def get_latest_energy() -> Optional[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM energy_records ORDER BY id DESC LIMIT 1")
+    cursor.execute("SELECT * FROM energy_records ORDER BY timestamp DESC, id DESC LIMIT 1")
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
@@ -1523,7 +1523,7 @@ def get_energy_timeseries(hours: int = 24) -> List[Dict[str, Any]]:
         SELECT timestamp, p_solare, p_utenze, p_batteria, p_rete, soc
         FROM energy_records
         WHERE timestamp >= ?
-        ORDER BY id ASC
+        ORDER BY timestamp ASC, id ASC
     """, (since_dt,))
     rows = cursor.fetchall()
     conn.close()
@@ -1549,12 +1549,12 @@ def get_today_energy_summary() -> Dict[str, Any]:
                soc, e_pannelli_wh, e_comprata_wh, e_venduta_wh, e_batteria_wh
         FROM energy_records 
         WHERE timestamp >= ? 
-        ORDER BY id ASC
+        ORDER BY timestamp ASC, id ASC
     """, (today_start_utc,))
     rows = cursor.fetchall()
     
     if not rows:
-        cursor.execute("SELECT * FROM energy_records ORDER BY id DESC LIMIT 1")
+        cursor.execute("SELECT * FROM energy_records ORDER BY timestamp DESC, id DESC LIMIT 1")
         last_row = cursor.fetchone()
         rows = [last_row] if last_row else []
     
@@ -2057,6 +2057,23 @@ def get_soil_moisture_summary() -> Dict[str, Any]:
     latest = get_latest_reading() or {}
     soil = latest.get("soil_moisture", {})
     aliases = get_sensor_aliases()
+
+    if not soil:
+        # Fallback alla lettura più recente che contiene dati suolo
+        conn_fb = get_connection()
+        cur_fb = conn_fb.cursor()
+        cur_fb.execute("""
+            SELECT soil_moisture_json FROM weather_records 
+            WHERE soil_moisture_json IS NOT NULL AND soil_moisture_json NOT IN ('{}', 'null', '')
+            ORDER BY timestamp DESC, id DESC LIMIT 1
+        """)
+        row_fb = cur_fb.fetchone()
+        conn_fb.close()
+        if row_fb and row_fb["soil_moisture_json"]:
+            try:
+                soil = json.loads(row_fb["soil_moisture_json"])
+            except Exception:
+                soil = {}
 
     if not soil:
         return {

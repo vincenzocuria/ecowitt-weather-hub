@@ -2,7 +2,14 @@ import os
 import sys
 import unittest
 import tempfile
+import atexit
+import shutil
 from datetime import datetime, timezone
+
+# Isolate test suite database in an isolated temporary directory to NEVER pollute production DB
+_test_dir = tempfile.mkdtemp(prefix="ecowitt_test_")
+os.environ["DATA_DIR"] = _test_dir
+atexit.register(lambda: shutil.rmtree(_test_dir, ignore_errors=True))
 
 # Ensure project root is on sys.path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

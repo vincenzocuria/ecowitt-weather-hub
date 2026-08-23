@@ -1,9 +1,10 @@
+from __future__ import annotations
 import os
 import json
 import base64
 import logging
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from backend.config import settings
 from backend.database import log_alert_db, get_all_push_subscriptions, delete_push_subscription, get_unread_alerts_count
 

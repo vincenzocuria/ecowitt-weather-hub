@@ -69,11 +69,16 @@ DISHWASHER_CYCLE_MAP = {
 
 import os
 import json
+import base64
 
 class SmartThingsService:
     def __init__(self):
         self.token = settings.SMARTTHINGS_PAT
-        self.enabled = settings.SMARTTHINGS_ENABLED and bool(self.token)
+        self.refresh_token_str = settings.SMARTTHINGS_REFRESH_TOKEN
+        self.client_id = settings.SMARTTHINGS_CLIENT_ID
+        self.client_secret = settings.SMARTTHINGS_CLIENT_SECRET
+
+        self.enabled = settings.SMARTTHINGS_ENABLED and (bool(self.token) or bool(self.refresh_token_str))
         self.poll_interval = settings.SMARTTHINGS_POLL_INTERVAL_SEC
         self.devices: List[Dict[str, Any]] = []
 
@@ -86,7 +91,7 @@ class SmartThingsService:
         self._load_cache()
 
     def _load_cache(self):
-        """Carica lo stato dei dispositivi Samsung SmartThings persistito su disco."""
+        """Carica lo stato dei dispositivi e le chiavi OAuth persistiti su disco."""
         try:
             if os.path.exists(self.cache_file):
                 with open(self.cache_file, "r", encoding="utf-8") as f:
@@ -94,13 +99,19 @@ class SmartThingsService:
                     self.devices = data.get("devices", [])
                     self.device_statuses = data.get("device_statuses", {})
                     self.last_sync_time = data.get("last_sync_time")
+                    saved_token = data.get("access_token")
+                    saved_refresh = data.get("refresh_token")
+                    if saved_token:
+                        self.token = saved_token
+                    if saved_refresh:
+                        self.refresh_token_str = saved_refresh
                     if self.devices:
                         logger.info(f"📂 [SmartThings] Caricati {len(self.devices)} dispositivi dalla cache locale persistente.")
         except Exception as e:
             logger.warning(f"⚠️ [SmartThings] Impossibile caricare la cache da disco: {e}")
 
     def _save_cache(self):
-        """Salva lo stato dei dispositivi su file JSON in modo atomico."""
+        """Salva lo stato dei dispositivi e le chiavi OAuth su file JSON in modo atomico."""
         try:
             os.makedirs(settings.DATA_DIR, exist_ok=True)
             tmp_path = f"{self.cache_file}.tmp"
@@ -108,13 +119,61 @@ class SmartThingsService:
                 "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "devices": self.devices,
                 "device_statuses": self.device_statuses,
-                "last_sync_time": self.last_sync_time
+                "last_sync_time": self.last_sync_time,
+                "access_token": self.token,
+                "refresh_token": self.refresh_token_str
             }
             with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=2)
             os.replace(tmp_path, self.cache_file)
         except Exception as e:
             logger.warning(f"⚠️ [SmartThings] Impossibile salvare la cache su disco: {e}")
+
+    async def refresh_access_token(self) -> bool:
+        """Rinnova in automatico l'access_token SmartThings usando il refresh_token OAuth 2.0 in background."""
+        ref_tok = self.refresh_token_str or settings.SMARTTHINGS_REFRESH_TOKEN
+        c_id = self.client_id or settings.SMARTTHINGS_CLIENT_ID
+        c_sec = self.client_secret or settings.SMARTTHINGS_CLIENT_SECRET
+        
+        if not ref_tok or not c_id or not c_sec:
+            return False
+
+        try:
+            url = "https://api.smartthings.com/oauth/token"
+            auth_header = base64.b64encode(f"{c_id}:{c_sec}".encode()).decode()
+            headers = {
+                "Authorization": f"Basic {auth_header}",
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+            data = {
+                "grant_type": "refresh_token",
+                "refresh_token": ref_tok,
+                "client_id": c_id
+            }
+
+            await self.close()
+            session = await self.get_session()
+
+            async with session.post(url, headers=headers, data=data) as resp:
+                if resp.status == 200:
+                    res_json = await resp.json()
+                    new_acc = res_json.get("access_token")
+                    new_ref = res_json.get("refresh_token")
+                    if new_acc:
+                        self.token = new_acc
+                        if new_ref:
+                            self.refresh_token_str = new_ref
+                        self.is_connected = True
+                        self.sync_error = None
+                        self._save_cache()
+                        logger.info("✅ [SmartThings] Token OAuth 2.0 rinnovato in automatico con successo!")
+                        return True
+                else:
+                    err_body = await resp.text()
+                    logger.warning(f"⚠️ [SmartThings] Rinnovo OAuth 2.0 non riuscito (HTTP {resp.status}): {err_body[:180]}")
+        except Exception as e:
+            logger.error(f"❌ [SmartThings] Eccezione durante il rinnovo token OAuth 2.0: {e}")
+        return False
 
     async def get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -154,6 +213,24 @@ class SmartThingsService:
                     self.sync_error = None
                     self._save_cache()
                     return self.devices
+                elif resp.status == 401:
+                    # Tenta il rinnovo automatico tramite OAuth2 Refresh Token
+                    if await self.refresh_access_token():
+                        session_retry = await self.get_session()
+                        async with session_retry.get(url) as resp_retry:
+                            if resp_retry.status == 200:
+                                data_retry = await resp_retry.json()
+                                self.devices = data_retry.get("items", [])
+                                self.is_connected = True
+                                self.sync_error = None
+                                self._save_cache()
+                                return self.devices
+
+                    err_txt = await resp.text()
+                    self.is_connected = False
+                    self.sync_error = f"HTTP {resp.status}: {err_txt[:150]}"
+                    logger.error(f"Errore recupero lista dispositivi SmartThings: {self.sync_error}")
+                    return self.devices
                 else:
                     err_txt = await resp.text()
                     self.is_connected = False
@@ -177,6 +254,17 @@ class SmartThingsService:
                     self.device_statuses[device_id] = data
                     self._save_cache()
                     return data
+                elif resp.status == 401:
+                    if await self.refresh_access_token():
+                        session_retry = await self.get_session()
+                        async with session_retry.get(url) as resp_retry:
+                            if resp_retry.status == 200:
+                                data_retry = await resp_retry.json()
+                                self.device_statuses[device_id] = data_retry
+                                self._save_cache()
+                                return data_retry
+                    logger.warning(f"Status per dispositivo {device_id} ha risposto HTTP {resp.status}")
+                    return self.device_statuses.get(device_id)
                 else:
                     logger.warning(f"Status per dispositivo {device_id} ha risposto HTTP {resp.status}")
                     return self.device_statuses.get(device_id)
