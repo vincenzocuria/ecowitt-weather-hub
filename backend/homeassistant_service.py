@@ -220,6 +220,23 @@ class HomeAssistantService:
             return await self.call_service(domain, service, entity_id)
         return {"success": False, "error": f"Dominio {domain} non supporta toggle diretto"}
 
+    def find_entity_by_tuya_id(self, device_id: str) -> Optional[str]:
+        """Trova l'entità Home Assistant corrispondente a un ID dispositivo Tuya."""
+        for ent_id in self.entities:
+            if device_id in ent_id:
+                return ent_id
+        # Mappa nota dei dispositivi
+        tuya_id_map = {
+            "04564850cc50e3d1ca35": "switch.cisterna_presa",
+            "bfe099fb503c352edeq28i": "switch.lavasciuga_socket_1",
+            "bfb7123e755a2ce701p0xd": "switch.lavastoviglie_socket_1",
+            "bf0d071d55d193bc3fxwmp": "switch.climatizzatore_socket_1",
+            "bf4a39d41904562ce8gssc": "valve.aiuola_valve",
+            "30148414807d3a287c81": "cover.persiana_tenda",
+            "5402285098f4abbc53a3": "climate.termostato"
+        }
+        return tuya_id_map.get(device_id)
+
     async def worker_loop(self):
         """Loop di polling periodico per mantenere aggiornato lo stato delle entità locali."""
         logger.info("🏠 [HASS] Worker loop Home Assistant avviato (intervallo: %ss)", settings.HASS_POLL_INTERVAL_SEC)

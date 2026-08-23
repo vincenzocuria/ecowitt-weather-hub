@@ -286,7 +286,16 @@ async function performDeviceToggle(ecosystem, rawId, targetState, sourceBtn = nu
         let success = false;
         let errMsg = null;
 
-        if (ecosystem === 'tuya') {
+        if (ecosystem === 'homeassistant') {
+            const resp = await fetch(`/api/homeassistant/device/${encodeURIComponent(rawId)}/toggle`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({state: targetState})
+            });
+            const data = await resp.json();
+            success = resp.ok && data.success === true;
+            if (!success) errMsg = data.error || 'Errore esecuzione comando Home Assistant';
+        } else if (ecosystem === 'tuya') {
             const resp = await fetch(`/api/tuya/device/${rawId}/toggle`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -317,7 +326,7 @@ async function performDeviceToggle(ecosystem, rawId, targetState, sourceBtn = nu
 
         if (success) {
             // Aggiorna catalogo locale in memoria immediatamente
-            const dev = devicesCatalog.find(d => String(d.raw_id) === String(rawId) || String(d.id) === String(rawId) || d.id === `tuya_${rawId}` || d.id === `thinq_${rawId}` || d.id === `st_${rawId}`);
+            const dev = devicesCatalog.find(d => String(d.raw_id) === String(rawId) || String(d.id) === String(rawId) || d.id === `tuya_${rawId}` || d.id === `thinq_${rawId}` || d.id === `st_${rawId}` || d.id === `hass_${rawId}`);
             if (dev) {
                 dev.is_on = targetState;
                 if (dev.category === 'plugs') {

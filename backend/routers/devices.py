@@ -199,18 +199,27 @@ async def api_tuya_devices():
 
 @router.post("/api/tuya/device/{device_id}/toggle")
 async def api_tuya_toggle(device_id: str, request: Request):
-    """Inverte o imposta lo stato ON/OFF del dispositivo Tuya."""
+    """Inverte o imposta lo stato ON/OFF del dispositivo Tuya con fallback trasparente su Home Assistant."""
     try:
         payload = await request.json()
     except Exception:
         payload = {}
     target_state = payload.get("state")
     res = await tuya_service.toggle_device(device_id, target_state)
+    
+    # Fallback trasparente su Home Assistant locale se Tuya Cloud non risponde o è disabilitato
+    if not res.get("success") and homeassistant_service.enabled:
+        ha_entity = homeassistant_service.find_entity_by_tuya_id(device_id)
+        if ha_entity:
+            logger.info("⚡ [FALLBACK] Reindirizzamento comando Tuya %s -> Home Assistant %s", device_id, ha_entity)
+            ha_res = await homeassistant_service.toggle_device(ha_entity, target_state)
+            if ha_res.get("success"):
+                return ha_res
     return res
 
 @router.post("/api/tuya/device/{device_id}/command")
 async def api_tuya_command(device_id: str, request: Request):
-    """Invia un comando avanzato (es: setpoint temperatura, comandi raw) a un dispositivo Tuya."""
+    """Invia un comando avanzato a un dispositivo Tuya con fallback su Home Assistant."""
     try:
         payload = await request.json()
     except Exception:
@@ -219,17 +228,33 @@ async def api_tuya_command(device_id: str, request: Request):
     if not commands and "temp_c" in payload:
         return await tuya_service.set_thermostat_temp(device_id, float(payload["temp_c"]))
     if not commands and ("action" in payload or "control" in payload):
-        return await tuya_service.control_curtain(device_id, payload.get("action") or payload.get("control"))
+        action = payload.get("action") or payload.get("control")
+        if homeassistant_service.enabled:
+            ha_entity = homeassistant_service.find_entity_by_tuya_id(device_id)
+            if ha_entity and ha_entity.startswith("cover."):
+                service = "open_cover" if action == "open" else ("close_cover" if action == "close" else "stop_cover")
+                return await homeassistant_service.call_service("cover", service, ha_entity)
+        return await tuya_service.control_curtain(device_id, action)
     return await tuya_service.send_command(device_id, commands)
 
 @router.post("/api/tuya/device/{device_id}/curtain")
 async def api_tuya_curtain(device_id: str, request: Request):
-    """Invia comandi di apertura/stop/chiusura alla persiana/tenda Tuya."""
+    """Invia comandi di apertura/stop/chiusura alla persiana/tenda Tuya con fallback Home Assistant."""
     try:
         payload = await request.json()
     except Exception:
         payload = {}
     action = payload.get("action") or payload.get("control") or "stop"
+    
+    # Fallback Home Assistant
+    if homeassistant_service.enabled:
+        ha_entity = homeassistant_service.find_entity_by_tuya_id(device_id)
+        if ha_entity and ha_entity.startswith("cover."):
+            service = "open_cover" if action == "open" else ("close_cover" if action == "close" else "stop_cover")
+            ha_res = await homeassistant_service.call_service("cover", service, ha_entity)
+            if ha_res.get("success"):
+                return ha_res
+                
     return await tuya_service.control_curtain(device_id, action)
 
 @router.post("/api/tuya/device/{device_id}/config")
