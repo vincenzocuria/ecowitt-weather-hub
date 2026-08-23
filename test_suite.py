@@ -28,6 +28,13 @@ from backend.database import (
 )
 from backend.forecast_service import forecast_service
 from backend.alert_engine import engine
+from backend.notifier import notifier
+from unittest.mock import MagicMock
+
+# Disabilita completamente l'invio di notifiche reali su smartphone durante i test unitari
+notifier.send_alert = MagicMock(return_value={"success": True})
+notifier.send_push = MagicMock(return_value=True)
+notifier.send_ntfy = MagicMock(return_value=True)
 
 
 class TestEcowittHub(unittest.TestCase):
@@ -1121,6 +1128,8 @@ class TestEcowittHub(unittest.TestCase):
 
         # 7. Verifica esecuzione task scaduto
         # Crea task già scaduto nel passato
+        import backend.device_scheduler
+        backend.device_scheduler.notifier.send_alert = MagicMock(return_value={"success": True})
         past_iso = "2020-01-01T00:00:00+00:00"
         t_due = device_scheduler.create_schedule(
             ecosystem="tuya",
