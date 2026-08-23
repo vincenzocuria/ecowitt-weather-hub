@@ -13,7 +13,11 @@ from typing import Dict, Any, List, Optional
 import tinytuya
 
 from backend.config import settings
-from backend.database import get_tuya_device_configs, save_tuya_device_config
+from backend.database import (
+    get_tuya_device_configs, save_tuya_device_config,
+    get_tuya_local_devices, get_tuya_local_device, save_tuya_local_device,
+    update_tuya_local_status, update_tuya_local_device_ip, delete_tuya_local_device
+)
 
 logger = logging.getLogger("TuyaService")
 
@@ -427,17 +431,234 @@ class TuyaService:
 
         return res
 
+    # =========================================================================
+    # CONTROLLO LOCALE LAN (ZERO CLOUD - SENZA API TRIAL)
+    # =========================================================================
+
+    async def scan_lan_devices(self, subnet_prefix: str = "192.168.1", port: int = 6668, timeout_sec: float = 0.6) -> List[Dict[str, Any]]:
+        """Esegue una scansione asincrona TCP veloce della rete locale per trovare tutti i dispositivi Tuya (porta 6668)."""
+        async def _check(ip: str):
+            try:
+                conn = asyncio.open_connection(ip, port)
+                reader, writer = await asyncio.wait_for(conn, timeout=timeout_sec)
+                writer.close()
+                await writer.wait_closed()
+                return {"ip": ip, "port": port, "open": True}
+            except Exception:
+                return None
+
+        tasks = [_check(f"{subnet_prefix}.{i}") for i in range(1, 255)]
+        results = await asyncio.gather(*tasks)
+        found = [r for r in results if r]
+        logger.info("📡 [Tuya LAN Scan] Trovati %d IP con porta Tuya aperta: %s", len(found), [f['ip'] for f in found])
+        return found
+
+    async def discover_device_ip(self, device_id: str) -> Optional[str]:
+        """Cerca l'IP locale associato a uno specifico device_id interrogando i dispositivi Tuya trovati su LAN."""
+        local_cfg = get_tuya_local_device(device_id)
+        key = local_cfg.get("local_key") if local_cfg else None
+        
+        lan_hosts = await self.scan_lan_devices()
+        loop = asyncio.get_running_loop()
+        
+        for host in lan_hosts:
+            ip = host["ip"]
+            if key:
+                def _test(ip_addr, l_key):
+                    try:
+                        d = tinytuya.OutletDevice(device_id, ip_addr, l_key, version=3.3, connection_timeout=1.0)
+                        d.set_socketPersistent(False)
+                        st = d.status()
+                        if st and (st.get("dps") or st.get("devId") == device_id):
+                            return True
+                    except Exception:
+                        pass
+                    return False
+
+                matched = await loop.run_in_executor(None, _test, ip, key)
+                if matched:
+                    logger.info("🎯 [Tuya Local] Rilevato IP %s per device_id %s", ip, device_id)
+                    update_tuya_local_device_ip(device_id, ip)
+                    return ip
+
+        # Se c'è un solo dispositivo Tuya sulla rete ed è l'unico configurato, associa quell'IP
+        if len(lan_hosts) == 1:
+            lone_ip = lan_hosts[0]["ip"]
+            logger.info("🎯 [Tuya Local] Associato unico IP Tuya trovato %s a %s", lone_ip, device_id)
+            update_tuya_local_device_ip(device_id, lone_ip)
+            return lone_ip
+
+        return None
+
+    async def control_device_local(self, device_id: str, new_state: bool, switch_num: int = 1) -> Dict[str, Any]:
+        """Comanda direttamente il dispositivo Tuya via socket locale TCP (porta 6668, zero cloud)."""
+        local_dev = get_tuya_local_device(device_id)
+        if not local_dev or not local_dev.get("local_key"):
+            return {"success": False, "error": "Chiave locale (local_key) non presente"}
+
+        ip = local_dev.get("ip_address")
+        key = local_dev.get("local_key")
+        version_str = str(local_dev.get("version") or "3.3")
+
+        # Se non c'è un IP, tenta discovery
+        if not ip:
+            ip = await self.discover_device_ip(device_id)
+            if not ip:
+                return {"success": False, "error": "Indirizzo IP locale non trovato sulla rete"}
+
+        loop = asyncio.get_running_loop()
+
+        def _sync_local_toggle():
+            try:
+                ver_val = float(version_str)
+            except Exception:
+                ver_val = 3.3
+
+            d = tinytuya.OutletDevice(
+                dev_id=device_id,
+                address=ip,
+                local_key=key,
+                version=ver_val,
+                connection_timeout=2.5
+            )
+            d.set_socketPersistent(False)
+
+            res = d.set_status(new_state, switch=switch_num)
+            if isinstance(res, dict) and ("Error" in res or res.get("success") is False):
+                res = d.set_value(switch_num, new_state)
+
+            stat = None
+            try:
+                stat = d.status()
+            except Exception:
+                pass
+            return res, stat
+
+        try:
+            res, stat = await loop.run_in_executor(None, _sync_local_toggle)
+            is_ok = False
+            if isinstance(res, dict):
+                if res.get("Error") is None and res.get("success") is not False:
+                    is_ok = True
+                elif res.get("dps"):
+                    is_ok = True
+            elif res is True:
+                is_ok = True
+
+            if is_ok:
+                logger.info("⚡ [Tuya Local LAN] Dispositivo %s impostato a %s via LAN (%s)", device_id, new_state, ip)
+                p_w = 0.0
+                v_v = 0.0
+                c_a = 0.0
+                if isinstance(stat, dict) and "dps" in stat:
+                    dps = stat["dps"]
+                    if "19" in dps:
+                        p_w = round(float(dps["19"]) / 10.0, 1)
+                    if "20" in dps:
+                        v_v = round(float(dps["20"]) / 10.0, 1)
+                    if "18" in dps:
+                        c_a = round(float(dps["18"]) / 1000.0, 2)
+                
+                update_tuya_local_status(device_id, is_on=new_state, power_w=p_w, voltage_v=v_v, current_a=c_a)
+                
+                if device_id in self.device_statuses:
+                    self.device_statuses[device_id]["is_on"] = new_state
+                    if p_w > 0:
+                        self.device_statuses[device_id]["power_w"] = p_w
+                    if v_v > 0:
+                        self.device_statuses[device_id]["voltage_v"] = v_v
+                    if c_a > 0:
+                        self.device_statuses[device_id]["current_a"] = c_a
+                else:
+                    self.device_statuses[device_id] = {
+                        "id": device_id,
+                        "name": local_dev.get("name", "Presa Smart"),
+                        "category": local_dev.get("category", "cz"),
+                        "type": "plug",
+                        "is_on": new_state,
+                        "power_w": p_w,
+                        "voltage_v": v_v,
+                        "current_a": c_a,
+                        "online": True
+                    }
+                self._save_cache()
+                return {"success": True, "local": True, "mode": "LAN", "ip": ip, "result": res}
+            else:
+                err = res.get("Error") if isinstance(res, dict) else "Errore risposta socket locale"
+                return {"success": False, "local": True, "error": str(err)}
+        except Exception as e:
+            logger.warning("⚠️ [Tuya Local] Errore LAN su %s (%s): %s", device_id, ip, e)
+            return {"success": False, "local": True, "error": str(e)}
+
+    async def import_keys_from_cloud(self) -> Dict[str, Any]:
+        """Tenta di scaricare tutte le local_key da Tuya Cloud per salvarle permanentemente in locale."""
+        if not self.cloud:
+            return {"success": False, "error": "Tuya Cloud client non inizializzato"}
+            
+        loop = asyncio.get_running_loop()
+        try:
+            devs_resp = await loop.run_in_executor(None, self.cloud._get_all_devices)
+            items = []
+            if isinstance(devs_resp, dict) and "result" in devs_resp:
+                items = devs_resp["result"]
+            elif isinstance(devs_resp, list):
+                items = devs_resp
+                
+            imported = 0
+            for item in items:
+                d_id = item.get("id")
+                d_name = item.get("name") or "Dispositivo Tuya"
+                d_key = item.get("local_key") or item.get("key")
+                d_ip = item.get("ip") or item.get("last_ip")
+                d_cat = item.get("category", "cz")
+                
+                if d_id and d_key:
+                    save_tuya_local_device(
+                        device_id=d_id,
+                        name=d_name,
+                        local_key=d_key,
+                        ip_address=d_ip,
+                        version="3.3",
+                        category=d_cat
+                    )
+                    imported += 1
+                    logger.info("🔑 [Tuya Local] Importata chiave permanente per '%s' (ID: %s)", d_name, d_id)
+            
+            return {"success": True, "imported_count": imported, "total_found": len(items)}
+        except Exception as e:
+            logger.error("Errore importazione chiavi Tuya: %s", e)
+            return {"success": False, "error": str(e)}
+
     async def toggle_device(self, device_id: str, target_state: Optional[bool] = None) -> Dict[str, Any]:
-        """Inverte o imposta lo stato ON/OFF del dispositivo con rilevamento dinamico del codice switch e fallback."""
+        """Inverte o imposta lo stato ON/OFF del dispositivo, privilegiando il controllo 100% LOCALE LAN."""
         dev = self.device_statuses.get(device_id)
         if not dev:
-            # Prova a sincronizzare prima
-            await self.sync_all()
-            dev = self.device_statuses.get(device_id)
+            # Prova a sincronizzare o leggere configurazione locale
+            local_info = get_tuya_local_device(device_id)
+            if local_info:
+                dev = {
+                    "id": device_id,
+                    "name": local_info["name"],
+                    "category": local_info["category"],
+                    "is_on": local_info["is_on"] or False,
+                    "online": True
+                }
+                self.device_statuses[device_id] = dev
 
         current_state = dev.get("is_on", False) if dev else False
         new_state = (not current_state) if target_state is None else target_state
 
+        # --- 1. TENTATIVO CONTROLLO 100% LOCALE LAN (Zero Cloud) ---
+        local_cfg = get_tuya_local_device(device_id)
+        if local_cfg and local_cfg.get("local_key"):
+            local_res = await self.control_device_local(device_id, new_state)
+            if local_res.get("success"):
+                logger.info("✅ [Tuya Toggle] Eseguito con successo via LAN LOCALE su %s", device_id)
+                return local_res
+            else:
+                logger.warning("⚠️ [Tuya Toggle] Controllo locale fallito (%s), fallback a Cloud...", local_res.get("error"))
+
+        # --- 2. FALLBACK A TUYA CLOUD ---
         raw_status = dev.get("raw_status", {}) if dev else {}
         
         candidates: List[str] = []

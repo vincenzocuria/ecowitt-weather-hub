@@ -15,7 +15,8 @@ from backend.database import (
     get_irrigation_automations_config, save_irrigation_automations_config,
     get_irrigation_learning_summary, log_irrigation_cycle_start,
     get_sensor_aliases, save_sensor_alias,
-    get_latest_reading, get_latest_energy, get_recent_rain_totals
+    get_latest_reading, get_latest_energy, get_recent_rain_totals,
+    get_tuya_local_devices, get_tuya_local_device, save_tuya_local_device, delete_tuya_local_device
 )
 from backend.analytics import calc_evapotranspiration, evaluate_smart_irrigation
 from backend.forecast_service import forecast_service
@@ -494,6 +495,59 @@ def build_devices_catalog() -> Dict[str, Any]:
             "raw": dev
         })
 
+    # 1.1 Integrazione Dispositivi Tuya con Controllo 100% Locale LAN
+    try:
+        local_tuya_list = get_tuya_local_devices()
+    except Exception:
+        local_tuya_list = []
+
+    existing_tuya_ids = {d["raw_id"] for d in devices if d["ecosystem"] == "tuya"}
+
+    for loc in local_tuya_list:
+        l_id = loc["device_id"]
+        if l_id in existing_tuya_ids:
+            for d in devices:
+                if d["raw_id"] == l_id and d["ecosystem"] == "tuya":
+                    d["is_local"] = True
+                    d["local_ip"] = loc.get("ip_address")
+                    d["local_version"] = loc.get("version", "3.3")
+                    d["category_label"] = f"{d.get('category_label', 'Tuya')} (LAN ⚡)"
+        else:
+            status_parts = []
+            if loc.get("is_on") is True:
+                p_w = loc.get("power_w", 0.0) or 0.0
+                status_parts.append(f"Acceso ({p_w:.1f} W)" if p_w > 0 else "Acceso (LAN ⚡)")
+            elif loc.get("is_on") is False:
+                status_parts.append("Spento (LAN ⚡)")
+            else:
+                status_parts.append("LAN Locale 🟢")
+
+            devices.append({
+                "id": f"tuya_{l_id}",
+                "raw_id": l_id,
+                "ecosystem": "tuya",
+                "is_local": True,
+                "local_ip": loc.get("ip_address"),
+                "local_version": loc.get("version", "3.3"),
+                "name": loc.get("name", "Presa Smart Locale"),
+                "icon": "🔌",
+                "category": "plugs",
+                "category_label": "Presa Smart • LAN Locale ⚡",
+                "is_on": loc.get("is_on"),
+                "can_toggle": True,
+                "is_online": True,
+                "status_text": " • ".join(status_parts),
+                "power_w": loc.get("power_w", 0.0) or 0.0,
+                "voltage_v": loc.get("voltage_v"),
+                "current_a": loc.get("current_a"),
+                "temp_current": None,
+                "temp_set": None,
+                "battery_pct": None,
+                "work_state": None,
+                "curtain_state": None,
+                "raw": loc
+            })
+
     # 2. LG ThinQ Dispositivi (Climatizzatori & Frigorifero)
     thinq_devices = thinq_service.get_cached_devices() if settings.LG_THINQ_ENABLED else []
     for d in thinq_devices:
@@ -797,4 +851,51 @@ async def api_devices_turn_all(request: Request):
                 results.append({"name": d.get("alias"), "res": res})
 
     return {"status": "ok", "target_state": target_state, "updated_count": len(results), "details": results}
+
+# --- TUYA LOCAL API (Zero Cloud LAN Management) ---
+
+@router.get("/api/tuya/local/devices")
+async def api_get_tuya_local_devices():
+    """Restituisce la lista dei dispositivi Tuya configurati per il controllo locale LAN."""
+    return {"devices": get_tuya_local_devices()}
+
+@router.post("/api/tuya/local/device")
+async def api_save_tuya_local_device(request: Request):
+    """Salva o aggiorna un dispositivo Tuya per il controllo locale LAN."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Payload non valido"}, status_code=400)
+
+    device_id = body.get("device_id")
+    name = body.get("name") or "Dispositivo Tuya"
+    local_key = body.get("local_key")
+    ip_address = body.get("ip_address")
+    version = body.get("version") or "3.3"
+    category = body.get("category") or "cz"
+
+    if not device_id or not local_key:
+        return JSONResponse({"error": "ID dispositivo e Local Key sono obbligatori"}, status_code=400)
+
+    save_tuya_local_device(device_id, name, local_key, ip_address, version, category)
+    return {"status": "ok", "device_id": device_id}
+
+@router.delete("/api/tuya/local/device/{device_id}")
+async def api_delete_tuya_local_device(device_id: str):
+    """Elimina un dispositivo dalla configurazione locale."""
+    success = delete_tuya_local_device(device_id)
+    return {"status": "ok" if success else "not_found"}
+
+@router.post("/api/tuya/local/scan")
+async def api_scan_tuya_lan():
+    """Esegue una scansione veloce della subnet locale per trovare dispositivi Tuya su porta 6668."""
+    found = await tuya_service.scan_lan_devices()
+    return {"status": "ok", "found_devices": found, "count": len(found)}
+
+@router.post("/api/tuya/local/import-cloud-keys")
+async def api_import_tuya_cloud_keys():
+    """Scarica e salva permanentemente in locale tutte le local_key dei dispositivi dal Cloud Tuya."""
+    res = await tuya_service.import_keys_from_cloud()
+    return res
+
 

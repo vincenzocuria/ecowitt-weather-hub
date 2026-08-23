@@ -22,7 +22,7 @@ from backend.database import (
     get_alert_logs, get_unread_alerts_count, get_alerts_stats,
     get_sensor_aliases, get_database_stats, get_today_energy_summary,
     get_latest_energy, get_climate_automations_config, get_irrigation_automations_config,
-    to_local_datetime_str
+    get_tuya_local_devices, to_local_datetime_str
 )
 from backend.analytics import (
     calc_apparent_temp, deg_to_compass, calc_current_weather_condition, calc_sun_ephemeris
@@ -452,6 +452,7 @@ async def settings_page(request: Request):
     tuya_sum = tuya_service.get_summary()
     climate_cfg = get_climate_automations_config()
     climate_devs = thinq_service.get_cached_devices() if settings.LG_THINQ_ENABLED else []
+    tuya_local_devs = get_tuya_local_devices()
     return templates.TemplateResponse(
         request=request,
         name="settings.html",
@@ -470,6 +471,7 @@ async def settings_page(request: Request):
             "tuya_enabled": settings.TUYA_ENABLED,
             "tuya_summary": tuya_sum,
             "tuya_devices": tuya_sum.get("all_devices", []),
+            "tuya_local_devices": tuya_local_devs,
             "sensor_aliases": aliases,
             "detected_sensors": detected_sensors,
             "db_stats": get_database_stats(),

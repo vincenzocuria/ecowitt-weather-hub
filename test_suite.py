@@ -1139,6 +1139,65 @@ class TestEcowittHub(unittest.TestCase):
         device_scheduler.cancel_schedule(t1["task_id"])
         device_scheduler.cancel_schedule(t2["task_id"])
 
+    def test_tuya_local_crud_and_endpoints(self):
+        from backend.database import (
+            save_tuya_local_device, get_tuya_local_devices, get_tuya_local_device,
+            update_tuya_local_status, update_tuya_local_device_ip, delete_tuya_local_device
+        )
+        from fastapi.testclient import TestClient
+        from backend.main import app
+        from backend.config import settings
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN})
+
+        # 1. Save local device
+        save_tuya_local_device(
+            device_id="local_test_plug_01",
+            name="Presa Cisterna LAN",
+            local_key="0123456789abcdef",
+            ip_address="192.168.1.150",
+            version="3.3",
+            category="cz"
+        )
+
+        dev = get_tuya_local_device("local_test_plug_01")
+        self.assertIsNotNone(dev)
+        self.assertEqual(dev["name"], "Presa Cisterna LAN")
+        self.assertEqual(dev["local_key"], "0123456789abcdef")
+        self.assertEqual(dev["ip_address"], "192.168.1.150")
+
+        # 2. Update status and IP
+        update_tuya_local_status("local_test_plug_01", is_on=True, power_w=240.5, voltage_v=229.0, current_a=1.05)
+        update_tuya_local_device_ip("local_test_plug_01", "192.168.1.155")
+        
+        dev_updated = get_tuya_local_device("local_test_plug_01")
+        self.assertEqual(dev_updated["ip_address"], "192.168.1.155")
+        self.assertTrue(dev_updated["is_on"])
+        self.assertEqual(dev_updated["power_w"], 240.5)
+
+        # 3. GET /api/tuya/local/devices
+        resp = client.get("/api/tuya/local/devices")
+        self.assertEqual(resp.status_code, 200)
+        local_devs = resp.json().get("devices", [])
+        self.assertTrue(any(d["device_id"] == "local_test_plug_01" for d in local_devs))
+
+        # 4. POST /api/tuya/local/device
+        resp_post = client.post("/api/tuya/local/device", json={
+            "device_id": "api_local_dev_99",
+            "name": "Luce Giardino LAN",
+            "local_key": "fedcba9876543210",
+            "ip_address": "192.168.1.160",
+            "version": "3.3"
+        })
+        self.assertEqual(resp_post.status_code, 200)
+
+        # 5. DELETE /api/tuya/local/device
+        resp_del = client.delete("/api/tuya/local/device/api_local_dev_99")
+        self.assertEqual(resp_del.status_code, 200)
+        self.assertEqual(resp_del.json()["status"], "ok")
+
+        # Clean up
+        delete_tuya_local_device("local_test_plug_01")
+
 
 if __name__ == "__main__":
     unittest.main()

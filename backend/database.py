@@ -265,6 +265,23 @@ def init_db():
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sched_status ON scheduled_device_tasks (status, execute_at)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sched_device ON scheduled_device_tasks (device_id, status)")
+
+    # 13. Dispositivi Tuya con Controllo Locale LAN (Zero Cloud, no API Key trial)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tuya_local_devices (
+            device_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            local_key TEXT NOT NULL,
+            ip_address TEXT,
+            version TEXT DEFAULT '3.3',
+            category TEXT DEFAULT 'cz',
+            is_on INTEGER,
+            power_w REAL DEFAULT 0.0,
+            voltage_v REAL DEFAULT 0.0,
+            current_a REAL DEFAULT 0.0,
+            updated_at TEXT NOT NULL
+        )
+    """)
     
     conn.commit()
     conn.close()
@@ -2719,6 +2736,126 @@ def cancel_scheduled_task(task_id: str) -> bool:
     conn.commit()
     conn.close()
     return rows_affected > 0
+
+# --- TUYA LOCAL DEVICES (Zero Cloud / LAN Protocol) ---
+
+def save_tuya_local_device(device_id: str, name: str, local_key: str, ip_address: Optional[str] = None, version: str = "3.3", category: str = "cz") -> bool:
+    """Salva o aggiorna un dispositivo Tuya per il controllo locale LAN."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_utc = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT INTO tuya_local_devices (device_id, name, local_key, ip_address, version, category, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(device_id) DO UPDATE SET
+            name = excluded.name,
+            local_key = excluded.local_key,
+            ip_address = COALESCE(excluded.ip_address, tuya_local_devices.ip_address),
+            version = excluded.version,
+            category = excluded.category,
+            updated_at = excluded.updated_at
+    """, (device_id.strip(), name.strip(), local_key.strip(), (ip_address.strip() if ip_address else None), str(version).strip(), category, now_utc))
+    conn.commit()
+    conn.close()
+    return True
+
+def get_tuya_local_devices() -> List[Dict[str, Any]]:
+    """Restituisce tutti i dispositivi configurati per il controllo locale."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT device_id, name, local_key, ip_address, version, category, is_on, power_w, voltage_v, current_a, updated_at
+        FROM tuya_local_devices
+        ORDER BY name ASC
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    devices = []
+    for r in rows:
+        devices.append({
+            "device_id": r[0],
+            "name": r[1],
+            "local_key": r[2],
+            "ip_address": r[3],
+            "version": r[4] or "3.3",
+            "category": r[5] or "cz",
+            "is_on": bool(r[6]) if r[6] is not None else None,
+            "power_w": float(r[7] or 0.0),
+            "voltage_v": float(r[8] or 0.0),
+            "current_a": float(r[9] or 0.0),
+            "updated_at": r[10]
+        })
+    return devices
+
+def get_tuya_local_device(device_id: str) -> Optional[Dict[str, Any]]:
+    """Restituisce la configurazione locale di uno specifico dispositivo Tuya."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT device_id, name, local_key, ip_address, version, category, is_on, power_w, voltage_v, current_a, updated_at
+        FROM tuya_local_devices
+        WHERE device_id = ?
+    """, (device_id,))
+    r = cursor.fetchone()
+    conn.close()
+    if not r:
+        return None
+    return {
+        "device_id": r[0],
+        "name": r[1],
+        "local_key": r[2],
+        "ip_address": r[3],
+        "version": r[4] or "3.3",
+        "category": r[5] or "cz",
+        "is_on": bool(r[6]) if r[6] is not None else None,
+        "power_w": float(r[7] or 0.0),
+        "voltage_v": float(r[8] or 0.0),
+        "current_a": float(r[9] or 0.0),
+        "updated_at": r[10]
+    }
+
+def update_tuya_local_status(device_id: str, is_on: Optional[bool] = None, power_w: Optional[float] = None, voltage_v: Optional[float] = None, current_a: Optional[float] = None) -> bool:
+    """Aggiorna lo stato telemetrico locale del dispositivo."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_utc = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        UPDATE tuya_local_devices
+        SET is_on = COALESCE(?, is_on),
+            power_w = COALESCE(?, power_w),
+            voltage_v = COALESCE(?, voltage_v),
+            current_a = COALESCE(?, current_a),
+            updated_at = ?
+        WHERE device_id = ?
+    """, (1 if is_on is True else (0 if is_on is False else None), power_w, voltage_v, current_a, now_utc, device_id))
+    conn.commit()
+    conn.close()
+    return True
+
+def update_tuya_local_device_ip(device_id: str, ip_address: str) -> bool:
+    """Aggiorna l'IP locale associato al dispositivo."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_utc = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        UPDATE tuya_local_devices
+        SET ip_address = ?, updated_at = ?
+        WHERE device_id = ?
+    """, (ip_address.strip(), now_utc, device_id))
+    conn.commit()
+    conn.close()
+    return True
+
+def delete_tuya_local_device(device_id: str) -> bool:
+    """Rimuove un dispositivo dalla configurazione locale."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM tuya_local_devices WHERE device_id = ?", (device_id,))
+    rows = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return rows > 0
+
 
 def mark_scheduled_task_completed(task_id: str, status: str, result: Any = None) -> bool:
     """Aggiorna lo stato di un task completato (executed o failed)."""

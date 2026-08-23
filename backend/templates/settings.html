@@ -416,6 +416,137 @@
             Nessun dispositivo Tuya rilevato. Verifica le credenziali Client ID e Secret nel file di configurazione.
         </div>
         {% endif %}
+    <!-- SEZIONE 2: CONTROLLO 100% LOCALE LAN (ZERO CLOUD) -->
+    <div class="card" id="tuya_local_card" style="margin-top: 1.5rem; border: 1px solid rgba(56, 189, 248, 0.35); background: linear-gradient(145deg, rgba(56, 189, 248, 0.06), var(--card-bg));">
+        <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.25rem;">🏠</span>
+                <strong>Controllo 100% Locale LAN (Zero Cloud / Senza Scadenze)</strong>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-sm btn-outline" onclick="scanTuyaLan()" id="btn_scan_lan" title="Cerca i dispositivi Tuya accesi sulla rete Wi-Fi locale">
+                    📡 Scansiona Rete LAN
+                </button>
+                <button type="button" class="btn btn-sm btn-outline" onclick="importTuyaCloudKeys()" id="btn_import_cloud" title="Scarica le Local Key da Tuya Cloud per salvarle per sempre in locale">
+                    📥 Importa da Cloud
+                </button>
+                <button type="button" class="btn btn-sm btn-primary" onclick="openAddLocalTuyaModal()">
+                    ➕ Aggiungi Dispositivo LAN
+                </button>
+            </div>
+        </div>
+
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.5;">
+            Comanda le prese e i dispositivi Tuya direttamente via TCP/IP sulla rete Wi-Fi locale. <strong>Zero richieste cloud, nessuna scadenza di API trial, funzionamento garantito anche senza internet e tempi di risposta istantanei (15 ms)</strong>.
+        </p>
+
+        <div id="tuya_local_status_msg" style="font-size: 0.82rem; margin-bottom: 0.75rem; display: none; padding: 0.5rem 0.75rem; border-radius: 8px;"></div>
+
+        <!-- ELENCO DISPOSITIVI LOCALI REGISTRATI -->
+        <div id="tuya_local_devices_container">
+            {% if tuya_local_devices %}
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                {% for ldev in tuya_local_devices %}
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 10px; padding: 0.85rem 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;" id="local_row_{{ ldev.device_id }}">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.4rem;">🔌</span>
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <strong style="color: var(--text); font-size: 0.95rem;">{{ ldev.name }}</strong>
+                                <span class="badge-tag" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; font-size: 0.7rem;">LAN ⚡ ver {{ ldev.version }}</span>
+                                {% if ldev.is_on is true %}
+                                <span class="badge-tag tag-on" style="font-size: 0.7rem;">🟢 ON</span>
+                                {% elif ldev.is_on is false %}
+                                <span class="badge-tag tag-off" style="font-size: 0.7rem;">⚪ OFF</span>
+                                {% endif %}
+                            </div>
+                            <div style="font-size: 0.78rem; color: var(--text-dim); margin-top: 2px;">
+                                <span>IP: <strong style="color: #f1f5f9;">{{ ldev.ip_address or 'Auto-Discovery' }}</strong></span> • 
+                                <span style="font-family: monospace;">ID: {{ ldev.device_id }}</span> • 
+                                <span>Key: <strong style="font-family: monospace; color: #a78bfa;">{{ ldev.local_key[:4] }}••••••••{{ ldev.local_key[-4:] if ldev.local_key|length >= 8 else '' }}</strong></span>
+                                {% if ldev.power_w and ldev.power_w > 0 %}
+                                • <strong style="color: #38bdf8;">⚡ {{ ldev.power_w }} W</strong>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <button type="button" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="testToggleTuya('{{ ldev.device_id }}')">
+                            ⚡ Prova Toggle LAN
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.55rem; font-size: 0.78rem;" onclick="editLocalTuya('{{ ldev.device_id }}', '{{ ldev.name }}', '{{ ldev.local_key }}', '{{ ldev.ip_address or '' }}', '{{ ldev.version }}')">
+                            ✏️ Modifica
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.55rem; font-size: 0.78rem; border-color: #ef4444; color: #ef4444;" onclick="deleteLocalTuya('{{ ldev.device_id }}')">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div style="background: rgba(0,0,0,0.2); border: 1px dashed var(--card-border); border-radius: 10px; padding: 1.5rem 1rem; text-align: center; color: var(--text-dim); font-size: 0.85rem;">
+                <div style="font-size: 2rem; margin-bottom: 0.4rem;">🏠</div>
+                <strong style="color: var(--text); font-size: 0.95rem;">Nessun dispositivo Tuya configurato per il controllo locale</strong>
+                <p style="margin-top: 0.35rem;">Puoi aggiungere la tua presa (es. <em>Cisterna</em>) con ID e Local Key oppure cliccare su <strong>"📥 Importa da Cloud"</strong>.</p>
+                <button type="button" class="btn btn-primary btn-sm" style="margin-top: 0.75rem;" onclick="openAddLocalTuyaModal()">➕ Aggiungi Dispositivo Locale</button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- MODALE AGGIUNGI / MODIFICA DISPOSITIVO TUYA LOCALE -->
+<div id="modal_tuya_local" class="device-modal-backdrop" style="display: none;" onclick="closeTuyaLocalModal(event)">
+    <div class="device-modal-dialog" style="max-width: 520px;" onclick="event.stopPropagation()">
+        <div class="device-modal-header">
+            <div class="modal-title-group">
+                <div class="modal-icon-badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8;">⚡</div>
+                <div>
+                    <h3 id="modal_tuya_local_title">Aggiungi Dispositivo Tuya Locale (LAN)</h3>
+                    <div class="modal-device-meta">Controllo diretto via Wi-Fi senza Cloud</div>
+                </div>
+            </div>
+            <button type="button" class="modal-close-btn" onclick="closeTuyaLocalModal()">&times;</button>
+        </div>
+
+        <div class="device-modal-body" style="padding: 1.25rem;">
+            <div style="display: flex; flex-direction: column; gap: 1rem;">
+                <div>
+                    <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">Nome Dispositivo</label>
+                    <input type="text" id="tuya_local_input_name" placeholder="es. Cisterna / Presa Smart" style="width: 100%; padding: 0.6rem 0.75rem; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-size: 0.9rem;" />
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">ID Dispositivo Tuya (Device ID)</label>
+                    <input type="text" id="tuya_local_input_id" placeholder="es. 04564850cc50e3d1ca35" style="width: 100%; padding: 0.6rem 0.75rem; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-family: monospace; font-size: 0.88rem;" />
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">Local Key (Chiave di Rete a 16 caratteri)</label>
+                    <input type="text" id="tuya_local_input_key" placeholder="es. a1b2c3d4e5f67890" style="width: 100%; padding: 0.6rem 0.75rem; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-family: monospace; font-size: 0.88rem;" />
+                    <small style="font-size: 0.72rem; color: var(--text-dim); display: block; margin-top: 2px;">La chiave univoca di cifratura locale associata al dispositivo.</small>
+                </div>
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.75rem;">
+                    <div>
+                        <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">Indirizzo IP Locale (Opzionale)</label>
+                        <input type="text" id="tuya_local_input_ip" placeholder="es. 192.168.1.145 (o lascia vuoto per auto-discovery)" style="width: 100%; padding: 0.6rem 0.75rem; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-size: 0.88rem;" />
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">Versione</label>
+                        <select id="tuya_local_input_ver" style="width: 100%; padding: 0.6rem 0.5rem; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-size: 0.88rem;">
+                            <option value="3.3" selected>3.3 (Standard)</option>
+                            <option value="3.4">3.4</option>
+                            <option value="3.5">3.5</option>
+                            <option value="3.1">3.1 (Legacy)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="device-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeTuyaLocalModal()">Annulla</button>
+            <button type="button" class="btn btn-primary" onclick="submitTuyaLocalDevice()">💾 Salva Dispositivo</button>
+        </div>
     </div>
 </div>
 
@@ -1288,6 +1419,175 @@ async function syncTuyaDevicesNow() {
             msgEl.style.color = '#ef4444';
             msgEl.innerText = `❌ Errore sincronizzazione: ${e.message}`;
         }
+    }
+}
+
+// =========================================================================
+// GESTIONE CONTROLLO LOCALE TUYA LAN (ZERO CLOUD)
+// =========================================================================
+
+function openAddLocalTuyaModal() {
+    document.getElementById('modal_tuya_local_title').innerText = 'Aggiungi Dispositivo Tuya Locale (LAN)';
+    document.getElementById('tuya_local_input_name').value = '';
+    document.getElementById('tuya_local_input_id').value = '';
+    document.getElementById('tuya_local_input_id').readOnly = false;
+    document.getElementById('tuya_local_input_key').value = '';
+    document.getElementById('tuya_local_input_ip').value = '';
+    document.getElementById('tuya_local_input_ver').value = '3.3';
+    const modal = document.getElementById('modal_tuya_local');
+    modal.style.display = 'flex';
+    modal.classList.add('show');
+}
+
+function closeTuyaLocalModal(e) {
+    if (e && e.target !== document.getElementById('modal_tuya_local') && !e.target.classList.contains('modal-close-btn') && !e.target.classList.contains('btn-secondary')) {
+        return;
+    }
+    const modal = document.getElementById('modal_tuya_local');
+    modal.style.display = 'none';
+    modal.classList.remove('show');
+}
+
+function editLocalTuya(id, name, key, ip, ver) {
+    document.getElementById('modal_tuya_local_title').innerText = `Modifica Dispositivo: ${name}`;
+    document.getElementById('tuya_local_input_name').value = name || '';
+    document.getElementById('tuya_local_input_id').value = id || '';
+    document.getElementById('tuya_local_input_id').readOnly = true;
+    document.getElementById('tuya_local_input_key').value = key || '';
+    document.getElementById('tuya_local_input_ip').value = ip || '';
+    document.getElementById('tuya_local_input_ver').value = ver || '3.3';
+    const modal = document.getElementById('modal_tuya_local');
+    modal.style.display = 'flex';
+    modal.classList.add('show');
+}
+
+async function submitTuyaLocalDevice() {
+    const name = document.getElementById('tuya_local_input_name').value.trim();
+    const id = document.getElementById('tuya_local_input_id').value.trim();
+    const key = document.getElementById('tuya_local_input_key').value.trim();
+    const ip = document.getElementById('tuya_local_input_ip').value.trim();
+    const ver = document.getElementById('tuya_local_input_ver').value;
+
+    if (!id || !key) {
+        alert('Device ID e Local Key sono obbligatori!');
+        return;
+    }
+
+    try {
+        const resp = await fetch('/api/tuya/local/device', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                device_id: id,
+                name: name || 'Dispositivo Tuya',
+                local_key: key,
+                ip_address: ip || null,
+                version: ver || '3.3'
+            })
+        });
+        const res = await resp.json();
+        if (resp.ok) {
+            closeTuyaLocalModal();
+            location.reload();
+        } else {
+            alert('Errore: ' + (res.error || 'Salvataggio fallito'));
+        }
+    } catch (e) {
+        alert('Errore di comunicazione: ' + e.message);
+    }
+}
+
+async function deleteLocalTuya(id) {
+    if (!confirm(`Sei sicuro di voler rimuovere il dispositivo locale ${id}?`)) return;
+    try {
+        const resp = await fetch(`/api/tuya/local/device/${id}`, { method: 'DELETE' });
+        if (resp.ok) {
+            location.reload();
+        }
+    } catch (e) {
+        alert('Errore eliminazione: ' + e.message);
+    }
+}
+
+async function scanTuyaLan() {
+    const btn = document.getElementById('btn_scan_lan');
+    const msgEl = document.getElementById('tuya_local_status_msg');
+    btn.disabled = true;
+    btn.innerText = '⏳ Scansione...';
+    if (msgEl) {
+        msgEl.style.display = 'block';
+        msgEl.style.background = 'rgba(56, 189, 248, 0.15)';
+        msgEl.style.color = '#38bdf8';
+        msgEl.innerText = '📡 Scansione rapida in corso sulla rete locale (192.168.1.0/24)...';
+    }
+
+    try {
+        const resp = await fetch('/api/tuya/local/scan', { method: 'POST' });
+        const data = await resp.json();
+        if (msgEl) {
+            if (data.count > 0) {
+                const ips = data.found_devices.map(d => d.ip).join(', ');
+                msgEl.style.background = 'rgba(16, 185, 129, 0.15)';
+                msgEl.style.color = '#10b981';
+                msgEl.innerHTML = `✅ <strong>Trovati ${data.count} dispositivi Tuya su LAN!</strong> IP attivi: <code>${ips}</code>`;
+            } else {
+                msgEl.style.background = 'rgba(234, 179, 8, 0.15)';
+                msgEl.style.color = '#eab308';
+                msgEl.innerText = 'Nessun dispositivo Tuya risponde attualmente sulla porta 6668. Verifica che siano accesi e connessi al Wi-Fi.';
+            }
+        }
+    } catch (e) {
+        if (msgEl) {
+            msgEl.style.background = 'rgba(239, 68, 68, 0.15)';
+            msgEl.style.color = '#ef4444';
+            msgEl.innerText = 'Errore scansione LAN: ' + e.message;
+        }
+    } finally {
+        btn.disabled = false;
+        btn.innerText = '📡 Scansiona Rete LAN';
+    }
+}
+
+async function importTuyaCloudKeys() {
+    const btn = document.getElementById('btn_import_cloud');
+    const msgEl = document.getElementById('tuya_local_status_msg');
+    btn.disabled = true;
+    btn.innerText = '⏳ Download...';
+    if (msgEl) {
+        msgEl.style.display = 'block';
+        msgEl.style.background = 'rgba(56, 189, 248, 0.15)';
+        msgEl.style.color = '#38bdf8';
+        msgEl.innerText = '📥 Scaricamento Local Key da Tuya Cloud...';
+    }
+
+    try {
+        const resp = await fetch('/api/tuya/local/import-cloud-keys', { method: 'POST' });
+        const data = await resp.json();
+        if (msgEl) {
+            if (data.success && data.imported_count > 0) {
+                msgEl.style.background = 'rgba(16, 185, 129, 0.15)';
+                msgEl.style.color = '#10b981';
+                msgEl.innerText = `🎉 Importate con successo ${data.imported_count} chiavi locali permanenti! Ricarica in corso...`;
+                setTimeout(() => location.reload(), 1500);
+            } else if (data.success && data.imported_count === 0) {
+                msgEl.style.background = 'rgba(234, 179, 8, 0.15)';
+                msgEl.style.color = '#eab308';
+                msgEl.innerText = 'Nessun nuovo dispositivo con Local Key trovato su Tuya Cloud.';
+            } else {
+                msgEl.style.background = 'rgba(239, 68, 68, 0.15)';
+                msgEl.style.color = '#ef4444';
+                msgEl.innerText = `⚠️ Impossibile scaricare le chiavi: ${data.error || 'Trial API Cloud scaduta. Rinnova su iot.tuya.com per scaricare le chiavi una tantum, oppure inserisci ID e Local Key manualmente.'}`;
+            }
+        }
+    } catch (e) {
+        if (msgEl) {
+            msgEl.style.background = 'rgba(239, 68, 68, 0.15)';
+            msgEl.style.color = '#ef4444';
+            msgEl.innerText = 'Errore importazione: ' + e.message;
+        }
+    } finally {
+        btn.disabled = false;
+        btn.innerText = '📥 Importa da Cloud';
     }
 }
 
