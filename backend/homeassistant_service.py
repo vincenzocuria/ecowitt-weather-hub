@@ -91,42 +91,70 @@ class HomeAssistantService:
             return []
 
     def get_catalog_devices(self) -> List[Dict[str, Any]]:
-        """Restituisce le entità rilevanti (switch, light, climate, cover) formattate per il catalogo unificato."""
+        """Restituisce le entità rilevanti formattate per il catalogo unificato con abbinamento potenza."""
         if not self.enabled or not self.entities:
             return []
+
+        # Mappa veloce sensori di potenza/consumo (es: sensor.cisterna_potenza -> 9.0 W)
+        power_map: Dict[str, float] = {}
+        for entity_id, state_obj in self.entities.items():
+            if entity_id.startswith("sensor.") and any(k in entity_id for k in ("_potenza", "_power", "_consumption")):
+                try:
+                    p_val = float(state_obj.get("state") or 0.0)
+                    base_key = entity_id.replace("sensor.", "").replace("_potenza", "").replace("_power", "").replace("_consumption", "")
+                    power_map[base_key] = p_val
+                except (ValueError, TypeError):
+                    pass
 
         devices = []
         for entity_id, state_obj in self.entities.items():
             domain = entity_id.split(".")[0]
-            if domain not in ("switch", "light", "climate", "cover", "fan"):
+            if domain not in ("switch", "light", "climate", "cover", "valve", "fan", "media_player"):
+                continue
+
+            # Filtra interruttori di configurazione secondari (es. blocco bambini)
+            if "blocco_bambini" in entity_id or "child_lock" in entity_id:
                 continue
 
             attributes = state_obj.get("attributes", {})
             friendly_name = attributes.get("friendly_name") or entity_id
             state_str = (state_obj.get("state") or "").lower()
-            is_on = state_str in ("on", "open", "cleaning", "cooling", "heating") if state_str not in ("unavailable", "unknown") else None
+            is_on = state_str in ("on", "open", "cleaning", "cooling", "heating", "playing") if state_str not in ("unavailable", "unknown") else None
             is_online = state_str not in ("unavailable", "unknown")
 
-            # Estrai potenza/consumo se presente negli attributi
-            power_w = float(attributes.get("current_power_w") or attributes.get("power") or attributes.get("current_consumption") or 0.0)
+            # Estrai potenza dagli attributi o dalla mappa sensori correlata
+            base_key = entity_id.split(".")[1].replace("_socket_1", "").replace("_presa", "").replace("_valve", "")
+            power_w = float(attributes.get("current_power_w") or attributes.get("power") or attributes.get("current_consumption") or power_map.get(base_key, 0.0))
 
             # Icona e categoria
             if domain in ("switch", "light"):
                 cat = "plugs"
                 icon = "💡" if domain == "light" else "🔌"
                 cat_label = "Luce Smart" if domain == "light" else "Presa Smart"
+            elif domain == "valve":
+                cat = "irrigation"
+                icon = "💧"
+                cat_label = "Elettrovalvola / Irrigazione"
             elif domain == "climate":
                 cat = "climate"
                 icon = "❄️"
-                cat_label = "Climatizzatore"
+                cat_label = "Climatizzatore / Termostato"
             elif domain == "cover":
                 cat = "shutters"
                 icon = "🪟"
                 cat_label = "Persiana / Tenda"
+            elif domain == "media_player":
+                cat = "appliances"
+                icon = "📺"
+                cat_label = "Smart TV / Media"
             else:
                 cat = "generic"
                 icon = "📱"
                 cat_label = "Dispositivo Smart"
+
+            status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
+            if power_w > 0:
+                status_text += f" • {power_w:.1f} W"
 
             devices.append({
                 "id": f"hass_{entity_id}",
@@ -137,9 +165,9 @@ class HomeAssistantService:
                 "category": cat,
                 "category_label": f"{cat_label} • HA",
                 "is_on": is_on,
-                "can_toggle": domain in ("switch", "light", "fan", "cover"),
+                "can_toggle": domain in ("switch", "light", "valve", "cover", "media_player", "climate"),
                 "is_online": is_online,
-                "status_text": f"Stato: {state_obj.get('state', 'N/D').upper()}",
+                "status_text": status_text,
                 "power_w": power_w,
                 "raw": state_obj
             })
@@ -178,12 +206,36 @@ class HomeAssistantService:
         if domain in ("switch", "light", "fan"):
             service = "turn_on" if target_state else "turn_off"
             return await self.call_service(domain, service, entity_id)
+        elif domain == "valve":
+            service = "open_valve" if target_state else "close_valve"
+            return await self.call_service(domain, service, entity_id)
         elif domain == "cover":
             service = "open_cover" if target_state else "close_cover"
             return await self.call_service(domain, service, entity_id)
         elif domain == "climate":
             service = "turn_on" if target_state else "turn_off"
             return await self.call_service(domain, service, entity_id)
+        elif domain == "media_player":
+            service = "turn_on" if target_state else "turn_off"
+            return await self.call_service(domain, service, entity_id)
         return {"success": False, "error": f"Dominio {domain} non supporta toggle diretto"}
+
+    async def worker_loop(self):
+        """Loop di polling periodico per mantenere aggiornato lo stato delle entità locali."""
+        logger.info("🏠 [HASS] Worker loop Home Assistant avviato (intervallo: %ss)", settings.HASS_POLL_INTERVAL_SEC)
+        while True:
+            try:
+                if self.enabled:
+                    await self.fetch_states()
+            except Exception as e:
+                logger.warning("Errore nel ciclo di aggiornamento Home Assistant: %s", e)
+            await asyncio.sleep(max(5, settings.HASS_POLL_INTERVAL_SEC))
+
+    def stop(self):
+        pass
+
+    async def close(self):
+        if self.session and not self.session.closed:
+            await self.session.close()
 
 homeassistant_service = HomeAssistantService()
