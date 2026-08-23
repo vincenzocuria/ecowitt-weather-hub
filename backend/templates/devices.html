@@ -512,7 +512,9 @@ function renderModalContent(deviceId) {
     let html = '';
 
     // Render in base all'ecosistema e categoria
-    if (dev.ecosystem === 'tuya') {
+    if (dev.ecosystem === 'homeassistant') {
+        html = renderHomeAssistantDetail(dev);
+    } else if (dev.ecosystem === 'tuya') {
         html = renderTuyaDetail(dev);
     } else if (dev.ecosystem === 'thinq') {
         html = renderThinQDetail(dev);
@@ -524,12 +526,124 @@ function renderModalContent(deviceId) {
         html = renderGenericDetail(dev);
     }
 
-    // Aggiungi sezione Programmazione & Timer per tutti i dispositivi commutabili / climatizzatori / prese
-    if (dev.can_toggle || ['plugs', 'climate', 'appliances', 'irrigation'].includes(dev.category)) {
+    // Aggiungi sezione Programmazione & Timer per tutti i dispositivi commutabili / climatizzatori / prese / persiane / valvole
+    if (dev.can_toggle || ['plugs', 'climate', 'appliances', 'irrigation', 'shutters', 'curtains'].includes(dev.category)) {
         html += renderDeviceScheduleBox(dev);
     }
 
     bodyEl.innerHTML = html;
+}
+
+// 0. Dettaglio Home Assistant (Hub Locale)
+function renderHomeAssistantDetail(dev) {
+    const raw = dev.raw || {};
+    const isOn = dev.is_on;
+    const pW = dev.power_w || 0;
+    const cat = dev.category;
+    const entityId = dev.raw_id;
+
+    let html = '';
+
+    if (cat === 'shutters' || entityId.startsWith('cover.')) {
+        const stateStr = (raw.state || 'N/D').toUpperCase();
+        const pos = raw.attributes ? (raw.attributes.current_position !== undefined ? raw.attributes.current_position : null) : null;
+        const posLabel = pos !== null ? `${pos}%` : stateStr;
+
+        html += `
+            <div class="modal-quick-state-card state-card-on" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.3);">
+                <div class="state-card-info">
+                    <span class="state-indicator-dot dot-on" style="background: #38bdf8; box-shadow: 0 0 8px #38bdf8;"></span>
+                    <span class="state-text">Persiana / Tenda: <strong>${posLabel}</strong></span>
+                </div>
+                <span class="badge-tag" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; font-size: 0.8rem;">HA Locale ⚡</span>
+            </div>
+
+            <div class="curtain-controls-box" style="margin-top: 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 14px; padding: 1.25rem; text-align: center;">
+                <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Comandi Rapidi Posizione</div>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
+                    <button type="button" class="btn btn-action-primary" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px;" onclick="controlHassCover('${entityId}', 'open_cover')">
+                        <span style="font-size: 1.35rem;">🔼</span>
+                        <span>Apri</span>
+                    </button>
+                    <button type="button" class="btn btn-outline" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px; border-color: #38bdf8; color: #38bdf8;" onclick="controlHassCover('${entityId}', 'set_cover_position', 50)">
+                        <span style="font-size: 1.35rem;">🌓</span>
+                        <span>A Metà (50%)</span>
+                    </button>
+                    <button type="button" class="btn btn-outline" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px; border-color: rgba(255,255,255,0.2);" onclick="controlHassCover('${entityId}', 'stop_cover')">
+                        <span style="font-size: 1.35rem;">⏸️</span>
+                        <span>Stop</span>
+                    </button>
+                    <button type="button" class="btn btn-action-danger" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px;" onclick="controlHassCover('${entityId}', 'close_cover')">
+                        <span style="font-size: 1.35rem;">🔽</span>
+                        <span>Chiudi</span>
+                    </button>
+                </div>
+
+                <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06);">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-dim); margin-bottom: 6px;">
+                        <span>Regolazione Fine Posizione:</span>
+                        <strong id="hass-cover-slider-val-${entityId}" style="color: #38bdf8;">${pos !== null ? pos : 50}%</strong>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <input type="range" min="0" max="100" value="${pos !== null ? pos : 50}" style="flex: 1; accent-color: #38bdf8;" oninput="document.getElementById('hass-cover-slider-val-${entityId}').textContent = this.value + '%'" id="hass-cover-slider-${entityId}">
+                        <button type="button" class="btn btn-primary btn-sm" onclick="controlHassCover('${entityId}', 'set_cover_position', parseInt(document.getElementById('hass-cover-slider-${entityId}').value))">
+                            Imposta
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        return html;
+    }
+
+    if (cat === 'irrigation' || entityId.startsWith('valve.')) {
+        const isWatering = (raw.state === 'open' || raw.state === 'opening');
+        html += `
+            <div class="modal-quick-state-card ${isWatering ? 'state-card-on' : 'state-card-off'}" style="${isWatering ? 'background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.4);' : ''}">
+                <div class="state-card-info">
+                    <span class="state-indicator-dot ${isWatering ? 'dot-on pulse' : 'dot-off'}" style="${isWatering ? 'background: #10b981; box-shadow: 0 0 10px #10b981;' : ''}"></span>
+                    <span class="state-text">Elettrovalvola: <strong>${isWatering ? 'Aperta / In Irrigazione 💧' : 'Chiusa / Standby 💤'}</strong></span>
+                </div>
+                <button type="button" class="btn ${isWatering ? 'btn-danger' : 'btn-success'}" onclick="controlHassValve('${entityId}', '${isWatering ? 'close_valve' : 'open_valve'}')">
+                    ${isWatering ? '🛑 Chiudi' : '💧 Apri'}
+                </button>
+            </div>
+        `;
+        return html;
+    }
+
+    // Default per Prese Smart & Luci su Home Assistant
+    html += `
+        <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
+                <span class="state-text">${isOn ? 'Dispositivo Acceso' : 'Dispositivo Spento'}</span>
+            </div>
+            <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
+                ${isOn ? 'Spegni' : 'Accendi'}
+            </button>
+        </div>
+
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            <div class="telemetry-card">
+                <span class="tel-label">Potenza Assorbita</span>
+                <span class="tel-val ${pW > 0 ? 'text-accent' : ''}">${pW > 0 ? pW.toFixed(1) + ' W' : '0.0 W'}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">Protocollo Hub</span>
+                <span class="tel-val" style="color: #4ade80;">Home Assistant LAN ⚡</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">Entità HA</span>
+                <span class="tel-val" style="font-size: 0.8rem; font-family: monospace;">${entityId}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">Stato Connessione</span>
+                <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+            </div>
+        </div>
+    `;
+    return html;
 }
 
 // 1. Dettaglio Tuya
@@ -1047,6 +1161,62 @@ async function setThinQFridgeTemp(rawId, newTemp) {
         }
     } catch (e) {
         showToast('Errore comunicazione frigorifero: ' + e.message, 'danger');
+    }
+}
+
+async function controlHassCover(entityId, service, position = null) {
+    try {
+        let payload = {
+            domain: 'cover',
+            service: service,
+            entity_id: entityId
+        };
+        if (service === 'set_cover_position' && position !== null) {
+            payload.data = { position: parseInt(position) };
+        }
+        const resp = await fetch('/api/homeassistant/service', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const res = await resp.json();
+        if (res.success) {
+            let label = 'Comando persiana inviato 🪟';
+            if (service === 'open_cover') label = 'Apertura persiana 100% avviata 🔼';
+            else if (service === 'close_cover') label = 'Chiusura persiana avviata 🔽';
+            else if (service === 'stop_cover') label = 'Movimento persiana fermato ⏸️';
+            else if (service === 'set_cover_position') label = `Persiana impostata al ${position}% 🌓`;
+            showToast(label, 'success');
+            setTimeout(fetchDevicesData, 1200);
+        } else {
+            showToast('Errore persiana: ' + (res.error || 'Errore HA'), 'danger');
+        }
+    } catch (e) {
+        showToast('Errore comunicazione Home Assistant: ' + e.message, 'danger');
+    }
+}
+
+async function controlHassValve(entityId, service) {
+    try {
+        const resp = await fetch('/api/homeassistant/service', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                domain: 'valve',
+                service: service,
+                entity_id: entityId
+            })
+        });
+        const res = await resp.json();
+        if (res.success) {
+            const label = service === 'open_valve' ? '💧 Elettrovalvola aperta con successo!' : '🛑 Elettrovalvola chiusa';
+            showToast(label, 'success');
+            setTimeout(fetchDevicesData, 1000);
+        } else {
+            showToast('Errore valvola: ' + (res.error || 'Errore HA'), 'danger');
+        }
+    } catch (e) {
+        showToast('Errore comunicazione valvola: ' + e.message, 'danger');
     }
 }
 

@@ -137,7 +137,19 @@ class DeviceScheduler:
 
                 elif ecosystem in ("homeassistant", "hass"):
                     from backend.homeassistant_service import homeassistant_service
-                    res = await homeassistant_service.toggle_device(device_id, target_state)
+                    if action in ("set_cover_position", "position", "half"):
+                        pos = int(payload.get("position", 50))
+                        res = await homeassistant_service.call_service("cover", "set_cover_position", device_id, {"position": pos})
+                    elif action in ("open_cover", "open"):
+                        res = await homeassistant_service.call_service("cover", "open_cover", device_id)
+                    elif action in ("close_cover", "close"):
+                        res = await homeassistant_service.call_service("cover", "close_cover", device_id)
+                    elif action in ("open_valve", "irrigate"):
+                        res = await homeassistant_service.call_service("valve", "open_valve", device_id)
+                    elif action in ("close_valve", "stop_irrigation"):
+                        res = await homeassistant_service.call_service("valve", "close_valve", device_id)
+                    else:
+                        res = await homeassistant_service.toggle_device(device_id, target_state)
                     is_success = bool(res.get("success"))
                     result = res
                     if not is_success:
@@ -157,7 +169,19 @@ class DeviceScheduler:
             executed_count += 1
 
             # Invia notifica all'utente
-            action_desc = "acceso 🟢" if target_state else "spento 🔴"
+            if action in ("set_cover_position", "position", "half"):
+                action_desc = f"posizionato al {payload.get('position', 50)}% 🪟"
+            elif action in ("open_cover", "open"):
+                action_desc = "aperto al 100% 🪟"
+            elif action in ("close_cover", "close"):
+                action_desc = "chiuso completamente 🪟"
+            elif action in ("open_valve", "irrigate"):
+                action_desc = "aperto in irrigazione 💧"
+            elif action in ("close_valve", "stop_irrigation"):
+                action_desc = "chiuso 🛑"
+            else:
+                action_desc = "acceso 🟢" if target_state else "spento 🔴"
+
             if is_success:
                 notifier.send_alert(
                     alert_type="device_scheduled_action",
