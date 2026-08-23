@@ -361,12 +361,26 @@ class TuyaService:
             if isinstance(res, dict):
                 if res.get("success") is True or res.get("result") is True:
                     is_ok = True
-                elif "Error" in res:
-                    err_msg = str(res.get("Error"))
-                elif "msg" in res:
-                    err_msg = str(res.get("msg"))
-                elif res.get("code") and res.get("code") != 0:
-                    err_msg = f"Tuya error {res.get('code')}: {res.get('msg', '')}"
+                else:
+                    payload_txt = str(res.get("Payload") or "")
+                    msg_txt = str(res.get("msg") or "")
+                    err_txt = str(res.get("Error") or "")
+                    
+                    full_err = f"{payload_txt} {msg_txt} {err_txt}".lower()
+                    if "trial quota is exhausted" in full_err or "quota is exhausted" in full_err or "28841105" in full_err or "28841002" in full_err:
+                        err_msg = "Quota API Tuya IoT Core scaduta su iot.tuya.com: estendi gratuitamente il periodo di prova da Cloud -> API Services -> IoT Core -> Extend Trial Period."
+                    elif "permission deny" in full_err or "1106" in full_err:
+                        err_msg = "Permesso negato da Tuya Cloud: verifica che il progetto su iot.tuya.com abbia abilitato il servizio IoT Core per questo dispositivo."
+                    elif "device is offline" in full_err or "2008" in full_err:
+                        err_msg = "Il dispositivo Tuya risulta spento o non connesso al Wi-Fi / Cloud."
+                    elif payload_txt:
+                        err_msg = str(res.get("Payload"))
+                    elif msg_txt:
+                        err_msg = msg_txt
+                    elif err_txt:
+                        err_msg = err_txt
+                    elif res.get("code") and res.get("code") != 0:
+                        err_msg = f"Errore Tuya {res.get('code')}: {res.get('msg', '')}"
             elif res is True:
                 is_ok = True
 
