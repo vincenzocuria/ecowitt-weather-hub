@@ -699,11 +699,11 @@ def build_devices_catalog() -> Dict[str, Any]:
     # 4. Aton Storage Fotovoltaico & Batteria
     if settings.ATON_ENABLED:
         e_latest = aton_service.latest_data or get_latest_energy() or {}
-        p_solar = float(e_latest.get("solar_power_w", 0) or 0)
-        p_batt = float(e_latest.get("battery_power_w", 0) or 0)
-        soc = float(e_latest.get("battery_soc_pct", 0) or 0)
-        load = float(e_latest.get("house_load_w", 0) or 0)
-        grid = float(e_latest.get("grid_power_w", 0) or 0)
+        p_solar = float(e_latest.get("p_solare") if e_latest.get("p_solare") is not None else (e_latest.get("solar_power_w") or 0))
+        p_batt = float(e_latest.get("p_batteria") if e_latest.get("p_batteria") is not None else (e_latest.get("battery_power_w") or 0))
+        soc = float(e_latest.get("soc") if e_latest.get("soc") is not None else (e_latest.get("battery_soc_pct") or 0))
+        load = float(e_latest.get("p_utenze") if e_latest.get("p_utenze") is not None else (e_latest.get("house_load_w") or 0))
+        grid = float(e_latest.get("p_rete") if e_latest.get("p_rete") is not None else (e_latest.get("grid_power_w") or 0))
         
         stat = f"Solare: {int(p_solar)} W • Batteria: {int(soc)}%"
         devices.append({
