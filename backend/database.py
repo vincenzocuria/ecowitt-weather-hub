@@ -2771,7 +2771,19 @@ def get_active_scheduled_tasks() -> List[Dict[str, Any]]:
 def get_device_active_schedules(device_id: str) -> List[Dict[str, Any]]:
     """Restituisce i task attivi pendenti per uno specifico dispositivo."""
     all_active = get_active_scheduled_tasks()
-    return [t for t in all_active if t["device_id"] == device_id or f"tuya_{t['device_id']}" == device_id or f"thinq_{t['device_id']}" == device_id or f"st_{t['device_id']}" == device_id]
+    d_clean = str(device_id).strip()
+    return [
+        t for t in all_active
+        if t["device_id"] == d_clean
+        or f"tuya_{t['device_id']}" == d_clean
+        or f"thinq_{t['device_id']}" == d_clean
+        or f"st_{t['device_id']}" == d_clean
+        or f"hass_{t['device_id']}" == d_clean
+        or t["device_id"] == d_clean.replace("tuya_", "")
+        or t["device_id"] == d_clean.replace("thinq_", "")
+        or t["device_id"] == d_clean.replace("st_", "")
+        or t["device_id"] == d_clean.replace("hass_", "")
+    ]
 
 def cancel_scheduled_task(task_id: str) -> bool:
     """Cancella un'azione programmata pendente."""

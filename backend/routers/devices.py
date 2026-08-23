@@ -799,16 +799,17 @@ def build_devices_catalog() -> Dict[str, Any]:
         raw_id = str(dev.get("raw_id", ""))
         dev_id = str(dev.get("id", ""))
         dev_scheds = (
-            schedules_by_device.get(raw_id, [])
-            or schedules_by_device.get(dev_id, [])
-            or schedules_by_device.get(f"tuya_{raw_id}", [])
-            or schedules_by_device.get(f"thinq_{raw_id}", [])
-            or schedules_by_device.get(f"st_{raw_id}", [])
-            or schedules_by_device.get(f"hass_{raw_id}", [])
-            or (schedules_by_device.get(dev_id.replace("tuya_", "")) if dev_id.startswith("tuya_") else [])
-            or (schedules_by_device.get(dev_id.replace("hass_", "")) if dev_id.startswith("hass_") else [])
-            or (schedules_by_device.get(dev_id.replace("thinq_", "")) if dev_id.startswith("thinq_") else [])
-            or (schedules_by_device.get(dev_id.replace("st_", "")) if dev_id.startswith("st_") else [])
+            schedules_by_device.get(raw_id)
+            or schedules_by_device.get(dev_id)
+            or schedules_by_device.get(f"tuya_{raw_id}")
+            or schedules_by_device.get(f"thinq_{raw_id}")
+            or schedules_by_device.get(f"st_{raw_id}")
+            or schedules_by_device.get(f"hass_{raw_id}")
+            or (schedules_by_device.get(dev_id.replace("tuya_", "")) if dev_id.startswith("tuya_") else None)
+            or (schedules_by_device.get(dev_id.replace("hass_", "")) if dev_id.startswith("hass_") else None)
+            or (schedules_by_device.get(dev_id.replace("thinq_", "")) if dev_id.startswith("thinq_") else None)
+            or (schedules_by_device.get(dev_id.replace("st_", "")) if dev_id.startswith("st_") else None)
+            or []
         )
         # Sincronizza il nome del dispositivo nelle notifiche/schedules
         for s in dev_scheds:

@@ -110,11 +110,27 @@ class DeviceScheduler:
             error_msg = None
 
             try:
+                # Normalizza device_id rimuovendo eventuali prefissi di ecosistema ridondanti
+                clean_dev_id = device_id
+                for pfx in ("tuya_", "thinq_", "st_", "hass_"):
+                    if clean_dev_id.startswith(pfx):
+                        clean_dev_id = clean_dev_id[len(pfx):]
+
                 if ecosystem == "tuya":
-                    result = await tuya_service.toggle_device(device_id, target_state)
+                    result = await tuya_service.toggle_device(clean_dev_id, target_state)
                     is_success = bool(result.get("success"))
                     if not is_success:
-                        error_msg = result.get("error") or "Comando Tuya non riuscito"
+                        from backend.homeassistant_service import homeassistant_service
+                        if homeassistant_service.enabled:
+                            ha_entity = homeassistant_service.find_entity_by_tuya_id(clean_dev_id)
+                            if ha_entity:
+                                logger.info(f"⚡ [SCHEDULER FALLBACK] Reindirizzamento Tuya {clean_dev_id} -> HA {ha_entity}")
+                                ha_res = await homeassistant_service.toggle_device(ha_entity, target_state)
+                                if ha_res.get("success"):
+                                    result = ha_res
+                                    is_success = True
+                    if not is_success:
+                        error_msg = (result.get("error") if isinstance(result, dict) else None) or "Comando Tuya non riuscito"
 
                 elif ecosystem == "thinq":
                     ctrl_payload = {"power": target_state}
@@ -122,14 +138,14 @@ class DeviceScheduler:
                         ctrl_payload["target_temp"] = payload["target_temp"]
                     if "mode" in payload:
                         ctrl_payload["mode"] = payload["mode"]
-                    result = await thinq_service.control_device(device_id, ctrl_payload)
+                    result = await thinq_service.control_device(clean_dev_id, ctrl_payload)
                     is_success = bool(result.get("success"))
                     if not is_success:
                         error_msg = result.get("error") or "Comando LG ThinQ non riuscito"
 
                 elif ecosystem == "smartthings":
                     cmd = "on" if target_state else "off"
-                    res = await smartthings_service.execute_command(device_id, "switch", cmd)
+                    res = await smartthings_service.execute_command(clean_dev_id, "switch", cmd)
                     is_success = bool(res)
                     result = {"success": res}
                     if not is_success:
@@ -137,19 +153,20 @@ class DeviceScheduler:
 
                 elif ecosystem in ("homeassistant", "hass"):
                     from backend.homeassistant_service import homeassistant_service
+                    entity_id = clean_dev_id
                     if action in ("set_cover_position", "position", "half"):
                         pos = int(payload.get("position", 50))
-                        res = await homeassistant_service.call_service("cover", "set_cover_position", device_id, {"position": pos})
+                        res = await homeassistant_service.call_service("cover", "set_cover_position", entity_id, {"position": pos})
                     elif action in ("open_cover", "open"):
-                        res = await homeassistant_service.call_service("cover", "open_cover", device_id)
+                        res = await homeassistant_service.call_service("cover", "open_cover", entity_id)
                     elif action in ("close_cover", "close"):
-                        res = await homeassistant_service.call_service("cover", "close_cover", device_id)
+                        res = await homeassistant_service.call_service("cover", "close_cover", entity_id)
                     elif action in ("open_valve", "irrigate"):
-                        res = await homeassistant_service.call_service("valve", "open_valve", device_id)
+                        res = await homeassistant_service.call_service("valve", "open_valve", entity_id)
                     elif action in ("close_valve", "stop_irrigation"):
-                        res = await homeassistant_service.call_service("valve", "close_valve", device_id)
+                        res = await homeassistant_service.call_service("valve", "close_valve", entity_id)
                     else:
-                        res = await homeassistant_service.toggle_device(device_id, target_state)
+                        res = await homeassistant_service.toggle_device(entity_id, target_state)
                     is_success = bool(res.get("success"))
                     result = res
                     if not is_success:
