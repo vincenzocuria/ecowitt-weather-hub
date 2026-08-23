@@ -20,6 +20,7 @@ from backend.database import (
 from backend.analytics import calc_evapotranspiration, evaluate_smart_irrigation
 from backend.forecast_service import forecast_service
 from backend.aton_service import aton_service
+from backend.device_scheduler import device_scheduler
 
 logger = logging.getLogger("weather_hub")
 
@@ -672,6 +673,25 @@ def build_devices_catalog() -> Dict[str, Any]:
             "raw": e_latest
         })
 
+    # 5. Associa eventuali timer/programmazioni attive a ciascun dispositivo
+    try:
+        active_schedules = device_scheduler.get_schedules()
+    except Exception:
+        active_schedules = []
+
+    schedules_by_device: Dict[str, List[Dict[str, Any]]] = {}
+    for s in active_schedules:
+        d_raw = s["device_id"]
+        if d_raw not in schedules_by_device:
+            schedules_by_device[d_raw] = []
+        schedules_by_device[d_raw].append(s)
+
+    for dev in devices:
+        raw_id = str(dev.get("raw_id"))
+        dev_scheds = schedules_by_device.get(raw_id, [])
+        dev["active_schedules"] = dev_scheds
+        dev["active_schedule"] = dev_scheds[0] if dev_scheds else None
+
     # Statistiche di sintesi
     total_count = len(devices)
     active_count = sum(1 for d in devices if d.get("is_on") is True)
@@ -680,11 +700,13 @@ def build_devices_catalog() -> Dict[str, Any]:
 
     return {
         "devices": devices,
+        "active_schedules": active_schedules,
         "stats": {
             "total": total_count,
             "active": active_count,
             "total_power_w": round(total_power, 1),
-            "online": online_count
+            "online": online_count,
+            "scheduled_tasks_count": len(active_schedules)
         }
     }
 
@@ -692,6 +714,56 @@ def build_devices_catalog() -> Dict[str, Any]:
 async def api_devices_all():
     """Restituisce la lista aggregata e normalizzata di tutti i dispositivi smart."""
     return build_devices_catalog()
+
+# --- Programmazione & Timer Dispositivi Endpoints ---
+
+@router.get("/api/devices/schedules")
+async def api_get_schedules(device_id: Optional[str] = None):
+    """Restituisce l'elenco delle programmazioni e timer attivi (o filtrati per dispositivo)."""
+    schedules = device_scheduler.get_schedules(device_id)
+    return {"schedules": schedules, "count": len(schedules)}
+
+@router.post("/api/devices/schedule")
+async def api_create_schedule(request: Request):
+    """Crea una nuova programmazione / timer di accensione o spegnimento."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+        
+    ecosystem = payload.get("ecosystem", "tuya")
+    device_id = payload.get("device_id")
+    device_name = payload.get("device_name") or "Dispositivo Smart"
+    action = payload.get("action", "turn_off")  # turn_on | turn_off
+    delay_minutes = payload.get("delay_minutes")
+    target_time_iso = payload.get("target_time_iso")
+    extra_payload = payload.get("payload") or {}
+
+    if not device_id:
+        return JSONResponse({"error": "ID dispositivo mancante"}, status_code=400)
+        
+    try:
+        task = device_scheduler.create_schedule(
+            ecosystem=ecosystem,
+            device_id=device_id,
+            device_name=device_name,
+            action=action,
+            delay_minutes=delay_minutes,
+            target_time_iso=target_time_iso,
+            payload=extra_payload
+        )
+        return {"status": "ok", "task": task}
+    except Exception as e:
+        logger.error(f"Errore creazione timer/schedule: {e}")
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+@router.delete("/api/devices/schedule/{task_id}")
+async def api_cancel_schedule(task_id: str):
+    """Annulla una programmazione / timer pendente."""
+    success = device_scheduler.cancel_schedule(task_id)
+    if success:
+        return {"status": "cancelled", "task_id": task_id}
+    return JSONResponse({"error": "Task non trovato o già eseguito/annullato"}, status_code=404)
 
 @router.post("/api/devices/turn-all")
 async def api_devices_turn_all(request: Request):
@@ -725,3 +797,4 @@ async def api_devices_turn_all(request: Request):
                 results.append({"name": d.get("alias"), "res": res})
 
     return {"status": "ok", "target_state": target_state, "updated_count": len(results), "details": results}
+

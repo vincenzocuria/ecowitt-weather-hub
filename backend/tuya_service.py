@@ -355,9 +355,28 @@ class TuyaService:
             res = await loop.run_in_executor(None, self.cloud.sendcommand, device_id, payload)
             logger.info("Comando Tuya inviato a %s: %s -> %s", device_id, payload, res)
             
-            # Schedula un refresh immediato dello stato del dispositivo
-            asyncio.create_task(self.sync_single_device(device_id))
-            return {"success": True, "result": res}
+            # Valida risposta effettiva di Tuya Cloud
+            is_ok = False
+            err_msg = None
+            if isinstance(res, dict):
+                if res.get("success") is True or res.get("result") is True:
+                    is_ok = True
+                elif "Error" in res:
+                    err_msg = str(res.get("Error"))
+                elif "msg" in res:
+                    err_msg = str(res.get("msg"))
+                elif res.get("code") and res.get("code") != 0:
+                    err_msg = f"Tuya error {res.get('code')}: {res.get('msg', '')}"
+            elif res is True:
+                is_ok = True
+
+            if is_ok:
+                # Schedula un refresh immediato dello stato del dispositivo
+                asyncio.create_task(self.sync_single_device(device_id))
+                return {"success": True, "result": res}
+            else:
+                logger.warning("Tuya Cloud ha rifiutato il comando per %s: %s", device_id, res)
+                return {"success": False, "error": err_msg or "Comando rifiutato dal dispositivo Tuya", "result": res}
         except Exception as e:
             logger.error("Errore invio comando Tuya a %s: %s", device_id, e)
             return {"success": False, "error": str(e)}
@@ -395,7 +414,7 @@ class TuyaService:
         return res
 
     async def toggle_device(self, device_id: str, target_state: Optional[bool] = None) -> Dict[str, Any]:
-        """Inverte o imposta lo stato ON/OFF del dispositivo con rilevamento dinamico del codice switch."""
+        """Inverte o imposta lo stato ON/OFF del dispositivo con rilevamento dinamico del codice switch e fallback."""
         dev = self.device_statuses.get(device_id)
         if not dev:
             # Prova a sincronizzare prima
@@ -406,24 +425,39 @@ class TuyaService:
         new_state = (not current_state) if target_state is None else target_state
 
         raw_status = dev.get("raw_status", {}) if dev else {}
-        cmd_code = None
-        for candidate in ["switch_1", "switch_led", "switch", "switch_2"]:
-            if candidate in raw_status:
-                cmd_code = candidate
-                break
         
-        if not cmd_code:
-            category = dev.get("category", "") if dev else ""
-            cmd_code = "switch_1" if category == "cz" else ("switch_led" if category == "dj" else "switch")
-
-        commands = [{"code": cmd_code, "value": new_state}]
-        res = await self.send_command(device_id, commands)
+        candidates: List[str] = []
+        for candidate in ["switch_1", "switch", "switch_led", "switch_2", "switch_spray"]:
+            if candidate in raw_status and candidate not in candidates:
+                candidates.append(candidate)
         
-        if res.get("success") and dev:
-            dev["is_on"] = new_state
-            self._save_cache()
+        category = dev.get("category", "") if dev else ""
+        if category == "cz" and "switch_1" not in candidates:
+            candidates.insert(0, "switch_1")
+        elif category in ("dj", "dd") and "switch_led" not in candidates:
+            candidates.insert(0, "switch_led")
+        elif category == "sfkzq" and "switch_spray" not in candidates:
+            candidates.insert(0, "switch_spray")
             
-        return res
+        for fallback in ["switch_1", "switch", "switch_led", "switch_2", "switch_spray"]:
+            if fallback not in candidates:
+                candidates.append(fallback)
+
+        last_res = {"success": False, "error": "Nessun codice switch accettato da Tuya"}
+        for cmd_code in candidates:
+            commands = [{"code": cmd_code, "value": new_state}]
+            res = await self.send_command(device_id, commands)
+            if res.get("success"):
+                if dev:
+                    dev["is_on"] = new_state
+                    if "raw_status" not in dev:
+                        dev["raw_status"] = {}
+                    dev["raw_status"][cmd_code] = new_state
+                    self._save_cache()
+                return res
+            last_res = res
+            
+        return last_res
 
     async def set_thermostat_temp(self, device_id: str, temp_c: float) -> Dict[str, Any]:
         """Imposta il target di temperatura per un termostato Tuya."""

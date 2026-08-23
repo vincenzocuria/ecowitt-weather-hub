@@ -24,6 +24,7 @@ from backend.aton_service import aton_service
 from backend.thinq_service import thinq_service
 from backend.smartthings_service import smartthings_service
 from backend.tuya_service import tuya_service
+from backend.device_scheduler import device_scheduler
 
 # Routers modulari
 from backend.routers.weather import router as weather_router, build_analytics_context, process_weather_data
@@ -97,6 +98,7 @@ async def lifespan(app: FastAPI):
     thinq_task = asyncio.create_task(thinq_service.worker_loop())
     smartthings_task = asyncio.create_task(smartthings_service.worker_loop())
     tuya_task = asyncio.create_task(tuya_service.worker_loop())
+    scheduler_task = asyncio.create_task(device_scheduler.worker_loop())
     yield
     watchdog_task.cancel()
     aton_service.stop()
@@ -106,6 +108,8 @@ async def lifespan(app: FastAPI):
     smartthings_task.cancel()
     await smartthings_service.close()
     tuya_task.cancel()
+    device_scheduler.stop()
+    scheduler_task.cancel()
 
 # Inizializzazione FastAPI
 app = FastAPI(title="Ecowitt & Sainlogic Weather Station Hub", lifespan=lifespan)

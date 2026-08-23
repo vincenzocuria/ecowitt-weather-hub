@@ -1061,6 +1061,84 @@ class TestEcowittHub(unittest.TestCase):
         self.assertEqual(resp_test.status_code, 200)
         self.assertEqual(resp_test.json()["status"], "sent")
 
+    def test_device_scheduler(self):
+        from backend.device_scheduler import device_scheduler
+        from backend.database import get_active_scheduled_tasks, cancel_scheduled_task
+        from fastapi.testclient import TestClient
+        from backend.main import app
+        from backend.config import settings
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN})
+
+        # 1. Crea schedule con ritardo 60 minuti (es. accendi clima tra 1 ora)
+        t1 = device_scheduler.create_schedule(
+            ecosystem="thinq",
+            device_id="dev_clima_cameretta_123",
+            device_name="Clima Cameretta",
+            action="turn_on",
+            delay_minutes=60
+        )
+        self.assertTrue(t1["task_id"].startswith("sched_"))
+        self.assertEqual(t1["action"], "turn_on")
+        self.assertEqual(t1["device_name"], "Clima Cameretta")
+
+        # 2. Crea schedule con ritardo 300 minuti (es. spegni dopo 5 ore)
+        t2 = device_scheduler.create_schedule(
+            ecosystem="tuya",
+            device_id="dev_cisterna_999",
+            device_name="Cisterna",
+            action="turn_off",
+            delay_minutes=300
+        )
+        self.assertEqual(t2["action"], "turn_off")
+
+        # 3. Verifica query task attivi
+        active = device_scheduler.get_schedules()
+        self.assertTrue(any(x["task_id"] == t1["task_id"] for x in active))
+        self.assertTrue(any(x["task_id"] == t2["task_id"] for x in active))
+
+        # 4. Verifica API GET /api/devices/schedules
+        resp = client.get("/api/devices/schedules")
+        self.assertEqual(resp.status_code, 200)
+        scheds = resp.json().get("schedules", [])
+        self.assertTrue(len(scheds) >= 2)
+
+        # 5. Verifica API POST /api/devices/schedule
+        resp_post = client.post("/api/devices/schedule", json={
+            "ecosystem": "tuya",
+            "device_id": "test_plug_api",
+            "device_name": "Presa Test",
+            "action": "turn_off",
+            "delay_minutes": 15
+        })
+        self.assertEqual(resp_post.status_code, 200)
+        task_api = resp_post.json()["task"]
+        self.assertEqual(task_api["action"], "turn_off")
+
+        # 6. Verifica API DELETE /api/devices/schedule/{task_id}
+        resp_del = client.delete(f"/api/devices/schedule/{task_api['task_id']}")
+        self.assertEqual(resp_del.status_code, 200)
+        self.assertEqual(resp_del.json()["status"], "cancelled")
+
+        # 7. Verifica esecuzione task scaduto
+        # Crea task già scaduto nel passato
+        past_iso = "2020-01-01T00:00:00+00:00"
+        t_due = device_scheduler.create_schedule(
+            ecosystem="tuya",
+            device_id="dev_past",
+            device_name="Dispositivo Passato",
+            action="turn_off",
+            target_time_iso=past_iso
+        )
+        import asyncio
+        loop = asyncio.new_event_loop()
+        count = loop.run_until_complete(device_scheduler.execute_due_tasks())
+        loop.close()
+        self.assertGreaterEqual(count, 1)
+
+        # Pulisci task t1 e t2
+        device_scheduler.cancel_schedule(t1["task_id"])
+        device_scheduler.cancel_schedule(t2["task_id"])
+
 
 if __name__ == "__main__":
     unittest.main()

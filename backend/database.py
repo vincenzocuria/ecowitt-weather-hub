@@ -246,6 +246,26 @@ def init_db():
         )
     """)
     
+    # 12. Programmazione e Timer Dispositivi Smart (Accensione / Spegnimento Temporizzato)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS scheduled_device_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id TEXT UNIQUE NOT NULL,
+            created_at TEXT NOT NULL,
+            execute_at TEXT NOT NULL,
+            ecosystem TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            device_name TEXT NOT NULL,
+            action TEXT NOT NULL,
+            action_payload_json TEXT,
+            status TEXT DEFAULT 'pending',
+            executed_at TEXT,
+            result_json TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sched_status ON scheduled_device_tasks (status, execute_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sched_device ON scheduled_device_tasks (device_id, status)")
+    
     conn.commit()
     conn.close()
 
@@ -2540,4 +2560,182 @@ def get_irrigation_learning_summary() -> Dict[str, Any]:
         "suggested_pulse_minutes": suggested_pulse,
         "recent_cycles": cycles
     }
+
+
+# =========================================================================
+# GESTIONE PROGRAMMAZIONE & TIMER DISPOSITIVI SMART (PERSISTENZA DB)
+# =========================================================================
+
+def save_scheduled_task(
+    task_id: str,
+    ecosystem: str,
+    device_id: str,
+    device_name: str,
+    action: str,
+    execute_at: str,
+    payload: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Salva una nuova azione programmata (timer) nel database SQLite."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    created_at = datetime.now(timezone.utc).isoformat()
+    payload_json = json.dumps(payload or {}, ensure_ascii=False)
+    
+    cursor.execute("""
+        INSERT INTO scheduled_device_tasks (
+            task_id, created_at, execute_at, ecosystem, device_id, device_name, action, action_payload_json, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    """, (task_id, created_at, execute_at, ecosystem, device_id, device_name, action, payload_json))
+    
+    conn.commit()
+    conn.close()
+    
+    return {
+        "task_id": task_id,
+        "created_at": created_at,
+        "execute_at": execute_at,
+        "ecosystem": ecosystem,
+        "device_id": device_id,
+        "device_name": device_name,
+        "action": action,
+        "payload": payload or {},
+        "status": "pending"
+    }
+
+def get_due_scheduled_tasks() -> List[Dict[str, Any]]:
+    """Restituisce tutti i task in stato 'pending' la cui data/ora di esecuzione è già trascorsa o attuale."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_utc = datetime.now(timezone.utc).isoformat()
+    
+    cursor.execute("""
+        SELECT * FROM scheduled_device_tasks
+        WHERE status = 'pending' AND execute_at <= ?
+        ORDER BY execute_at ASC
+    """, (now_utc,))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    tasks = []
+    for r in rows:
+        payload = {}
+        try:
+            if r["action_payload_json"]:
+                payload = json.loads(r["action_payload_json"])
+        except Exception:
+            pass
+            
+        tasks.append({
+            "id": r["id"],
+            "task_id": r["task_id"],
+            "created_at": r["created_at"],
+            "execute_at": r["execute_at"],
+            "ecosystem": r["ecosystem"],
+            "device_id": r["device_id"],
+            "device_name": r["device_name"],
+            "action": r["action"],
+            "payload": payload,
+            "status": r["status"]
+        })
+    return tasks
+
+def get_active_scheduled_tasks() -> List[Dict[str, Any]]:
+    """Restituisce tutti i task attualmente pendenti e attivi."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT * FROM scheduled_device_tasks
+        WHERE status = 'pending'
+        ORDER BY execute_at ASC
+    """)
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    tasks = []
+    now_utc_dt = datetime.now(timezone.utc)
+    for r in rows:
+        payload = {}
+        try:
+            if r["action_payload_json"]:
+                payload = json.loads(r["action_payload_json"])
+        except Exception:
+            pass
+            
+        try:
+            exec_dt = datetime.fromisoformat(str(r["execute_at"]).replace("Z", "+00:00"))
+            if exec_dt.tzinfo is None:
+                exec_dt = exec_dt.replace(tzinfo=timezone.utc)
+            rem_sec = max(0, int((exec_dt - now_utc_dt).total_seconds()))
+        except Exception:
+            rem_sec = 0
+
+        # Formatta etichetta leggibile del tempo rimanente (es. "tra 45m", "tra 1h 30m")
+        if rem_sec < 60:
+            rem_label = "tra meno di un minuto"
+        elif rem_sec < 3600:
+            rem_label = f"tra {rem_sec // 60}m"
+        else:
+            hrs = rem_sec // 3600
+            mins = (rem_sec % 3600) // 60
+            rem_label = f"tra {hrs}h {mins}m" if mins > 0 else f"tra {hrs}h"
+
+        tasks.append({
+            "id": r["id"],
+            "task_id": r["task_id"],
+            "created_at": r["created_at"],
+            "created_at_local": to_local_datetime_str(r["created_at"]),
+            "execute_at": r["execute_at"],
+            "execute_at_local": to_local_datetime_str(r["execute_at"]),
+            "ecosystem": r["ecosystem"],
+            "device_id": r["device_id"],
+            "device_name": r["device_name"],
+            "action": r["action"],
+            "action_label": "Accensione" if r["action"] == "turn_on" else ("Spegnimento" if r["action"] == "turn_off" else r["action"]),
+            "payload": payload,
+            "status": r["status"],
+            "remaining_seconds": rem_sec,
+            "remaining_label": rem_label
+        })
+    return tasks
+
+def get_device_active_schedules(device_id: str) -> List[Dict[str, Any]]:
+    """Restituisce i task attivi pendenti per uno specifico dispositivo."""
+    all_active = get_active_scheduled_tasks()
+    return [t for t in all_active if t["device_id"] == device_id or f"tuya_{t['device_id']}" == device_id or f"thinq_{t['device_id']}" == device_id or f"st_{t['device_id']}" == device_id]
+
+def cancel_scheduled_task(task_id: str) -> bool:
+    """Cancella un'azione programmata pendente."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE scheduled_device_tasks 
+        SET status = 'cancelled', executed_at = ?
+        WHERE task_id = ? AND status = 'pending'
+    """, (datetime.now(timezone.utc).isoformat(), task_id))
+    rows_affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return rows_affected > 0
+
+def mark_scheduled_task_completed(task_id: str, status: str, result: Any = None) -> bool:
+    """Aggiorna lo stato di un task completato (executed o failed)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_utc = datetime.now(timezone.utc).isoformat()
+    res_json = json.dumps(result or {}, ensure_ascii=False)
+    
+    cursor.execute("""
+        UPDATE scheduled_device_tasks
+        SET status = ?, executed_at = ?, result_json = ?
+        WHERE task_id = ?
+    """, (status, now_utc, res_json, task_id))
+    
+    rows_affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return rows_affected > 0
+
 
