@@ -282,6 +282,15 @@ def init_db():
             updated_at TEXT NOT NULL
         )
     """)
+
+    # 14. Alias e Nomi Personalizzati per qualsiasi Dispositivo Smart (Tuya, HA, LG ThinQ, SmartThings, Aton)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS device_aliases (
+            device_id TEXT PRIMARY KEY,
+            alias TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
     
     conn.commit()
     conn.close()
@@ -1701,6 +1710,47 @@ def save_sensor_alias(sensor_id: str, alias: str) -> None:
         """, (sensor_id.strip(), alias.strip(), now_iso))
     conn.commit()
     conn.close()
+
+# ----------------- GESTIONE ALIAS DISPOSITIVI SMART -----------------
+
+def get_device_aliases() -> Dict[str, str]:
+    """Restituisce la mappa di tutti gli alias personalizzati assegnati a qualsiasi dispositivo smart."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT device_id, alias FROM device_aliases")
+    rows = cursor.fetchall()
+    conn.close()
+    return {r["device_id"]: r["alias"] for r in rows}
+
+def save_device_alias(device_id: str, alias: str) -> bool:
+    """Salva o rimuove un alias personalizzato per qualsiasi dispositivo smart (Tuya, HA, LG, ST, Aton)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    device_id_clean = str(device_id).strip()
+    alias_clean = str(alias).strip() if alias else ""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    
+    if not alias_clean:
+        cursor.execute("DELETE FROM device_aliases WHERE device_id = ?", (device_id_clean,))
+    else:
+        cursor.execute("""
+            INSERT INTO device_aliases (device_id, alias, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(device_id) DO UPDATE SET alias=excluded.alias, updated_at=excluded.updated_at
+        """, (device_id_clean, alias_clean, now_iso))
+    conn.commit()
+    conn.close()
+    return True
+
+def delete_device_alias(device_id: str) -> bool:
+    """Rimuove l'alias personalizzato ripristinando il nome predefinito del dispositivo."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM device_aliases WHERE device_id = ?", (str(device_id).strip(),))
+    rows = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return rows > 0
 
 # ----------------- GESTIONE DISPOSITIVI TUYA / SMART LIFE -----------------
 

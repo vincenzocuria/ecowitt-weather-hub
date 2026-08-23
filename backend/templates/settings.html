@@ -421,6 +421,8 @@
             Nessun dispositivo Tuya rilevato. Verifica le credenziali Client ID e Secret nel file di configurazione.
         </div>
         {% endif %}
+    </div>
+
     <!-- SEZIONE 2: CONTROLLO 100% LOCALE LAN (ZERO CLOUD) -->
     <div class="card" id="tuya_local_card" style="margin-top: 1.5rem; border: 1px solid rgba(56, 189, 248, 0.35); background: linear-gradient(145deg, rgba(56, 189, 248, 0.06), var(--card-bg));">
         <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
@@ -1341,7 +1343,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const hash = window.location.hash.replace('#', '').toLowerCase();
     
     // Mappa tab valide
-    const validTabs = ['notifications', 'alarms', 'sensors', 'tuya', 'climate', 'database', 'system'];
+    const validTabs = ['notifications', 'alarms', 'sensors', 'tuya', 'climate', 'homeassistant', 'database', 'system'];
     if (hash && validTabs.includes(hash)) {
         initialTab = hash;
     } else {

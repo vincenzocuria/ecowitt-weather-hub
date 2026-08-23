@@ -4661,6 +4661,164 @@ body {
 .tag-batt { color: #10b981; background: rgba(16, 185, 129, 0.1); }
 .tag-info { color: var(--text); }
 .tag-dim { color: var(--text-dim); }
+.tag-timer {
+    background: rgba(56, 189, 248, 0.18);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 700;
+}
+
+/* BANNER TIMER EVIDENTE SUL MATTONCINO DEL DISPOSITIVO */
+.device-card-has-timer {
+    border-color: rgba(56, 189, 248, 0.5) !important;
+    box-shadow: 0 0 15px -3px rgba(56, 189, 248, 0.25) !important;
+}
+
+.device-card-timer-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(14, 165, 233, 0.28));
+    border: 1px solid rgba(56, 189, 248, 0.45);
+    border-radius: 8px;
+    padding: 5px 8px;
+    margin: 4px 0;
+    gap: 6px;
+    animation: timerPulse 3s infinite ease-in-out;
+}
+
+@keyframes timerPulse {
+    0%, 100% { border-color: rgba(56, 189, 248, 0.45); box-shadow: 0 0 8px rgba(56, 189, 248, 0.15); }
+    50% { border-color: rgba(56, 189, 248, 0.8); box-shadow: 0 0 14px rgba(56, 189, 248, 0.35); }
+}
+
+.device-card-timer-info {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #38bdf8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.device-card-timer-action {
+    display: inline-block;
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+.timer-action-on { background: rgba(16, 185, 129, 0.3); color: #6ee7b7; }
+.timer-action-off { background: rgba(239, 68, 68, 0.3); color: #fca5a5; }
+
+.device-card-timer-countdown {
+    color: #f0f9ff;
+    font-variant-numeric: tabular-nums;
+}
+
+.device-card-timer-cancel {
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #f87171;
+    border-radius: 6px;
+    padding: 1px 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    line-height: 1.2;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+.device-card-timer-cancel:hover {
+    background: #ef4444;
+    color: #fff;
+    border-color: #ef4444;
+}
+
+/* PULSANTE E MODULO RINOMINA DISPOSITIVO */
+.modal-title-with-rename {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.modal-rename-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--text-dim);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s ease;
+}
+.modal-rename-btn:hover {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: #38bdf8;
+    color: #38bdf8;
+}
+
+.modal-rename-box {
+    margin-top: 0.5rem;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.modal-rename-input-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.modal-rename-input {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #fff;
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.2s ease;
+}
+.modal-rename-input:focus {
+    border-color: #38bdf8;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.card-rename-trigger {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    opacity: 0.6;
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 2px;
+    line-height: 1;
+    transition: opacity 0.2s ease, color 0.2s ease;
+}
+.device-card:hover .card-rename-trigger {
+    opacity: 1;
+}
+.card-rename-trigger:hover {
+    color: #38bdf8;
+}
 
 .devices-empty-state {
     grid-column: 1 / -1;

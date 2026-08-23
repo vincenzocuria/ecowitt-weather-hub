@@ -1207,6 +1207,49 @@ class TestEcowittHub(unittest.TestCase):
         # Clean up
         delete_tuya_local_device("local_test_plug_01")
 
+    def test_device_aliases_and_rename_endpoints(self):
+        from backend.database import save_device_alias, get_device_aliases, delete_device_alias
+        from backend.routers.devices import build_devices_catalog
+        from fastapi.testclient import TestClient
+        from backend.main import app
+        from backend.config import settings
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN})
+
+        # 1. Test database functions
+        test_id = "test_alias_dev_100"
+        save_device_alias(test_id, "Nuovo Nome Test")
+        aliases = get_device_aliases()
+        self.assertEqual(aliases.get(test_id), "Nuovo Nome Test")
+
+        # 2. Test API GET /api/devices/aliases
+        resp_get = client.get("/api/devices/aliases")
+        self.assertEqual(resp_get.status_code, 200)
+        self.assertEqual(resp_get.json()["aliases"].get(test_id), "Nuovo Nome Test")
+
+        # 3. Test API POST /api/devices/rename
+        resp_rename = client.post("/api/devices/rename", json={
+            "device_id": "tuya_test_renamed_plug",
+            "alias": "Presa Sala TV",
+            "ecosystem": "tuya"
+        })
+        self.assertEqual(resp_rename.status_code, 200)
+        self.assertEqual(resp_rename.json()["alias"], "Presa Sala TV")
+        
+        aliases_after = get_device_aliases()
+        self.assertEqual(aliases_after.get("tuya_test_renamed_plug"), "Presa Sala TV")
+        self.assertEqual(aliases_after.get("test_renamed_plug"), "Presa Sala TV")
+
+        # 4. Test GET /devices page loads with timer & rename attributes
+        resp_page = client.get("/devices")
+        self.assertEqual(resp_page.status_code, 200)
+        self.assertIn("modal-rename-box", resp_page.text)
+        self.assertIn("card-rename-trigger", resp_page.text)
+
+        # Cleanup
+        delete_device_alias(test_id)
+        delete_device_alias("tuya_test_renamed_plug")
+        delete_device_alias("test_renamed_plug")
+
 
 if __name__ == "__main__":
     unittest.main()

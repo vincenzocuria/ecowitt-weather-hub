@@ -10,6 +10,7 @@
                 <h1>💡 Dispositivi Smart</h1>
                 <p class="devices-subtitle">Centrale di controllo domotica integrata in tempo reale</p>
             </div>
+            <div class="devices-header-actions" style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
                 <button type="button" class="btn btn-action-secondary" id="btn-open-schedules" onclick="openSchedulesModal()" title="Visualizza e gestisci tutti i timer attivi della casa">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                     <span>Timer (<strong id="badge-active-schedules-count">{{ active_schedules|length if active_schedules else 0 }}</strong>)</span>
@@ -83,7 +84,7 @@
     <div class="devices-grid" id="devices-container">
         {% if devices %}
             {% for dev in devices %}
-            <div class="device-card {% if dev.is_on %}device-card-on{% else %}device-card-off{% endif %} {% if not dev.is_online %}device-card-offline{% endif %}" 
+            <div class="device-card {% if dev.is_on %}device-card-on{% else %}device-card-off{% endif %} {% if not dev.is_online %}device-card-offline{% endif %} {% if dev.active_schedule %}device-card-has-timer{% endif %}" 
                  data-id="{{ dev.id }}" 
                  data-raw-id="{{ dev.raw_id }}" 
                  data-ecosystem="{{ dev.ecosystem }}" 
@@ -103,18 +104,35 @@
                         </span>
                     </div>
 
-                    {% if dev.can_toggle %}
-                    <button type="button" 
-                            class="device-toggle-btn {% if dev.is_on %}active{% endif %}" 
-                            data-device-id="{{ dev.id }}"
-                            data-raw-id="{{ dev.raw_id }}"
-                            data-ecosystem="{{ dev.ecosystem }}"
-                            title="Commuta ON/OFF"
-                            onclick="event.stopPropagation(); quickToggleDevice(this, '{{ dev.ecosystem }}', '{{ dev.raw_id }}', {{ 'true' if dev.is_on else 'false' }})">
-                        <span class="toggle-slider"></span>
-                    </button>
-                    {% endif %}
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <button type="button" class="card-rename-trigger" title="Rinomina '{{ dev.name }}'" onclick="event.stopPropagation(); quickPromptRename('{{ dev.id }}', '{{ dev.raw_id }}', '{{ dev.name|replace('\'', '\\\'') }}', '{{ dev.ecosystem }}')">✏️</button>
+                        {% if dev.can_toggle %}
+                        <button type="button" 
+                                class="device-toggle-btn {% if dev.is_on %}active{% endif %}" 
+                                data-device-id="{{ dev.id }}"
+                                data-raw-id="{{ dev.raw_id }}"
+                                data-ecosystem="{{ dev.ecosystem }}"
+                                title="Commuta ON/OFF"
+                                onclick="event.stopPropagation(); quickToggleDevice(this, '{{ dev.ecosystem }}', '{{ dev.raw_id }}', {{ 'true' if dev.is_on else 'false' }})">
+                            <span class="toggle-slider"></span>
+                        </button>
+                        {% endif %}
+                    </div>
                 </div>
+
+                <!-- BANNER TIMER ATTIVO IN PRIMO PIANO SUL MATTONCINO -->
+                {% if dev.active_schedule %}
+                <div class="device-card-timer-banner" data-task-id="{{ dev.active_schedule.task_id }}" data-execute-at="{{ dev.active_schedule.execute_at }}" onclick="event.stopPropagation(); openSchedulesModal();" title="Timer attivo: clicca per gestire">
+                    <div class="device-card-timer-info">
+                        <span>⏱️</span>
+                        <span class="device-card-timer-action {{ 'timer-action-on' if dev.active_schedule.action == 'turn_on' else 'timer-action-off' }}">
+                            {{ 'ON' if dev.active_schedule.action == 'turn_on' else 'OFF' }}
+                        </span>
+                        <span class="device-card-timer-countdown">{{ dev.active_schedule.remaining_label }}</span>
+                    </div>
+                    <button type="button" class="device-card-timer-cancel" title="Annulla questo timer" onclick="event.stopPropagation(); cancelDeviceTimer('{{ dev.active_schedule.task_id }}')">✕</button>
+                </div>
+                {% endif %}
 
                 <div class="device-card-body">
                     <div class="device-name" title="{{ dev.name }}">{{ dev.name }}</div>
@@ -185,11 +203,27 @@
     <div class="device-modal-dialog" onclick="event.stopPropagation()">
         
         <div class="device-modal-header">
-            <div class="modal-title-group">
+            <div class="modal-title-group" style="flex: 1;">
                 <div class="modal-icon-badge" id="modal-icon-badge">📱</div>
-                <div>
-                    <h3 id="modal-device-name">Nome Dispositivo</h3>
+                <div style="flex: 1;">
+                    <div class="modal-title-with-rename">
+                        <h3 id="modal-device-name">Nome Dispositivo</h3>
+                        <button type="button" class="modal-rename-btn" id="btn-toggle-rename" onclick="toggleModalRenameBox()" title="Rinomina questo dispositivo">
+                            <span>✏️ Rinomina</span>
+                        </button>
+                    </div>
                     <div class="modal-device-meta" id="modal-device-meta">Ecosistema • Categoria</div>
+                    <div id="modal-rename-box" class="modal-rename-box" style="display: none;">
+                        <div class="modal-rename-input-row">
+                            <input type="text" id="modal-rename-input" class="modal-rename-input" placeholder="Nuovo nome..." onkeydown="if(event.key==='Enter') submitModalRename()" />
+                            <button type="button" class="btn btn-primary btn-sm" onclick="submitModalRename()">Salva</button>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="toggleModalRenameBox(false)">✕</button>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <small id="modal-rename-original-hint" style="color: var(--text-dim); font-size: 0.72rem;"></small>
+                            <button type="button" class="btn btn-outline btn-sm" id="btn-reset-rename" style="padding: 2px 6px; font-size: 0.72rem; color: #f87171; border-color: rgba(239,68,68,0.3); display: none;" onclick="resetDeviceName()">Ripristina Default</button>
+                        </div>
+                    </div>
                 </div>
             </div>
             <button type="button" class="modal-close-btn" onclick="closeDeviceDetail()" title="Chiudi">&times;</button>
@@ -460,11 +494,16 @@ async function fetchDevicesData() {
         
         // Aggiorna statistiche
         if (data.stats) {
-            document.getElementById('stat-total').textContent = data.stats.total || devicesCatalog.length;
-            document.getElementById('stat-active').textContent = data.stats.active || 0;
-            document.getElementById('stat-power').textContent = `${data.stats.total_power_w || 0} W`;
-            document.getElementById('stat-online').textContent = data.stats.online || devicesCatalog.length;
-            document.getElementById('badge-count-all').textContent = devicesCatalog.length;
+            const statTotalEl = document.getElementById('stat-total');
+            if (statTotalEl) statTotalEl.textContent = data.stats.total || devicesCatalog.length;
+            const statActiveEl = document.getElementById('stat-active');
+            if (statActiveEl) statActiveEl.textContent = data.stats.active || 0;
+            const statPowerEl = document.getElementById('stat-power');
+            if (statPowerEl) statPowerEl.textContent = `${data.stats.total_power_w || 0} W`;
+            const statOnlineEl = document.getElementById('stat-online');
+            if (statOnlineEl) statOnlineEl.textContent = data.stats.online || devicesCatalog.length;
+            const badgeCountEl = document.getElementById('badge-count-all');
+            if (badgeCountEl) badgeCountEl.textContent = devicesCatalog.length;
             
             const schedCount = data.stats.scheduled_tasks_count || (data.active_schedules ? data.active_schedules.length : 0);
             const schedPill = document.getElementById('stat-schedules');
@@ -473,12 +512,265 @@ async function fetchDevicesData() {
             if (schedBadge) schedBadge.textContent = schedCount;
         }
 
+        // Aggiorna in tempo reale i mattoncini dei dispositivi nella griglia
+        updateDevicesGridInDOM(devicesCatalog);
+
         // Se un modale è aperto, aggiorna i dettagli
         if (currentOpenDeviceId) {
             renderModalContent(currentOpenDeviceId);
         }
     } catch (e) {
         console.debug('Polling devices all error:', e);
+    }
+}
+
+// Aggiorna dinamicamente i mattoncini DOM senza ricaricare la pagina
+function updateDevicesGridInDOM(devices) {
+    if (!devices || !Array.isArray(devices)) return;
+    
+    devices.forEach(dev => {
+        const rawId = dev.raw_id;
+        const devId = dev.id;
+        const cardEl = document.querySelector(`.device-card[data-id="${devId}"]`) || document.querySelector(`.device-card[data-raw-id="${rawId}"]`);
+        if (!cardEl) return;
+        
+        // Aggiorna nome e tooltip
+        const nameEl = cardEl.querySelector('.device-name');
+        if (nameEl && nameEl.textContent !== dev.name) {
+            nameEl.textContent = dev.name;
+            nameEl.title = dev.name;
+        }
+        
+        // Aggiorna trigger rinomina
+        const renameTrigger = cardEl.querySelector('.card-rename-trigger');
+        if (renameTrigger) {
+            renameTrigger.title = `Rinomina '${dev.name}'`;
+            const safeN = (dev.name || '').replace(/'/g, "\\'");
+            renameTrigger.setAttribute('onclick', `event.stopPropagation(); quickPromptRename('${dev.id}', '${dev.raw_id}', '${safeN}', '${dev.ecosystem}')`);
+        }
+        
+        // Aggiorna classe ON/OFF
+        const isOn = dev.is_on;
+        cardEl.setAttribute('data-is-on', isOn ? 'true' : 'false');
+        if (isOn) {
+            cardEl.classList.remove('device-card-off');
+            cardEl.classList.add('device-card-on');
+        } else {
+            cardEl.classList.remove('device-card-on');
+            cardEl.classList.add('device-card-off');
+        }
+        
+        // Aggiorna badge ON/OFF
+        const badge = cardEl.querySelector('.device-status-badge');
+        const label = cardEl.querySelector('.status-label');
+        if (badge && label) {
+            if (isOn === true) {
+                badge.className = 'device-status-badge badge-on';
+                label.textContent = 'ON';
+            } else if (isOn === false) {
+                badge.className = 'device-status-badge badge-off';
+                label.textContent = 'OFF';
+            } else {
+                badge.className = 'device-status-badge badge-off';
+                label.textContent = 'STANDBY';
+            }
+        }
+        
+        // Aggiorna glow icona
+        const iconBox = cardEl.querySelector('.device-icon-box');
+        if (iconBox) {
+            if (isOn) iconBox.classList.add('icon-glow-on');
+            else iconBox.classList.remove('icon-glow-on');
+        }
+        
+        // Aggiorna toggle button
+        const toggleBtn = cardEl.querySelector('.device-toggle-btn');
+        if (toggleBtn) {
+            if (isOn) {
+                toggleBtn.classList.add('active');
+                toggleBtn.setAttribute('onclick', `event.stopPropagation(); quickToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', true)`);
+            } else {
+                toggleBtn.classList.remove('active');
+                toggleBtn.setAttribute('onclick', `event.stopPropagation(); quickToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', false)`);
+            }
+        }
+        
+        // Gestione Banner Timer Attivo sul Mattoncino
+        const sched = dev.active_schedule;
+        let bannerEl = cardEl.querySelector('.device-card-timer-banner');
+        if (sched) {
+            cardEl.classList.add('device-card-has-timer');
+            const actionIsOn = (sched.action === 'turn_on');
+            const actionClass = actionIsOn ? 'timer-action-on' : 'timer-action-off';
+            const actionText = actionIsOn ? 'ON' : 'OFF';
+            const remText = sched.remaining_label || '';
+            const bannerHtml = `
+                <div class="device-card-timer-info">
+                    <span>⏱️</span>
+                    <span class="device-card-timer-action ${actionClass}">${actionText}</span>
+                    <span class="device-card-timer-countdown">${remText}</span>
+                </div>
+                <button type="button" class="device-card-timer-cancel" title="Annulla questo timer" onclick="event.stopPropagation(); cancelDeviceTimer('${sched.task_id}')">✕</button>
+            `;
+            if (bannerEl) {
+                bannerEl.setAttribute('data-task-id', sched.task_id);
+                bannerEl.setAttribute('data-execute-at', sched.execute_at);
+                bannerEl.innerHTML = bannerHtml;
+            } else {
+                const newBanner = document.createElement('div');
+                newBanner.className = 'device-card-timer-banner';
+                newBanner.setAttribute('data-task-id', sched.task_id);
+                newBanner.setAttribute('data-execute-at', sched.execute_at);
+                newBanner.setAttribute('onclick', 'event.stopPropagation(); openSchedulesModal();');
+                newBanner.setAttribute('title', 'Timer attivo: clicca per gestire');
+                newBanner.innerHTML = bannerHtml;
+                const headerEl = cardEl.querySelector('.device-card-header');
+                if (headerEl && headerEl.nextSibling) {
+                    cardEl.insertBefore(newBanner, headerEl.nextSibling);
+                } else {
+                    cardEl.appendChild(newBanner);
+                }
+            }
+        } else {
+            cardEl.classList.remove('device-card-has-timer');
+            if (bannerEl) {
+                bannerEl.remove();
+            }
+        }
+    });
+}
+
+// Live Countdown Ticker per i Timer (aggiornamento ogni secondo)
+function updateLiveCountdowns() {
+    const banners = document.querySelectorAll('.device-card-timer-banner[data-execute-at]');
+    const now = new Date();
+    let hasExpired = false;
+    
+    banners.forEach(b => {
+        const execAtIso = b.getAttribute('data-execute-at');
+        if (!execAtIso) return;
+        const targetDate = new Date(execAtIso);
+        const remSec = Math.floor((targetDate - now) / 1000);
+        
+        const countEl = b.querySelector('.device-card-timer-countdown');
+        if (!countEl) return;
+        
+        if (remSec <= 0) {
+            countEl.textContent = 'in esecuzione...';
+            hasExpired = true;
+        } else if (remSec < 60) {
+            countEl.textContent = `tra ${remSec}s`;
+        } else if (remSec < 3600) {
+            const m = Math.floor(remSec / 60);
+            const s = remSec % 60;
+            countEl.textContent = `tra ${m}m ${s}s`;
+        } else {
+            const h = Math.floor(remSec / 3600);
+            const m = Math.floor((remSec % 3600) / 60);
+            countEl.textContent = m > 0 ? `tra ${h}h ${m}m` : `tra ${h}h`;
+        }
+    });
+    
+    if (hasExpired) {
+        setTimeout(fetchDevicesData, 1500);
+    }
+}
+setInterval(updateLiveCountdowns, 1000);
+
+// Gestione Rinomina Dispositivo
+function toggleModalRenameBox(forceOpen = null) {
+    const box = document.getElementById('modal-rename-box');
+    const input = document.getElementById('modal-rename-input');
+    const hint = document.getElementById('modal-rename-original-hint');
+    const resetBtn = document.getElementById('btn-reset-rename');
+    if (!box || !currentOpenDeviceId) return;
+    
+    const dev = devicesCatalog.find(d => d.id === currentOpenDeviceId);
+    if (!dev) return;
+
+    const isOpen = (forceOpen !== null) ? forceOpen : (box.style.display === 'none');
+    if (isOpen) {
+        box.style.display = 'flex';
+        input.value = dev.name || '';
+        input.focus();
+        input.select();
+        
+        if (dev.original_name && dev.original_name !== dev.name) {
+            hint.textContent = `Default: "${dev.original_name}"`;
+            resetBtn.style.display = 'inline-block';
+        } else {
+            hint.textContent = '';
+            resetBtn.style.display = 'none';
+        }
+    } else {
+        box.style.display = 'none';
+    }
+}
+
+async function submitModalRename() {
+    if (!currentOpenDeviceId) return;
+    const dev = devicesCatalog.find(d => d.id === currentOpenDeviceId);
+    if (!dev) return;
+    
+    const input = document.getElementById('modal-rename-input');
+    const newName = input.value.trim();
+    if (!newName) {
+        showToast('Inserisci un nome valido', 'info');
+        return;
+    }
+    
+    await performDeviceRename(dev.id, dev.raw_id, newName, dev.ecosystem);
+    toggleModalRenameBox(false);
+}
+
+async function resetDeviceName() {
+    if (!currentOpenDeviceId) return;
+    const dev = devicesCatalog.find(d => d.id === currentOpenDeviceId);
+    if (!dev) return;
+    
+    if (!confirm(`Ripristinare il nome originale di fabbrica ("${dev.original_name || 'Default'}")?`)) return;
+    await performDeviceRename(dev.id, dev.raw_id, '', dev.ecosystem);
+    toggleModalRenameBox(false);
+}
+
+async function quickPromptRename(devId, rawId, currentName, ecosystem) {
+    openDeviceDetail(devId);
+    setTimeout(() => toggleModalRenameBox(true), 200);
+}
+
+async function performDeviceRename(devId, rawId, newName, ecosystem) {
+    try {
+        const resp = await fetch('/api/devices/rename', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                device_id: devId,
+                raw_id: rawId,
+                alias: newName,
+                ecosystem: ecosystem
+            })
+        });
+        const data = await resp.json();
+        if (resp.ok && data.status === 'ok') {
+            devicesCatalog = data.devices || devicesCatalog;
+            updateDevicesGridInDOM(devicesCatalog);
+            
+            const updatedDev = devicesCatalog.find(d => d.id === devId || String(d.raw_id) === String(rawId));
+            const finalName = updatedDev ? updatedDev.name : (newName || 'Nome ripristinato');
+            
+            const nameEl = document.getElementById('modal-device-name');
+            if (nameEl) nameEl.textContent = finalName;
+            
+            showToast(`Nome aggiornato: "${finalName}"`, 'success');
+            
+            if (currentOpenDeviceId) {
+                renderModalContent(currentOpenDeviceId);
+            }
+        } else {
+            showToast(data.error || 'Errore durante la ridenominazione', 'danger');
+        }
+    } catch (e) {
+        showToast('Errore di comunicazione: ' + e.message, 'danger');
     }
 }
 

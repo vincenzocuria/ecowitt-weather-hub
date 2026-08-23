@@ -171,6 +171,7 @@ async def devices_page(request: Request):
             "title": "Dispositivi & Smart Home • Weather Hub",
             "devices": catalog.get("devices", []),
             "stats": catalog.get("stats", {}),
+            "active_schedules": catalog.get("active_schedules", []),
             "tuya_enabled": settings.TUYA_ENABLED,
             "thinq_enabled": settings.LG_THINQ_ENABLED,
             "smartthings_enabled": settings.SMARTTHINGS_ENABLED,

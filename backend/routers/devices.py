@@ -15,8 +15,10 @@ from backend.database import (
     get_irrigation_automations_config, save_irrigation_automations_config,
     get_irrigation_learning_summary, log_irrigation_cycle_start,
     get_sensor_aliases, save_sensor_alias,
+    get_device_aliases, save_device_alias, delete_device_alias,
     get_latest_reading, get_latest_energy, get_recent_rain_totals,
-    get_tuya_local_devices, get_tuya_local_device, save_tuya_local_device, delete_tuya_local_device
+    get_tuya_local_devices, get_tuya_local_device, save_tuya_local_device, delete_tuya_local_device,
+    save_tuya_device_config
 )
 from backend.analytics import calc_evapotranspiration, evaluate_smart_irrigation
 from backend.forecast_service import forecast_service
@@ -758,7 +760,29 @@ def build_devices_catalog() -> Dict[str, Any]:
         for hd in homeassistant_service.get_catalog_devices():
             devices.append(hd)
 
-    # 6. Associa eventuali timer/programmazioni attive a ciascun dispositivo
+    # 6. Applica eventuali alias/nomi personalizzati salvati dall'utente
+    try:
+        device_aliases = get_device_aliases()
+    except Exception:
+        device_aliases = {}
+
+    for dev in devices:
+        raw_id = str(dev.get("raw_id", ""))
+        dev_id = str(dev.get("id", ""))
+        # Match per ID normalizzato o raw_id
+        matched_alias = (
+            device_aliases.get(dev_id)
+            or device_aliases.get(raw_id)
+            or (device_aliases.get(dev_id.replace("tuya_", "")) if dev_id.startswith("tuya_") else None)
+            or (device_aliases.get(dev_id.replace("hass_", "")) if dev_id.startswith("hass_") else None)
+            or (device_aliases.get(dev_id.replace("thinq_", "")) if dev_id.startswith("thinq_") else None)
+            or (device_aliases.get(dev_id.replace("st_", "")) if dev_id.startswith("st_") else None)
+        )
+        if matched_alias:
+            dev["original_name"] = dev.get("original_name") or dev.get("name")
+            dev["name"] = matched_alias
+
+    # 7. Associa eventuali timer/programmazioni attive a ciascun dispositivo
     try:
         active_schedules = device_scheduler.get_schedules()
     except Exception:
@@ -766,14 +790,29 @@ def build_devices_catalog() -> Dict[str, Any]:
 
     schedules_by_device: Dict[str, List[Dict[str, Any]]] = {}
     for s in active_schedules:
-        d_raw = s["device_id"]
+        d_raw = str(s.get("device_id", ""))
         if d_raw not in schedules_by_device:
             schedules_by_device[d_raw] = []
         schedules_by_device[d_raw].append(s)
 
     for dev in devices:
-        raw_id = str(dev.get("raw_id"))
-        dev_scheds = schedules_by_device.get(raw_id, [])
+        raw_id = str(dev.get("raw_id", ""))
+        dev_id = str(dev.get("id", ""))
+        dev_scheds = (
+            schedules_by_device.get(raw_id, [])
+            or schedules_by_device.get(dev_id, [])
+            or schedules_by_device.get(f"tuya_{raw_id}", [])
+            or schedules_by_device.get(f"thinq_{raw_id}", [])
+            or schedules_by_device.get(f"st_{raw_id}", [])
+            or schedules_by_device.get(f"hass_{raw_id}", [])
+            or (schedules_by_device.get(dev_id.replace("tuya_", "")) if dev_id.startswith("tuya_") else [])
+            or (schedules_by_device.get(dev_id.replace("hass_", "")) if dev_id.startswith("hass_") else [])
+            or (schedules_by_device.get(dev_id.replace("thinq_", "")) if dev_id.startswith("thinq_") else [])
+            or (schedules_by_device.get(dev_id.replace("st_", "")) if dev_id.startswith("st_") else [])
+        )
+        # Sincronizza il nome del dispositivo nelle notifiche/schedules
+        for s in dev_scheds:
+            s["device_name"] = dev["name"]
         dev["active_schedules"] = dev_scheds
         dev["active_schedule"] = dev_scheds[0] if dev_scheds else None
 
@@ -799,6 +838,54 @@ def build_devices_catalog() -> Dict[str, Any]:
 async def api_devices_all():
     """Restituisce la lista aggregata e normalizzata di tutti i dispositivi smart."""
     return build_devices_catalog()
+
+# --- Nomi Personalizzati / Alias Dispositivi Endpoints ---
+
+@router.get("/api/devices/aliases")
+async def api_get_device_aliases():
+    """Restituisce la mappa di tutti gli alias personalizzati assegnati ai dispositivi."""
+    return {"aliases": get_device_aliases()}
+
+@router.post("/api/devices/rename")
+@router.post("/api/devices/{device_id}/rename")
+async def api_rename_device(request: Request, device_id: Optional[str] = None):
+    """Rinomina o assegna un alias personalizzato a un qualsiasi dispositivo smart (Tuya, HA, LG ThinQ, SmartThings, Aton)."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    target_id = str(device_id or payload.get("device_id") or "").strip()
+    alias = str(payload.get("alias") or payload.get("name") or "").strip()
+    ecosystem = str(payload.get("ecosystem") or "").lower()
+
+    if not target_id:
+        return JSONResponse({"error": "ID dispositivo mancante"}, status_code=400)
+
+    # Salva l'alias sia sull'ID fornito che sull'eventuale raw_id
+    save_device_alias(target_id, alias)
+    
+    # Se il target_id ha prefisso tuya_ / thinq_ / st_ / hass_, salva anche la chiave raw
+    for prefix in ("tuya_", "thinq_", "st_", "hass_"):
+        if target_id.startswith(prefix):
+            raw_k = target_id.replace(prefix, "")
+            save_device_alias(raw_k, alias)
+
+    # Se è un dispositivo Tuya, propaga l'aggiornamento a tuya_devices_config e in-memory cache
+    if ecosystem == "tuya" or target_id.startswith("tuya_") or target_id in tuya_service.device_statuses:
+        raw_tuya_id = target_id.replace("tuya_", "")
+        save_tuya_device_config(raw_tuya_id, enabled=True, custom_name=alias or None)
+        if raw_tuya_id in tuya_service.device_statuses:
+            tuya_service.device_statuses[raw_tuya_id]["name"] = alias if alias else tuya_service.device_statuses[raw_tuya_id].get("original_name", "Dispositivo Tuya")
+
+    catalog = build_devices_catalog()
+    return {
+        "status": "ok",
+        "device_id": target_id,
+        "alias": alias,
+        "aliases": get_device_aliases(),
+        "devices": catalog["devices"]
+    }
 
 # --- Programmazione & Timer Dispositivi Endpoints ---
 
