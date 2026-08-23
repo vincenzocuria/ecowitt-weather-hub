@@ -1128,6 +1128,7 @@ body {
 /* TABLES */
 .table-responsive {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 .weather-table {
     width: 100%;
@@ -4227,6 +4228,31 @@ body {
         display: inline-flex;
         align-items: center;
         justify-content: center;
+    }
+}
+
+@media (max-width: 380px) {
+    .mobile-bottom-nav {
+        padding: 4px 1px calc(4px + env(safe-area-inset-bottom, 0px)) 1px;
+    }
+    .mobile-tab {
+        padding: 3px 1px;
+    }
+    .tab-icon-wrap {
+        width: 22px;
+        height: 22px;
+        margin-bottom: 1px;
+    }
+    .tab-svg {
+        width: 19px;
+        height: 19px;
+    }
+    .tab-label {
+        font-size: 0.60rem;
+        letter-spacing: -0.2px;
+    }
+    .container {
+        padding: 0.5rem 0.45rem calc(72px + env(safe-area-inset-bottom, 0px)) 0.45rem;
     }
 }
 
