@@ -758,37 +758,70 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIsInstance(data["active_consumers"], list)
         self.assertIsInstance(data["standby_devices"], list)
 
+    def test_homeassistant_service_parsing(self):
+        from backend.homeassistant_service import HomeAssistantService
+        ha = HomeAssistantService()
+        ha.entities = {
+            "sensor.lavanderia_lavatrice_machine_state": {"state": "run", "attributes": {"friendly_name": "Lavatrice Machine State"}},
+            "sensor.lavanderia_lavatrice_job_state": {"state": "wash", "attributes": {"friendly_name": "Lavatrice Job State"}},
+            "sensor.lavanderia_lavatrice_completion_time": {"state": "2026-08-24T08:30:00+00:00", "attributes": {}},
+            "select.lavanderia_lavatrice_temperatura_dell_acqua": {"state": "40 °C", "attributes": {}},
+            "select.lavanderia_lavatrice_spin_level": {"state": "1200 rpm", "attributes": {}},
+            "sensor.cucina_lavastoviglie_machine_state": {"state": "run", "attributes": {"friendly_name": "Lavastoviglie Machine State"}},
+            "sensor.cucina_lavastoviglie_job_state": {"state": "rinse", "attributes": {"friendly_name": "Lavastoviglie Job State"}},
+            "sensor.cucina_lavastoviglie_completion_time": {"state": "2026-08-24T07:45:00+00:00", "attributes": {}},
+            "person.vincenzo_curia": {"state": "home", "attributes": {"friendly_name": "Vincenzo Curia", "latitude": 39.62, "longitude": 16.50}},
+            "sensor.galaxy_s26_ultra_battery_level": {"state": "88", "attributes": {"unit_of_measurement": "%"}},
+            "valve.aiuola_valve": {"state": "closed", "attributes": {"friendly_name": "Aiuola Valvola"}},
+            "switch.cisterna_presa": {"state": "on", "attributes": {"friendly_name": "Presa Cisterna"}},
+            "sensor.cisterna_presa_power": {"state": "120.5", "attributes": {"unit_of_measurement": "W"}}
+        }
+
+        w = ha.parse_washer_data()
+        self.assertTrue(w["is_on"])
+        self.assertTrue(w["is_running"])
+        self.assertEqual(w["water_temp"], "40 °C")
+        self.assertEqual(w["spin_speed"], "1200 rpm")
+
+        dw = ha.parse_dishwasher_data()
+        self.assertTrue(dw["is_on"])
+        self.assertTrue(dw["is_running"])
+
+        p = ha.parse_presence_data()
+        self.assertTrue(p["is_present"])
+        self.assertEqual(p["battery_percent"], 88)
+
+        summary = ha.get_summary(
+            energy_latest={"p_solare": 3000.0, "soc": 90.0, "p_batteria": 100.0},
+            drying_index={"score": 90, "status": "excellent", "desc": "Condizioni ideali"}
+        )
+        self.assertTrue(summary["solar_synergy"]["solar_optimal"])
+        self.assertTrue(summary["presence"]["is_present"])
+        self.assertEqual(summary["presence"]["battery_percent"], 88)
+
+        catalog = ha.get_catalog_devices()
+        self.assertGreater(len(catalog), 0)
+        cat_ids = [d["id"] for d in catalog]
+        self.assertIn("hass_washer", cat_ids)
+        self.assertIn("hass_dishwasher", cat_ids)
+        self.assertIn("hass_presence", cat_ids)
+        self.assertIn("hass_valve.aiuola_valve", cat_ids)
+
     def test_devices_deduplication(self):
         from backend.routers.devices import build_devices_catalog
         from backend.homeassistant_service import homeassistant_service
-        from backend.tuya_service import tuya_service
 
-        # Simula presenza dello stesso dispositivo sia in Tuya che in Home Assistant
-        tuya_service.raw_devices = [
-            {"id": "test_valve_shared", "name": "Valvola Irrigazione Orto", "category": "sfkzq"}
-        ]
-        tuya_service.device_statuses = {
-            "test_valve_shared": {
-                "id": "test_valve_shared",
-                "name": "Valvola Irrigazione Orto",
-                "category": "sfkzq",
-                "type": "irrigation",
-                "is_on": False,
-                "enabled": True
-            }
-        }
         homeassistant_service.entities = {
-            "valve.test_valve_shared": {
-                "entity_id": "valve.test_valve_shared",
+            "valve.aiuola_valve": {
+                "entity_id": "valve.aiuola_valve",
                 "state": "closed",
                 "attributes": {"friendly_name": "Valvola Orto HA"}
             }
         }
 
         catalog = build_devices_catalog()
-        valve_devices = [d for d in catalog["devices"] if "test_valve_shared" in d.get("raw_id", "") or "test_valve_shared" in d.get("id", "")]
-        # Deve essere presente esattamente 1 volta grazie alla deduplicazione intelligente
-        self.assertEqual(len(valve_devices), 1, "La valvola condivisa tra Tuya e HA deve essere deduplicata")
+        valve_devices = [d for d in catalog["devices"] if "valve.aiuola_valve" in d.get("raw_id", "") or "valve.aiuola_valve" in d.get("id", "")]
+        self.assertEqual(len(valve_devices), 1, "La valvola presente su HA deve essere inclusa nel catalogo")
 
     def test_tropical_nights_and_soil_moisture(self):
         from backend.database import (

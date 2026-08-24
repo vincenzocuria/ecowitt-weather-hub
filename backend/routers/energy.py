@@ -8,9 +8,7 @@ from backend.database import (
     get_latest_energy, get_today_energy_summary, get_energy_timeseries,
     get_tuya_local_devices, get_device_aliases
 )
-from backend.tuya_service import tuya_service
 from backend.thinq_service import thinq_service
-from backend.smartthings_service import smartthings_service
 from backend.homeassistant_service import homeassistant_service
 
 logger = logging.getLogger("weather_hub")
@@ -90,89 +88,31 @@ async def api_energy_house_breakdown():
         else:
             standby_devices.append(entry)
 
-    # 1. Prese Smart ed Interruttori Tuya / Smart Life Cloud
-    if settings.TUYA_ENABLED:
-        tuya_sum = tuya_service.get_summary()
-        all_tuya = tuya_sum.get("enabled_devices") or tuya_sum.get("devices") or []
-        for dev in all_tuya:
-            p_w = float(dev.get("power_w") or 0.0)
-            is_on = dev.get("is_on")
-            c_type = dev.get("type") or "generic"
-            icon = dev.get("icon") or "🔌"
-            name = dev.get("name", "Presa Smart")
-            cat_label = dev.get("type_label") or "Presa Smart Life"
-
-            status_txt = "Spento" if is_on is False else "Acceso"
-            if is_on and p_w > 0:
-                status_txt = f"Assorbimento: {p_w:.1f} W"
-            elif is_on and dev.get("temp_current") is not None:
-                status_txt = f"Temp: {dev.get('temp_current')}°C"
-
-            _add_consumer({
-                "id": f"tuya_{dev.get('id')}",
-                "raw_id": dev.get("id"),
-                "dedup_key": f"tuya_{dev.get('id')}",
-                "ecosystem": "tuya",
-                "name": name,
-                "icon": icon,
-                "category_label": cat_label,
-                "type": c_type,
-                "is_on": is_on,
-                "can_toggle": (c_type != "curtain") and (is_on is not None or c_type in ("plug", "light", "irrigation")),
-                "power_w": p_w,
-                "voltage_v": dev.get("voltage_v"),
-                "current_a": dev.get("current_a"),
-                "status_text": status_txt
-            })
-
-    # 1.1 Dispositivi Tuya con Controllo 100% Locale LAN
-    try:
-        local_tuya = get_tuya_local_devices()
-        for loc in local_tuya:
-            l_id = loc["device_id"]
-            p_w = float(loc.get("power_w") or 0.0)
-            is_on = loc.get("is_on")
-            _add_consumer({
-                "id": f"tuya_{l_id}",
-                "raw_id": l_id,
-                "dedup_key": f"tuya_{l_id}",
-                "ecosystem": "tuya",
-                "name": loc.get("name", "Presa Smart Locale"),
-                "icon": "🔌",
-                "category_label": "Presa Smart • LAN Locale ⚡",
-                "type": "plug",
-                "is_on": is_on,
-                "can_toggle": True,
-                "power_w": p_w,
-                "voltage_v": loc.get("voltage_v"),
-                "current_a": loc.get("current_a"),
-                "status_text": f"Acceso ({p_w:.1f} W)" if (is_on and p_w > 0) else ("Acceso" if is_on else "Spento")
-            })
-    except Exception:
-        pass
-
-    # 1.2 Home Assistant (entità locali con potenza rilevata)
+    # 1. Dispositivi Home Assistant (Prese smart, Elettrodomestici Samsung, Valvole, Clima)
     if settings.HASS_ENABLED and homeassistant_service.enabled:
         for hd in homeassistant_service.get_catalog_devices():
-            if hd.get("category") in ("plugs", "climate", "shutters", "irrigation"):
-                p_w = float(hd.get("power_w") or 0.0)
-                is_on = hd.get("is_on")
-                _add_consumer({
-                    "id": hd.get("id"),
-                    "raw_id": hd.get("raw_id"),
-                    "dedup_key": str(hd.get("raw_id")),
-                    "ecosystem": "homeassistant",
-                    "name": hd.get("name"),
-                    "icon": hd.get("icon", "🔌"),
-                    "category_label": hd.get("category_label", "Home Assistant"),
-                    "type": "plug" if hd.get("category") == "plugs" else hd.get("category"),
-                    "is_on": is_on,
-                    "can_toggle": hd.get("can_toggle", False),
-                    "power_w": p_w,
-                    "voltage_v": None,
-                    "current_a": None,
-                    "status_text": hd.get("status_text", "")
-                })
+            p_w = float(hd.get("power_w") or 0.0)
+            is_on = hd.get("is_on")
+            is_running = hd.get("raw", {}).get("is_running", False) if isinstance(hd.get("raw"), dict) else False
+            c_type = "appliance" if hd.get("category") == "appliances" else ("climate" if hd.get("category") == "climate" else "plug")
+            
+            _add_consumer({
+                "id": hd.get("id"),
+                "raw_id": hd.get("raw_id"),
+                "dedup_key": str(hd.get("raw_id")),
+                "ecosystem": "homeassistant",
+                "name": hd.get("name"),
+                "icon": hd.get("icon", "🔌"),
+                "category_label": hd.get("category_label", "Home Assistant"),
+                "type": c_type,
+                "is_on": is_on,
+                "is_running": is_running,
+                "can_toggle": hd.get("can_toggle", False),
+                "power_w": p_w,
+                "voltage_v": None,
+                "current_a": None,
+                "status_text": hd.get("status_text", "")
+            })
 
     # 2. Climatizzatori LG ThinQ
     if settings.LG_THINQ_ENABLED:
@@ -209,65 +149,6 @@ async def api_energy_house_breakdown():
                 "can_toggle": True,
                 "power_w": 0.0,
                 "status_text": " • ".join(stat_parts)
-            })
-
-    # 3. Samsung SmartThings (Lavatrice / Lavastoviglie)
-    if settings.SMARTTHINGS_ENABLED:
-        st_summary = smartthings_service.get_summary(energy_data)
-        washer = st_summary.get("washer") or {}
-        if washer and washer.get("device_id"):
-            is_run = washer.get("is_running", False)
-            is_on = washer.get("is_on", False)
-            p_w = float(washer.get("power_w") or 0.0)
-
-            st_text = washer.get("job_state_label") or ("In Lavaggio" if is_run else "In Standby")
-            if washer.get("remaining_min") and washer.get("remaining_min") > 0:
-                st_text += f" • {washer.get('remaining_min')} min rimasti (fine ~{washer.get('finish_estimate')})"
-            if washer.get("cycle_name"):
-                st_text += f" • {washer.get('cycle_name')}"
-
-            _add_consumer({
-                "id": f"st_{washer.get('device_id')}",
-                "raw_id": washer.get("device_id"),
-                "dedup_key": f"st_{washer.get('device_id')}",
-                "ecosystem": "smartthings",
-                "name": washer.get("name", "Lavatrice Samsung AI"),
-                "icon": "🫧",
-                "category_label": "Lavatrice Samsung Smart",
-                "type": "appliance",
-                "is_on": is_on,
-                "is_running": is_run,
-                "can_toggle": False,
-                "power_w": p_w,
-                "status_text": st_text
-            })
-
-        dish = st_summary.get("dishwasher") or {}
-        if dish and dish.get("device_id"):
-            is_run = dish.get("is_running", False)
-            is_on = dish.get("is_on", False)
-            p_w = float(dish.get("power_w") or 0.0)
-
-            st_text = dish.get("job_state_label") or ("In Lavaggio" if is_run else "In Standby")
-            if dish.get("remaining_min") and dish.get("remaining_min") > 0:
-                st_text += f" • {dish.get('remaining_min')} min rimasti (fine ~{dish.get('finish_estimate')})"
-            if dish.get("cycle_name"):
-                st_text += f" • {dish.get('cycle_name')}"
-
-            _add_consumer({
-                "id": f"st_{dish.get('device_id')}",
-                "raw_id": dish.get("device_id"),
-                "dedup_key": f"st_{dish.get('device_id')}",
-                "ecosystem": "smartthings",
-                "name": dish.get("name", "Lavastoviglie Samsung"),
-                "icon": "🍽️",
-                "category_label": "Lavastoviglie Samsung Smart",
-                "type": "appliance",
-                "is_on": is_on,
-                "is_running": is_run,
-                "can_toggle": False,
-                "power_w": p_w,
-                "status_text": st_text
             })
 
     # Calcolo totali e quote

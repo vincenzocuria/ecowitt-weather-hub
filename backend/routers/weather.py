@@ -27,8 +27,7 @@ from backend.forecast_service import forecast_service
 from backend.civil_protection_service import civil_protection_service
 from backend.aton_service import aton_service
 from backend.thinq_service import thinq_service
-from backend.smartthings_service import smartthings_service
-from backend.tuya_service import tuya_service
+from backend.homeassistant_service import homeassistant_service
 
 logger = logging.getLogger("weather_hub")
 
@@ -256,13 +255,15 @@ async def api_live():
     clean_latest["climate_devices"] = thinq_service.get_cached_devices()
     clean_latest["thinq_enabled"] = settings.LG_THINQ_ENABLED
     clean_latest["thinq_connected"] = thinq_service.is_connected
-    clean_latest["smartthings"] = smartthings_service.get_summary(
+    ha_sum = homeassistant_service.get_summary(
         aton_service.latest_data or get_latest_energy() or {},
         analytics_ctx.get("drying_index") if analytics_ctx else None
     )
-    clean_latest["smartthings_enabled"] = settings.SMARTTHINGS_ENABLED
-    clean_latest["tuya"] = tuya_service.get_summary()
-    clean_latest["tuya_enabled"] = settings.TUYA_ENABLED
+    clean_latest["smartthings"] = ha_sum
+    clean_latest["smartthings_enabled"] = True
+    clean_latest["tuya"] = ha_sum
+    clean_latest["tuya_enabled"] = True
+    clean_latest["hass_enabled"] = settings.HASS_ENABLED
     if settings.CIVIL_PROTECTION_ENABLED:
         clean_latest["civil_protection"] = civil_protection_service.fetch_alerts()
     return clean_latest

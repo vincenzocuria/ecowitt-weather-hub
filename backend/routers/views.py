@@ -12,8 +12,7 @@ from backend.forecast_service import forecast_service
 from backend.civil_protection_service import civil_protection_service
 from backend.aton_service import aton_service
 from backend.thinq_service import thinq_service
-from backend.smartthings_service import smartthings_service
-from backend.tuya_service import tuya_service
+from backend.homeassistant_service import homeassistant_service
 from backend.database import (
     get_latest_reading, get_station_status, get_pressure_trend,
     get_all_records, get_records_history, get_today_extremes,
@@ -119,9 +118,8 @@ async def dashboard_page(request: Request):
     energy_latest = aton_service.latest_data or get_latest_energy() or {}
     energy_summary = get_today_energy_summary()
 
-    # Dati SmartThings & Tuya Smart Life
-    smartthings_summary = smartthings_service.get_summary(energy_latest, analytics.get("drying_index") if analytics else None)
-    tuya_summary = tuya_service.get_summary()
+    # Dati Smart Home & Elettrodomestici (Home Assistant Locale)
+    ha_summary = homeassistant_service.get_summary(energy_latest, analytics.get("drying_index") if analytics else None)
 
     return templates.TemplateResponse(
         request=request,
@@ -148,10 +146,11 @@ async def dashboard_page(request: Request):
             "thinq_enabled": settings.LG_THINQ_ENABLED,
             "thinq_connected": thinq_service.is_connected,
             "climate_devices": thinq_service.get_cached_devices(),
-            "smartthings": smartthings_summary,
-            "smartthings_enabled": settings.SMARTTHINGS_ENABLED,
-            "tuya": tuya_summary,
-            "tuya_enabled": settings.TUYA_ENABLED,
+            "smartthings": ha_summary,
+            "smartthings_enabled": True,
+            "tuya": ha_summary,
+            "tuya_enabled": True,
+            "hass_enabled": settings.HASS_ENABLED,
             "sensor_aliases": get_sensor_aliases(),
             "db_stats": get_database_stats(),
             "civil_protection": civil_protection_service.fetch_alerts() if settings.CIVIL_PROTECTION_ENABLED else None,
@@ -450,7 +449,7 @@ async def settings_page(request: Request):
     aliases = get_sensor_aliases()
     soil_moist = latest.get("soil_moisture") or {}
     detected_sensors = get_detected_sensors(raw, soil_moist, aliases)
-    tuya_sum = tuya_service.get_summary()
+    ha_sum = homeassistant_service.get_summary()
     climate_cfg = get_climate_automations_config()
     climate_devs = thinq_service.get_cached_devices() if settings.LG_THINQ_ENABLED else []
     tuya_local_devs = get_tuya_local_devices()
@@ -468,10 +467,10 @@ async def settings_page(request: Request):
             "climate_config": climate_cfg,
             "climate_devices": climate_devs,
             "irrigation_config": get_irrigation_automations_config(),
-            "smartthings_enabled": settings.SMARTTHINGS_ENABLED,
-            "tuya_enabled": settings.TUYA_ENABLED,
-            "tuya_summary": tuya_sum,
-            "tuya_devices": tuya_sum.get("all_devices", []),
+            "smartthings_enabled": True,
+            "tuya_enabled": True,
+            "tuya_summary": ha_sum,
+            "tuya_devices": homeassistant_service.get_catalog_devices(),
             "tuya_local_devices": tuya_local_devs,
             "hass_enabled": settings.HASS_ENABLED,
             "hass_url": settings.HASS_URL,

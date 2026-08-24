@@ -51,12 +51,12 @@ async def watchdog_worker():
             engine.check_evening_energy_digest()
             engine.check_nightly_maintenance()
 
-            # Automazioni intelligenti Presenza S26 Ultra, Elettrodomestici, Clima & Solare
+            # Automazioni intelligenti Presenza Smartphone, Elettrodomestici, Clima & Solare via Home Assistant
             latest_w = get_latest_reading() or {}
             latest_e = aton_service.latest_data or get_latest_energy() or {}
             an_ctx = build_analytics_context(latest_w)
-            st_sum = smartthings_service.get_summary(latest_e, an_ctx.get("drying_index") if an_ctx else None)
-            engine.evaluate_smartthings_automations(st_sum, latest_w, latest_e)
+            ha_sum = homeassistant_service.get_summary(latest_e, an_ctx.get("drying_index") if an_ctx else None)
+            engine.evaluate_smartthings_automations(ha_sum, latest_w, latest_e)
 
             # Automazioni Climatizzatori LG ThinQ (Spegnimento/Accensione Autonoma & Notifiche)
             if settings.LG_THINQ_ENABLED:
@@ -66,28 +66,27 @@ async def watchdog_worker():
                         thinq_devs,
                         latest_w,
                         latest_e,
-                        st_sum.get("presence") if st_sum else None
+                        ha_sum.get("presence") if ha_sum else None
                     )
 
-            # Automazioni Irrigazione Intelligente (WH51 + Tuya SOP10 + Meteo Predittivo)
-            if settings.TUYA_ENABLED:
-                fc_rain = 0.0
-                try:
-                    fc_data = forecast_service.fetch_open_meteo() or {}
-                    fc_rain = float(fc_data.get("rain_24h_sum", 0.0) or 0.0)
-                except Exception:
-                    pass
-                recent_rain_mm = 0.0
-                try:
-                    recent_r = get_recent_rain_totals() or {}
-                    recent_rain_mm = float(recent_r.get("rain_48h", 0.0) or 0.0)
-                except Exception:
-                    pass
-                await engine.evaluate_smart_irrigation_automations(
-                    weather_data=latest_w,
-                    forecast_rain_24h_mm=fc_rain,
-                    recent_rain_48h_mm=recent_rain_mm
-                )
+            # Automazioni Irrigazione Intelligente (WH51 + Elettrovalvola Home Assistant + Meteo Predittivo)
+            fc_rain = 0.0
+            try:
+                fc_data = forecast_service.fetch_open_meteo() or {}
+                fc_rain = float(fc_data.get("rain_24h_sum", 0.0) or 0.0)
+            except Exception:
+                pass
+            recent_rain_mm = 0.0
+            try:
+                recent_r = get_recent_rain_totals() or {}
+                recent_rain_mm = float(recent_r.get("rain_48h", 0.0) or 0.0)
+            except Exception:
+                pass
+            await engine.evaluate_smart_irrigation_automations(
+                weather_data=latest_w,
+                forecast_rain_24h_mm=fc_rain,
+                recent_rain_48h_mm=recent_rain_mm
+            )
         except Exception as e:
             logger.error(f"Errore nel watchdog worker: {e}")
         await asyncio.sleep(60)
@@ -97,8 +96,6 @@ async def lifespan(app: FastAPI):
     watchdog_task = asyncio.create_task(watchdog_worker())
     aton_task = asyncio.create_task(aton_service.worker_loop())
     thinq_task = asyncio.create_task(thinq_service.worker_loop())
-    smartthings_task = asyncio.create_task(smartthings_service.worker_loop())
-    tuya_task = asyncio.create_task(tuya_service.worker_loop())
     hass_task = asyncio.create_task(homeassistant_service.worker_loop())
     scheduler_task = asyncio.create_task(device_scheduler.worker_loop())
     yield
@@ -107,9 +104,6 @@ async def lifespan(app: FastAPI):
     aton_task.cancel()
     thinq_service.stop()
     thinq_task.cancel()
-    smartthings_task.cancel()
-    await smartthings_service.close()
-    tuya_task.cancel()
     hass_task.cancel()
     await homeassistant_service.close()
     device_scheduler.stop()

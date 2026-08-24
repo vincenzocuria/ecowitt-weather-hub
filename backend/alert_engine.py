@@ -1644,11 +1644,8 @@ class AlertEngine:
         - Watchdog di sicurezza per chiusura forzata (Auto-Off)
         """
         from backend.database import get_irrigation_automations_config
-        from backend.tuya_service import tuya_service
+        from backend.homeassistant_service import homeassistant_service
         from backend.analytics import calc_evapotranspiration
-
-        if not settings.TUYA_ENABLED:
-            return
 
         cfg = get_irrigation_automations_config()
         if not cfg.get("master_enabled", True) or cfg.get("mode") == "disabled":
@@ -1657,23 +1654,26 @@ class AlertEngine:
         now = time.time()
         current_hour = datetime.now(settings.get_tz()).hour
 
-        # 1. Individuazione Elettrovalvola Tuya (sfkzq / irrigation)
-        tuya_summary = tuya_service.get_summary()
-        all_tuya = tuya_summary.get("all_devices") or tuya_summary.get("devices") or []
+        # 1. Individuazione Elettrovalvola su Home Assistant (valve.aiuola_valve)
+        ha_summary = homeassistant_service.get_summary()
+        irrigation_info = ha_summary.get("irrigation", {})
+        valves = irrigation_info.get("valves", [])
         
-        target_id = cfg.get("target_device_id", "bfeb96waen2hlkvg")
-        valve_dev = None
-        if target_id and target_id != "auto":
-            valve_dev = next((d for d in all_tuya if d.get("id") == target_id), None)
-        if not valve_dev:
-            valve_dev = next((d for d in all_tuya if d.get("category") == "sfkzq" or d.get("type") == "irrigation"), None)
+        target_id = cfg.get("target_device_id", "valve.aiuola_valve")
+        if target_id == "auto" or not target_id:
+            target_id = "valve.aiuola_valve"
+
+        valve_dev = next((v for v in valves if v.get("id") == target_id), None)
+        if not valve_dev and valves:
+            valve_dev = valves[0]
 
         if not valve_dev:
-            return
+            # Fallback se non ci sono valvole nel summary
+            valve_dev = {"id": "valve.aiuola_valve", "name": "Elettrovalvola Aiuola", "state": "closed"}
 
         dev_id = valve_dev.get("id")
         dev_name = valve_dev.get("name", "Elettrovalvola Irrigazione")
-        is_valve_open = valve_dev.get("is_on") is True or valve_dev.get("work_state") in ("watering", "spray", "manual", "auto", "running")
+        is_valve_open = valve_dev.get("state") == "open"
 
         # 2. Parametri Meteo e Sensore Terreno WH51
         temp_c = weather_data.get("temp_c")
@@ -1726,7 +1726,7 @@ class AlertEngine:
 
             # Sub-caso A1: Pioggia intensa durante l'irrigazione -> Chiusura Immediata
             if rain_rate >= 0.5 or self.is_raining:
-                await tuya_service.close_irrigation(dev_id)
+                await homeassistant_service.close_irrigation(dev_id)
                 self.is_irrigating = False
                 self.last_irrigation_stop_time = now
                 self._save_state()
@@ -1744,7 +1744,7 @@ class AlertEngine:
             target_sat = float(cfg.get("soil_target_threshold", 70.0))
             crop_label = cfg.get("crop_label", "Grande Vaso (Pomodori & Zucchine) 🪴🍅🥒")
             if soil_moisture is not None and soil_moisture >= target_sat and elapsed_min >= 1.0:
-                await tuya_service.close_irrigation(dev_id)
+                await homeassistant_service.close_irrigation(dev_id)
                 self.is_irrigating = False
                 self.last_irrigation_stop_time = now
                 self._save_state()
@@ -1764,7 +1764,7 @@ class AlertEngine:
             limit_min = min(planned_min, max_safety_min)
 
             if elapsed_min >= limit_min:
-                await tuya_service.close_irrigation(dev_id)
+                await homeassistant_service.close_irrigation(dev_id)
                 self.is_irrigating = False
                 self.last_irrigation_stop_time = now
                 self._save_state()
@@ -1883,7 +1883,7 @@ class AlertEngine:
 
         # 8. Esecuzione Azione (Auto o Notifica)
         if mode == "auto":
-            res = await tuya_service.open_irrigation(dev_id, duration_minutes=int(max(1, round(duration))))
+            res = await homeassistant_service.open_irrigation(dev_id, duration_minutes=int(max(1, round(duration))))
             if res.get("success"):
                 self.is_irrigating = True
                 self.irrigation_started_at = now

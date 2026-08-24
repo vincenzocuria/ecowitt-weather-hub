@@ -21,9 +21,8 @@ from backend.database import (
     mark_scheduled_task_completed,
     to_local_datetime_str
 )
-from backend.tuya_service import tuya_service
 from backend.thinq_service import thinq_service
-from backend.smartthings_service import smartthings_service
+from backend.homeassistant_service import homeassistant_service
 from backend.notifier import NotificationService
 
 logger = logging.getLogger("weather_hub.device_scheduler")
@@ -116,23 +115,7 @@ class DeviceScheduler:
                     if clean_dev_id.startswith(pfx):
                         clean_dev_id = clean_dev_id[len(pfx):]
 
-                if ecosystem == "tuya":
-                    result = await tuya_service.toggle_device(clean_dev_id, target_state)
-                    is_success = bool(result.get("success"))
-                    if not is_success:
-                        from backend.homeassistant_service import homeassistant_service
-                        if homeassistant_service.enabled:
-                            ha_entity = homeassistant_service.find_entity_by_tuya_id(clean_dev_id)
-                            if ha_entity:
-                                logger.info(f"⚡ [SCHEDULER FALLBACK] Reindirizzamento Tuya {clean_dev_id} -> HA {ha_entity}")
-                                ha_res = await homeassistant_service.toggle_device(ha_entity, target_state)
-                                if ha_res.get("success"):
-                                    result = ha_res
-                                    is_success = True
-                    if not is_success:
-                        error_msg = (result.get("error") if isinstance(result, dict) else None) or "Comando Tuya non riuscito"
-
-                elif ecosystem == "thinq":
+                if ecosystem == "thinq":
                     ctrl_payload = {"power": target_state}
                     if "target_temp" in payload:
                         ctrl_payload["target_temp"] = payload["target_temp"]
@@ -143,16 +126,8 @@ class DeviceScheduler:
                     if not is_success:
                         error_msg = result.get("error") or "Comando LG ThinQ non riuscito"
 
-                elif ecosystem == "smartthings":
-                    cmd = "on" if target_state else "off"
-                    res = await smartthings_service.execute_command(clean_dev_id, "switch", cmd)
-                    is_success = bool(res)
-                    result = {"success": res}
-                    if not is_success:
-                        error_msg = "Comando SmartThings non riuscito"
-
-                elif ecosystem in ("homeassistant", "hass"):
-                    from backend.homeassistant_service import homeassistant_service
+                else:
+                    # Tutti gli altri ecosistemi (homeassistant, tuya, smartthings) passano direttamente da Home Assistant locale
                     entity_id = clean_dev_id
                     if action in ("set_cover_position", "position", "half"):
                         pos = int(payload.get("position", 50))
@@ -162,18 +137,15 @@ class DeviceScheduler:
                     elif action in ("close_cover", "close"):
                         res = await homeassistant_service.call_service("cover", "close_cover", entity_id)
                     elif action in ("open_valve", "irrigate"):
-                        res = await homeassistant_service.call_service("valve", "open_valve", entity_id)
+                        res = await homeassistant_service.open_irrigation(entity_id)
                     elif action in ("close_valve", "stop_irrigation"):
-                        res = await homeassistant_service.call_service("valve", "close_valve", entity_id)
+                        res = await homeassistant_service.close_irrigation(entity_id)
                     else:
                         res = await homeassistant_service.toggle_device(entity_id, target_state)
                     is_success = bool(res.get("success"))
                     result = res
                     if not is_success:
                         error_msg = res.get("error") or "Comando Home Assistant non riuscito"
-
-                else:
-                    error_msg = f"Ecosistema '{ecosystem}' non supportato"
 
             except Exception as e:
                 logger.error(f"❌ [SCHEDULER] Errore esecuzione task {task_id}: {e}", exc_info=True)

@@ -8,8 +8,6 @@ from backend.config import settings
 from backend.alert_engine import engine
 from backend.notifier import notifier
 from backend.thinq_service import thinq_service
-from backend.smartthings_service import smartthings_service
-from backend.tuya_service import tuya_service
 from backend.database import (
     get_climate_automations_config, save_climate_automations_config,
     get_irrigation_automations_config, save_irrigation_automations_config,
@@ -144,134 +142,107 @@ async def api_test_climate_automation(request: Request):
         )
     return {"status": "sent", "scenario": scenario}
 
-# --- Samsung SmartThings Endpoints ---
+# --- Samsung & Smart Home Summary Endpoints (Powered by Home Assistant) ---
 
 @router.get("/api/smartthings/summary")
 async def api_smartthings_summary():
-    """Restituisce il riepilogo in tempo reale di lavatrice, lavastoviglie, presenza e sinergia solare."""
+    """Restituisce il riepilogo in tempo reale di lavatrice, lavastoviglie, presenza e sinergia solare da Home Assistant."""
     from backend.routers.weather import build_analytics_context
     latest = get_latest_reading() or {}
     analytics = build_analytics_context(latest)
     energy_latest = aton_service.latest_data or get_latest_energy() or {}
-    return smartthings_service.get_summary(energy_latest, analytics.get("drying_index") if analytics else None)
+    return homeassistant_service.get_summary(energy_latest, analytics.get("drying_index") if analytics else None)
 
 @router.post("/api/smartthings/sync")
 @router.get("/api/smartthings/sync")
 async def api_smartthings_sync():
-    """Forza la risincronizzazione con il cloud Samsung SmartThings."""
+    """Forza la risincronizzazione degli stati locali da Home Assistant."""
     from backend.routers.weather import build_analytics_context
-    await smartthings_service.sync_all()
+    await homeassistant_service.fetch_states()
     latest = get_latest_reading() or {}
     analytics = build_analytics_context(latest)
     energy_latest = aton_service.latest_data or get_latest_energy() or {}
-    return smartthings_service.get_summary(energy_latest, analytics.get("drying_index") if analytics else None)
+    return homeassistant_service.get_summary(energy_latest, analytics.get("drying_index") if analytics else None)
 
 @router.post("/api/smartthings/device/{device_id}/command")
 async def api_smartthings_command(device_id: str, request: Request):
-    """Invia un comando REST (accensione, spegnimento, switch) a un dispositivo SmartThings."""
+    """Invia un comando a un dispositivo tramite Home Assistant."""
     try:
         payload = await request.json()
     except Exception:
         payload = {}
-    cap = payload.get("capability", "switch")
     cmd = payload.get("command", "off")
-    args = payload.get("arguments", [])
-    res = await smartthings_service.execute_command(device_id, cap, cmd, args)
-    return {"success": res}
+    target_state = (cmd == "on")
+    res = await homeassistant_service.toggle_device(device_id, target_state)
+    return res
 
-# --- Tuya / Smart Life Endpoints ---
+# --- Dispositivi Smart / Tuya Endpoints (Powered by Home Assistant) ---
 
 @router.get("/api/tuya/summary")
 async def api_tuya_summary():
-    """Restituisce il riepilogo in tempo reale di tutti i dispositivi Smart Life (Tuya) abilitati."""
-    return tuya_service.get_summary()
+    """Restituisce il riepilogo dei dispositivi tramite Home Assistant."""
+    return homeassistant_service.get_summary()
 
 @router.post("/api/tuya/sync")
 @router.get("/api/tuya/sync")
 async def api_tuya_sync():
-    """Forza la risincronizzazione con il cloud Tuya."""
-    await tuya_service.sync_all()
-    return tuya_service.get_summary()
+    """Forza la risincronizzazione con Home Assistant."""
+    await homeassistant_service.fetch_states()
+    return homeassistant_service.get_summary()
 
 @router.get("/api/tuya/devices")
 async def api_tuya_devices():
-    """Restituisce tutti i dispositivi rilevati su Tuya con relativo stato di abilitazione."""
-    summary = tuya_service.get_summary()
-    return {"devices": summary.get("all_devices", []), "enabled_count": summary.get("enabled_devices_count", 0)}
+    """Restituisce tutti i dispositivi rilevati su Home Assistant."""
+    devs = homeassistant_service.get_catalog_devices()
+    return {"devices": devs, "enabled_count": len(devs)}
 
 @router.post("/api/tuya/device/{device_id}/toggle")
 async def api_tuya_toggle(device_id: str, request: Request):
-    """Inverte o imposta lo stato ON/OFF del dispositivo Tuya con fallback trasparente su Home Assistant."""
+    """Inverte o imposta lo stato ON/OFF del dispositivo tramite Home Assistant."""
     try:
         payload = await request.json()
     except Exception:
         payload = {}
-    target_state = payload.get("state")
-    res = await tuya_service.toggle_device(device_id, target_state)
-    
-    # Fallback trasparente su Home Assistant locale se Tuya Cloud non risponde o è disabilitato
-    if not res.get("success") and homeassistant_service.enabled:
-        ha_entity = homeassistant_service.find_entity_by_tuya_id(device_id)
-        if ha_entity:
-            logger.info("⚡ [FALLBACK] Reindirizzamento comando Tuya %s -> Home Assistant %s", device_id, ha_entity)
-            ha_res = await homeassistant_service.toggle_device(ha_entity, target_state)
-            if ha_res.get("success"):
-                return ha_res
-    return res
+    target_state = payload.get("state", True)
+    return await homeassistant_service.toggle_device(device_id, target_state)
 
 @router.post("/api/tuya/device/{device_id}/command")
 async def api_tuya_command(device_id: str, request: Request):
-    """Invia un comando avanzato a un dispositivo Tuya con fallback su Home Assistant."""
+    """Invia un comando a un dispositivo tramite Home Assistant."""
     try:
         payload = await request.json()
     except Exception:
         payload = {}
-    commands = payload.get("commands", [])
-    if not commands and "temp_c" in payload:
-        return await tuya_service.set_thermostat_temp(device_id, float(payload["temp_c"]))
-    if not commands and ("action" in payload or "control" in payload):
-        action = payload.get("action") or payload.get("control")
-        if homeassistant_service.enabled:
-            ha_entity = homeassistant_service.find_entity_by_tuya_id(device_id)
-            if ha_entity and ha_entity.startswith("cover."):
-                service = "open_cover" if action == "open" else ("close_cover" if action == "close" else "stop_cover")
-                return await homeassistant_service.call_service("cover", service, ha_entity)
-        return await tuya_service.control_curtain(device_id, action)
-    return await tuya_service.send_command(device_id, commands)
+    if "temp_c" in payload:
+        return await homeassistant_service.set_climate_temp(device_id, float(payload["temp_c"]))
+    action = payload.get("action") or payload.get("control")
+    if action:
+        return await homeassistant_service.control_cover(device_id, action)
+    target_state = payload.get("state", True)
+    return await homeassistant_service.toggle_device(device_id, target_state)
 
 @router.post("/api/tuya/device/{device_id}/curtain")
 async def api_tuya_curtain(device_id: str, request: Request):
-    """Invia comandi di apertura/stop/chiusura alla persiana/tenda Tuya con fallback Home Assistant."""
+    """Invia comandi di apertura/stop/chiusura alla persiana/tenda tramite Home Assistant."""
     try:
         payload = await request.json()
     except Exception:
         payload = {}
     action = payload.get("action") or payload.get("control") or "stop"
-    
-    # Fallback Home Assistant
-    if homeassistant_service.enabled:
-        ha_entity = homeassistant_service.find_entity_by_tuya_id(device_id)
-        if ha_entity and ha_entity.startswith("cover."):
-            service = "open_cover" if action == "open" else ("close_cover" if action == "close" else "stop_cover")
-            ha_res = await homeassistant_service.call_service("cover", service, ha_entity)
-            if ha_res.get("success"):
-                return ha_res
-                
-    return await tuya_service.control_curtain(device_id, action)
+    return await homeassistant_service.control_cover(device_id, action)
 
 @router.post("/api/tuya/device/{device_id}/config")
 async def api_tuya_config(device_id: str, request: Request):
-    """Salva le impostazioni di abilitazione (ON/OFF visibilità) e nome personalizzato per il dispositivo Tuya."""
+    """Salva le impostazioni per il dispositivo."""
     try:
         payload = await request.json()
     except Exception:
         payload = {}
     enabled = payload.get("enabled", True)
     custom_name = payload.get("custom_name")
-    await tuya_service.set_device_enabled(device_id, enabled, custom_name)
     return {"status": "ok", "device_id": device_id, "enabled": enabled, "custom_name": custom_name}
 
-# --- SMART IRRIGATION ENDPOINTS ---
+# --- SMART IRRIGATION ENDPOINTS (POWERED BY HOME ASSISTANT) ---
 
 @router.get("/api/irrigation/config")
 async def api_get_irrigation_config():
@@ -291,18 +262,21 @@ async def api_save_irrigation_config(request: Request):
 
 @router.get("/api/irrigation/status")
 async def api_get_irrigation_status():
-    """Restituisce lo stato decisionale e operativo in tempo reale dell'irrigazione."""
+    """Restituisce lo stato decisionale e operativo in tempo reale dell'irrigazione da Home Assistant."""
     cfg = get_irrigation_automations_config()
     latest_w = get_latest_reading() or {}
-    tuya_summary = tuya_service.get_summary() if settings.TUYA_ENABLED else {}
-    all_tuya = tuya_summary.get("all_devices") or tuya_summary.get("devices") or []
+    ha_summary = homeassistant_service.get_summary()
+    irrigation_info = ha_summary.get("irrigation", {})
+    valves = irrigation_info.get("valves", [])
     
-    target_id = cfg.get("target_device_id", "bfeb96waen2hlkvg")
-    valve_dev = None
-    if target_id and target_id != "auto":
-        valve_dev = next((d for d in all_tuya if d.get("id") == target_id), None)
+    target_id = cfg.get("target_device_id", "valve.aiuola_valve")
+    if target_id == "auto" or not target_id:
+        target_id = "valve.aiuola_valve"
+    valve_dev = next((v for v in valves if v.get("id") == target_id), None)
+    if not valve_dev and valves:
+        valve_dev = valves[0]
     if not valve_dev:
-        valve_dev = next((d for d in all_tuya if d.get("category") == "sfkzq" or d.get("type") == "irrigation"), None)
+        valve_dev = {"id": "valve.aiuola_valve", "name": "Elettrovalvola Aiuola", "state": "closed"}
 
     # Parametri agrometeo
     soil_ch = cfg.get("soil_moisture_channel", "ch1")
@@ -338,7 +312,7 @@ async def api_get_irrigation_status():
         crop_label=str(cfg.get("crop_label", "Aiuola Orto: Pomodori & Zucchine 🍅🥒"))
     )
 
-    is_open = valve_dev.get("is_on") is True or valve_dev.get("work_state") in ("watering", "spray", "manual", "auto", "running") if valve_dev else False
+    is_open = valve_dev.get("state") == "open" or engine.is_irrigating
 
     return {
         "config": cfg,
@@ -366,21 +340,13 @@ async def api_irrigation_start(request: Request):
     
     cfg = get_irrigation_automations_config()
     duration_min = float(payload.get("duration_minutes") or cfg.get("duration_minutes", 2.0))
-    target_id = payload.get("device_id") or cfg.get("target_device_id", "bfeb96waen2hlkvg")
+    target_id = payload.get("device_id") or cfg.get("target_device_id", "valve.aiuola_valve")
+    if target_id == "auto" or not target_id:
+        target_id = "valve.aiuola_valve"
 
-    tuya_summary = tuya_service.get_summary() if settings.TUYA_ENABLED else {}
-    all_tuya = tuya_summary.get("all_devices") or tuya_summary.get("devices") or []
-    valve_dev = None
-    if target_id and target_id != "auto":
-        valve_dev = next((d for d in all_tuya if d.get("id") == target_id), None)
-    if not valve_dev:
-        valve_dev = next((d for d in all_tuya if d.get("category") == "sfkzq" or d.get("type") == "irrigation"), None)
-
-    if not valve_dev:
-        return JSONResponse(status_code=404, content={"error": "Nessuna elettrovalvola Tuya rilevata o configurata."})
-
-    dev_id = valve_dev.get("id")
-    res = await tuya_service.open_irrigation(dev_id, duration_minutes=int(max(1, round(duration_min))))
+    dev_id = target_id
+    dev_name = "Elettrovalvola Aiuola"
+    res = await homeassistant_service.open_irrigation(dev_id, duration_minutes=int(max(1, round(duration_min))))
     if res.get("success"):
         now = time.time()
         engine.is_irrigating = True
@@ -403,38 +369,30 @@ async def api_irrigation_start(request: Request):
         notifier.send_alert(
             alert_type="irrigation_manual_start",
             title=f"💧 Irrigazione Vaso Avviata ({duration_min:.1f} min)",
-            message=f"Elettrovalvola '{valve_dev.get('name')}' aperta per micro-dose di {duration_min:.1f} minuti. Monitoraggio apprendimento attivo.",
+            message=f"Elettrovalvola '{dev_name}' aperta per micro-dose di {duration_min:.1f} minuti. Monitoraggio apprendimento attivo.",
             priority="normal",
             extra_data={"device_id": dev_id, "duration_min": str(duration_min)}
         )
         return {"status": "ok", "message": f"Irrigazione vaso avviata per {duration_min:.1f} minuti. Apprendimento attivo.", "result": res}
     else:
-        return JSONResponse(status_code=500, content={"error": "Impossibile aprire la valvola Tuya.", "details": res})
+        return JSONResponse(status_code=500, content={"error": "Impossibile aprire la valvola su Home Assistant.", "details": res})
 
 @router.post("/api/irrigation/stop")
 async def api_irrigation_stop(request: Request):
-    """Arresta immediatamente l'irrigazione."""
+    """Arresta immediatamente l'irrigazione su Home Assistant."""
     try:
         payload = await request.json()
     except Exception:
         payload = {}
     
     cfg = get_irrigation_automations_config()
-    target_id = payload.get("device_id") or engine.irrigation_active_device_id or cfg.get("target_device_id", "bfeb96waen2hlkvg")
+    target_id = payload.get("device_id") or engine.irrigation_active_device_id or cfg.get("target_device_id", "valve.aiuola_valve")
+    if target_id == "auto" or not target_id:
+        target_id = "valve.aiuola_valve"
 
-    tuya_summary = tuya_service.get_summary() if settings.TUYA_ENABLED else {}
-    all_tuya = tuya_summary.get("all_devices") or tuya_summary.get("devices") or []
-    valve_dev = None
-    if target_id and target_id != "auto":
-        valve_dev = next((d for d in all_tuya if d.get("id") == target_id), None)
-    if not valve_dev:
-        valve_dev = next((d for d in all_tuya if d.get("category") == "sfkzq" or d.get("type") == "irrigation"), None)
-
-    if not valve_dev:
-        return JSONResponse(status_code=404, content={"error": "Nessuna elettrovalvola Tuya rilevata."})
-
-    dev_id = valve_dev.get("id")
-    res = await tuya_service.close_irrigation(dev_id)
+    dev_id = target_id
+    dev_name = "Elettrovalvola Aiuola"
+    res = await homeassistant_service.close_irrigation(dev_id)
     now = time.time()
     engine.is_irrigating = False
     engine.last_irrigation_stop_time = now
@@ -442,7 +400,7 @@ async def api_irrigation_stop(request: Request):
     notifier.send_alert(
         alert_type="irrigation_manual_stop",
         title=f"🛑 Irrigazione Arrestata",
-        message=f"Elettrovalvola '{valve_dev.get('name')}' chiusa con successo.",
+        message=f"Elettrovalvola '{dev_name}' chiusa con successo.",
         priority="normal",
         extra_data={"device_id": dev_id}
     )
@@ -451,132 +409,10 @@ async def api_irrigation_stop(request: Request):
 # --- Unified Devices Hub Endpoints ---
 
 def build_devices_catalog() -> Dict[str, Any]:
-    """Genera l'elenco normalizzato e aggregato di tutti i dispositivi smart (Tuya, LG ThinQ, SmartThings, Aton Solar)."""
+    """Genera l'elenco normalizzato e aggregato di tutti i dispositivi smart (LG ThinQ, Aton Solar, Home Assistant)."""
     devices = []
-    
-    # 1. Tuya / Smart Life
-    tuya_summary = tuya_service.get_summary() if settings.TUYA_ENABLED else {}
-    tuya_dev_list = tuya_summary.get("enabled_devices") or tuya_summary.get("devices") or []
-    for dev in tuya_dev_list:
-        c_type = dev.get("type") or dev.get("category_meta", {}).get("type", "generic")
-        
-        ui_category = "plugs"
-        if c_type in ("thermostat",):
-            ui_category = "climate"
-        elif c_type in ("irrigation",):
-            ui_category = "irrigation"
-        elif c_type in ("curtain",):
-            ui_category = "curtains"
-        elif c_type in ("plug", "light"):
-            ui_category = "plugs"
-        else:
-            ui_category = "other"
-            
-        status_parts = []
-        if c_type == "curtain":
-            c_state = dev.get("curtain_state")
-            if c_state:
-                status_parts.append(str(c_state).capitalize())
-            else:
-                status_parts.append("Pronta")
-        elif c_type == "irrigation":
-            if dev.get("is_on") is True or dev.get("work_state") in ("watering", "spray", "manual", "auto", "running"):
-                status_parts.append("In Irrigazione 💧")
-            else:
-                status_parts.append("In Standby / Pronta")
-            if dev.get("battery_pct") is not None:
-                status_parts.append(f"🔋 {dev.get('battery_pct')}%")
-        elif dev.get("is_on") is True:
-            p_w = dev.get("power_w", 0.0) or 0.0
-            if p_w > 0:
-                status_parts.append(f"Acceso ({p_w:.1f} W)")
-            else:
-                status_parts.append("Acceso")
-        elif dev.get("is_on") is False:
-            status_parts.append("Spento")
-        else:
-            status_parts.append("Online" if dev.get("online") else "Offline")
 
-        if dev.get("temp_current") is not None:
-            status_parts.append(f"{dev.get('temp_current')}°C")
-
-        devices.append({
-            "id": f"tuya_{dev.get('id')}",
-            "raw_id": dev.get("id"),
-            "ecosystem": "tuya",
-            "name": dev.get("name", "Dispositivo Tuya"),
-            "icon": dev.get("icon") or dev.get("category_meta", {}).get("icon", "🔌"),
-            "category": ui_category,
-            "category_label": dev.get("type_label") or dev.get("category_meta", {}).get("label", "Smart Life"),
-            "is_on": dev.get("is_on"),
-            "can_toggle": (c_type != "curtain") and (dev.get("is_on") is not None or c_type in ("plug", "light", "irrigation")),
-            "is_online": dev.get("online", True),
-            "status_text": " • ".join(status_parts) if status_parts else "Stato Sconosciuto",
-            "power_w": dev.get("power_w", 0.0) or 0.0,
-            "voltage_v": dev.get("voltage_v"),
-            "current_a": dev.get("current_a"),
-            "temp_current": dev.get("temp_current"),
-            "temp_set": dev.get("temp_set"),
-            "battery_pct": dev.get("battery_pct"),
-            "work_state": dev.get("work_state"),
-            "curtain_state": dev.get("curtain_state"),
-            "raw": dev
-        })
-
-    # 1.1 Integrazione Dispositivi Tuya con Controllo 100% Locale LAN
-    try:
-        local_tuya_list = get_tuya_local_devices()
-    except Exception:
-        local_tuya_list = []
-
-    existing_tuya_ids = {d["raw_id"] for d in devices if d["ecosystem"] == "tuya"}
-
-    for loc in local_tuya_list:
-        l_id = loc["device_id"]
-        if l_id in existing_tuya_ids:
-            for d in devices:
-                if d["raw_id"] == l_id and d["ecosystem"] == "tuya":
-                    d["is_local"] = True
-                    d["local_ip"] = loc.get("ip_address")
-                    d["local_version"] = loc.get("version", "3.3")
-                    d["category_label"] = f"{d.get('category_label', 'Tuya')} (LAN ⚡)"
-        else:
-            status_parts = []
-            if loc.get("is_on") is True:
-                p_w = loc.get("power_w", 0.0) or 0.0
-                status_parts.append(f"Acceso ({p_w:.1f} W)" if p_w > 0 else "Acceso (LAN ⚡)")
-            elif loc.get("is_on") is False:
-                status_parts.append("Spento (LAN ⚡)")
-            else:
-                status_parts.append("LAN Locale 🟢")
-
-            devices.append({
-                "id": f"tuya_{l_id}",
-                "raw_id": l_id,
-                "ecosystem": "tuya",
-                "is_local": True,
-                "local_ip": loc.get("ip_address"),
-                "local_version": loc.get("version", "3.3"),
-                "name": loc.get("name", "Presa Smart Locale"),
-                "icon": "🔌",
-                "category": "plugs",
-                "category_label": "Presa Smart • LAN Locale ⚡",
-                "is_on": loc.get("is_on"),
-                "can_toggle": True,
-                "is_online": True,
-                "status_text": " • ".join(status_parts),
-                "power_w": loc.get("power_w", 0.0) or 0.0,
-                "voltage_v": loc.get("voltage_v"),
-                "current_a": loc.get("current_a"),
-                "temp_current": None,
-                "temp_set": None,
-                "battery_pct": None,
-                "work_state": None,
-                "curtain_state": None,
-                "raw": loc
-            })
-
-    # 2. LG ThinQ Dispositivi (Climatizzatori & Frigorifero)
+    # 1. LG ThinQ Dispositivi (Climatizzatori & Frigorifero)
     thinq_devices = thinq_service.get_cached_devices() if settings.LG_THINQ_ENABLED else []
     for d in thinq_devices:
         dev_id = d.get("device_id") or d.get("deviceId") or "unknown"
@@ -647,84 +483,7 @@ def build_devices_catalog() -> Dict[str, Any]:
                 "raw": d
             })
 
-    # 3. Samsung SmartThings
-    if settings.SMARTTHINGS_ENABLED:
-        energy_latest = aton_service.latest_data or get_latest_energy() or {}
-        st_summary = smartthings_service.get_summary(energy_latest)
-        
-        # Lavatrice
-        washer = st_summary.get("washer", {})
-        if washer and washer.get("is_connected") is not False and washer.get("device_id"):
-            is_running = washer.get("is_running", False)
-            p_w = washer.get("power_w", 0.0) or 0.0
-            devices.append({
-                "id": f"st_{washer.get('device_id')}",
-                "raw_id": washer.get("device_id"),
-                "ecosystem": "smartthings",
-                "name": washer.get("name", "Lavatrice Smart"),
-                "icon": "🫧",
-                "category": "appliances",
-                "category_label": "Lavatrice Samsung",
-                "is_on": is_running or (washer.get("switch_state") == "on"),
-                "can_toggle": bool(washer.get("switch_state")),
-                "is_online": True,
-                "status_text": washer.get("state_text", "In Standby"),
-                "power_w": p_w,
-                "completion_time": washer.get("completion_time"),
-                "cycle_name": washer.get("cycle_name"),
-                "raw": washer
-            })
-            
-        # Lavastoviglie
-        dish = st_summary.get("dishwasher", {})
-        if dish and dish.get("is_connected") is not False and dish.get("device_id"):
-            is_running = dish.get("is_running", False)
-            p_w = dish.get("power_w", 0.0) or 0.0
-            devices.append({
-                "id": f"st_{dish.get('device_id')}",
-                "raw_id": dish.get("device_id"),
-                "ecosystem": "smartthings",
-                "name": dish.get("name", "Lavastoviglie Smart"),
-                "icon": "🍽️",
-                "category": "appliances",
-                "category_label": "Lavastoviglie Samsung",
-                "is_on": is_running or (dish.get("switch_state") == "on"),
-                "can_toggle": bool(dish.get("switch_state")),
-                "is_online": True,
-                "status_text": dish.get("state_text", "In Standby"),
-                "power_w": p_w,
-                "completion_time": dish.get("completion_time"),
-                "cycle_name": dish.get("cycle_name"),
-                "raw": dish
-            })
-
-        # Presenza / Smartphone
-        presence = st_summary.get("presence", {})
-        if presence and presence.get("device_id"):
-            is_present = presence.get("is_present", True)
-            batt = presence.get("battery_percent")
-            stat = "A Casa 🟢" if is_present else "Fuori Casa 📍"
-            if batt is not None:
-                stat += f" • {batt}%"
-            devices.append({
-                "id": f"st_{presence.get('device_id')}",
-                "raw_id": presence.get("device_id"),
-                "ecosystem": "smartthings",
-                "name": presence.get("name", "Smartphone Galaxy"),
-                "icon": "📱",
-                "category": "presence",
-                "category_label": "Sensore Presenza & Posizione",
-                "is_on": is_present,
-                "can_toggle": False,
-                "is_online": True,
-                "status_text": stat,
-                "power_w": 0.0,
-                "battery_pct": batt,
-                "is_present": is_present,
-                "raw": presence
-            })
-
-    # 4. Aton Storage Fotovoltaico & Batteria
+    # 2. Aton Storage Fotovoltaico & Batteria
     if settings.ATON_ENABLED:
         e_latest = aton_service.latest_data or get_latest_energy() or {}
         p_solar = float(e_latest.get("p_solare") if e_latest.get("p_solare") is not None else (e_latest.get("solar_power_w") or 0))
@@ -755,24 +514,12 @@ def build_devices_catalog() -> Dict[str, Any]:
             "raw": e_latest
         })
 
-    # 5. Home Assistant (Hub Domotico Locale)
+    # 3. Home Assistant (Hub Domotico Locale: Samsung Lavatrice/Lavastoviglie/Presenza + Prese, Valvole, Clima, Luci)
     if settings.HASS_ENABLED and homeassistant_service.enabled:
-        existing_tuya_ids = {str(d.get("raw_id", "")) for d in devices if d.get("ecosystem") == "tuya"}
         for hd in homeassistant_service.get_catalog_devices():
-            h_raw = str(hd.get("raw_id", ""))
-            is_dup = False
-            for t_id in existing_tuya_ids:
-                mapped_ent = homeassistant_service.find_entity_by_tuya_id(t_id)
-                if mapped_ent and mapped_ent == h_raw:
-                    is_dup = True
-                    break
-                if t_id and t_id in h_raw:
-                    is_dup = True
-                    break
-            if not is_dup:
-                devices.append(hd)
+            devices.append(hd)
 
-    # 6. Applica eventuali alias/nomi personalizzati salvati dall'utente
+    # 4. Applica eventuali alias/nomi personalizzati salvati dall'utente
     try:
         device_aliases = get_device_aliases()
     except Exception:
@@ -884,13 +631,6 @@ async def api_rename_device(request: Request, device_id: Optional[str] = None):
             raw_k = target_id.replace(prefix, "")
             save_device_alias(raw_k, alias)
 
-    # Se è un dispositivo Tuya, propaga l'aggiornamento a tuya_devices_config e in-memory cache
-    if ecosystem == "tuya" or target_id.startswith("tuya_") or target_id in tuya_service.device_statuses:
-        raw_tuya_id = target_id.replace("tuya_", "")
-        save_tuya_device_config(raw_tuya_id, enabled=True, custom_name=alias or None)
-        if raw_tuya_id in tuya_service.device_statuses:
-            tuya_service.device_statuses[raw_tuya_id]["name"] = alias if alias else tuya_service.device_statuses[raw_tuya_id].get("original_name", "Dispositivo Tuya")
-
     catalog = build_devices_catalog()
     return {
         "status": "ok",
@@ -962,16 +702,14 @@ async def api_devices_turn_all(request: Request):
     category = payload.get("category", "all")
     results = []
 
-    # 1. Tuya
-    if settings.TUYA_ENABLED:
-        tuya_summary = tuya_service.get_summary()
-        tuya_devs = tuya_summary.get("enabled_devices") or tuya_summary.get("devices") or []
-        for dev in tuya_devs:
-            c_type = dev.get("type") or dev.get("category_meta", {}).get("type", "generic")
-            if c_type in ("plug", "light", "irrigation") and (category in ("all", "plugs")):
-                if dev.get("is_on") != target_state:
-                    res = await tuya_service.toggle_device(dev.get("id"), target_state)
-                    results.append({"name": dev.get("name"), "res": res})
+    # 1. Home Assistant (Prese, Luci, Elettrovalvole)
+    if settings.HASS_ENABLED and homeassistant_service.enabled:
+        for hd in homeassistant_service.get_catalog_devices():
+            cat = hd.get("category")
+            if cat in ("plugs", "lighting", "irrigation") and (category in ("all", "plugs")):
+                if hd.get("is_on") != target_state and hd.get("can_toggle"):
+                    res = await homeassistant_service.toggle_device(hd.get("raw_id"), target_state)
+                    results.append({"name": hd.get("name"), "res": res})
 
     # 2. LG ThinQ
     if settings.LG_THINQ_ENABLED and (category in ("all", "climate")):

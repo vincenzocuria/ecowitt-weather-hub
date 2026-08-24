@@ -462,6 +462,19 @@ class SmartThingsService:
         main_comp = status.get("components", {}).get("main", {})
         presence_val = main_comp.get("presenceSensor", {}).get("presence", {}).get("value", "not present")
         is_present = presence_val == "present"
+
+        # Estrazione percentuale batteria se fornita da SmartThings
+        battery_val = (
+            main_comp.get("battery", {}).get("battery", {}).get("value")
+            or main_comp.get("samsungce.battery", {}).get("battery", {}).get("value")
+        )
+        battery_pct = None
+        if battery_val is not None:
+            try:
+                battery_pct = int(round(float(battery_val)))
+            except (ValueError, TypeError):
+                battery_pct = None
+
         raw_name = dev_info.get("label") or dev_info.get("name") or "S26 Ultra"
         clean_name = raw_name.replace("di Vincenzo", "").strip()
 
@@ -470,7 +483,9 @@ class SmartThingsService:
             "name": raw_name,
             "device_name": clean_name or "S26 Ultra",
             "is_present": is_present,
-            "presence_label": "A Casa 🏠" if is_present else "Fuori Casa 🚗"
+            "presence_label": "A Casa 🏠" if is_present else "Fuori Casa 🚗",
+            "battery_percent": battery_pct,
+            "battery_pct": battery_pct
         }
 
     def get_summary(
