@@ -48,6 +48,7 @@ async def watchdog_worker():
             engine.check_rain_forecast()
             engine.check_civil_protection_alerts()
             engine.check_daily_digest()
+            engine.check_monthly_digest()
             engine.check_evening_energy_digest()
             engine.check_nightly_maintenance()
 

@@ -3,7 +3,7 @@ import json
 import time
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from backend.config import settings
 from backend.notifier import notifier
@@ -51,6 +51,7 @@ class AlertEngine:
 
         # Digest & Maintenance state
         self.last_digest_date: Optional[str] = None
+        self.last_monthly_digest_month: Optional[str] = None
         self.last_maintenance_date: Optional[str] = None
 
         # SmartThings & Leak states
@@ -127,6 +128,7 @@ class AlertEngine:
                 "last_battery_full_alert": self.last_battery_full_alert,
                 "last_evening_energy_date": self.last_evening_energy_date,
                 "last_digest_date": self.last_digest_date,
+                "last_monthly_digest_month": self.last_monthly_digest_month,
                 "last_maintenance_date": self.last_maintenance_date,
                 "_was_battery_full": self._was_battery_full,
                 "_last_presence_is_present": self._last_presence_is_present,
@@ -200,6 +202,7 @@ class AlertEngine:
                 self.last_battery_full_alert = data.get("last_battery_full_alert", self.last_battery_full_alert)
                 self.last_evening_energy_date = data.get("last_evening_energy_date", self.last_evening_energy_date)
                 self.last_digest_date = data.get("last_digest_date", self.last_digest_date)
+                self.last_monthly_digest_month = data.get("last_monthly_digest_month", self.last_monthly_digest_month)
                 self.last_maintenance_date = data.get("last_maintenance_date", self.last_maintenance_date)
                 self._was_battery_full = data.get("_was_battery_full", self._was_battery_full)
                 self._last_presence_is_present = data.get("_last_presence_is_present", self._last_presence_is_present)
@@ -1206,6 +1209,113 @@ class AlertEngine:
             priority="normal"
         )
         return {"status": "sent", "title": title, "message": msg}
+
+    def check_monthly_digest(self):
+        """Controlla se è il momento di inviare il Resoconto Mensile per il mese appena concluso."""
+        now_dt = settings.now_local()
+        # Se siamo il 1° giorno del mese alle ore 08:00 o successive
+        if now_dt.day == 1 and now_dt.hour >= 8:
+            # Mese concluso precedente
+            first_of_this_month = now_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            prev_month_dt = first_of_this_month - timedelta(days=1)
+            target_year = prev_month_dt.year
+            target_month = prev_month_dt.month
+            target_ym = f"{target_year:04d}-{target_month:02d}"
+
+            if getattr(self, "last_monthly_digest_month", None) != target_ym:
+                self.last_monthly_digest_month = target_ym
+                self._save_state()
+                self.send_monthly_digest(target_year, target_month)
+
+    def send_monthly_digest(self, year: Optional[int] = None, month: Optional[int] = None) -> Dict[str, Any]:
+        """Genera e invia la notifica con il resoconto statistico completo del mese e i record battuti."""
+        from backend.database import (
+            calculate_monthly_summary, save_monthly_summary,
+            check_and_update_monthly_records, to_local_datetime_str
+        )
+        now_dt = settings.now_local()
+        if year is None or month is None:
+            # Default al mese precedente
+            first_of_this_month = now_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            prev_month_dt = first_of_this_month - timedelta(days=1)
+            year = prev_month_dt.year
+            month = prev_month_dt.month
+
+        summary = calculate_monthly_summary(year, month)
+        if summary.get("total_records", 0) > 0:
+            save_monthly_summary(summary)
+            broken_records = check_and_update_monthly_records(summary)
+        else:
+            broken_records = []
+
+        m_name = summary.get("month_name", f"{month}/{year}")
+        t_avg = summary.get("avg_temp")
+        t_max = summary.get("max_temp")
+        t_min = summary.get("min_temp")
+        t_max_time = to_local_datetime_str(summary.get("max_temp_time"), "%d/%m ore %H:%M") if summary.get("max_temp_time") else ""
+        t_min_time = to_local_datetime_str(summary.get("min_temp_time"), "%d/%m ore %H:%M") if summary.get("min_temp_time") else ""
+        trop_nights = summary.get("tropical_nights_count", 0)
+        super_trop = summary.get("super_tropical_nights_count", 0)
+
+        rain_mm = summary.get("total_rain_mm", 0.0)
+        rain_days = summary.get("rainy_days_count", 0)
+        rain_rate_max = summary.get("max_rain_rate_mm_hr", 0.0)
+
+        gust_max = summary.get("max_wind_gust_kmh")
+        gust_dir = summary.get("max_wind_gust_dir") or ""
+        lightnings = summary.get("lightning_count_total", 0)
+
+        sol_kwh = summary.get("solar_total_kwh", 0.0)
+        sol_max_w = summary.get("solar_max_w", 0.0)
+        sol_peak_kw = round(sol_max_w / 1000.0, 2) if sol_max_w else 0.0
+        house_kwh = summary.get("house_consumption_kwh", 0.0)
+        autarky = summary.get("autarky_pct", 0.0)
+        self_cons = summary.get("self_consumption_pct", 0.0)
+        bought = summary.get("bought_kwh", 0.0)
+        sold = summary.get("sold_kwh", 0.0)
+
+        lines = [
+            f"📅 Bilancio Mensile Ufficiale Stazione Ecowitt & Aton",
+            "",
+            f"🌡️ CLIMA & TEMPERATURE:",
+            f"• Media Mese: {t_avg}°C" if t_avg is not None else "• Media Mese: --",
+            f"• Massima: {t_max}°C ({t_max_time})" if t_max is not None else "",
+            f"• Minima: {t_min}°C ({t_min_time})" if t_min is not None else "",
+            f"• Notti Tropicali: {trop_nights} notti" + (f" (di cui {super_trop} roventi >25°C)" if super_trop > 0 else "") if trop_nights > 0 else "",
+            "",
+            f"☀️ FOTOVOLTAICO & ATON STORAGE:",
+            f"• Produzione Solare: {sol_kwh} kWh (Picco: {sol_peak_kw} kW)",
+            f"• Consumo Casa: {house_kwh} kWh",
+            f"• Indice Autosufficienza: {autarky}%",
+            f"• Autoconsumo Solare: {self_cons}%",
+            f"• Prelevati Rete: {bought} kWh • Ceduti: {sold} kWh",
+            "",
+            f"🌧️ PIOGGIA & EVENTI:",
+            f"• Pioggia: {rain_mm} mm ({rain_days} giorni di pioggia)",
+            f"• Intensità Max: {rain_rate_max} mm/h" if rain_rate_max > 0 else "",
+            f"• Raffica Max: {gust_max} km/h {gust_dir}" if gust_max else "",
+            f"• Fulmini Rilevati: {lightnings} scariche" if lightnings > 0 else ""
+        ]
+
+        if broken_records:
+            lines.append("")
+            lines.append("🏆 NUOVI RECORD MENSILI STORICI ASSOLUTI:")
+            for br in broken_records:
+                old_info = f" (prec. {br['old_value']} {br['unit']} in {br['old_month_name']})" if br.get('old_value') is not None else " (Primo Record)"
+                lines.append(f"⭐ {br['title']}: {br['new_value']} {br['unit']}{old_info}")
+
+        title = f"🏆 Resoconto Mensile • {m_name}"
+        msg = "\n".join([l for l in lines if l is not None and (l != "" or True)])
+
+        logger.info(f"[MONTHLY DIGEST] Invio resoconto mensile: {title}\n{msg}")
+        notifier.send_alert(
+            alert_type="monthly_digest",
+            title=title,
+            message=msg,
+            priority="high",
+            extra_data={"year_month": summary.get("year_month", "")}
+        )
+        return {"status": "sent", "title": title, "message": msg, "summary": summary, "broken_records": broken_records}
 
     def evaluate_smartthings_automations(
         self,

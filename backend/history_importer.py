@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional, List, Tuple, Callable
 from concurrent.futures import ThreadPoolExecutor
 
 from backend.config import settings
-from backend.database import get_connection, deg_to_compass, calc_dew_point, RECORD_DEFINITIONS
+from backend.database import get_connection, deg_to_compass, calc_dew_point, RECORD_DEFINITIONS, rebuild_all_historical_monthly_summaries
 from backend.analytics import calc_vpd
 
 logger = logging.getLogger("weather_hub.importer")
@@ -454,6 +454,12 @@ class WeatherHistoryImporter:
             conn.commit()
         finally:
             conn.close()
+
+        # Ricalcola anche tutti i riepiloghi mensili e i record mensili storici
+        try:
+            rebuild_all_historical_monthly_summaries()
+        except Exception as e_m:
+            logger.warning(f"[IMPORTER] Errore aggiornamento record mensili: {e_m}")
 
         return records_found
 

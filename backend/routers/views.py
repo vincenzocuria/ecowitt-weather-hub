@@ -21,7 +21,8 @@ from backend.database import (
     get_alert_logs, get_unread_alerts_count, get_alerts_stats,
     get_sensor_aliases, get_database_stats, get_today_energy_summary,
     get_latest_energy, get_climate_automations_config, get_irrigation_automations_config,
-    get_tuya_local_devices, to_local_datetime_str
+    get_tuya_local_devices, to_local_datetime_str,
+    get_monthly_records, get_all_monthly_summaries
 )
 from backend.analytics import (
     calc_apparent_temp, deg_to_compass, calc_current_weather_condition, calc_sun_ephemeris
@@ -186,6 +187,8 @@ async def records_page(request: Request):
     soil_summary = get_soil_moisture_summary()
     climate_stats = get_climate_comparisons()
     today_extremes = get_today_extremes()
+    monthly_records = get_monthly_records()
+    monthly_summaries = get_all_monthly_summaries(limit=24)
     return templates.TemplateResponse(
         request=request,
         name="records.html",
@@ -197,7 +200,9 @@ async def records_page(request: Request):
             "tropical_stats": tropical_stats,
             "soil_summary": soil_summary,
             "climate_stats": climate_stats,
-            "today_extremes": today_extremes
+            "today_extremes": today_extremes,
+            "monthly_records": monthly_records,
+            "monthly_summaries": monthly_summaries
         }
     )
 

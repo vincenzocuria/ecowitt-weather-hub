@@ -807,6 +807,74 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIn("hass_presence", cat_ids)
         self.assertIn("hass_valve.aiuola_valve", cat_ids)
 
+    def test_homeassistant_modular_package(self):
+        from backend.homeassistant import (
+            HomeAssistantClient, CatalogHelper, DeviceController, SynergiesHelper,
+            parse_washer_data, parse_dishwasher_data, parse_presence_data,
+            parse_climate_data, parse_irrigation_data, parse_energy_data
+        )
+
+        # 1. Test Client defaults
+        client = HomeAssistantClient()
+        self.assertEqual(len(client.entities), 0)
+
+        # 2. Test Climate Parser
+        mock_entities = {
+            "climate.termostato_salotto": {
+                "state": "heat",
+                "attributes": {
+                    "friendly_name": "Termostato Salotto",
+                    "current_temperature": 20.5,
+                    "temperature": 22.0,
+                    "hvac_modes": ["off", "heat", "auto"]
+                }
+            },
+            "sensor.pv_power": {"state": "2400.0"},
+            "sensor.battery_soc": {"state": "75.0"},
+            "sensor.battery_power": {"state": "-800.0"},
+            "sensor.house_power": {"state": "1600.0"},
+            "switch.scaldabagno": {"state": "on", "attributes": {"friendly_name": "Scaldabagno"}},
+            "sensor.scaldabagno_potenza": {"state": "1200.0"}
+        }
+
+        climates = parse_climate_data(mock_entities)
+        self.assertEqual(len(climates), 1)
+        self.assertEqual(climates[0]["name"], "Termostato Salotto")
+        self.assertEqual(climates[0]["current_temp"], 20.5)
+        self.assertEqual(climates[0]["target_temp"], 22.0)
+        self.assertTrue(climates[0]["is_on"])
+
+        # 3. Test Energy Parser from HA entities
+        energy = parse_energy_data(mock_entities)
+        self.assertIsNotNone(energy)
+        self.assertEqual(energy["p_solare"], 2400.0)
+        self.assertEqual(energy["soc"], 75.0)
+        self.assertEqual(energy["p_batteria"], -800.0)
+        self.assertEqual(energy["p_utenze"], 1600.0)
+
+        # 4. Test CatalogHelper Power Map
+        power_map = CatalogHelper.build_power_map(mock_entities)
+        self.assertEqual(power_map.get("scaldabagno"), 1200.0)
+
+        # 5. Test DeviceController ID resolution
+        controller = DeviceController(client)
+        self.assertEqual(controller.resolve_entity_id("04564850cc50e3d1ca35"), "switch.cisterna_presa")
+        self.assertEqual(controller.resolve_entity_id("luce_corridoio"), "switch.luce_corridoio")
+        self.assertEqual(controller.resolve_entity_id("light.luce_cucina"), "light.luce_cucina")
+
+        # 6. Test SynergiesHelper
+        sol_syn = SynergiesHelper.calculate_solar_synergy(p_solare=2000.0, soc=80.0)
+        self.assertTrue(sol_syn["solar_optimal"])
+        self.assertEqual(sol_syn["solar_badge_class"], "badge-success")
+
+        dry_syn = SynergiesHelper.calculate_drying_synergy(
+            washer_data={"is_running": True},
+            drying_index={"score": 75, "desc": "Ottimo"}
+        )
+        self.assertIsNotNone(dry_syn)
+        self.assertTrue(dry_syn["optimal"])
+
+
     def test_devices_deduplication(self):
         from backend.routers.devices import build_devices_catalog
         from backend.homeassistant_service import homeassistant_service
@@ -1346,9 +1414,50 @@ class TestEcowittHub(unittest.TestCase):
         delete_device_alias("tuya_test_renamed_plug")
         delete_device_alias("test_renamed_plug")
 
+    def test_monthly_records_and_digest(self):
+        from backend.database import (
+            calculate_monthly_summary, save_monthly_summary,
+            get_monthly_records, get_all_monthly_summaries,
+            rebuild_all_historical_monthly_summaries
+        )
+        from backend.config import settings
+        from backend.alert_engine import engine
+        from fastapi.testclient import TestClient
+        from backend.main import app
+
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+
+        # 1. Test rebuild historical summaries
+        rebuild_res = rebuild_all_historical_monthly_summaries()
+        self.assertEqual(rebuild_res["status"], "success")
+
+        # 2. Test get monthly records and summaries
+        m_recs = get_monthly_records()
+        self.assertGreaterEqual(len(m_recs), 10)
+        
+        m_sums = get_all_monthly_summaries(limit=10)
+        self.assertIsInstance(m_sums, list)
+
+        # 3. Test API GET /api/records/monthly
+        resp_api = client.get("/api/records/monthly")
+        self.assertEqual(resp_api.status_code, 200)
+        self.assertIn("monthly_records", resp_api.json())
+        self.assertIn("monthly_summaries", resp_api.json())
+
+        # 4. Test API GET /api/export/records-csv
+        resp_csv = client.get("/api/export/records-csv")
+        self.assertEqual(resp_csv.status_code, 200)
+        self.assertIn("ALBO DEI RECORD MENSILI STORICI", resp_csv.text)
+
+        # 5. Test send monthly digest simulation
+        digest_res = engine.send_monthly_digest(year=2026, month=8)
+        self.assertIn("title", digest_res)
+        self.assertIn("Resoconto Mensile", digest_res["title"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

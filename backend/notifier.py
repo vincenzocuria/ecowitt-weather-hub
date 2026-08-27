@@ -207,6 +207,8 @@ class NotificationService:
             "tropical_night": f"{cdn_base}/Palm%20tree/3D/palm_tree_3d.png",
             "record": f"{cdn_base}/Trophy/3D/trophy_3d.png",
             "digest": f"{cdn_base}/Hot%20beverage/3D/hot_beverage_3d.png",
+            "monthly_digest": f"{cdn_base}/Spiral%20calendar/3D/spiral_calendar_3d.png",
+            "energy_digest": f"{cdn_base}/Zap/3D/zap_3d.png",
             "offline": f"{cdn_base}/Satellite%20antenna/3D/satellite_antenna_3d.png",
             "online": f"{cdn_base}/Check%20mark%20button/3D/check_mark_button_3d.png",
             "battery_low": f"{cdn_base}/Battery/3D/battery_3d.png",
@@ -239,6 +241,8 @@ class NotificationService:
             "uv_extreme": "sunglasses,fire",
             "battery_low": "battery,warning",
             "digest": "coffee,sunrise,partly_sunny",
+            "monthly_digest": "spiral_calendar,trophy,bar_chart",
+            "energy_digest": "zap,bar_chart,sun_with_face",
             "civil_protection": "warning,shield,rotating_light"
         }
         return mapping.get(alert_type, "loudspeaker")

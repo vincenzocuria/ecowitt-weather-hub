@@ -14,7 +14,9 @@ from backend.database import (
     get_station_status, get_pressure_trend,
     get_today_extremes, get_yesterday_same_time, get_recent_rain_totals, get_climate_comparisons,
     get_sensor_aliases, get_tropical_nights_stats, get_soil_moisture_summary,
-    get_irrigation_automations_config, get_latest_energy
+    get_irrigation_automations_config, get_latest_energy,
+    get_monthly_records, get_all_monthly_summaries, get_monthly_summary_by_key,
+    calculate_monthly_summary, save_monthly_summary, rebuild_all_historical_monthly_summaries
 )
 from backend.analytics import (
     calc_zambretti_forecast, abs_to_rel_pressure, evaluate_window_ventilation, evaluate_laundry_index,
@@ -350,27 +352,78 @@ async def api_export_alerts_csv():
 
 @router.get("/api/export/records-csv")
 async def api_export_records_csv():
-    """Esporta l'Albo dei Record e la cronologia dei record infranti in CSV per Excel."""
+    """Esporta l'Albo dei Record, i Record Mensili e la cronologia in CSV per Excel."""
     records = get_all_records()
+    monthly_recs = get_monthly_records()
+    monthly_sums = get_all_monthly_summaries(limit=100)
     history = get_records_history(limit=500)
     output = io.StringIO()
     output.write('\ufeff')
     writer = csv.writer(output, delimiter=';')
     
-    writer.writerow(["--- ALBO DEI RECORD ASSOLUTI ATTUALI ---"])
+    writer.writerow(["--- ALBO DEI RECORD ASSOLUTI ATTUALI (ALL-TIME) ---"])
     writer.writerow(["Chiave Record", "Categoria", "Titolo", "Valore Record", "Unità", "Data e Ora Registrazione"])
     for r in records:
         writer.writerow([r.get("record_key"), r.get("category"), r.get("title"), r.get("value"), r.get("unit"), r.get("timestamp")])
     
     writer.writerow([])
+    writer.writerow(["--- ALBO DEI RECORD MENSILI STORICI ---"])
+    writer.writerow(["Chiave", "Categoria", "Titolo Primato", "Valore Record", "Unità", "Mese / Anno Record", "Data Registrazione"])
+    for mr in monthly_recs:
+        writer.writerow([mr.get("record_key"), mr.get("category"), mr.get("title"), mr.get("value"), mr.get("unit"), mr.get("month_name"), mr.get("timestamp")])
+
+    writer.writerow([])
     writer.writerow(["--- CRONOLOGIA DEI RECORD INFRANTI NEL TEMPO ---"])
     writer.writerow(["ID", "Data e Ora", "Titolo Record", "Vecchio Valore", "Nuovo Record Battuto", "Unità"])
     for h in history:
         writer.writerow([h.get("id"), h.get("timestamp"), h.get("title"), h.get("old_value"), h.get("new_value"), h.get("unit")])
+
+    writer.writerow([])
+    writer.writerow(["--- ARCHIVIO DEI RIEPILOGHI MENSILI CONSOLIDATI ---"])
+    writer.writerow(["Mese/Anno", "T Media (°C)", "T Min (°C)", "T Max (°C)", "Pioggia Totale (mm)", "GG Pioggia", "Notti Tropicali", "Solare Aton (kWh)", "Autarchia (%)", "Raffica Max (km/h)"])
+    for ms in monthly_sums:
+        writer.writerow([
+            ms.get("month_name"), ms.get("avg_temp"), ms.get("min_temp"), ms.get("max_temp"),
+            ms.get("total_rain_mm"), ms.get("rainy_days_count"), ms.get("tropical_nights_count"),
+            ms.get("solar_total_kwh"), ms.get("autarky_pct"), ms.get("max_wind_gust_kmh")
+        ])
         
     output.seek(0)
     return Response(
         content=output.getvalue(),
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": "attachment; filename=albo_record_meteo.csv"}
+        headers={"Content-Disposition": "attachment; filename=albo_record_meteo_e_mensili.csv"}
     )
+
+# ----------------- RECORD & RESOCONTI MENSILI -----------------
+
+@router.get("/api/records/monthly")
+async def api_get_monthly_records():
+    """Restituisce l'Albo dei Record Mensili Storici e l'elenco dei riepiloghi mensili."""
+    return {
+        "monthly_records": get_monthly_records(),
+        "monthly_summaries": get_all_monthly_summaries(limit=36)
+    }
+
+@router.get("/api/reports/monthly/{year}/{month}")
+async def api_get_monthly_report(year: int, month: int):
+    """Calcola o restituisce il riepilogo mensile per un determinato anno e mese."""
+    ym = f"{year:04d}-{month:02d}"
+    stored = get_monthly_summary_by_key(ym)
+    if stored:
+        return stored
+    summary = calculate_monthly_summary(year, month)
+    if summary.get("total_records", 0) > 0:
+        save_monthly_summary(summary)
+    return summary
+
+@router.post("/api/reports/monthly/rebuild")
+async def api_rebuild_monthly_reports():
+    """Ricalcola tutti i riepiloghi mensili storici e aggiorna i record mensili assoluti."""
+    return rebuild_all_historical_monthly_summaries()
+
+@router.post("/api/reports/monthly/send-digest")
+async def api_send_monthly_digest(year: Optional[int] = Query(None), month: Optional[int] = Query(None)):
+    """Invia manualmente o su richiesta il Resoconto Mensile per il mese specificato (o per il mese precedente)."""
+    return engine.send_monthly_digest(year=year, month=month)
+

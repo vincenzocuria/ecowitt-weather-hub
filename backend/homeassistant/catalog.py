@@ -1,0 +1,239 @@
+"""
+Helper per la scansione, normalizzazione e composizione del catalogo unificato dei dispositivi da Home Assistant.
+Effettua il binding automatico tra entità commutabili (switch, light, valve, climate, cover) e i rispettivi sensori di potenza istantanea in Watt.
+"""
+
+import logging
+from typing import Dict, Any, List
+
+from .parsers.appliances import parse_washer_data, parse_dishwasher_data, parse_fridge_data
+from .parsers.presence import parse_presence_data
+
+logger = logging.getLogger("weather_hub.homeassistant.catalog")
+
+
+class CatalogHelper:
+    """Costruttore del catalogo unificato dispositivi per Home Assistant."""
+
+    @staticmethod
+    def build_power_map(entities: Dict[str, Dict[str, Any]]) -> Dict[str, float]:
+        """Mappa veloce dei sensori di potenza/consumo (es: sensor.cisterna_potenza -> 9.0 W)."""
+        power_map: Dict[str, float] = {}
+        for entity_id, state_obj in entities.items():
+            if entity_id.startswith("sensor.") and any(k in entity_id for k in ("_potenza", "_power", "_consumption")):
+                try:
+                    p_val = float(state_obj.get("state") or 0.0)
+                    base_key = (
+                        entity_id.replace("sensor.", "")
+                        .replace("_potenza", "")
+                        .replace("_power", "")
+                        .replace("_consumption", "")
+                    )
+                    power_map[base_key] = p_val
+                except (ValueError, TypeError):
+                    pass
+        return power_map
+
+    @classmethod
+    def get_catalog_devices(cls, entities: Dict[str, Dict[str, Any]], enabled: bool = True) -> List[Dict[str, Any]]:
+        """Restituisce tutte le entità rilevanti formattate per il catalogo unificato con abbinamento potenza."""
+        if not enabled or not entities:
+            return []
+
+        power_map = cls.build_power_map(entities)
+        devices: List[Dict[str, Any]] = []
+
+        # 1. Lavatrice Samsung
+        washer = parse_washer_data(entities)
+        if washer:
+            devices.append({
+                "id": "hass_washer",
+                "raw_id": "lavanderia_lavatrice",
+                "ecosystem": "homeassistant",
+                "name": "Lavatrice Samsung",
+                "icon": "🫧",
+                "category": "appliances",
+                "category_label": "Lavatrice Samsung • HA",
+                "is_on": washer.get("is_on", False),
+                "can_toggle": False,
+                "is_online": True,
+                "status_text": washer.get("job_state_label", "In Standby"),
+                "power_w": washer.get("power_w", 0.0),
+                "completion_time": washer.get("finish_estimate"),
+                "cycle_name": washer.get("water_temp"),
+                "raw": washer
+            })
+
+        # 2. Lavastoviglie Samsung
+        dish = parse_dishwasher_data(entities)
+        if dish:
+            devices.append({
+                "id": "hass_dishwasher",
+                "raw_id": "cucina_lavastoviglie",
+                "ecosystem": "homeassistant",
+                "name": "Lavastoviglie Samsung",
+                "icon": "🍽️",
+                "category": "appliances",
+                "category_label": "Lavastoviglie Samsung • HA",
+                "is_on": dish.get("is_on", False),
+                "can_toggle": False,
+                "is_online": True,
+                "status_text": dish.get("job_state_label", "In Standby"),
+                "power_w": dish.get("power_w", 0.0),
+                "completion_time": dish.get("finish_estimate"),
+                "cycle_name": dish.get("cycle_name"),
+                "raw": dish
+            })
+
+        # 3. Frigorifero Smart (LG ThinQ da HA)
+        fridge = parse_fridge_data(entities)
+        if fridge:
+            devices.append({
+                "id": "hass_frigorifero",
+                "raw_id": "frigorifero",
+                "ecosystem": "homeassistant",
+                "name": fridge.get("name", "Frigorifero LG"),
+                "icon": "🧊",
+                "category": "appliances",
+                "category_label": "Frigorifero LG • HA",
+                "is_on": fridge.get("is_on", False),
+                "can_toggle": True,
+                "is_online": True,
+                "status_text": fridge.get("status_text", "In funzione"),
+                "power_w": fridge.get("power_w", 0.0),
+                "temp_set": fridge.get("target_temp"),
+                "door_open": fridge.get("door_open", False),
+                "express_mode": fridge.get("express_mode", False),
+                "raw": fridge
+            })
+
+        # 4. Presenza Smartphone
+        presence = parse_presence_data(entities)
+        devices.append({
+            "id": "hass_presence",
+            "raw_id": "ha_presence_phone",
+            "ecosystem": "homeassistant",
+            "name": presence.get("name", "Smartphone"),
+            "icon": "📱",
+            "category": "presence",
+            "category_label": "Sensore Presenza & Posizione • HA",
+            "is_on": presence.get("is_present", True),
+            "can_toggle": False,
+            "is_online": True,
+            "status_text": f"{presence.get('presence_label', 'A Casa')}" + (f" • {presence.get('battery_pct')}%" if presence.get('battery_pct') is not None else ""),
+            "power_w": 0.0,
+            "battery_pct": presence.get("battery_pct"),
+            "is_present": presence.get("is_present", True),
+            "raw": presence
+        })
+
+        # 5. Interruttori, Luci, Clima, Valvole, Tende, Media Player
+        for entity_id, state_obj in entities.items():
+            domain = entity_id.split(".")[0]
+            if domain not in ("switch", "light", "climate", "cover", "valve", "fan", "media_player"):
+                continue
+
+            # Filtra pulsanti e switch interni secondari di configurazione
+            if any(k in entity_id for k in (
+                "blocco_bambini", "child_lock", "bubble_soak", "speed_booster", "sanitize",
+                "_power", "_energy_saving", "frigorifero_express_mode", "_sleep_timer",
+                "_schedule_turn_on", "_schedule_turn_off"
+            )):
+                continue
+
+            attributes = state_obj.get("attributes", {})
+            friendly_name = attributes.get("friendly_name") or entity_id
+            state_str = (state_obj.get("state") or "").lower()
+            is_online = state_str not in ("unavailable", "unknown")
+
+            # Estrai potenza dagli attributi o dalla mappa sensori correlata
+            base_key = entity_id.split(".")[1].replace("_socket_1", "").replace("_presa", "").replace("_valve", "")
+            power_w = float(attributes.get("current_power_w") or attributes.get("power") or attributes.get("current_consumption") or power_map.get(base_key, 0.0))
+
+            extra_fields: Dict[str, Any] = {}
+
+            if domain == "climate":
+                cat = "climate"
+                mode = state_str.upper()
+                is_on = state_str not in ("off", "unavailable", "unknown")
+                icon = "❄️" if mode == "COOL" else ("🔥" if mode == "HEAT" else "🌬️")
+                cat_label = "Climatizzatore / Termostato"
+
+                t_curr = attributes.get("current_temperature")
+                t_target = attributes.get("temperature")
+                fan_mode = attributes.get("fan_mode") or "AUTO"
+
+                status_parts = []
+                status_parts.append("Acceso" if is_on else "Spento")
+                if t_curr is not None:
+                    if is_on and t_target is not None:
+                        status_parts.append(f"{t_curr}°C (Set: {t_target}°C)")
+                    else:
+                        status_parts.append(f"{t_curr}°C")
+
+                status_text = " • ".join(status_parts)
+                extra_fields = {
+                    "current_temp": t_curr,
+                    "temp_current": t_curr,
+                    "target_temp": t_target,
+                    "temp_set": t_target,
+                    "mode": mode,
+                    "job_mode": mode,
+                    "fan_speed": str(fan_mode).upper(),
+                    "hvac_modes": attributes.get("hvac_modes", []),
+                    "fan_modes": attributes.get("fan_modes", []),
+                    "swing_mode": attributes.get("swing_mode")
+                }
+            elif domain in ("switch", "light"):
+                cat = "plugs"
+                is_on = state_str in ("on", "open", "cleaning", "cooling", "heating", "playing") if is_online else None
+                icon = "💡" if domain == "light" else "🔌"
+                cat_label = "Luce Smart" if domain == "light" else "Presa Smart"
+                status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
+            elif domain == "valve":
+                cat = "irrigation"
+                is_on = state_str == "open"
+                icon = "💧"
+                cat_label = "Elettrovalvola / Irrigazione"
+                status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
+            elif domain == "cover":
+                cat = "shutters"
+                is_on = state_str == "open"
+                icon = "🪟"
+                cat_label = "Persiana / Tenda"
+                status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
+            elif domain == "media_player":
+                cat = "appliances"
+                is_on = state_str in ("on", "playing", "idle") if is_online else None
+                icon = "📺"
+                cat_label = "Smart TV / Media"
+                status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
+            else:
+                cat = "generic"
+                is_on = state_str in ("on", "open") if is_online else None
+                icon = "📱"
+                cat_label = "Dispositivo Smart"
+                status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
+
+            if power_w > 0 and domain != "climate":
+                status_text += f" • {power_w:.1f} W"
+
+            dev_dict = {
+                "id": f"hass_{entity_id}",
+                "raw_id": entity_id,
+                "ecosystem": "homeassistant",
+                "name": friendly_name,
+                "icon": icon,
+                "category": cat,
+                "category_label": f"{cat_label} • HA",
+                "is_on": is_on,
+                "can_toggle": domain in ("switch", "light", "valve", "cover", "media_player", "climate"),
+                "is_online": is_online,
+                "status_text": status_text,
+                "power_w": power_w,
+                "raw": state_obj
+            }
+            dev_dict.update(extra_fields)
+            devices.append(dev_dict)
+
+        return devices

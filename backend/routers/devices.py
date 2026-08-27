@@ -65,12 +65,55 @@ async def api_thinq_devices():
 
 @router.post("/api/thinq/device/{device_id}/control")
 async def api_thinq_control(device_id: str, request: Request):
-    """Invia comandi (Power, Temp, Mode, Fan Speed, Swing) a un condizionatore LG."""
+    """Invia comandi (Power, Temp, Mode, Fan Speed, Swing) a un condizionatore LG o dispositivo Home Assistant."""
     try:
         payload = await request.json()
     except Exception:
         payload = {}
+
+    # 1. Se il dispositivo corrisponde a un'entità Home Assistant (es. climate.camera_da_letto o frigorifero)
+    clean_id = device_id
+    if clean_id.startswith("thinq_"):
+        clean_id = clean_id[6:]
+    if clean_id.startswith("hass_"):
+        clean_id = clean_id[5:]
+
+    ha_entities = homeassistant_service.entities
+    matched_ha_id = None
+    if clean_id in ha_entities:
+        matched_ha_id = clean_id
+    elif f"climate.{clean_id}" in ha_entities:
+        matched_ha_id = f"climate.{clean_id}"
+    elif clean_id in ("frigorifero", "fridge"):
+        matched_ha_id = "switch.frigorifero_express_mode"
+
+    if matched_ha_id and homeassistant_service.enabled:
+        results = []
+        if "power" in payload:
+            is_on = payload["power"] in (True, "POWER_ON", "on", "1")
+            res = await homeassistant_service.toggle_device(matched_ha_id, is_on)
+            results.append({"power": is_on, "res": res})
+        if "mode" in payload:
+            m = str(payload["mode"]).lower()
+            res = await homeassistant_service.set_climate_hvac_mode(matched_ha_id, m)
+            results.append({"mode": m, "res": res})
+        if "target_temp" in payload or "temperature" in payload:
+            t = float(payload.get("target_temp", payload.get("temperature")))
+            res = await homeassistant_service.set_climate_temp(matched_ha_id, t)
+            results.append({"target_temp": t, "res": res})
+        if "fan_speed" in payload or "wind_strength" in payload:
+            f_speed = str(payload.get("fan_speed", payload.get("wind_strength"))).lower()
+            res = await homeassistant_service.set_climate_fan_mode(matched_ha_id, f_speed)
+            results.append({"fan_speed": f_speed, "res": res})
+        if "express_mode" in payload or "expressMode" in payload:
+            exp_on = bool(payload.get("express_mode", payload.get("expressMode")))
+            res = await homeassistant_service.toggle_device("switch.frigorifero_express_mode", exp_on)
+            results.append({"express_mode": exp_on, "res": res})
+        return {"status": "success", "device_id": device_id, "actions": results, "ecosystem": "homeassistant"}
+
+    # 2. Fallback diretto su ThinQ Cloud API
     return await thinq_service.control_device(device_id, payload)
+
 
 @router.post("/api/thinq/sync")
 @router.get("/api/thinq/sync")

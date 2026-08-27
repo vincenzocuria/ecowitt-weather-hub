@@ -50,6 +50,21 @@ RECORD_DEFINITIONS = [
     {"key": "lightning_closest", "category": "lightning", "title": "Fulmine Più Vicino", "unit": "km", "type": "min"}
 ]
 
+# Definizioni dei Record Mensili Storici (Mese più caldo, freddo, piovoso, record solare Aton, ecc.)
+MONTHLY_RECORD_DEFINITIONS = [
+    {"key": "hottest_month", "category": "temperature", "title": "Mese Più Caldo (Media T)", "field": "avg_temp", "unit": "°C", "type": "max"},
+    {"key": "coldest_month", "category": "temperature", "title": "Mese Più Freddo (Media T)", "field": "avg_temp", "unit": "°C", "type": "min"},
+    {"key": "highest_temp_month", "category": "temperature", "title": "Mese con Picco T Max Più Alto", "field": "max_temp", "unit": "°C", "type": "max"},
+    {"key": "lowest_temp_month", "category": "temperature", "title": "Mese con Picco T Min Più Basso", "field": "min_temp", "unit": "°C", "type": "min"},
+    {"key": "rainiest_month", "category": "rain", "title": "Mese Più Piovoso (Accumulo Max)", "field": "total_rain_mm", "unit": "mm", "type": "max"},
+    {"key": "driest_month", "category": "rain", "title": "Mese Meno Piovoso / Più Secco", "field": "total_rain_mm", "unit": "mm", "type": "min"},
+    {"key": "highest_solar_production_month", "category": "solar_energy", "title": "Record Mensile Produzione Solare Aton", "field": "solar_total_kwh", "unit": "kWh", "type": "max"},
+    {"key": "highest_autarky_month", "category": "solar_energy", "title": "Record Mensile Autosufficienza Energetica", "field": "autarky_pct", "unit": "%", "type": "max"},
+    {"key": "most_tropical_nights_month", "category": "climate", "title": "Mese con Più Notti Tropicali", "field": "tropical_nights_count", "unit": "notti", "type": "max"},
+    {"key": "highest_wind_gust_month", "category": "wind", "title": "Mese con Raffica di Vento Max", "field": "max_wind_gust_kmh", "unit": "km/h", "type": "max"},
+    {"key": "highest_rain_rate_month", "category": "rain", "title": "Mese con Intensità Pioggia Max", "field": "max_rain_rate_mm_hr", "unit": "mm/h", "type": "max"}
+]
+
 def init_db():
     conn = get_connection()
     conn.isolation_level = None
@@ -291,6 +306,81 @@ def init_db():
             updated_at TEXT NOT NULL
         )
     """)
+
+    # 15. Riepiloghi Mensili Consolidati
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS monthly_summaries (
+            year_month TEXT PRIMARY KEY,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            month_name TEXT NOT NULL,
+            total_records INTEGER DEFAULT 0,
+            avg_temp REAL,
+            max_temp REAL,
+            max_temp_time TEXT,
+            min_temp REAL,
+            min_temp_time TEXT,
+            temp_range REAL,
+            tropical_nights_count INTEGER DEFAULT 0,
+            super_tropical_nights_count INTEGER DEFAULT 0,
+            total_rain_mm REAL DEFAULT 0.0,
+            max_daily_rain_mm REAL DEFAULT 0.0,
+            max_daily_rain_date TEXT,
+            max_rain_rate_mm_hr REAL DEFAULT 0.0,
+            rainy_days_count INTEGER DEFAULT 0,
+            max_wind_gust_kmh REAL,
+            max_wind_gust_time TEXT,
+            max_wind_gust_dir TEXT,
+            avg_wind_speed_kmh REAL,
+            solar_total_kwh REAL DEFAULT 0.0,
+            solar_max_w REAL DEFAULT 0.0,
+            house_consumption_kwh REAL DEFAULT 0.0,
+            autarky_pct REAL DEFAULT 0.0,
+            self_consumption_pct REAL DEFAULT 0.0,
+            bought_kwh REAL DEFAULT 0.0,
+            sold_kwh REAL DEFAULT 0.0,
+            max_solar_rad REAL,
+            max_uv_index INTEGER,
+            lightning_count_total INTEGER DEFAULT 0,
+            details_json TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_monthly_sum_year ON monthly_summaries (year, month)")
+
+    # 16. Albo dei Record Mensili Storici (Mese più caldo, freddo, piovoso, record produzione solare Aton, ecc.)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS monthly_extremes (
+            record_key TEXT PRIMARY KEY,
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            value REAL NOT NULL,
+            unit TEXT NOT NULL,
+            year_month TEXT NOT NULL,
+            month_name TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            details_json TEXT
+        )
+    """)
+
+    # 17. Cronologia Record Mensili Infranti nel Tempo
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS monthly_records_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            record_key TEXT NOT NULL,
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            old_value REAL,
+            new_value REAL NOT NULL,
+            unit TEXT NOT NULL,
+            old_year_month TEXT,
+            new_year_month TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            details_json TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_mrec_key ON monthly_records_history (record_key)")
     
     conn.commit()
     conn.close()
@@ -2936,5 +3026,448 @@ def mark_scheduled_task_completed(task_id: str, status: str, result: Any = None)
     conn.commit()
     conn.close()
     return rows_affected > 0
+
+
+# ---------------------------------------------------------------------------
+# 15. RIEPILOGHI MENSILI & RECORD MENSILI STORICI (All-Time Monthly Primates)
+# ---------------------------------------------------------------------------
+
+def calculate_monthly_summary(year: int, month: int) -> Dict[str, Any]:
+    """
+    Calcola l'aggregazione statistica completa di un mese solare:
+    - Metriche meteo (T media, T max/min con orari, Notti Tropicali, Pioggia, Vento, UV, Solare, Fulmini)
+    - Metriche energetiche Aton (Produzione solare totale kWh, Picco W, Consumo casa, Autarchia %, Autoconsumo %)
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    if month == 12:
+        next_year = year + 1
+        next_month = 1
+    else:
+        next_year = year
+        next_month = month + 1
+    
+    last_day = (datetime(next_year, next_month, 1) - timedelta(days=1)).day
+    start_iso = f"{year:04d}-{month:02d}-01T00:00:00"
+    end_iso = f"{year:04d}-{month:02d}-{last_day:02d}T23:59:59"
+    year_month = f"{year:04d}-{month:02d}"
+    month_name = f"{ITALIAN_MONTHS.get(month, str(month))} {year}"
+
+    # 1. Metriche Generali Meteo
+    cursor.execute("""
+        SELECT 
+            COUNT(*) as total_records,
+            AVG(temp_c) as avg_temp,
+            MIN(temp_c) as min_temp,
+            MAX(temp_c) as max_temp,
+            AVG(humidity) as avg_hum,
+            AVG(wind_speed_kmh) as avg_wind_speed,
+            MAX(wind_gust_kmh) as max_wind_gust,
+            MAX(solar_radiation) as max_solar_rad,
+            MAX(uv_index) as max_uv_index,
+            MAX(rain_rate_mm_hr) as max_rain_rate
+        FROM weather_records
+        WHERE timestamp >= ? AND timestamp <= ?
+    """, (start_iso, end_iso))
+    row = cursor.fetchone()
+
+    total_records = row["total_records"] if row else 0
+    avg_temp = round(row["avg_temp"], 1) if row and row["avg_temp"] is not None else None
+    min_temp = round(row["min_temp"], 1) if row and row["min_temp"] is not None else None
+    max_temp = round(row["max_temp"], 1) if row and row["max_temp"] is not None else None
+    temp_range = round(max_temp - min_temp, 1) if (max_temp is not None and min_temp is not None) else None
+    avg_wind_speed = round(row["avg_wind_speed"], 1) if row and row["avg_wind_speed"] is not None else None
+    max_wind_gust = round(row["max_wind_gust"], 1) if row and row["max_wind_gust"] is not None else None
+    max_solar_rad = round(row["max_solar_rad"], 1) if row and row["max_solar_rad"] is not None else None
+    max_uv_index = int(row["max_uv_index"]) if row and row["max_uv_index"] is not None else None
+    max_rain_rate = round(row["max_rain_rate"], 1) if row and row["max_rain_rate"] is not None else None
+
+    # Timestamp Max Temp
+    max_temp_time = None
+    if max_temp is not None:
+        cursor.execute("""
+            SELECT timestamp FROM weather_records
+            WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
+            ORDER BY temp_c DESC, timestamp ASC LIMIT 1
+        """, (start_iso, end_iso))
+        r_tmax = cursor.fetchone()
+        if r_tmax:
+            max_temp_time = r_tmax["timestamp"]
+
+    # Timestamp Min Temp
+    min_temp_time = None
+    if min_temp is not None:
+        cursor.execute("""
+            SELECT timestamp FROM weather_records
+            WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
+            ORDER BY temp_c ASC, timestamp ASC LIMIT 1
+        """, (start_iso, end_iso))
+        r_tmin = cursor.fetchone()
+        if r_tmin:
+            min_temp_time = r_tmin["timestamp"]
+
+    # Raffica Max dettagli (ora e direzione)
+    max_wind_gust_time = None
+    max_wind_gust_dir = None
+    if max_wind_gust is not None and max_wind_gust > 0:
+        cursor.execute("""
+            SELECT timestamp, wind_dir_deg FROM weather_records
+            WHERE timestamp >= ? AND timestamp <= ? AND wind_gust_kmh IS NOT NULL
+            ORDER BY wind_gust_kmh DESC, timestamp ASC LIMIT 1
+        """, (start_iso, end_iso))
+        r_gust = cursor.fetchone()
+        if r_gust:
+            max_wind_gust_time = r_gust["timestamp"]
+            max_wind_gust_dir = deg_to_compass(r_gust["wind_dir_deg"])
+
+    # Precipitazioni Giornaliere (Accumulo totale, giorno record e giorni piovosi)
+    cursor.execute("""
+        SELECT day, MAX(day_rain) as day_rain FROM (
+            SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
+            FROM weather_records
+            WHERE timestamp >= ? AND timestamp <= ?
+            GROUP BY date(timestamp)
+        ) GROUP BY day
+    """, (start_iso, end_iso))
+    rain_days = cursor.fetchall()
+    
+    total_rain_mm = round(sum((r["day_rain"] or 0.0) for r in rain_days), 1)
+    rainy_days_count = sum(1 for r in rain_days if (r["day_rain"] or 0.0) >= 0.2)
+    
+    max_daily_rain_mm = 0.0
+    max_daily_rain_date = None
+    if rain_days:
+        best_rain = max(rain_days, key=lambda x: x["day_rain"] or 0.0)
+        max_daily_rain_mm = round(best_rain["day_rain"] or 0.0, 1)
+        max_daily_rain_date = best_rain["day"]
+
+    # Notti Tropicali (Tmin >= 20°C) e Notti Roventi (Tmin >= 25°C)
+    cursor.execute("""
+        SELECT day, MIN(temp_c) as day_min FROM (
+            SELECT date(timestamp) as day, temp_c
+            FROM weather_records
+            WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
+        ) GROUP BY day
+    """, (start_iso, end_iso))
+    temp_days = cursor.fetchall()
+
+    tropical_nights_count = sum(1 for r in temp_days if (r["day_min"] or 0.0) >= 20.0)
+    super_tropical_nights_count = sum(1 for r in temp_days if (r["day_min"] or 0.0) >= 25.0)
+
+    # Fulmini nel mese
+    cursor.execute("""
+        SELECT MAX(lightning_count) - MIN(lightning_count) as diff_lightnings
+        FROM weather_records
+        WHERE timestamp >= ? AND timestamp <= ? AND lightning_count IS NOT NULL
+    """, (start_iso, end_iso))
+    r_light = cursor.fetchone()
+    lightning_count_total = max(0, int(r_light["diff_lightnings"] or 0)) if r_light and r_light["diff_lightnings"] is not None else 0
+
+    # 2. Metriche Energetiche Aton
+    cursor.execute("""
+        SELECT 
+            date(timestamp) as day,
+            MAX(e_pannelli_wh) as day_solar_wh,
+            MAX(e_comprata_wh) as day_bought_wh,
+            MAX(e_venduta_wh) as day_sold_wh,
+            MAX(p_solare) as max_solar_w
+        FROM energy_records
+        WHERE timestamp >= ? AND timestamp <= ?
+        GROUP BY date(timestamp)
+    """, (start_iso, end_iso))
+    energy_days = cursor.fetchall()
+
+    solar_total_kwh = round(sum((r["day_solar_wh"] or 0.0) for r in energy_days) / 1000.0, 2)
+    bought_kwh = round(sum((r["day_bought_wh"] or 0.0) for r in energy_days) / 1000.0, 2)
+    sold_kwh = round(sum((r["day_sold_wh"] or 0.0) for r in energy_days) / 1000.0, 2)
+    solar_max_w = round(max([(r["max_solar_w"] or 0.0) for r in energy_days] + [0.0]), 1)
+    
+    self_consumed_kwh = max(0.0, round(solar_total_kwh - sold_kwh, 2))
+    house_consumption_kwh = round(self_consumed_kwh + bought_kwh, 2)
+
+    if house_consumption_kwh > 0:
+        autarky_pct = round(max(0.0, min(100.0, (1.0 - (bought_kwh / house_consumption_kwh)) * 100.0)), 1)
+    else:
+        autarky_pct = 0.0
+
+    if solar_total_kwh > 0:
+        self_consumption_pct = round(max(0.0, min(100.0, (self_consumed_kwh / solar_total_kwh) * 100.0)), 1)
+    else:
+        self_consumption_pct = 100.0
+
+    conn.close()
+
+    now_utc = datetime.now(timezone.utc).isoformat()
+    return {
+        "year_month": year_month,
+        "year": year,
+        "month": month,
+        "month_name": month_name,
+        "total_records": total_records,
+        "avg_temp": avg_temp,
+        "max_temp": max_temp,
+        "max_temp_time": max_temp_time,
+        "min_temp": min_temp,
+        "min_temp_time": min_temp_time,
+        "temp_range": temp_range,
+        "tropical_nights_count": tropical_nights_count,
+        "super_tropical_nights_count": super_tropical_nights_count,
+        "total_rain_mm": total_rain_mm,
+        "max_daily_rain_mm": max_daily_rain_mm,
+        "max_daily_rain_date": max_daily_rain_date,
+        "max_rain_rate_mm_hr": max_rain_rate,
+        "rainy_days_count": rainy_days_count,
+        "max_wind_gust_kmh": max_wind_gust,
+        "max_wind_gust_time": max_wind_gust_time,
+        "max_wind_gust_dir": max_wind_gust_dir,
+        "avg_wind_speed_kmh": avg_wind_speed,
+        "solar_total_kwh": solar_total_kwh,
+        "solar_max_w": solar_max_w,
+        "house_consumption_kwh": house_consumption_kwh,
+        "autarky_pct": autarky_pct,
+        "self_consumption_pct": self_consumption_pct,
+        "bought_kwh": bought_kwh,
+        "sold_kwh": sold_kwh,
+        "max_solar_rad": max_solar_rad,
+        "max_uv_index": max_uv_index,
+        "lightning_count_total": lightning_count_total,
+        "details_json": json.dumps({"start_iso": start_iso, "end_iso": end_iso}),
+        "created_at": now_utc,
+        "updated_at": now_utc
+    }
+
+def save_monthly_summary(summary: Dict[str, Any]) -> None:
+    """Salva o aggiorna il riepilogo mensile consolidato nella tabella monthly_summaries."""
+    if not summary or not summary.get("year_month"):
+        return
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_utc = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT OR REPLACE INTO monthly_summaries (
+            year_month, year, month, month_name, total_records,
+            avg_temp, max_temp, max_temp_time, min_temp, min_temp_time, temp_range,
+            tropical_nights_count, super_tropical_nights_count,
+            total_rain_mm, max_daily_rain_mm, max_daily_rain_date, max_rain_rate_mm_hr, rainy_days_count,
+            max_wind_gust_kmh, max_wind_gust_time, max_wind_gust_dir, avg_wind_speed_kmh,
+            solar_total_kwh, solar_max_w, house_consumption_kwh, autarky_pct, self_consumption_pct,
+            bought_kwh, sold_kwh, max_solar_rad, max_uv_index, lightning_count_total,
+            details_json, created_at, updated_at
+        ) VALUES (
+            :year_month, :year, :month, :month_name, :total_records,
+            :avg_temp, :max_temp, :max_temp_time, :min_temp, :min_temp_time, :temp_range,
+            :tropical_nights_count, :super_tropical_nights_count,
+            :total_rain_mm, :max_daily_rain_mm, :max_daily_rain_date, :max_rain_rate_mm_hr, :rainy_days_count,
+            :max_wind_gust_kmh, :max_wind_gust_time, :max_wind_gust_dir, :avg_wind_speed_kmh,
+            :solar_total_kwh, :solar_max_w, :house_consumption_kwh, :autarky_pct, :self_consumption_pct,
+            :bought_kwh, :sold_kwh, :max_solar_rad, :max_uv_index, :lightning_count_total,
+            :details_json, :created_at, :updated_at
+        )
+    """, {
+        **summary,
+        "created_at": summary.get("created_at") or now_utc,
+        "updated_at": now_utc
+    })
+    conn.commit()
+    conn.close()
+
+def check_and_update_monthly_records(summary: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Confronta le metriche del mese con l'Albo dei Record Mensili Storici (All-Time Monthly Extremes).
+    Se un primato storico viene superato, aggiorna monthly_extremes e registra l'evento in monthly_records_history.
+    Restituisce la lista dei nuovi record infranti.
+    """
+    if not summary or summary.get("total_records", 0) == 0:
+        return []
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM monthly_extremes")
+    current_records = {row["record_key"]: dict(row) for row in cursor.fetchall()}
+
+    now_utc = datetime.now(timezone.utc).isoformat()
+    new_records_broken = []
+
+    for defn in MONTHLY_RECORD_DEFINITIONS:
+        key = defn["key"]
+        field = defn["field"]
+        val = summary.get(field)
+        if val is None:
+            continue
+
+        val = float(val)
+        # Salta valori non validi o nulli per record di tipo max (es. pioggia 0 non è record max pioggia)
+        if defn["type"] == "max" and val <= 0 and key in ("rainiest_month", "highest_solar_production_month", "highest_rain_rate_month", "most_tropical_nights_month"):
+            continue
+
+        curr = current_records.get(key)
+        ym = summary["year_month"]
+        mname = summary["month_name"]
+
+        if curr is None:
+            # Primo record storico assoluto mai registrato
+            cursor.execute("""
+                INSERT OR REPLACE INTO monthly_extremes (
+                    record_key, category, title, value, unit, year_month, month_name, timestamp, details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (key, defn["category"], defn["title"], val, defn["unit"], ym, mname, now_utc, json.dumps(summary)))
+            continue
+
+        old_val = float(curr["value"]) if curr.get("value") is not None else None
+        old_ym = curr.get("year_month", "")
+        old_mname = curr.get("month_name", "")
+
+        is_broken = False
+        if old_val is None:
+            is_broken = True
+        elif defn["type"] == "max" and val > old_val:
+            is_broken = True
+        elif defn["type"] == "min" and val < old_val:
+            is_broken = True
+
+        if is_broken and old_val is not None:
+            # Aggiorna il record attuale
+            cursor.execute("""
+                INSERT OR REPLACE INTO monthly_extremes (
+                    record_key, category, title, value, unit, year_month, month_name, timestamp, details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (key, defn["category"], defn["title"], val, defn["unit"], ym, mname, now_utc, json.dumps(summary)))
+
+            # Inserisci nella cronologia storica
+            cursor.execute("""
+                INSERT INTO monthly_records_history (
+                    record_key, category, title, old_value, new_value, unit, old_year_month, new_year_month, timestamp, details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (key, defn["category"], defn["title"], old_val, val, defn["unit"], old_ym, ym, now_utc, json.dumps(summary)))
+
+            new_records_broken.append({
+                "record_key": key,
+                "category": defn["category"],
+                "title": defn["title"],
+                "old_value": old_val,
+                "new_value": val,
+                "unit": defn["unit"],
+                "old_year_month": old_ym,
+                "old_month_name": old_mname,
+                "new_year_month": ym,
+                "new_month_name": mname,
+                "timestamp": now_utc
+            })
+
+    conn.commit()
+    conn.close()
+    return new_records_broken
+
+def get_monthly_records() -> List[Dict[str, Any]]:
+    """Restituisce l'elenco completo dei Record Mensili Storici attuali con i dettagli."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM monthly_extremes")
+    stored = {row["record_key"]: dict(row) for row in cursor.fetchall()}
+    conn.close()
+
+    result = []
+    for defn in MONTHLY_RECORD_DEFINITIONS:
+        key = defn["key"]
+        if key in stored:
+            item = stored[key]
+            if item.get("details_json"):
+                try:
+                    item["details"] = json.loads(item["details_json"])
+                except Exception:
+                    item["details"] = {}
+            result.append(item)
+        else:
+            result.append({
+                "record_key": key,
+                "category": defn["category"],
+                "title": defn["title"],
+                "value": None,
+                "unit": defn["unit"],
+                "year_month": None,
+                "month_name": "In attesa dati",
+                "timestamp": None,
+                "details": {}
+            })
+    return result
+
+def get_all_monthly_summaries(limit: int = 36) -> List[Dict[str, Any]]:
+    """Restituisce la lista di tutti i riepiloghi mensili ordinati dal più recente al più vecchio."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM monthly_summaries ORDER BY year_month DESC LIMIT ?", (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        d = dict(r)
+        if d.get("details_json"):
+            try:
+                d["details"] = json.loads(d["details_json"])
+            except Exception:
+                d["details"] = {}
+        result.append(d)
+    return result
+
+def get_monthly_summary_by_key(year_month: str) -> Optional[Dict[str, Any]]:
+    """Recupera il riepilogo mensile per un determinato mese (es. '2026-08')."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM monthly_summaries WHERE year_month = ?", (year_month,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        d = dict(row)
+        if d.get("details_json"):
+            try:
+                d["details"] = json.loads(d["details_json"])
+            except Exception:
+                d["details"] = {}
+        return d
+    return None
+
+def rebuild_all_historical_monthly_summaries() -> Dict[str, Any]:
+    """
+    Scansiona tutte le letture storiche nel DB, genera e salva il riepilogo mensile per ogni mese,
+    e ricalcola i primati mensili storici (monthly_extremes) in ordine cronologico.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT DISTINCT strftime('%Y-%m', timestamp) as ym
+        FROM weather_records
+        WHERE timestamp IS NOT NULL
+        ORDER BY ym ASC
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+
+    months = [r["ym"] for r in rows if r["ym"] and len(r["ym"]) == 7]
+    processed_count = 0
+    all_broken_records = []
+
+    for ym in months:
+        try:
+            parts = ym.split("-")
+            y = int(parts[0])
+            m = int(parts[1])
+            summary = calculate_monthly_summary(y, m)
+            if summary.get("total_records", 0) > 0:
+                save_monthly_summary(summary)
+                broken = check_and_update_monthly_records(summary)
+                if broken:
+                    all_broken_records.extend(broken)
+                processed_count += 1
+        except Exception as e:
+            logger.error(f"[MONTHLY-REBUILD] Errore elaborazione mese {ym}: {e}")
+
+    return {
+        "status": "success",
+        "processed_months": processed_count,
+        "months": months,
+        "records_set": len(all_broken_records)
+    }
+
 
 
