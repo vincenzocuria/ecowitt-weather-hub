@@ -1179,9 +1179,20 @@ class TestEcowittHub(unittest.TestCase):
         cfg = get_climate_automations_config()
         self.assertIn("master_enabled", cfg)
         self.assertIn("away_action", cfg)
+        self.assertIn("comfort_guard_action", cfg)
+        self.assertIn("comfort_max_temp", cfg)
 
-        saved = save_climate_automations_config({"away_action": "notify", "max_runtime_hours": 6})
+        saved = save_climate_automations_config({
+            "away_action": "notify",
+            "max_runtime_hours": 6,
+            "comfort_guard_action": "on",
+            "comfort_max_temp": 26.0,
+            "comfort_min_rest_min": 25
+        })
         self.assertEqual(saved["max_runtime_hours"], 6)
+        self.assertEqual(saved["comfort_guard_action"], "on")
+        self.assertEqual(saved["comfort_max_temp"], 26.0)
+        self.assertEqual(saved["comfort_min_rest_min"], 25)
 
         from fastapi.testclient import TestClient
         from backend.main import app
@@ -1190,6 +1201,12 @@ class TestEcowittHub(unittest.TestCase):
         resp = client.get("/api/climate/automations/config")
         self.assertEqual(resp.status_code, 200)
         self.assertIn("config", resp.json())
+        self.assertEqual(resp.json()["config"]["comfort_max_temp"], 26.0)
+
+        # Test trigger test-action comfort
+        resp_test = client.post("/api/climate/automations/test-action", json={"scenario": "comfort"})
+        self.assertEqual(resp_test.status_code, 200)
+        self.assertEqual(resp_test.json()["status"], "sent")
 
     def test_civil_protection_service(self):
         from backend.civil_protection_service import (

@@ -121,7 +121,7 @@
     let radarHost = "https://tilecache.rainviewer.com";
     let colorScheme = 2; // Default Universale
     let radarOpacity = 0.8;
-    const PLAY_SPEED_MS = 600;
+    const PLAY_SPEED_MS = 1000; // Intervallo bilanciato per evitare superamento rate limit (100 req/min)
 
     // Inizializzazione Mappa
     function initMap() {
@@ -169,11 +169,11 @@
             </div>
         `);
 
-        // Carica dati fotogrammi da RainViewer
+        // Carica dati fotogrammi da RainViewer on-demand
         loadRainViewerData();
     }
 
-    // Caricamento API RainViewer (100% Free e Aperto)
+    // Caricamento API RainViewer (100% On-Demand per la pagina attiva)
     async function loadRainViewerData() {
         try {
             document.getElementById('radar-frame-label').innerText = "Download fotogrammi radar...";
@@ -183,8 +183,11 @@
             const data = await resp.json();
             radarHost = data.host || "https://tilecache.rainviewer.com";
 
-            // Combina fotogrammi passati (past) e previsionali (nowcast)
-            const past = data.radar?.past || [];
+            // Seleziona gli ultimi 8 fotogrammi passati (i più recenti) per efficienza e limite richieste
+            let past = data.radar?.past || [];
+            if (past.length > 8) {
+                past = past.slice(-8);
+            }
             const nowcast = data.radar?.nowcast || [];
 
             radarFrames = [];
@@ -199,26 +202,21 @@
             const slider = document.getElementById('radar-slider');
             slider.max = radarFrames.length - 1;
             
-            // Imposta l'ultimo fotogramma rilevato (prima del nowcast) o l'ultimo passato
+            // Imposta l'ultimo fotogramma rilevato (stato in tempo reale)
             const lastPastIdx = past.length > 0 ? past.length - 1 : 0;
             currentFrameIndex = lastPastIdx;
             slider.value = currentFrameIndex;
 
-            // Pre-carica e mostra fotogramma iniziale
+            // Mostra il fotogramma corrente (statico immediato)
             showFrame(currentFrameIndex);
-
-            // Avvia automaticamente l'animazione dopo 1.2 secondi
-            setTimeout(() => {
-                startPlay();
-            }, 1200);
 
         } catch (err) {
             console.error("Errore caricamento radar:", err);
-            document.getElementById('radar-frame-label').innerText = "Errore connessione radar RainViewer.";
+            document.getElementById('radar-frame-label').innerText = "Radar temporaneamente non disponibile.";
         }
     }
 
-    // Mostra fotogramma radar specifico
+    // Mostra fotogramma radar specifico con gestione efficiente della cache
     function showFrame(index) {
         if (!radarFrames || radarFrames.length === 0 || index < 0 || index >= radarFrames.length) return;
 
@@ -226,28 +224,27 @@
         const slider = document.getElementById('radar-slider');
         slider.value = index;
 
-        // Rimuovi layer precedente se presente
-        Object.keys(radarLayers).forEach(idx => {
-            if (parseInt(idx) !== index && radarLayers[idx]) {
-                map.removeLayer(radarLayers[idx]);
-            }
-        });
-
-        // Crea o aggiungi layer per l'indice corrente
+        // Crea il layer se non ancora esistente per questo frame
         if (!radarLayers[index]) {
             const tileUrl = `${radarHost}${frame.path}/256/{z}/{x}/{y}/${colorScheme}/1_1.png`;
             radarLayers[index] = L.tileLayer(tileUrl, {
-                opacity: radarOpacity,
+                opacity: 0,
                 zIndex: 10,
                 maxNativeZoom: 7,
                 maxZoom: 14
             });
-        }
-
-        if (!map.hasLayer(radarLayers[index])) {
             radarLayers[index].addTo(map);
         }
-        radarLayers[index].setOpacity(radarOpacity);
+
+        // Porta a 0 l'opacità degli altri layer già in memoria per evitare distruzione DOM/richieste inutili
+        Object.keys(radarLayers).forEach(idx => {
+            const layerIndex = parseInt(idx);
+            if (layerIndex === index) {
+                radarLayers[layerIndex].setOpacity(radarOpacity);
+            } else {
+                radarLayers[layerIndex].setOpacity(0);
+            }
+        });
 
         // Formatta orario fotogramma (locale)
         const frameDate = new Date(frame.time * 1000);
@@ -303,6 +300,11 @@
         document.getElementById('btn-play-pause').classList.add('active');
 
         playInterval = setInterval(() => {
+            // Se la scheda non è visibile, interrompi subito la riproduzione
+            if (document.hidden) {
+                stopPlay();
+                return;
+            }
             let next = currentFrameIndex + 1;
             if (next >= radarFrames.length) next = 0;
             showFrame(next);
@@ -310,12 +312,16 @@
     }
 
     function stopPlay() {
-        if (!isPlaying) return;
+        if (!isPlaying && !playInterval) return;
         isPlaying = false;
-        clearInterval(playInterval);
-        playInterval = null;
-        document.getElementById('play-icon').innerText = "▶️";
-        document.getElementById('btn-play-pause').classList.remove('active');
+        if (playInterval) {
+            clearInterval(playInterval);
+            playInterval = null;
+        }
+        const playIcon = document.getElementById('play-icon');
+        const playBtn = document.getElementById('btn-play-pause');
+        if (playIcon) playIcon.innerText = "▶️";
+        if (playBtn) playBtn.classList.remove('active');
     }
 
     // Cambio Opacità
@@ -329,9 +335,9 @@
     // Cambio Palette Colori
     function changeColorScheme(val) {
         colorScheme = parseInt(val);
-        // Svuota cache layer per ricaricare con la nuova palette
+        // Svuota e rimuove i layer per ricaricare con la nuova palette
         Object.keys(radarLayers).forEach(idx => {
-            if (map.hasLayer(radarLayers[idx])) {
+            if (map && map.hasLayer(radarLayers[idx])) {
                 map.removeLayer(radarLayers[idx]);
             }
         });
@@ -348,6 +354,17 @@
             }
         }
     }
+
+    // GESTIONE VISIBILITÀ SCHEDA: Ferma tutto quando la pagina è in background o minimizzata
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+            stopPlay();
+        }
+    });
+
+    window.addEventListener("pagehide", () => {
+        stopPlay();
+    });
 
     // Avvio al caricamento del DOM
     document.addEventListener("DOMContentLoaded", () => {

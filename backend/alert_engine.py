@@ -68,6 +68,7 @@ class AlertEngine:
         self.last_climate_night_alert: Dict[str, float] = {}
         self.last_climate_solar_alert: Dict[str, float] = {}
         self.last_climate_battery_alert: Dict[str, float] = {}
+        self.last_climate_comfort_alert: Dict[str, float] = {}
         self.last_fridge_door_alert: float = 0.0
         self.last_fridge_away_alert: float = 0.0
         self.last_fridge_solar_alert: float = 0.0
@@ -142,6 +143,7 @@ class AlertEngine:
                 "last_climate_night_alert": self.last_climate_night_alert,
                 "last_climate_solar_alert": self.last_climate_solar_alert,
                 "last_climate_battery_alert": self.last_climate_battery_alert,
+                "last_climate_comfort_alert": self.last_climate_comfort_alert,
                 "last_fridge_door_alert": self.last_fridge_door_alert,
                 "last_fridge_away_alert": self.last_fridge_away_alert,
                 "last_fridge_solar_alert": self.last_fridge_solar_alert,
@@ -216,6 +218,7 @@ class AlertEngine:
                 self.last_climate_night_alert = data.get("last_climate_night_alert", self.last_climate_night_alert)
                 self.last_climate_solar_alert = data.get("last_climate_solar_alert", self.last_climate_solar_alert)
                 self.last_climate_battery_alert = data.get("last_climate_battery_alert", self.last_climate_battery_alert)
+                self.last_climate_comfort_alert = data.get("last_climate_comfort_alert", self.last_climate_comfort_alert)
                 self.last_fridge_door_alert = data.get("last_fridge_door_alert", self.last_fridge_door_alert)
                 self.last_fridge_away_alert = data.get("last_fridge_away_alert", self.last_fridge_away_alert)
                 self.last_fridge_solar_alert = data.get("last_fridge_solar_alert", self.last_fridge_solar_alert)
@@ -1684,7 +1687,75 @@ class AlertEngine:
                         )
 
         # =========================================================================
-        # 6. ALLARMI & AUTOMAZIONI FRIGORIFERO SMART LG THINQ
+        # 6. SCENARIO TERMOSTATO INTELLIGENTE & ISTERESI COMFORT GUARD (Auto-Ripristino)
+        # =========================================================================
+        comfort_action = cfg.get("comfort_guard_action", "notify")  # 'on', 'notify', 'disabled'
+        comfort_max_t = float(cfg.get("comfort_max_temp", 26.5))
+        comfort_min_t = float(cfg.get("comfort_min_temp", 19.0))
+        comfort_target_t = float(cfg.get("comfort_target_temp", 24.0))
+        comfort_min_rest_min = float(cfg.get("comfort_min_rest_min", 20))
+
+        # Non attivare se siamo fuori casa o la batteria è in soglia critica
+        if comfort_action != "disabled" and is_present is not False and (soc > battery_min_soc or p_solare > 500):
+            for dev in all_ac_units:
+                dev_id = dev.get("device_id") or dev.get("deviceId")
+                alias = dev.get("alias", "Climatizzatore")
+                is_on = dev.get("is_on", False)
+                curr_in = dev.get("current_temp")
+                p_off_since = dev.get("power_off_since")
+
+                # Controlla solo climatizzatori attualmente spenti/in standby con temperatura rilevata
+                if not is_on and curr_in is not None:
+                    # Protezione compressore: rispetta il tempo minimo di riposo a split spento
+                    rest_elapsed_min = ((now - p_off_since) / 60.0) if p_off_since else 999.0
+
+                    if rest_elapsed_min >= comfort_min_rest_min:
+                        # Condizione Estate (Caldo eccessivo in stanza)
+                        needs_cool = curr_in >= comfort_max_t
+                        # Condizione Inverno (Freddo eccessivo in stanza)
+                        needs_heat = curr_in <= comfort_min_t
+
+                        if needs_cool or needs_heat:
+                            last_alert = self.last_climate_comfort_alert.get(dev_id, 0.0)
+                            last_solar = self.last_climate_solar_alert.get(dev_id, 0.0)
+                            # Evita avviso doppio se è già scattato l'avviso di pre-cooling solare in questo ciclo
+                            if (now - last_solar) < 300:
+                                continue
+
+                            if (now - last_alert) >= 7200:  # Cooldown 2h per lo stesso split
+                                self.last_climate_comfort_alert[dev_id] = now
+                                self._save_state()
+
+                                target_mode = "COOL" if needs_cool else "HEAT"
+                                season_desc = "risalita" if needs_cool else "scesa"
+                                action_desc = "Raffrescamento" if needs_cool else "Riscaldamento"
+                                icon = "🔥" if needs_cool else "❄️"
+
+                                if comfort_action == "on":
+                                    await thinq_service.control_device(dev_id, {
+                                        "power": True,
+                                        "mode": target_mode,
+                                        "target_temp": comfort_target_t
+                                    })
+                                    notifier.send_alert(
+                                        alert_type="climate_comfort_auto_on",
+                                        title=f"🤖 Comfort Guard: {alias} Riattivato ({action_desc})",
+                                        message=f"La temperatura nella stanza è {season_desc} a {curr_in}°C (fuori soglia comfort). {alias} riavviato automaticamente a {comfort_target_t}°C.",
+                                        priority="normal",
+                                        extra_data={"device_id": dev_id, "current_temp": str(curr_in), "target_temp": str(comfort_target_t)}
+                                    )
+                                    logger.info(f"[CLIMATE-COMFORT] Auto-ripristino {target_mode} per {alias} (Temp: {curr_in}°C)")
+                                elif comfort_action == "notify":
+                                    notifier.send_alert(
+                                        alert_type="climate_comfort_warning",
+                                        title=f"{icon} Temperatura Fuori Soglia: {alias}",
+                                        message=f"La stanza di '{alias}' è a {curr_in}°C ({season_desc} oltre la soglia). Clima a riposo da {int(rest_elapsed_min)} min: puoi riattivarlo a {comfort_target_t}°C.",
+                                        priority="normal",
+                                        extra_data={"device_id": dev_id, "current_temp": str(curr_in), "target_temp": str(comfort_target_t)}
+                                    )
+
+        # =========================================================================
+        # 7. ALLARMI & AUTOMAZIONI FRIGORIFERO SMART LG THINQ
         # =========================================================================
         fridges = [d for d in climate_devices if d.get("device_type") == "DEVICE_REFRIGERATOR"]
         for fr in fridges:

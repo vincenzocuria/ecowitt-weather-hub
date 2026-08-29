@@ -152,11 +152,14 @@ class LGThinQService:
                     prev_dev = self.devices_cache.get(device_id, {})
                     prev_on = prev_dev.get("is_on", False)
                     prev_since = prev_dev.get("power_on_since")
+                    prev_off_since = prev_dev.get("power_off_since")
                     
                     if is_on:
                         power_on_since = prev_since if (prev_on and prev_since) else time.time()
+                        power_off_since = None
                     else:
                         power_on_since = None
+                        power_off_since = prev_off_since if (not prev_on and prev_off_since) else time.time()
 
                     self.devices_cache[device_id] = {
                         "device_id": device_id,
@@ -168,6 +171,7 @@ class LGThinQService:
                         "power": op_mode,
                         "is_on": is_on,
                         "power_on_since": power_on_since,
+                        "power_off_since": power_off_since,
                         "current_temp": current_temp,
                         "target_temp": target_temp,
                         "unit": unit,

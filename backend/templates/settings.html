@@ -667,7 +667,7 @@
                         <span class="climate-scenario-icon">🌙</span>
                         <div>
                             <strong style="color: #fff; font-size: 0.95rem;">Free Cooling Notturno (Fresco all'Esterno)</strong>
-                            <div class="climate-scenario-desc">Di notte (23:00 - 07:00), confronta la temperatura esterna con la stanza.</div>
+                            <div class="climate-scenario-desc">Confronta la temperatura esterna con la stanza e consiglia aria fresca naturale.</div>
                         </div>
                     </div>
                     <div class="climate-scenario-body">
@@ -677,8 +677,26 @@
                             <option value="off" {% if climate_config.night_cooling_action == 'off' %}selected{% endif %}>🤖 Auto-Spegnimento Notturno</option>
                             <option value="disabled" {% if climate_config.night_cooling_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
                         </select>
-                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.6rem; line-height: 1.4;">
-                            ℹ️ Si attiva solo se la temperatura esterna è inferiore a quella interna di almeno 1.5°C e non piove. Durante le Notti Tropicali l'avviso viene soppresso automaticamente.
+                        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.6rem;">
+                            <div>
+                                <label style="font-size: 0.8rem; color: var(--text-dim);">Inizio Notte:</label>
+                                <select class="climate-select-ctrl" id="climate_night_start_hour" style="margin-top: 3px;">
+                                    <option value="22" {% if climate_config.night_start_hour == 22 %}selected{% endif %}>22:00</option>
+                                    <option value="23" {% if climate_config.night_start_hour == 23 or not climate_config.night_start_hour %}selected{% endif %}>23:00 (Default)</option>
+                                    <option value="0" {% if climate_config.night_start_hour == 0 %}selected{% endif %}>00:00</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 0.8rem; color: var(--text-dim);">Fine Notte:</label>
+                                <select class="climate-select-ctrl" id="climate_night_end_hour" style="margin-top: 3px;">
+                                    <option value="6" {% if climate_config.night_end_hour == 6 %}selected{% endif %}>06:00</option>
+                                    <option value="7" {% if climate_config.night_end_hour == 7 or not climate_config.night_end_hour %}selected{% endif %}>07:00 (Default)</option>
+                                    <option value="8" {% if climate_config.night_end_hour == 8 %}selected{% endif %}>08:00</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem; line-height: 1.3;">
+                            ℹ️ Si attiva se fuori fa più fresco di &ge; 1.5°C e non piove.
                         </div>
                     </div>
                 </div>
@@ -696,11 +714,28 @@
                         <label class="climate-select-label">Azione con Surplus Solare:</label>
                         <select class="climate-select-ctrl" id="climate_solar_action">
                             <option value="notify" {% if climate_config.solar_preconditioning_action == 'notify' %}selected{% endif %}>🔔 Solo Notifica Opportunità a Costo Zero</option>
-                            <option value="on" {% if climate_config.solar_preconditioning_action == 'on' %}selected{% endif %}>🤖 Auto-Accensione Solare (Avvia a 25°C)</option>
+                            <option value="on" {% if climate_config.solar_preconditioning_action == 'on' %}selected{% endif %}>🤖 Auto-Accensione Solare (Avvia Clima)</option>
                             <option value="disabled" {% if climate_config.solar_preconditioning_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
                         </select>
-                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.6rem; line-height: 1.4;">
-                            ℹ️ Condizioni: Produzione solare &ge; 1800 W, Batteria Aton &ge; 80% e temperatura ambiente calda (&ge; 26°C).
+                        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.6rem;">
+                            <div>
+                                <label style="font-size: 0.8rem; color: var(--text-dim);">Min Watt Solari:</label>
+                                <select class="climate-select-ctrl" id="climate_solar_surplus_w" style="margin-top: 3px;">
+                                    <option value="1200" {% if climate_config.solar_surplus_w == 1200 %}selected{% endif %}>1200 W</option>
+                                    <option value="1500" {% if climate_config.solar_surplus_w == 1500 %}selected{% endif %}>1500 W</option>
+                                    <option value="1800" {% if climate_config.solar_surplus_w == 1800 or not climate_config.solar_surplus_w %}selected{% endif %}>1800 W (Default)</option>
+                                    <option value="2200" {% if climate_config.solar_surplus_w == 2200 %}selected{% endif %}>2200 W</option>
+                                    <option value="2500" {% if climate_config.solar_surplus_w == 2500 %}selected{% endif %}>2500 W</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 0.8rem; color: var(--text-dim);">Min % Batteria:</label>
+                                <select class="climate-select-ctrl" id="climate_solar_min_soc" style="margin-top: 3px;">
+                                    <option value="70" {% if climate_config.solar_min_soc == 70 %}selected{% endif %}>70%</option>
+                                    <option value="80" {% if climate_config.solar_min_soc == 80 or not climate_config.solar_min_soc %}selected{% endif %}>80% (Default)</option>
+                                    <option value="90" {% if climate_config.solar_min_soc == 90 %}selected{% endif %}>90%</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -718,11 +753,55 @@
                         <label class="climate-select-label">Azione con Batteria Bassa:</label>
                         <select class="climate-select-ctrl" id="climate_battery_guard_action">
                             <option value="notify" {% if climate_config.battery_guard_action == 'notify' %}selected{% endif %}>🔔 Solo Notifica di Prelievo Rete</option>
-                            <option value="off" {% if climate_config.battery_guard_action == 'off' %}selected{% endif %}>🤖 Auto-Spegnimento Batteria Scarica (SoC &le; 20%)</option>
+                            <option value="off" {% if climate_config.battery_guard_action == 'off' %}selected{% endif %}>🤖 Auto-Spegnimento Batteria Scarica</option>
                             <option value="disabled" {% if climate_config.battery_guard_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
                         </select>
-                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.6rem; line-height: 1.4;">
-                            ℹ️ Si attiva la sera/notte se la batteria di accumulo scende sotto il 20% e uno o più climatizzatori risultano in funzione.
+                        <div class="climate-sub-setting" style="margin-top: 0.6rem;">
+                            <label style="font-size: 0.8rem; color: var(--text-dim);">Soglia Minima Batteria (SoC):</label>
+                            <select class="climate-select-ctrl" id="climate_battery_min_soc" style="margin-top: 3px;">
+                                <option value="15" {% if climate_config.battery_min_soc == 15 %}selected{% endif %}>&le; 15%</option>
+                                <option value="20" {% if climate_config.battery_min_soc == 20 or not climate_config.battery_min_soc %}selected{% endif %}>&le; 20% (Default)</option>
+                                <option value="25" {% if climate_config.battery_min_soc == 25 %}selected{% endif %}>&le; 25%</option>
+                                <option value="30" {% if climate_config.battery_min_soc == 30 %}selected{% endif %}>&le; 30%</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SCENARIO 6: TERMOSTATO INTELLIGENTE & ISTERESI COMFORT GUARD -->
+                <div class="climate-scenario-card" style="border-color: rgba(56, 189, 248, 0.25);">
+                    <div class="climate-scenario-head">
+                        <span class="climate-scenario-icon">🌡️</span>
+                        <div>
+                            <strong style="color: #38bdf8; font-size: 0.95rem;">Termostato con Isteresi & Auto-Ripristino</strong>
+                            <div class="climate-scenario-desc">Se il clima è a riposo ma la stanza torna calda, riavvia in autonomia.</div>
+                        </div>
+                    </div>
+                    <div class="climate-scenario-body">
+                        <label class="climate-select-label">Azione Ripristino Termico:</label>
+                        <select class="climate-select-ctrl" id="climate_comfort_guard_action">
+                            <option value="notify" {% if climate_config.comfort_guard_action == 'notify' or not climate_config.comfort_guard_action %}selected{% endif %}>🔔 Solo Notifica (Stanza Fuori Comfort)</option>
+                            <option value="on" {% if climate_config.comfort_guard_action == 'on' %}selected{% endif %}>🤖 Auto-Riaccensione Intelligente (Ripristina Comfort)</option>
+                            <option value="disabled" {% if climate_config.comfort_guard_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
+                        </select>
+                        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.6rem;">
+                            <div>
+                                <label style="font-size: 0.8rem; color: var(--text-dim);">Soglia Max Estate:</label>
+                                <select class="climate-select-ctrl" id="climate_comfort_max_temp" style="margin-top: 3px;">
+                                    <option value="25.5" {% if climate_config.comfort_max_temp == 25.5 %}selected{% endif %}>25.5°C</option>
+                                    <option value="26.0" {% if climate_config.comfort_max_temp == 26.0 %}selected{% endif %}>26.0°C</option>
+                                    <option value="26.5" {% if climate_config.comfort_max_temp == 26.5 or not climate_config.comfort_max_temp %}selected{% endif %}>26.5°C (Consigliato)</option>
+                                    <option value="27.0" {% if climate_config.comfort_max_temp == 27.0 %}selected{% endif %}>27.0°C</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 0.8rem; color: var(--text-dim);">Pausa Compressore:</label>
+                                <select class="climate-select-ctrl" id="climate_comfort_min_rest_min" style="margin-top: 3px;">
+                                    <option value="15" {% if climate_config.comfort_min_rest_min == 15 %}selected{% endif %}>15 Minuti</option>
+                                    <option value="20" {% if climate_config.comfort_min_rest_min == 20 or not climate_config.comfort_min_rest_min %}selected{% endif %}>20 Minuti (Sicuro)</option>
+                                    <option value="30" {% if climate_config.comfort_min_rest_min == 30 %}selected{% endif %}>30 Minuti</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -735,7 +814,8 @@
                     💾 Salva Impostazioni Clima
                 </button>
                 <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                    <button type="button" class="btn btn-outline btn-sm" onclick="testClimateNotification('away')">🧪 Test Avviso Uscita</button>
+                    <button type="button" class="btn btn-outline btn-sm" onclick="testClimateNotification('away')">🧪 Test Uscita</button>
+                    <button type="button" class="btn btn-outline btn-sm" onclick="testClimateNotification('comfort')">🧪 Test Comfort Guard</button>
                     <button type="button" class="btn btn-outline btn-sm" onclick="testClimateNotification('night')">🧪 Test Free Cooling</button>
                     <button type="button" class="btn btn-outline btn-sm" onclick="testClimateNotification('solar')">🧪 Test Solare</button>
                 </div>
@@ -1724,8 +1804,16 @@ async function saveClimateSettings() {
     const maxRuntimeAction = document.getElementById('climate_max_runtime_action')?.value || 'notify';
     const maxRuntimeHours = parseFloat(document.getElementById('climate_max_runtime_hours')?.value || '5');
     const nightCoolingAction = document.getElementById('climate_night_cooling_action')?.value || 'notify';
+    const nightStartHour = parseInt(document.getElementById('climate_night_start_hour')?.value || '23');
+    const nightEndHour = parseInt(document.getElementById('climate_night_end_hour')?.value || '7');
     const solarAction = document.getElementById('climate_solar_action')?.value || 'notify';
+    const solarSurplusW = parseInt(document.getElementById('climate_solar_surplus_w')?.value || '1800');
+    const solarMinSoc = parseInt(document.getElementById('climate_solar_min_soc')?.value || '80');
     const batteryGuardAction = document.getElementById('climate_battery_guard_action')?.value || 'notify';
+    const batteryMinSoc = parseInt(document.getElementById('climate_battery_min_soc')?.value || '20');
+    const comfortGuardAction = document.getElementById('climate_comfort_guard_action')?.value || 'notify';
+    const comfortMaxTemp = parseFloat(document.getElementById('climate_comfort_max_temp')?.value || '26.5');
+    const comfortMinRestMin = parseInt(document.getElementById('climate_comfort_min_rest_min')?.value || '20');
 
     const payload = {
         master_enabled: masterEnabled,
@@ -1734,8 +1822,16 @@ async function saveClimateSettings() {
         max_runtime_action: maxRuntimeAction,
         max_runtime_hours: maxRuntimeHours,
         night_cooling_action: nightCoolingAction,
+        night_start_hour: nightStartHour,
+        night_end_hour: nightEndHour,
         solar_preconditioning_action: solarAction,
-        battery_guard_action: batteryGuardAction
+        solar_surplus_w: solarSurplusW,
+        solar_min_soc: solarMinSoc,
+        battery_guard_action: batteryGuardAction,
+        battery_min_soc: batteryMinSoc,
+        comfort_guard_action: comfortGuardAction,
+        comfort_max_temp: comfortMaxTemp,
+        comfort_min_rest_min: comfortMinRestMin
     };
 
     if (feedbackEl) {

@@ -183,6 +183,13 @@ async def api_test_climate_automation(request: Request):
             message="⏱️ [TEST] Il climatizzatore 'Camera' è acceso da oltre 5 ore (Temp stanza: 24.5°C).",
             priority="normal"
         )
+    elif scenario == "comfort":
+        notifier.send_alert(
+            alert_type="climate_comfort_warning",
+            title="🧪 TEST: Comfort Guard & Isteresi",
+            message="🌡️ [TEST] La stanza 'Salotto' è risalita a 27.2°C (fuori soglia comfort dopo la pausa). Clima riavviato automaticamente a 24.0°C.",
+            priority="normal"
+        )
     return {"status": "sent", "scenario": scenario}
 
 # --- Samsung & Smart Home Summary Endpoints (Powered by Home Assistant) ---
@@ -452,81 +459,10 @@ async def api_irrigation_stop(request: Request):
 # --- Unified Devices Hub Endpoints ---
 
 def build_devices_catalog() -> Dict[str, Any]:
-    """Genera l'elenco normalizzato e aggregato di tutti i dispositivi smart (LG ThinQ, Aton Solar, Home Assistant)."""
+    """Genera l'elenco normalizzato e aggregato di tutti i dispositivi smart (Home Assistant come hub centrale unico, Aton Solar)."""
     devices = []
 
-    # 1. LG ThinQ Dispositivi (Climatizzatori & Frigorifero)
-    thinq_devices = thinq_service.get_cached_devices() if settings.LG_THINQ_ENABLED else []
-    for d in thinq_devices:
-        dev_id = d.get("device_id") or d.get("deviceId") or "unknown"
-        dev_type = d.get("device_type", "DEVICE_AIR_CONDITIONER")
-
-        if dev_type == "DEVICE_REFRIGERATOR":
-            door_open = d.get("door_open", False)
-            express_mode = d.get("express_mode", False)
-            target_temp = d.get("target_temp", 4)
-            status_parts = []
-            if door_open:
-                status_parts.append("🔴 Porta Aperta ⚠️")
-            else:
-                status_parts.append("🟢 Porta Chiusa")
-            status_parts.append(f"Set: {target_temp}°C")
-            if express_mode:
-                status_parts.append("Express Cool ❄️")
-
-            devices.append({
-                "id": f"thinq_{dev_id}",
-                "raw_id": dev_id,
-                "ecosystem": "thinq",
-                "name": d.get("alias") or "Frigorifero LG",
-                "icon": "🧊",
-                "category": "appliances",
-                "category_label": "Frigorifero LG ThinQ",
-                "is_on": express_mode,
-                "can_toggle": True,
-                "is_online": d.get("is_online", True),
-                "status_text": " • ".join(status_parts),
-                "power_w": 0.0,
-                "temp_set": target_temp,
-                "door_open": door_open,
-                "express_mode": express_mode,
-                "raw": d
-            })
-        elif dev_type == "DEVICE_AIR_CONDITIONER":
-            is_on = d.get("is_on", False)
-            t_curr = d.get("current_temp")
-            t_target = d.get("target_temp")
-            mode = d.get("mode") or d.get("job_mode", "COOL")
-            
-            status_txt = "Acceso" if is_on else "Spento"
-            if is_on and t_curr is not None:
-                status_txt += f" • {t_curr}°C (Set: {t_target}°C)"
-            elif t_curr is not None:
-                status_txt += f" • {t_curr}°C"
-
-            devices.append({
-                "id": f"thinq_{dev_id}",
-                "raw_id": dev_id,
-                "ecosystem": "thinq",
-                "name": d.get("alias") or d.get("name", "Climatizzatore LG"),
-                "icon": "❄️" if mode == "COOL" else ("🔥" if mode == "HEAT" else "🌬️"),
-                "category": "climate",
-                "category_label": "Climatizzatore LG ThinQ",
-                "is_on": is_on,
-                "can_toggle": True,
-                "is_online": d.get("is_online", True),
-                "status_text": status_txt,
-                "power_w": 0.0,
-                "temp_current": t_curr,
-                "temp_set": t_target,
-                "job_mode": mode,
-                "fan_speed": d.get("fan_speed", "LOW"),
-                "swing_vertical": d.get("rotate_up_down", False),
-                "swing_horizontal": d.get("rotate_left_right", False),
-                "raw": d
-            })
-
-    # 2. Aton Storage Fotovoltaico & Batteria
+    # 1. Aton Storage Fotovoltaico & Batteria (Integrazione hardware inverter dedicato)
     if settings.ATON_ENABLED:
         e_latest = aton_service.latest_data or get_latest_energy() or {}
         p_solar = float(e_latest.get("p_solare") if e_latest.get("p_solare") is not None else (e_latest.get("solar_power_w") or 0))
@@ -557,10 +493,81 @@ def build_devices_catalog() -> Dict[str, Any]:
             "raw": e_latest
         })
 
-    # 3. Home Assistant (Hub Domotico Locale: Samsung Lavatrice/Lavastoviglie/Presenza + Prese, Valvole, Clima, Luci)
+    # 2. Home Assistant (Hub Domotico Locale Unico: Samsung, LG ThinQ, Tuya, Presenza, Clima, Prese, Luci)
     if settings.HASS_ENABLED and homeassistant_service.enabled:
         for hd in homeassistant_service.get_catalog_devices():
             devices.append(hd)
+    elif settings.LG_THINQ_ENABLED:
+        # Fallback diretto su cloud LG ThinQ solo se Home Assistant non è abilitato/connesso
+        thinq_devices = thinq_service.get_cached_devices()
+        for d in thinq_devices:
+            dev_id = d.get("device_id") or d.get("deviceId") or "unknown"
+            dev_type = d.get("device_type", "DEVICE_AIR_CONDITIONER")
+
+            if dev_type == "DEVICE_REFRIGERATOR":
+                door_open = d.get("door_open", False)
+                express_mode = d.get("express_mode", False)
+                target_temp = d.get("target_temp", 4)
+                status_parts = []
+                if door_open:
+                    status_parts.append("🔴 Porta Aperta ⚠️")
+                else:
+                    status_parts.append("🟢 Porta Chiusa")
+                status_parts.append(f"Set: {target_temp}°C")
+                if express_mode:
+                    status_parts.append("Express Cool ❄️")
+
+                devices.append({
+                    "id": f"thinq_{dev_id}",
+                    "raw_id": dev_id,
+                    "ecosystem": "thinq",
+                    "name": d.get("alias") or "Frigorifero LG",
+                    "icon": "🧊",
+                    "category": "appliances",
+                    "category_label": "Frigorifero LG ThinQ",
+                    "is_on": express_mode,
+                    "can_toggle": True,
+                    "is_online": d.get("is_online", True),
+                    "status_text": " • ".join(status_parts),
+                    "power_w": 0.0,
+                    "temp_set": target_temp,
+                    "door_open": door_open,
+                    "express_mode": express_mode,
+                    "raw": d
+                })
+            elif dev_type == "DEVICE_AIR_CONDITIONER":
+                is_on = d.get("is_on", False)
+                t_curr = d.get("current_temp")
+                t_target = d.get("target_temp")
+                mode = d.get("mode") or d.get("job_mode", "COOL")
+                
+                status_txt = "Acceso" if is_on else "Spento"
+                if is_on and t_curr is not None:
+                    status_txt += f" • {t_curr}°C (Set: {t_target}°C)"
+                elif t_curr is not None:
+                    status_txt += f" • {t_curr}°C"
+
+                devices.append({
+                    "id": f"thinq_{dev_id}",
+                    "raw_id": dev_id,
+                    "ecosystem": "thinq",
+                    "name": d.get("alias") or d.get("name", "Climatizzatore LG"),
+                    "icon": "❄️" if mode == "COOL" else ("🔥" if mode == "HEAT" else "🌬️"),
+                    "category": "climate",
+                    "category_label": "Climatizzatore LG ThinQ",
+                    "is_on": is_on,
+                    "can_toggle": True,
+                    "is_online": d.get("is_online", True),
+                    "status_text": status_txt,
+                    "power_w": 0.0,
+                    "temp_current": t_curr,
+                    "temp_set": t_target,
+                    "job_mode": mode,
+                    "fan_speed": d.get("fan_speed", "LOW"),
+                    "swing_vertical": d.get("rotate_up_down", False),
+                    "swing_horizontal": d.get("rotate_left_right", False),
+                    "raw": d
+                })
 
     # 4. Applica eventuali alias/nomi personalizzati salvati dall'utente
     try:
@@ -745,17 +752,17 @@ async def api_devices_turn_all(request: Request):
     category = payload.get("category", "all")
     results = []
 
-    # 1. Home Assistant (Prese, Luci, Elettrovalvole)
+    # 1. Home Assistant (Prese, Luci, Elettrovalvole, Climatizzatori)
     if settings.HASS_ENABLED and homeassistant_service.enabled:
         for hd in homeassistant_service.get_catalog_devices():
             cat = hd.get("category")
-            if cat in ("plugs", "lighting", "irrigation") and (category in ("all", "plugs")):
+            if cat in ("plugs", "lighting", "irrigation", "climate") and (category in ("all", "plugs", "climate")):
                 if hd.get("is_on") != target_state and hd.get("can_toggle"):
                     res = await homeassistant_service.toggle_device(hd.get("raw_id"), target_state)
                     results.append({"name": hd.get("name"), "res": res})
 
-    # 2. LG ThinQ
-    if settings.LG_THINQ_ENABLED and (category in ("all", "climate")):
+    # 2. LG ThinQ (Solo come Fallback se Home Assistant non è abilitato)
+    elif settings.LG_THINQ_ENABLED and (category in ("all", "climate")):
         for d in thinq_service.get_cached_devices():
             if d.get("is_on") != target_state:
                 dev_id = d.get("device_id") or d.get("deviceId")

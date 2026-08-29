@@ -2362,7 +2362,13 @@ DEFAULT_CLIMATE_AUTOMATIONS_CONFIG: Dict[str, Any] = {
     "solar_target_temp": 25.0,
     # 5. Protezione batteria scarica / rete: 'off', 'notify', 'disabled'
     "battery_guard_action": "notify",
-    "battery_min_soc": 20
+    "battery_min_soc": 20,
+    # 6. Termostato Intelligente & Isteresi Comfort Guard: 'on', 'notify', 'disabled'
+    "comfort_guard_action": "notify",
+    "comfort_max_temp": 26.5,
+    "comfort_min_temp": 19.0,
+    "comfort_target_temp": 24.0,
+    "comfort_min_rest_min": 20
 }
 
 def get_climate_automations_config() -> Dict[str, Any]:
@@ -2405,10 +2411,67 @@ def save_climate_automations_config(config_dict: Dict[str, Any]) -> Dict[str, An
                 pass
         if "night_cooling_action" in config_dict and config_dict["night_cooling_action"] in ("off", "notify", "disabled"):
             current["night_cooling_action"] = str(config_dict["night_cooling_action"])
+        if "night_start_hour" in config_dict:
+            try:
+                current["night_start_hour"] = max(0, min(23, int(config_dict["night_start_hour"])))
+            except (ValueError, TypeError):
+                pass
+        if "night_end_hour" in config_dict:
+            try:
+                current["night_end_hour"] = max(0, min(23, int(config_dict["night_end_hour"])))
+            except (ValueError, TypeError):
+                pass
+        if "night_temp_diff" in config_dict:
+            try:
+                current["night_temp_diff"] = max(0.5, min(10.0, float(config_dict["night_temp_diff"])))
+            except (ValueError, TypeError):
+                pass
         if "solar_preconditioning_action" in config_dict and config_dict["solar_preconditioning_action"] in ("on", "notify", "disabled"):
             current["solar_preconditioning_action"] = str(config_dict["solar_preconditioning_action"])
+        if "solar_surplus_w" in config_dict:
+            try:
+                current["solar_surplus_w"] = max(500, min(10000, int(config_dict["solar_surplus_w"])))
+            except (ValueError, TypeError):
+                pass
+        if "solar_min_soc" in config_dict:
+            try:
+                current["solar_min_soc"] = max(10, min(100, int(config_dict["solar_min_soc"])))
+            except (ValueError, TypeError):
+                pass
+        if "solar_target_temp" in config_dict:
+            try:
+                current["solar_target_temp"] = max(18.0, min(30.0, float(config_dict["solar_target_temp"])))
+            except (ValueError, TypeError):
+                pass
         if "battery_guard_action" in config_dict and config_dict["battery_guard_action"] in ("off", "notify", "disabled"):
             current["battery_guard_action"] = str(config_dict["battery_guard_action"])
+        if "battery_min_soc" in config_dict:
+            try:
+                current["battery_min_soc"] = max(5, min(50, int(config_dict["battery_min_soc"])))
+            except (ValueError, TypeError):
+                pass
+        if "comfort_guard_action" in config_dict and config_dict["comfort_guard_action"] in ("on", "notify", "disabled"):
+            current["comfort_guard_action"] = str(config_dict["comfort_guard_action"])
+        if "comfort_max_temp" in config_dict:
+            try:
+                current["comfort_max_temp"] = max(20.0, min(35.0, float(config_dict["comfort_max_temp"])))
+            except (ValueError, TypeError):
+                pass
+        if "comfort_min_temp" in config_dict:
+            try:
+                current["comfort_min_temp"] = max(10.0, min(25.0, float(config_dict["comfort_min_temp"])))
+            except (ValueError, TypeError):
+                pass
+        if "comfort_target_temp" in config_dict:
+            try:
+                current["comfort_target_temp"] = max(18.0, min(30.0, float(config_dict["comfort_target_temp"])))
+            except (ValueError, TypeError):
+                pass
+        if "comfort_min_rest_min" in config_dict:
+            try:
+                current["comfort_min_rest_min"] = max(5, min(120, int(config_dict["comfort_min_rest_min"])))
+            except (ValueError, TypeError):
+                pass
 
     now_iso = datetime.now(timezone.utc).isoformat()
     json_str = json.dumps(current, ensure_ascii=False)
