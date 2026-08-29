@@ -1600,6 +1600,124 @@ function renderHealthStepsMiniChart(chartData) {
     });
 }
 
+let healthWeightChartInstance = null;
+
+function renderHealthWeightMiniChart(weightData) {
+    const canvas = document.getElementById('healthWeightMiniChart');
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (!weightData || !weightData.labels || !weightData.labels.length) return;
+
+    const ctx = canvas.getContext('2d');
+    if (healthWeightChartInstance) {
+        healthWeightChartInstance.data.labels = weightData.labels;
+        healthWeightChartInstance.data.datasets[0].data = weightData.weights;
+        if (healthWeightChartInstance.data.datasets[1] && weightData.fats) {
+            healthWeightChartInstance.data.datasets[1].data = weightData.fats;
+        }
+        if (healthWeightChartInstance.data.datasets[2] && weightData.leans) {
+            healthWeightChartInstance.data.datasets[2].data = weightData.leans;
+        }
+        healthWeightChartInstance.update('none');
+        return;
+    }
+
+    healthWeightChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: weightData.labels,
+            datasets: [
+                {
+                    label: 'Peso (kg)',
+                    data: weightData.weights,
+                    borderColor: '#fbbf24',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    borderWidth: 2.5,
+                    pointRadius: 3,
+                    pointBackgroundColor: '#fbbf24',
+                    tension: 0.3,
+                    fill: false,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Massa Grassa (%)',
+                    data: weightData.fats || [],
+                    borderColor: '#ef4444',
+                    borderDash: [4, 4],
+                    borderWidth: 1.8,
+                    pointRadius: 2,
+                    pointBackgroundColor: '#ef4444',
+                    tension: 0.3,
+                    fill: false,
+                    yAxisID: 'y1'
+                },
+                {
+                    label: 'Massa Magra (kg)',
+                    data: weightData.leans || [],
+                    borderColor: '#38bdf8',
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    tension: 0.3,
+                    fill: false,
+                    yAxisID: 'y'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#f8fafc',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    callbacks: {
+                        label: function(ctx) {
+                            if (ctx.datasetIndex === 0) return `⚖️ Peso: ${ctx.raw} kg`;
+                            if (ctx.datasetIndex === 1) return `🥩 Grasso: ${ctx.raw}%`;
+                            if (ctx.datasetIndex === 2) return `💪 Magra: ${ctx.raw} kg`;
+                            return `${ctx.dataset.label}: ${ctx.raw}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { color: '#64748b', font: { size: 10 } }
+                },
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                    ticks: {
+                        color: '#fbbf24',
+                        font: { size: 10 },
+                        callback: function(val) { return val + ' kg'; }
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    grid: { drawOnChartArea: false },
+                    ticks: {
+                        color: '#ef4444',
+                        font: { size: 10 },
+                        callback: function(val) { return val + '%'; }
+                    }
+                }
+            }
+        }
+    });
+}
+
 function updateHealthUI(health) {
     if (!health) return;
     const sec = document.getElementById('health_dashboard_section');
@@ -1718,6 +1836,9 @@ function updateHealthUI(health) {
         if (a.chart_data_14d) {
             renderHealthStepsMiniChart(a.chart_data_14d);
         }
+        if (a.weight_chart_30d) {
+            renderHealthWeightMiniChart(a.weight_chart_30d);
+        }
     }
 }
 
@@ -1741,12 +1862,18 @@ function syncHealthLiveMetrics() {
 
 function loadHealthHistoryOnStartup() {
     const canvas = document.getElementById('healthStepsMiniChart');
-    if (!canvas) return;
-    fetch('/api/health/history?days=14')
+    const weightCanvas = document.getElementById('healthWeightMiniChart');
+    if (!canvas && !weightCanvas) return;
+    fetch('/api/health/history?days=30')
         .then(r => r.json())
         .then(data => {
-            if (data && data.analytics && data.analytics.chart_data_14d) {
-                renderHealthStepsMiniChart(data.analytics.chart_data_14d);
+            if (data && data.analytics) {
+                if (data.analytics.chart_data_14d) {
+                    renderHealthStepsMiniChart(data.analytics.chart_data_14d);
+                }
+                if (data.analytics.weight_chart_30d) {
+                    renderHealthWeightMiniChart(data.analytics.weight_chart_30d);
+                }
             }
         })
         .catch(err => console.warn('Errore caricamento storico salute:', err));
@@ -1954,6 +2081,11 @@ function switchDashboardTab(tabId) {
             if (window.healthStepsChartInstance) {
                 try {
                     window.healthStepsChartInstance.resize();
+                } catch (e) {}
+            }
+            if (window.healthWeightChartInstance) {
+                try {
+                    window.healthWeightChartInstance.resize();
                 } catch (e) {}
             }
         }

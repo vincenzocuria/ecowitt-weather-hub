@@ -160,6 +160,36 @@ class CatalogHelper:
                 "raw": health
             })
 
+            # 5.1 Bilancia Smart & Analisi BIA (Samsung Health / Health Connect)
+            body_info = health.get("body", {})
+            if body_info and body_info.get("weight_kg") is not None:
+                scale_parts = []
+                if body_info.get("weight_kg") is not None:
+                    scale_parts.append(f"⚖️ {body_info['weight_kg']} kg")
+                if body_info.get("fat_pct") is not None:
+                    scale_parts.append(f"🥩 {body_info['fat_pct']}% Grasso")
+                if body_info.get("lean_mass_kg") is not None:
+                    scale_parts.append(f"💪 {body_info['lean_mass_kg']} kg Magra")
+
+                devices.append({
+                    "id": "hass_smart_scale",
+                    "raw_id": "smart_scale_bia_samsung",
+                    "ecosystem": "homeassistant",
+                    "name": "Bilancia Smart BIA • Samsung Health",
+                    "icon": "⚖️",
+                    "category": "health",
+                    "category_label": "Bilancia Smart • Composizione Corporea BIA",
+                    "is_on": True,
+                    "can_toggle": False,
+                    "is_online": True,
+                    "status_text": " • ".join(scale_parts) if scale_parts else "Misurazione sincronizzata",
+                    "power_w": 0.0,
+                    "battery_pct": None,
+                    "health_data": health,
+                    "body_data": body_info,
+                    "raw": health
+                })
+
         # 6. Interruttori, Luci, Clima, Valvole, Tende, Media Player
         for entity_id, state_obj in entities.items():
             domain = entity_id.split(".")[0]

@@ -3755,11 +3755,18 @@ def get_health_stats_summary() -> Dict[str, Any]:
     if prev_m_avg_steps > 0:
         month_diff_pct = round(((curr_m_avg_steps - prev_m_avg_steps) / prev_m_avg_steps) * 100, 1)
 
-    # Formattazione array per grafici Chart.js
+    # Formattazione array per grafici Chart.js (Passi 14gg)
     chart_days = list(reversed(recent_rows[:14]))
     chart_labels = [r["date"][5:] for r in chart_days]  # MM-DD
     chart_steps = [r["steps"] or 0 for r in chart_days]
     chart_cals = [int(round(r["total_calories"] or 0)) for r in chart_days]
+
+    # Formattazione array per grafico Peso & Composizione Corporea (30gg)
+    weight_days = list(reversed(recent_rows))
+    weight_labels = [r["date"][5:] for r in weight_days if r.get("weight_kg") is not None]
+    weight_vals = [round(float(r["weight_kg"]), 1) for r in weight_days if r.get("weight_kg") is not None]
+    fat_vals = [round(float(r["body_fat_pct"]), 1) for r in weight_days if r.get("body_fat_pct") is not None]
+    lean_vals = [round(float(r["lean_mass_kg"]), 1) for r in weight_days if r.get("lean_mass_kg") is not None]
 
     return {
         "avg_daily_steps_7d": avg_steps_7d,
@@ -3785,6 +3792,15 @@ def get_health_stats_summary() -> Dict[str, Any]:
             "labels": chart_labels,
             "steps": chart_steps,
             "calories": chart_cals
+        },
+        "weight_chart_30d": {
+            "labels": weight_labels,
+            "weights": weight_vals,
+            "fats": fat_vals,
+            "leans": lean_vals,
+            "latest_weight": weight_vals[-1] if weight_vals else None,
+            "min_weight": min(weight_vals) if weight_vals else None,
+            "max_weight": max(weight_vals) if weight_vals else None
         }
     }
 
