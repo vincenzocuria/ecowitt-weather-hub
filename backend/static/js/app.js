@@ -459,6 +459,11 @@ function startDashboardPolling() {
                         updateSmartThingsUI(data.smartthings);
                     }
 
+                    // Dati Salute & Attività Samsung Health
+                    if (data.health) {
+                        updateHealthUI(data.health);
+                    }
+
                     // Dispositivi Smart Life (Tuya)
                     if (data.tuya) {
                         updateTuyaUI(data.tuya);
@@ -1519,6 +1524,121 @@ function syncSmartThingsDevices() {
             const btn2 = document.getElementById('st_sync_btn');
             if (btn2) {
                 btn2.innerHTML = `<span class="pulse-dot"></span> <span id="st_status_text">🟢 SmartThings Connesso</span>`;
+            }
+        });
+}
+
+function updateHealthUI(health) {
+    if (!health) return;
+    const sec = document.getElementById('health_dashboard_section');
+    if (!sec) return;
+
+    if (!health.is_available) {
+        sec.style.display = 'none';
+        return;
+    }
+    sec.style.display = 'block';
+
+    if (health.device_name) {
+        const dName = document.getElementById('health_device_name');
+        if (dName) dName.innerText = health.device_name;
+    }
+
+    if (health.battery_pct !== undefined && health.battery_pct !== null) {
+        const battBadge = document.getElementById('health_battery_badge');
+        const battVal = document.getElementById('health_battery_val');
+        if (battBadge) battBadge.style.display = 'inline-flex';
+        if (battVal) battVal.innerText = `${health.battery_pct}%`;
+    }
+
+    // 1. Passi
+    if (health.steps) {
+        const s = health.steps;
+        const stepsEl = document.getElementById('health_daily_steps');
+        const stepsPct = document.getElementById('health_steps_pct_badge');
+        const stepsBar = document.getElementById('health_steps_bar');
+        const distEl = document.getElementById('health_distance_val');
+        const floorsEl = document.getElementById('health_floors_val');
+        const odoEl = document.getElementById('health_odometer_val');
+
+        if (stepsEl && s.daily !== undefined) stepsEl.innerText = Number(s.daily).toLocaleString('it-IT');
+        if (stepsPct && s.pct !== undefined) stepsPct.innerText = `${s.pct}%`;
+        if (stepsBar && s.pct !== undefined) stepsBar.style.width = `${s.pct}%`;
+        if (distEl && s.distance_km !== undefined) distEl.innerText = `${s.distance_km} km`;
+        if (floorsEl && s.floors !== undefined) floorsEl.innerText = s.floors;
+        if (odoEl && s.total_odometer !== undefined) odoEl.innerText = Number(s.total_odometer).toLocaleString('it-IT');
+    }
+
+    // 2. Calorie
+    if (health.calories) {
+        const c = health.calories;
+        const totCal = document.getElementById('health_total_cal');
+        const actPct = document.getElementById('health_active_pct_badge');
+        const calBar = document.getElementById('health_cal_bar');
+        const actCal = document.getElementById('health_active_cal');
+        const basalCal = document.getElementById('health_basal_cal');
+
+        if (totCal && c.total_kcal !== undefined && c.total_kcal !== null) totCal.innerText = Math.round(c.total_kcal);
+        if (actPct && c.active_pct !== undefined) actPct.innerText = `${c.active_pct}% attive`;
+        if (calBar && c.active_pct !== undefined) calBar.style.width = `${c.active_pct}%`;
+        if (actCal && c.active_kcal !== undefined && c.active_kcal !== null) actCal.innerText = `${c.active_kcal} kcal`;
+        if (basalCal && c.basal_kcal !== undefined && c.basal_kcal !== null) basalCal.innerText = `${Math.round(c.basal_kcal)} kcal`;
+    }
+
+    // 3. Cardio, SpO2 & Sonno
+    if (health.heart) {
+        const h = health.heart;
+        const hrEl = document.getElementById('health_heart_rate');
+        const hrPill = document.getElementById('health_heart_status_pill');
+        const spo2El = document.getElementById('health_spo2_val');
+        const vo2El = document.getElementById('health_vo2_val');
+
+        if (hrEl && h.rate_bpm !== undefined && h.rate_bpm !== null) hrEl.innerText = h.rate_bpm;
+        if (hrPill && h.status) {
+            hrPill.innerText = h.status;
+            hrPill.className = `appliance-status-pill ${h.badge_class || 'pill-standby'}`;
+        }
+        if (spo2El && h.spo2_pct !== undefined && h.spo2_pct !== null) spo2El.innerText = `${h.spo2_pct}%`;
+        if (vo2El && h.vo2_max !== undefined && h.vo2_max !== null) vo2El.innerText = h.vo2_max;
+    }
+
+    if (health.sleep) {
+        const sl = health.sleep;
+        const sleepEl = document.getElementById('health_sleep_formatted');
+        if (sleepEl && sl.duration_formatted) sleepEl.innerText = sl.duration_formatted;
+    }
+
+    // 4. Composizione Corporea
+    if (health.body) {
+        const b = health.body;
+        const wBadge = document.getElementById('health_weight_badge');
+        const fatEl = document.getElementById('health_body_fat_val');
+        const leanEl = document.getElementById('health_lean_mass_val');
+        const waterEl = document.getElementById('health_water_val');
+        const boneEl = document.getElementById('health_bone_val');
+
+        if (wBadge && b.weight_kg !== undefined && b.weight_kg !== null) wBadge.innerText = `${b.weight_kg} kg`;
+        if (fatEl && b.fat_pct !== undefined && b.fat_pct !== null) fatEl.innerText = b.fat_pct;
+        if (leanEl && b.lean_mass_kg !== undefined && b.lean_mass_kg !== null) leanEl.innerText = `${b.lean_mass_kg} kg`;
+        if (waterEl && b.water_mass_kg !== undefined && b.water_mass_kg !== null) waterEl.innerText = `${b.water_mass_kg} kg`;
+        if (boneEl && b.bone_mass_kg !== undefined && b.bone_mass_kg !== null) boneEl.innerText = `${b.bone_mass_kg} kg`;
+    }
+}
+
+function syncHealthLiveMetrics() {
+    const btn = document.getElementById('health_sync_btn');
+    if (btn) {
+        btn.innerHTML = `<span class="pulse-dot"></span> <span>⏳ Sincronizzazione...</span>`;
+    }
+    fetch('/api/health/sync', { method: 'POST' })
+        .then(r => r.json())
+        .then(res => {
+            if (res) updateHealthUI(res);
+        })
+        .finally(() => {
+            const btn2 = document.getElementById('health_sync_btn');
+            if (btn2) {
+                btn2.innerHTML = `<span class="pulse-dot"></span> <span id="health_status_text">🟢 Sincronizzato</span>`;
             }
         });
 }

@@ -1317,6 +1317,170 @@
         </div>
     </div>
 
+    <!-- SEZIONE SALUTE & ATTIVITÀ FISICA SAMSUNG HEALTH & HEALTH CONNECT -->
+    <div class="smart-appliances-hero health-hero-card" id="health_dashboard_section" style="margin-top: 1.25rem; {% if not health or not health.is_available %}display: none;{% endif %}">
+        <div class="appliances-header">
+            <div class="appliances-title-group">
+                <span class="appliances-header-icon health-glow-icon">🩺</span>
+                <div>
+                    <h2>Attività & Parametri Biometrici</h2>
+                    <div class="appliances-sub-header">
+                        Integrazione <strong>Samsung Health</strong> • <span id="health_device_name">{{ health.device_name if health and health.device_name else 'Galaxy S26' }}</span> via Google Health Connect
+                    </div>
+                </div>
+            </div>
+            <div class="appliances-header-badges">
+                {% if health and health.battery_pct is not none %}
+                <span class="presence-badge badge-present" id="health_battery_badge" style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.25); color: #34d399;">
+                    🔋 Batteria: <strong id="health_battery_val" style="margin-left: 4px;">{{ health.battery_pct }}%</strong>
+                </span>
+                {% endif %}
+                <div class="climate-status-badge" id="health_sync_btn" onclick="syncHealthLiveMetrics()" title="Sincronizza metriche sanitarie con Home Assistant">
+                    <span class="pulse-dot"></span> <span id="health_status_text">🟢 Sincronizzato</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- GRIGLIA SALUTE E ATTIVITÀ -->
+        <div class="health-grid" id="health_metrics_grid">
+            
+            <!-- 1. CARD PASSI & MOVIMENTO -->
+            <div class="health-card" id="card_health_steps">
+                <div class="health-card-header">
+                    <div class="health-card-title">
+                        <span class="health-card-icon">👟</span>
+                        <div>
+                            <strong>Passi & Movimento</strong>
+                            <span class="health-card-sub">Obiettivo: 8.000 passi</span>
+                        </div>
+                    </div>
+                    <span class="health-progress-badge" id="health_steps_pct_badge">{{ health.steps.pct if health and health.steps else 0 }}%</span>
+                </div>
+                <div class="health-main-stat">
+                    <span class="health-stat-num" id="health_daily_steps">{{ "{:,}".format(health.steps.daily if health and health.steps else 0).replace(',', '.') }}</span>
+                    <span class="health-stat-unit">passi</span>
+                </div>
+                <!-- Progress bar passi -->
+                <div class="health-progress-track">
+                    <div class="health-progress-fill fill-steps" id="health_steps_bar" style="width: {{ health.steps.pct if health and health.steps else 0 }}%;"></div>
+                </div>
+                <div class="health-card-submetrics">
+                    <div class="submetric-item">
+                        <span class="submetric-label">Distanza</span>
+                        <strong class="submetric-val" id="health_distance_val">{{ health.steps.distance_km if health and health.steps and health.steps.distance_km is not none else '--' }} km</strong>
+                    </div>
+                    <div class="submetric-item">
+                        <span class="submetric-label">Piani Saliti</span>
+                        <strong class="submetric-val" id="health_floors_val">{{ health.steps.floors if health and health.steps else 0 }}</strong>
+                    </div>
+                    <div class="submetric-item">
+                        <span class="submetric-label">Tot. Odometro</span>
+                        <strong class="submetric-val" id="health_odometer_val">{{ "{:,}".format(health.steps.total_odometer if health and health.steps and health.steps.total_odometer else 0).replace(',', '.') }}</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. CARD CALORIE & METABOLISMO -->
+            <div class="health-card" id="card_health_calories">
+                <div class="health-card-header">
+                    <div class="health-card-title">
+                        <span class="health-card-icon">🔥</span>
+                        <div>
+                            <strong>Calorie Bruciate</strong>
+                            <span class="health-card-sub">Totali & Attività</span>
+                        </div>
+                    </div>
+                    <span class="health-progress-badge pill-cal" id="health_active_pct_badge">{{ health.calories.active_pct if health and health.calories else 0 }}% attive</span>
+                </div>
+                <div class="health-main-stat">
+                    <span class="health-stat-num" id="health_total_cal">{{ int(health.calories.total_kcal) if health and health.calories and health.calories.total_kcal is not none else '--' }}</span>
+                    <span class="health-stat-unit">kcal totali</span>
+                </div>
+                <!-- Progress bar calorie attive -->
+                <div class="health-progress-track">
+                    <div class="health-progress-fill fill-calories" id="health_cal_bar" style="width: {{ health.calories.active_pct if health and health.calories else 0 }}%;"></div>
+                </div>
+                <div class="health-card-submetrics">
+                    <div class="submetric-item">
+                        <span class="submetric-label">Calorie Attive</span>
+                        <strong class="submetric-val" id="health_active_cal">{{ health.calories.active_kcal if health and health.calories and health.calories.active_kcal is not none else '--' }} kcal</strong>
+                    </div>
+                    <div class="submetric-item">
+                        <span class="submetric-label">Metabolismo Basale</span>
+                        <strong class="submetric-val" id="health_basal_cal">{{ int(health.calories.basal_kcal) if health and health.calories and health.calories.basal_kcal is not none else '--' }} kcal</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. CARD CARDIO, SPO2 & SONNO -->
+            <div class="health-card" id="card_health_cardio">
+                <div class="health-card-header">
+                    <div class="health-card-title">
+                        <span class="health-card-icon heart-pulse-icon">❤️</span>
+                        <div>
+                            <strong>Parametri Cardio & Sonno</strong>
+                            <span class="health-card-sub">Sensore Ottico / ECG</span>
+                        </div>
+                    </div>
+                    <span class="appliance-status-pill {{ health.heart.badge_class if health and health.heart else 'pill-standby' }}" id="health_heart_status_pill">
+                        {{ health.heart.status if health and health.heart else 'Normale' }}
+                    </span>
+                </div>
+                <div class="health-main-stat">
+                    <span class="health-stat-num" id="health_heart_rate">{{ health.heart.rate_bpm if health and health.heart and health.heart.rate_bpm is not none else '--' }}</span>
+                    <span class="health-stat-unit">bpm</span>
+                </div>
+                <div class="health-card-submetrics" style="margin-top: 14px;">
+                    <div class="submetric-item">
+                        <span class="submetric-label">🫁 SpO2 Ossigeno</span>
+                        <strong class="submetric-val" id="health_spo2_val">{{ health.heart.spo2_pct if health and health.heart and health.heart.spo2_pct is not none else '--' }}%</strong>
+                    </div>
+                    <div class="submetric-item">
+                        <span class="submetric-label">🏃 VO2 Max</span>
+                        <strong class="submetric-val" id="health_vo2_val">{{ health.heart.vo2_max if health and health.heart and health.heart.vo2_max is not none else '--' }}</strong>
+                    </div>
+                    <div class="submetric-item">
+                        <span class="submetric-label">😴 Sonno</span>
+                        <strong class="submetric-val" id="health_sleep_formatted">{{ health.sleep.duration_formatted if health and health.sleep else '--' }}</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4. CARD COMPOSIZIONE CORPOREA (BIA) -->
+            <div class="health-card" id="card_health_body">
+                <div class="health-card-header">
+                    <div class="health-card-title">
+                        <span class="health-card-icon">⚖️</span>
+                        <div>
+                            <strong>Composizione Corporea</strong>
+                            <span class="health-card-sub">Analisi BIA Galaxy</span>
+                        </div>
+                    </div>
+                    <span class="health-progress-badge" id="health_weight_badge" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;">{{ health.body.weight_kg if health and health.body and health.body.weight_kg is not none else '--' }} kg</span>
+                </div>
+                <div class="health-main-stat">
+                    <span class="health-stat-num" id="health_body_fat_val">{{ health.body.fat_pct if health and health.body and health.body.fat_pct is not none else '--' }}</span>
+                    <span class="health-stat-unit">% massa grassa</span>
+                </div>
+                <div class="health-card-submetrics" style="margin-top: 14px;">
+                    <div class="submetric-item">
+                        <span class="submetric-label">🥩 Massa Magra</span>
+                        <strong class="submetric-val" id="health_lean_mass_val">{{ health.body.lean_mass_kg if health and health.body and health.body.lean_mass_kg is not none else '--' }} kg</strong>
+                    </div>
+                    <div class="submetric-item">
+                        <span class="submetric-label">💧 Acqua Totale</span>
+                        <strong class="submetric-val" id="health_water_val">{{ health.body.water_mass_kg if health and health.body and health.body.water_mass_kg is not none else '--' }} kg</strong>
+                    </div>
+                    <div class="submetric-item">
+                        <span class="submetric-label">🦴 Massa Ossea</span>
+                        <strong class="submetric-val" id="health_bone_val">{{ health.body.bone_mass_kg if health and health.body and health.body.bone_mass_kg is not none else '--' }} kg</strong>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
     <!-- SEZIONE DISPOSITIVI SMART LIFE (TUYA) & PRESE MISURATE -->
     {% if tuya_enabled %}
     <div class="smart-appliances-hero" id="tuya_dashboard_section" style="margin-top: 1.25rem;">

@@ -265,6 +265,8 @@ async def api_live():
     clean_latest["smartthings_enabled"] = True
     clean_latest["tuya"] = ha_sum
     clean_latest["tuya_enabled"] = True
+    clean_latest["health"] = ha_sum.get("health") or homeassistant_service.parse_health_data()
+    clean_latest["health_enabled"] = bool(clean_latest["health"].get("is_available"))
     clean_latest["hass_enabled"] = settings.HASS_ENABLED
     if settings.CIVIL_PROTECTION_ENABLED:
         clean_latest["civil_protection"] = civil_protection_service.fetch_alerts()

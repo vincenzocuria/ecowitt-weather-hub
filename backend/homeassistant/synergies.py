@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional
 from .parsers.appliances import parse_washer_data, parse_dishwasher_data
 from .parsers.presence import parse_presence_data
 from .parsers.irrigation import parse_irrigation_data
+from .parsers.health import parse_health_data
 
 
 class SynergiesHelper:
@@ -83,6 +84,7 @@ class SynergiesHelper:
         dishwasher_data = parse_dishwasher_data(entities)
         presence_data = parse_presence_data(entities)
         irrigation_data = parse_irrigation_data(entities)
+        health_data = parse_health_data(entities)
 
         p_solare = 0.0
         soc = 0.0
@@ -103,5 +105,6 @@ class SynergiesHelper:
             "presence": presence_data,
             "solar_synergy": solar_synergy,
             "laundry_drying_synergy": laundry_synergy,
-            "irrigation": irrigation_data
+            "irrigation": irrigation_data,
+            "health": health_data
         }

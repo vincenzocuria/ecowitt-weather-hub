@@ -8,6 +8,7 @@ from typing import Dict, Any, List
 
 from .parsers.appliances import parse_washer_data, parse_dishwasher_data, parse_fridge_data
 from .parsers.presence import parse_presence_data
+from .parsers.health import parse_health_data
 
 logger = logging.getLogger("weather_hub.homeassistant.catalog")
 
@@ -127,7 +128,39 @@ class CatalogHelper:
             "raw": presence
         })
 
-        # 5. Interruttori, Luci, Clima, Valvole, Tende, Media Player
+        # 5. Salute & Attività Fisica (Samsung Health / Health Connect)
+        health = parse_health_data(entities)
+        if health.get("is_available"):
+            steps_info = health.get("steps", {})
+            cal_info = health.get("calories", {})
+            heart_info = health.get("heart", {})
+            stat_parts = []
+            if steps_info.get("daily") is not None:
+                stat_parts.append(f"👟 {steps_info['daily']} passi")
+            if heart_info.get("rate_bpm") is not None:
+                stat_parts.append(f"❤️ {heart_info['rate_bpm']} bpm")
+            if cal_info.get("total_kcal") is not None:
+                stat_parts.append(f"🔥 {int(cal_info['total_kcal'])} kcal")
+
+            devices.append({
+                "id": "hass_health_samsung",
+                "raw_id": "samsung_health_hub",
+                "ecosystem": "homeassistant",
+                "name": f"Samsung Health • {health.get('device_name', 'Galaxy')}",
+                "icon": "🩺",
+                "category": "health",
+                "category_label": "Salute & Attività Fisica • Health Connect",
+                "is_on": True,
+                "can_toggle": False,
+                "is_online": True,
+                "status_text": " • ".join(stat_parts) if stat_parts else "Sincronizzato",
+                "power_w": 0.0,
+                "battery_pct": health.get("battery_pct"),
+                "health_data": health,
+                "raw": health
+            })
+
+        # 6. Interruttori, Luci, Clima, Valvole, Tende, Media Player
         for entity_id, state_obj in entities.items():
             domain = entity_id.split(".")[0]
             if domain not in ("switch", "light", "climate", "cover", "valve", "fan", "media_player"):

@@ -226,6 +226,20 @@ async def api_smartthings_command(device_id: str, request: Request):
     res = await homeassistant_service.toggle_device(device_id, target_state)
     return res
 
+# --- Health & Fitness Endpoints (Samsung Health & Health Connect) ---
+
+@router.get("/api/health/summary")
+async def api_health_summary():
+    """Restituisce il riepilogo in tempo reale di parametri biometrici, passi, calorie e sonno da Samsung Health."""
+    return homeassistant_service.parse_health_data()
+
+@router.post("/api/health/sync")
+@router.get("/api/health/sync")
+async def api_health_sync():
+    """Forza la risincronizzazione degli stati da Home Assistant e restituisce i dati sanitari."""
+    await homeassistant_service.fetch_states()
+    return homeassistant_service.parse_health_data()
+
 # --- Dispositivi Smart / Tuya Endpoints (Powered by Home Assistant) ---
 
 @router.get("/api/tuya/summary")

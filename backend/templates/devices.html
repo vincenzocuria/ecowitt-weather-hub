@@ -78,6 +78,9 @@
         <button class="filter-chip" data-filter="presence">
             <span>📍 Presenza</span>
         </button>
+        <button class="filter-chip" data-filter="health">
+            <span>🩺 Salute & Cardio</span>
+        </button>
     </div>
 
     <!-- GRIGLIA A MATTONCINI DEI DISPOSITIVI -->
@@ -172,6 +175,10 @@
                         {% elif dev.category == 'energy' %}
                             <span class="metric-tag tag-solar">☀️ {{ dev.solar_power_w|int }} W</span>
                             <span class="metric-tag tag-batt">🔋 {{ dev.battery_soc_pct|int }}%</span>
+                        {% elif dev.category == 'health' %}
+                            <span class="metric-tag tag-info">👟 {{ dev.health_data.steps.daily if dev.health_data and dev.health_data.steps else '--' }} passi</span>
+                            <span class="metric-tag tag-temp">❤️ {{ dev.health_data.heart.rate_bpm if dev.health_data and dev.health_data.heart else '--' }} bpm</span>
+                            <span class="metric-tag tag-solar">🔥 {{ dev.health_data.calories.total_kcal|int if dev.health_data and dev.health_data.calories and dev.health_data.calories.total_kcal else '--' }} kcal</span>
                         {% elif dev.category == 'presence' and dev.battery_pct is not none %}
                             <span class="metric-tag tag-batt">🔋 {{ dev.battery_pct }}%</span>
                         {% else %}
@@ -978,7 +985,75 @@ function renderHomeAssistantDetail(dev) {
         `;
     }
 
-    // 0.4 Grandi Elettrodomestici (Lavatrice Samsung / Lavastoviglie Samsung)
+    // 0.4 Salute & Parametri Biometrici (Samsung Health & Health Connect)
+    if (cat === 'health' || dev.id === 'hass_health_samsung') {
+        const h = dev.health_data || raw || {};
+        const steps = h.steps || {};
+        const cal = h.calories || {};
+        const heart = h.heart || {};
+        const sleep = h.sleep || {};
+        const body = h.body || {};
+        const batt = dev.battery_pct !== null && dev.battery_pct !== undefined ? `${dev.battery_pct}%` : 'N/D';
+
+        return `
+            <div class="modal-presence-box" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(56, 189, 248, 0.08) 100%);">
+                <div class="presence-status-large">
+                    <span class="presence-icon">🩺</span>
+                    <div class="presence-title">${dev.name}</div>
+                    <p class="presence-sub">${h.device_name || 'Galaxy S26'} • Sincronizzazione Google Health Connect & Samsung Health</p>
+                </div>
+                <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+                    <div class="telemetry-card">
+                        <span class="tel-label">👟 Passi Giornalieri</span>
+                        <span class="tel-val text-accent">${(steps.daily || 0).toLocaleString('it-IT')} / 8.000 (${steps.pct || 0}%)</span>
+                    </div>
+                    <div class="telemetry-card">
+                        <span class="tel-label">📏 Distanza Percorsa</span>
+                        <span class="tel-val">${steps.distance_km || '--'} km (Piani: ${steps.floors || 0})</span>
+                    </div>
+                    <div class="telemetry-card">
+                        <span class="tel-label">🔥 Calorie Totali</span>
+                        <span class="tel-val text-warning">${cal.total_kcal ? Math.round(cal.total_kcal) + ' kcal' : '--'}</span>
+                    </div>
+                    <div class="telemetry-card">
+                        <span class="tel-label">⚡ Calorie Attive / BMR</span>
+                        <span class="tel-val">${cal.active_kcal || '--'} / ${cal.basal_kcal ? Math.round(cal.basal_kcal) : '--'} kcal</span>
+                    </div>
+                    <div class="telemetry-card">
+                        <span class="tel-label">❤️ Frequenza Cardiaca</span>
+                        <span class="tel-val text-danger">${heart.rate_bpm || '--'} bpm (${heart.status || 'Normale'})</span>
+                    </div>
+                    <div class="telemetry-card">
+                        <span class="tel-label">🫁 SpO2 / VO2 Max</span>
+                        <span class="tel-val text-info">${heart.spo2_pct ? heart.spo2_pct + '%' : '--'} • VO2: ${heart.vo2_max || '--'}</span>
+                    </div>
+                    <div class="telemetry-card">
+                        <span class="tel-label">😴 Sonno Monitorato</span>
+                        <span class="tel-val text-success">${sleep.duration_formatted || '--'}</span>
+                    </div>
+                    <div class="telemetry-card">
+                        <span class="tel-label">⚖️ Peso & Grasso Corporeo</span>
+                        <span class="tel-val">${body.weight_kg ? body.weight_kg + ' kg' : '--'} (${body.fat_pct ? body.fat_pct + '%' : '--'})</span>
+                    </div>
+                    <div class="telemetry-card">
+                        <span class="tel-label">🥩 Massa Magra / Acqua</span>
+                        <span class="tel-val">${body.lean_mass_kg ? body.lean_mass_kg + ' kg' : '--'} / ${body.water_mass_kg ? body.water_mass_kg + ' kg' : '--'}</span>
+                    </div>
+                    <div class="telemetry-card">
+                        <span class="tel-label">🔋 Batteria Dispositivo</span>
+                        <span class="tel-val text-success">🔋 ${batt}</span>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem; text-align: center;">
+                    <button type="button" class="btn btn-action-primary" onclick="syncHealthLiveMetrics()" style="padding: 6px 14px; font-size: 0.82rem;">
+                        🔄 Forza Sincronizzazione Dati Salute
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    // 0.5 Grandi Elettrodomestici (Lavatrice Samsung / Lavastoviglie Samsung)
     if (cat === 'appliances' || dev.id === 'hass_washer' || dev.id === 'hass_dishwasher') {
         const isRunning = dev.is_on || raw.is_running || false;
         const stateTxt = dev.status_text || raw.job_state_label || 'In Standby';

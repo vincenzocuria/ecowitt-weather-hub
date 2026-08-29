@@ -7519,6 +7519,180 @@ body {
     vertical-align: middle;
 }
 
+/* ==========================================================================
+   HEALTH & BIOMETRICS (SAMSUNG HEALTH & HEALTH CONNECT)
+   ========================================================================== */
+
+.health-hero-card {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.04) 0%, rgba(14, 165, 233, 0.04) 50%, rgba(16, 185, 129, 0.04) 100%);
+    border: 1px solid rgba(239, 68, 68, 0.18);
+}
+
+.health-glow-icon {
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.35);
+    background: rgba(239, 68, 68, 0.15) !important;
+}
+
+.health-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.health-card {
+    background: rgba(15, 23, 42, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.2rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.health-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(56, 189, 248, 0.3);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.health-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.health-card-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.health-card-icon {
+    font-size: 1.4rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+}
+
+.health-card-sub {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--text-dim, #94a3b8);
+    margin-top: 2px;
+}
+
+.health-progress-badge {
+    padding: 3px 8px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    border-radius: 20px;
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    white-space: nowrap;
+}
+
+.health-progress-badge.pill-cal {
+    background: rgba(249, 115, 22, 0.15);
+    color: #fb923c;
+    border-color: rgba(249, 115, 22, 0.3);
+}
+
+.health-main-stat {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin: 0.35rem 0 0.6rem 0;
+}
+
+.health-stat-num {
+    font-size: 1.85rem;
+    font-weight: 800;
+    color: #f8fafc;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+
+.health-stat-unit {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-dim, #94a3b8);
+}
+
+.health-progress-track {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 0.4rem 0 0.8rem 0;
+}
+
+.health-progress-fill {
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.health-progress-fill.fill-steps {
+    background: linear-gradient(90deg, #38bdf8 0%, #06b6d4 100%);
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+}
+
+.health-progress-fill.fill-calories {
+    background: linear-gradient(90deg, #f97316 0%, #ef4444 100%);
+    box-shadow: 0 0 10px rgba(249, 115, 22, 0.5);
+}
+
+.health-card-submetrics {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-top: 0.65rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.submetric-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.submetric-label {
+    font-size: 0.72rem;
+    color: var(--text-dim, #94a3b8);
+}
+
+.submetric-val {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #e2e8f0;
+}
+
+@keyframes heartPulse {
+    0% { transform: scale(1); }
+    14% { transform: scale(1.25); }
+    28% { transform: scale(1); }
+    42% { transform: scale(1.15); }
+    70% { transform: scale(1); }
+}
+
+.heart-pulse-icon {
+    animation: heartPulse 1.8s infinite ease-in-out;
+}
+
 
 
 

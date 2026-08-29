@@ -1471,6 +1471,68 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIn("title", digest_res)
         self.assertIn("Resoconto Mensile", digest_res["title"])
 
+    def test_samsung_health_and_health_connect_integration(self):
+        from backend.homeassistant.parsers.health import parse_health_data
+        from backend.homeassistant.catalog import CatalogHelper
+        from backend.homeassistant import homeassistant_service
+        from fastapi.testclient import TestClient
+        from backend.main import app
+        from backend.config import settings
+
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+
+        # 1. Mock entities dictionary matching user's Samsung S26 Health Connect setup
+        mock_entities = {
+            "sensor.samsung_s26_daily_steps": {"entity_id": "sensor.samsung_s26_daily_steps", "state": "3450"},
+            "sensor.samsung_s26_steps_sensor": {"entity_id": "sensor.samsung_s26_steps_sensor", "state": "140000"},
+            "sensor.samsung_s26_total_calories_burned": {"entity_id": "sensor.samsung_s26_total_calories_burned", "state": "2100.5"},
+            "sensor.samsung_s26_basal_metabolic_rate": {"entity_id": "sensor.samsung_s26_basal_metabolic_rate", "state": "1650.0"},
+            "sensor.samsung_s26_daily_distance": {"entity_id": "sensor.samsung_s26_daily_distance", "state": "1250.0"},
+            "sensor.samsung_s26_daily_floors": {"entity_id": "sensor.samsung_s26_daily_floors", "state": "4"},
+            "sensor.samsung_s26_heart_rate": {"entity_id": "sensor.samsung_s26_heart_rate", "state": "72.0"},
+            "sensor.samsung_s26_oxygen_saturation": {"entity_id": "sensor.samsung_s26_oxygen_saturation", "state": "98.0"},
+            "sensor.samsung_s26_vo2_max": {"entity_id": "sensor.samsung_s26_vo2_max", "state": "38.5"},
+            "sensor.samsung_s26_sleep_duration": {"entity_id": "sensor.samsung_s26_sleep_duration", "state": "430.0"},
+            "sensor.samsung_s26_weight": {"entity_id": "sensor.samsung_s26_weight", "state": "80500.0"},
+            "sensor.samsung_s26_body_fat": {"entity_id": "sensor.samsung_s26_body_fat", "state": "27.5"},
+            "sensor.samsung_s26_lean_body_mass": {"entity_id": "sensor.samsung_s26_lean_body_mass", "state": "58300.0"},
+            "sensor.samsung_s26_body_water_mass": {"entity_id": "sensor.samsung_s26_body_water_mass", "state": "42500.0"},
+            "sensor.samsung_s26_bone_mass": {"entity_id": "sensor.samsung_s26_bone_mass", "state": "2900.0"},
+            "sensor.samsung_s26_daily_hydration": {"entity_id": "sensor.samsung_s26_daily_hydration", "state": "1500.0"},
+            "sensor.samsung_s26_battery_level": {"entity_id": "sensor.samsung_s26_battery_level", "state": "85"}
+        }
+
+        # 2. Test parser output
+        health = parse_health_data(mock_entities)
+        self.assertTrue(health["is_available"])
+        self.assertEqual(health["steps"]["daily"], 3450)
+        self.assertEqual(health["steps"]["floors"], 4)
+        self.assertEqual(health["steps"]["distance_km"], 1.25)
+        self.assertEqual(health["calories"]["total_kcal"], 2100.5)
+        self.assertEqual(health["calories"]["active_kcal"], 450.5)
+        self.assertEqual(health["heart"]["rate_bpm"], 72)
+        self.assertEqual(health["heart"]["spo2_pct"], 98.0)
+        self.assertEqual(health["sleep"]["duration_formatted"], "7h 10m")
+        self.assertEqual(health["body"]["weight_kg"], 80.5)
+        self.assertEqual(health["body"]["fat_pct"], 27.5)
+        self.assertEqual(health["battery_pct"], 85)
+
+        # 3. Test Catalog inclusion
+        catalog_devs = CatalogHelper.get_catalog_devices(mock_entities, enabled=True)
+        health_dev = next((d for d in catalog_devs if d["id"] == "hass_health_samsung"), None)
+        self.assertIsNotNone(health_dev)
+        self.assertEqual(health_dev["category"], "health")
+        self.assertIn("passi", health_dev["status_text"])
+
+        # 4. Test API GET /api/health/summary
+        resp_h = client.get("/api/health/summary")
+        self.assertEqual(resp_h.status_code, 200)
+
+        # 5. Test Live API includes health payload
+        resp_live = client.get("/api/live")
+        self.assertEqual(resp_live.status_code, 200)
+        self.assertIn("health", resp_live.json())
+
 
 if __name__ == "__main__":
     unittest.main()

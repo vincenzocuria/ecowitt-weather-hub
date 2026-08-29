@@ -17,11 +17,12 @@ from .client import HomeAssistantClient
 from .catalog import CatalogHelper
 from .controllers import DeviceController
 from .synergies import SynergiesHelper
-from .parsers.appliances import parse_washer_data, parse_dishwasher_data
+from .parsers.appliances import parse_washer_data, parse_dishwasher_data, parse_fridge_data
 from .parsers.presence import parse_presence_data
 from .parsers.climate import parse_climate_data
 from .parsers.irrigation import parse_irrigation_data
 from .parsers.energy import parse_energy_data
+from .parsers.health import parse_health_data
 
 logger = logging.getLogger("weather_hub.homeassistant")
 
@@ -100,6 +101,9 @@ class HomeAssistantService:
 
     def parse_energy_data(self) -> Optional[Dict[str, Any]]:
         return parse_energy_data(self.client.entities)
+
+    def parse_health_data(self) -> Dict[str, Any]:
+        return parse_health_data(self.client.entities)
 
     # Riepilogo e Sinergie
     def get_summary(
@@ -185,6 +189,7 @@ __all__ = [
     "parse_presence_data",
     "parse_climate_data",
     "parse_irrigation_data",
-    "parse_energy_data"
+    "parse_energy_data",
+    "parse_health_data"
 ]
 
