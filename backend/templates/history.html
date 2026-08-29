@@ -1,521 +1,1086 @@
 {% extends "base.html" %}
 
 {% block content %}
-<!-- HEADER CARD -->
-<div class="header-card">
-    <div class="header-title">
-        <h1>🔍 Archivio & Ricerche Storiche</h1>
-        <p>Consulta lo storico delle rilevazioni meteo, analizza i parametri estremi del periodo ed esporta i dati in CSV.</p>
-    </div>
-    <div class="header-actions">
-        <a href="/api/export/csv?start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-gold history-export-btn" title="Scarica tutte le letture del periodo in formato CSV per Excel">
-            📥 Esporta CSV
-        </a>
-    </div>
-</div>
-
-<!-- SEZIONE FILTRI & PRESET RAPIDI -->
-<div class="history-filter-card">
-    <!-- FILTRI PRESET VELOCI (1-TAP SU SMARTPHONE) -->
-    <div class="history-presets-label">⚡ Periodi Rapidi:</div>
-    <div class="history-presets">
-        <button type="button" class="preset-pill" onclick="applyPreset('today')">Oggi</button>
-        <button type="button" class="preset-pill" onclick="applyPreset('yesterday')">Ieri</button>
-        <button type="button" class="preset-pill" onclick="applyPreset('7d')">Ultimi 7 gg</button>
-        <button type="button" class="preset-pill" onclick="applyPreset('30d')">Ultimi 30 gg</button>
-        <button type="button" class="preset-pill" onclick="applyPreset('month')">Questo Mese</button>
-        <a href="/history" class="preset-pill {% if not start_date and not end_date %}active{% endif %}">Tutto lo Storico</a>
-    </div>
-
-    <!-- FORM DI RICERCA INTERVALLO -->
-    <form method="GET" action="/history" id="history-filter-form" class="history-form-grid">
-        <div class="form-group">
-            <label for="start_date">📅 Data Inizio:</label>
-            <input type="date" id="start_date" name="start_date" class="form-control" value="{{ start_date or '' }}">
+<div class="history-page-wrap">
+    <!-- 1. HEADER CARD -->
+    <div class="header-card history-header-card">
+        <div class="header-title">
+            <h1>🔍 Archivio & Storico Rilevazioni</h1>
+            <p>Consulta lo storico meteo, visualizza i dettagli al tocco ed esporta i dati in CSV.</p>
         </div>
-        <div class="form-group">
-            <label for="end_date">📅 Data Fine:</label>
-            <input type="date" id="end_date" name="end_date" class="form-control" value="{{ end_date or '' }}">
-        </div>
-        <div class="history-btn-group">
-            <button type="submit" class="btn btn-primary" style="flex: 1 1 auto; min-height: 42px;">🔍 Filtra</button>
-            <a href="/history" class="btn btn-secondary" style="flex: 1 1 auto; min-height: 42px; text-align: center; text-decoration: none;">🔄 Azzera</a>
-        </div>
-    </form>
-</div>
-
-<!-- SEZIONE KPI AGGREGATI DEL PERIODO FILTRATO -->
-{% if kpis and kpis.total_records > 0 %}
-<div class="history-kpi-section">
-    <div class="history-kpi-header">
-        <div class="history-kpi-title">
-            <span class="kpi-icon">📊</span>
-            <div>
-                <h3>Riepilogo Parametri del Periodo</h3>
-                <p class="history-kpi-sub">
-                    {% if start_date or end_date %}
-                        Intervallo: <strong>{{ start_date or 'Inizio' }}</strong> ➔ <strong>{{ end_date or 'Oggi' }}</strong>
-                    {% else %}
-                        Tutte le registrazioni archiviate nel database
-                    {% endif %}
-                    • <strong>{{ kpis.total_records }}</strong> letture campionate
-                </p>
-            </div>
+        <div class="header-actions">
+            <a href="/api/export/csv?start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-gold history-export-btn" title="Scarica tutte le letture del periodo in formato CSV per Excel">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>Esporta CSV</span>
+            </a>
         </div>
     </div>
 
-    <div class="history-kpi-grid">
-        <!-- KPI 1: TEMPERATURA ESTERNA -->
-        <div class="history-kpi-card">
-            <div class="kpi-card-top">
-                <span class="kpi-tag">🌡️ Temp Esterna</span>
-                <span class="kpi-stat-avg">Media: <strong>{{ kpis.avg_temp if kpis.avg_temp is not none else '--' }}°C</strong></span>
-            </div>
-            <div class="kpi-dual-values">
-                <div class="kpi-val-box max">
-                    <span class="kpi-lbl">MAX</span>
-                    <span class="kpi-val">{{ kpis.max_temp if kpis.max_temp is not none else '--' }}<small>°C</small></span>
-                </div>
-                <div class="kpi-val-box min">
-                    <span class="kpi-lbl">MIN</span>
-                    <span class="kpi-val">{{ kpis.min_temp if kpis.min_temp is not none else '--' }}<small>°C</small></span>
-                </div>
-            </div>
+    <!-- 2. BARRA PRESET PERIODI RAPIDI (SCORRIMENTO ORIZZONTALE TOUCH) -->
+    <div class="history-presets-container">
+        <div class="history-presets-scroll">
+            <button type="button" class="preset-pill" onclick="applyPreset('today')">Oggi</button>
+            <button type="button" class="preset-pill" onclick="applyPreset('yesterday')">Ieri</button>
+            <button type="button" class="preset-pill" onclick="applyPreset('7d')">Ultimi 7 gg</button>
+            <button type="button" class="preset-pill" onclick="applyPreset('30d')">Ultimi 30 gg</button>
+            <button type="button" class="preset-pill" onclick="applyPreset('month')">Questo Mese</button>
+            <a href="/history" class="preset-pill {% if not start_date and not end_date %}active{% endif %}">Tutto lo Storico</a>
         </div>
 
-        <!-- KPI 2: UMIDITÀ ESTERNA -->
-        <div class="history-kpi-card">
-            <div class="kpi-card-top">
-                <span class="kpi-tag">💧 Umidità Esterna</span>
-                <span class="kpi-stat-avg">Media: <strong>{{ kpis.avg_hum if kpis.avg_hum is not none else '--' }}%</strong></span>
-            </div>
-            <div class="kpi-dual-values">
-                <div class="kpi-val-box max">
-                    <span class="kpi-lbl">MAX</span>
-                    <span class="kpi-val">{{ kpis.max_hum if kpis.max_hum is not none else '--' }}<small>%</small></span>
-                </div>
-                <div class="kpi-val-box min">
-                    <span class="kpi-lbl">MIN</span>
-                    <span class="kpi-val">{{ kpis.min_hum if kpis.min_hum is not none else '--' }}<small>%</small></span>
-                </div>
-            </div>
-        </div>
-
-        <!-- KPI 3: VENTO & RAFFICHE -->
-        <div class="history-kpi-card">
-            <div class="kpi-card-top">
-                <span class="kpi-tag">💨 Vento & Raffiche</span>
-                <span class="kpi-stat-avg">Vento Medio: <strong>{{ kpis.avg_wind if kpis.avg_wind is not none else '--' }} km/h</strong></span>
-            </div>
-            <div class="kpi-dual-values">
-                <div class="kpi-val-box wind-gust">
-                    <span class="kpi-lbl">MAX RAFFICA</span>
-                    <span class="kpi-val" style="color: var(--gold);">{{ kpis.max_gust if kpis.max_gust is not none else '--' }}<small>km/h</small></span>
-                </div>
-                <div class="kpi-val-box max">
-                    <span class="kpi-lbl">MAX VENTO</span>
-                    <span class="kpi-val">{{ kpis.max_wind if kpis.max_wind is not none else '--' }}<small>km/h</small></span>
-                </div>
-            </div>
-        </div>
-
-        <!-- KPI 4: PIOGGIA NEL PERIODO -->
-        <div class="history-kpi-card">
-            <div class="kpi-card-top">
-                <span class="kpi-tag">🌧️ Pioggia Periodo</span>
-                <span class="kpi-stat-avg">Rate Max: <strong>{{ kpis.max_rain_rate if kpis.max_rain_rate is not none else '0.0' }} mm/h</strong></span>
-            </div>
-            <div class="kpi-single-value">
-                <span class="kpi-val highlight-blue">{{ kpis.total_rain if kpis.total_rain is not none else '0.0' }} <small>mm</small></span>
-                <span class="kpi-sub-text">Accumulo totale stimato</span>
-            </div>
-        </div>
-
-        <!-- KPI 5: PRESSIONE BAROMETRICA -->
-        <div class="history-kpi-card">
-            <div class="kpi-card-top">
-                <span class="kpi-tag">📈 Pressione</span>
-                <span class="kpi-stat-avg">Media: <strong>{{ kpis.avg_press if kpis.avg_press is not none else '--' }} hPa</strong></span>
-            </div>
-            <div class="kpi-dual-values">
-                <div class="kpi-val-box max">
-                    <span class="kpi-lbl">MAX</span>
-                    <span class="kpi-val">{{ kpis.max_press if kpis.max_press is not none else '--' }}<small>hPa</small></span>
-                </div>
-                <div class="kpi-val-box min">
-                    <span class="kpi-lbl">MIN</span>
-                    <span class="kpi-val">{{ kpis.min_press if kpis.min_press is not none else '--' }}<small>hPa</small></span>
-                </div>
-            </div>
-        </div>
-
-        <!-- KPI 6: RADIAZIONE & UV -->
-        <div class="history-kpi-card">
-            <div class="kpi-card-top">
-                <span class="kpi-tag">☀️ Sole & Radiazione</span>
-                <span class="kpi-stat-avg">UV Max: <strong>{{ kpis.max_uv if kpis.max_uv is not none else '0' }}</strong></span>
-            </div>
-            <div class="kpi-dual-values">
-                <div class="kpi-val-box solar-box">
-                    <span class="kpi-lbl">MAX RAD.</span>
-                    <span class="kpi-val" style="color: #fde047;">{{ kpis.max_solar if kpis.max_solar is not none else '0' }}<small>W/m²</small></span>
-                </div>
-                <div class="kpi-val-box uv-box">
-                    <span class="kpi-lbl">INDICE UV</span>
-                    <span class="kpi-val" style="color: #fb923c;">{{ kpis.max_uv if kpis.max_uv is not none else '0' }}</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- KPI 7: AMBIENTE CASA -->
-        <div class="history-kpi-card">
-            <div class="kpi-card-top">
-                <span class="kpi-tag">🏠 Clima Casa</span>
-                <span class="kpi-stat-avg">Umidità Media: <strong>{{ kpis.avg_hum_in if kpis.avg_hum_in is not none else '--' }}%</strong></span>
-            </div>
-            <div class="kpi-dual-values">
-                <div class="kpi-val-box max">
-                    <span class="kpi-lbl">MAX CASA</span>
-                    <span class="kpi-val" style="color: #f59e0b;">{{ kpis.max_temp_in if kpis.max_temp_in is not none else '--' }}<small>°C</small></span>
-                </div>
-                <div class="kpi-val-box min">
-                    <span class="kpi-lbl">MIN CASA</span>
-                    <span class="kpi-val" style="color: #fcd34d;">{{ kpis.min_temp_in if kpis.min_temp_in is not none else '--' }}<small>°C</small></span>
-                </div>
-            </div>
-        </div>
-
-        <!-- KPI 8: NOTTI TROPICALI NEL PERIODO -->
-        <div class="history-kpi-card" style="border-left: 4px solid #f97316;">
-            <div class="kpi-card-top">
-                <span class="kpi-tag" style="color: #f97316;">🌴 Notti Tropicali</span>
-                <span class="kpi-stat-avg">Min &ge; 20.0°C</span>
-            </div>
-            <div class="kpi-dual-values">
-                <div class="kpi-val-box">
-                    <span class="kpi-lbl">TROPICALI</span>
-                    <span class="kpi-val" style="color: #f97316;">{{ kpis.tropical_nights if kpis.tropical_nights is not none else 0 }}<small>notti</small></span>
-                </div>
-                <div class="kpi-val-box">
-                    <span class="kpi-lbl">ROVENTI (&ge;25°)</span>
-                    <span class="kpi-val" style="color: #ef4444;">{{ kpis.very_hot_nights if kpis.very_hot_nights is not none else 0 }}<small>notti</small></span>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-{% endif %}
-
-<!-- SEZIONE RISULTATI & REGISTRO LETTURE -->
-<div class="card history-results-card">
-    <div class="history-results-header">
-        <div class="history-results-title">
-            <span>📋 Risultati: <strong id="history-header-count">{{ total_count }}</strong> letture trovate</span>
-            <span class="history-page-badge">Pagina {{ page }} di {{ max_pages }}</span>
-        </div>
-
-        <!-- TOGGLE VISTA (SCHEDE PER SMARTPHONE / TABELLA PER DESKTOP) -->
-        <div class="history-view-toggle">
-            <button type="button" id="btn-view-cards" class="view-toggle-btn active" onclick="setHistoryView('cards')" title="Visualizza come schede (ideale per mobile)">📱 Schede</button>
-            <button type="button" id="btn-view-table" class="view-toggle-btn" onclick="setHistoryView('table')" title="Visualizza come tabella densa">📊 Tabella</button>
-        </div>
-    </div>
-
-    {% if records %}
-    
-    <!-- TOOLBAR RICERCA RAPIDA & FILTRI NELLA PAGINA -->
-    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.8rem; margin-bottom: 1.2rem; background: rgba(0,0,0,0.25); padding: 0.8rem 1rem; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05);">
-        <!-- Input di Ricerca -->
-        <div style="position: relative; flex: 1; min-width: 240px; max-width: 460px;">
-            <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 0.95rem; color: var(--text-dim); pointer-events: none;">🔍</span>
-            <input 
-                type="text" 
-                id="history-live-search" 
-                placeholder="Cerca nella pagina (es. pioggia, 28°C, 15:30, vento)..." 
-                style="width: 100%; padding: 0.55rem 2.2rem 0.55rem 2.4rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-size: 0.88rem; outline: none; transition: border-color 0.2s, box-shadow 0.2s;"
-                onfocus="this.style.borderColor='var(--accent)'; this.style.boxShadow='0 0 0 3px rgba(56, 189, 248, 0.15)';"
-                onblur="this.style.borderColor='var(--card-border)'; this.style.boxShadow='none';"
-            >
-            <button 
-                id="history-live-clear" 
-                type="button" 
-                onclick="clearHistoryLiveSearch()" 
-                style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-dim); font-size: 1rem; cursor: pointer; display: none; padding: 2px 6px; border-radius: 4px;"
-                title="Azzera ricerca"
-            >✕</button>
-        </div>
-
-        <!-- Filtri Rapidi Parametri -->
-        <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
-            <button class="history-quick-filter-btn active" data-filter="all" onclick="applyHistoryQuickFilter('all', this)">Tutti</button>
-            <button class="history-quick-filter-btn" data-filter="rain" onclick="applyHistoryQuickFilter('rain', this)">🌧️ Con Pioggia</button>
-            <button class="history-quick-filter-btn" data-filter="wind" onclick="applyHistoryQuickFilter('wind', this)">💨 Vento &ge;15 km/h</button>
-            <button class="history-quick-filter-btn" data-filter="hot" onclick="applyHistoryQuickFilter('hot', this)">🔥 Caldo &ge;28°C</button>
-            <button class="history-quick-filter-btn" data-filter="cold" onclick="applyHistoryQuickFilter('cold', this)">❄️ Freddo &le;5°C</button>
-        </div>
-    </div>
-
-    <!-- 1. VISTA SCHEDE (MOBILE-FIRST) -->
-    <div id="history-cards-container" class="history-cards-container">
-        {% for r in records %}
-        <div class="history-record-card history-item-row"
-            data-time="{{ r.timestamp or '' }}"
-            data-temp="{{ r.temp_c if r.temp_c is not none else -999 }}"
-            data-hum="{{ r.humidity if r.humidity is not none else -999 }}"
-            data-temp-in="{{ r.temp_in_c if r.temp_in_c is not none else -999 }}"
-            data-hum-in="{{ r.humidity_in if r.humidity_in is not none else -999 }}"
-            data-dew="{{ r.dew_point_c if r.dew_point_c is not none else -999 }}"
-            data-press="{{ r.pressure_rel_hpa if r.pressure_rel_hpa is not none else -999 }}"
-            data-wind="{{ r.wind_speed_kmh if r.wind_speed_kmh is not none else -999 }}"
-            data-gust="{{ r.wind_gust_kmh if r.wind_gust_kmh is not none else -999 }}"
-            data-rain="{{ r.daily_rain_mm if r.daily_rain_mm is not none else 0 }}"
-            data-solar="{{ r.solar_radiation if r.solar_radiation is not none else 0 }}"
-            data-uv="{{ r.uv_index if r.uv_index is not none else 0 }}"
-            data-search="{{ r.timestamp | local_dt }} {{ r.temp_c }} {{ r.humidity }} {{ r.temp_in_c }} {{ r.humidity_in }} {{ r.dew_point_c }} {{ r.pressure_rel_hpa }} {{ r.wind_speed_kmh }} {{ r.wind_gust_kmh }} {{ r.daily_rain_mm }} {{ r.solar_radiation }} {{ r.uv_index }}">
-            <!-- HEADER SCHEDA: DATA, ORA E BADGE SALIENTI -->
-            <div class="record-card-header">
-                <div class="record-timestamp">
-                    <span class="record-dot"></span>
-                    <span class="record-time-text">{{ r.timestamp | local_dt }}</span>
-                </div>
-                <div class="record-badges">
-                    {% if r.daily_rain_mm and r.daily_rain_mm > 0 %}
-                    <span class="record-badge badge-rain">🌧️ {{ r.daily_rain_mm }} mm</span>
-                    {% endif %}
-                    {% if r.wind_gust_kmh and r.wind_gust_kmh >= 25 %}
-                    <span class="record-badge badge-wind">💨 {{ r.wind_gust_kmh }} km/h</span>
-                    {% endif %}
-                    {% if r.uv_index and r.uv_index >= 3 %}
-                    <span class="record-badge badge-uv">☀️ UV {{ r.uv_index }}</span>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- GRIGLIA PARAMETRI METEOROLOGICI -->
-            <div class="record-grid">
-                <!-- METRICA: TEMPERATURA ESTERNA -->
-                <div class="record-metric-item">
-                    <span class="metric-label">🌡️ Temp Out</span>
-                    <span class="metric-val highlight-temp">
-                        {{ r.temp_c if r.temp_c is not none else '--' }} <small>°C</small>
-                    </span>
-                    <span class="metric-sub">Umidità: <strong>{{ r.humidity if r.humidity is not none else '--' }}%</strong></span>
-                </div>
-
-                <!-- METRICA: TEMPERATURA CASA -->
-                <div class="record-metric-item">
-                    <span class="metric-label">🏠 Temp Casa</span>
-                    <span class="metric-val highlight-house">
-                        {{ r.temp_in_c if r.temp_in_c is not none else '--' }} <small>°C</small>
-                    </span>
-                    <span class="metric-sub">Umidità: <strong>{{ r.humidity_in if r.humidity_in is not none else '--' }}%</strong></span>
-                </div>
-
-                <!-- METRICA: VENTO & RAFFICA -->
-                <div class="record-metric-item">
-                    <span class="metric-label">💨 Vento</span>
-                    <span class="metric-val">
-                        {{ r.wind_speed_kmh if r.wind_speed_kmh is not none else '0.0' }} <small>km/h</small>
-                    </span>
-                    <span class="metric-sub">Raffica: <strong>{{ r.wind_gust_kmh if r.wind_gust_kmh is not none else '0.0' }} km/h</strong></span>
-                </div>
-
-                <!-- METRICA: PIOGGIA & RATE -->
-                <div class="record-metric-item">
-                    <span class="metric-label">🌧️ Pioggia</span>
-                    <span class="metric-val highlight-rain">
-                        {{ r.daily_rain_mm if r.daily_rain_mm is not none else '0.0' }} <small>mm</small>
-                    </span>
-                    <span class="metric-sub">Rate: <strong>{{ r.rain_rate_mm_hr if r.rain_rate_mm_hr is not none else '0.0' }} mm/h</strong></span>
-                </div>
-
-                <!-- METRICA: PRESSIONE -->
-                <div class="record-metric-item">
-                    <span class="metric-label">📈 Pressione</span>
-                    <span class="metric-val">
-                        {{ r.pressure_rel_hpa if r.pressure_rel_hpa is not none else '--' }} <small>hPa</small>
-                    </span>
-                    <span class="metric-sub">Rugiada: <strong>{{ r.dew_point_c if r.dew_point_c is not none else '--' }}°C</strong></span>
-                </div>
-
-                <!-- METRICA: RADIAZIONE SOLARE & UV -->
-                <div class="record-metric-item">
-                    <span class="metric-label">☀️ Sole & UV</span>
-                    <span class="metric-val highlight-solar">
-                        {{ r.solar_radiation if r.solar_radiation is not none else '0' }} <small>W/m²</small>
-                    </span>
-                    <span class="metric-sub">Indice UV: <strong>{{ r.uv_index if r.uv_index is not none else '0' }}</strong></span>
-                </div>
-            </div>
-        </div>
-        {% endfor %}
-    </div>
-
-    <!-- 2. VISTA TABELLA TRADIZIONALE MIGLIORATA (RESPONSIVE & ORDINABILE) -->
-    <div id="history-table-container" class="history-table-container table-responsive" style="display: none;">
-        <table class="weather-table history-table" id="history-table-elem">
-            <thead>
-                <tr>
-                    <th class="sortable-hist-th active-sort" data-col="time" onclick="sortHistoryRecords('time')" title="Ordina per Data & Ora">
-                        <div style="display: inline-flex; align-items: center; gap: 4px;">
-                            <span>Data & Ora</span> <span class="sort-icon-h" id="h-sort-time">▼</span>
-                        </div>
-                    </th>
-                    <th class="sortable-hist-th" data-col="temp" onclick="sortHistoryRecords('temp')" title="Ordina per Temp Out">
-                        <div style="display: inline-flex; align-items: center; gap: 4px;">
-                            <span>Temp Out</span> <span class="sort-icon-h" id="h-sort-temp">⇅</span>
-                        </div>
-                    </th>
-                    <th class="sortable-hist-th" data-col="hum" onclick="sortHistoryRecords('hum')" title="Ordina per Umidità">
-                        <div style="display: inline-flex; align-items: center; gap: 4px;">
-                            <span>Umidità</span> <span class="sort-icon-h" id="h-sort-hum">⇅</span>
-                        </div>
-                    </th>
-                    <th class="sortable-hist-th" data-col="temp-in" onclick="sortHistoryRecords('temp-in')" title="Ordina per Temp Casa">
-                        <div style="display: inline-flex; align-items: center; gap: 4px;">
-                            <span>Temp Casa</span> <span class="sort-icon-h" id="h-sort-temp-in">⇅</span>
-                        </div>
-                    </th>
-                    <th class="sortable-hist-th" data-col="hum-in" onclick="sortHistoryRecords('hum-in')" title="Ordina per Umidità Casa">
-                        <div style="display: inline-flex; align-items: center; gap: 4px;">
-                            <span>Umid. Casa</span> <span class="sort-icon-h" id="h-sort-hum-in">⇅</span>
-                        </div>
-                    </th>
-                    <th class="sortable-hist-th" data-col="dew" onclick="sortHistoryRecords('dew')" title="Ordina per Punto Rugiada">
-                        <div style="display: inline-flex; align-items: center; gap: 4px;">
-                            <span>P. Rugiada</span> <span class="sort-icon-h" id="h-sort-dew">⇅</span>
-                        </div>
-                    </th>
-                    <th class="sortable-hist-th" data-col="press" onclick="sortHistoryRecords('press')" title="Ordina per Pressione">
-                        <div style="display: inline-flex; align-items: center; gap: 4px;">
-                            <span>Pressione</span> <span class="sort-icon-h" id="h-sort-press">⇅</span>
-                        </div>
-                    </th>
-                    <th class="sortable-hist-th" data-col="wind" onclick="sortHistoryRecords('wind')" title="Ordina per Vento">
-                        <div style="display: inline-flex; align-items: center; gap: 4px;">
-                            <span>Vento</span> <span class="sort-icon-h" id="h-sort-wind">⇅</span>
-                        </div>
-                    </th>
-                    <th class="sortable-hist-th" data-col="gust" onclick="sortHistoryRecords('gust')" title="Ordina per Raffica">
-                        <div style="display: inline-flex; align-items: center; gap: 4px;">
-                            <span>Raffica</span> <span class="sort-icon-h" id="h-sort-gust">⇅</span>
-                        </div>
-                    </th>
-                    <th class="sortable-hist-th" data-col="rain" onclick="sortHistoryRecords('rain')" title="Ordina per Pioggia">
-                        <div style="display: inline-flex; align-items: center; gap: 4px;">
-                            <span>Pioggia</span> <span class="sort-icon-h" id="h-sort-rain">⇅</span>
-                        </div>
-                    </th>
-                    <th class="sortable-hist-th" data-col="solar" onclick="sortHistoryRecords('solar')" title="Ordina per Radiazione Solare">
-                        <div style="display: inline-flex; align-items: center; gap: 4px;">
-                            <span>Rad. Solare</span> <span class="sort-icon-h" id="h-sort-solar">⇅</span>
-                        </div>
-                    </th>
-                    <th class="sortable-hist-th" data-col="uv" onclick="sortHistoryRecords('uv')" title="Ordina per Indice UV">
-                        <div style="display: inline-flex; align-items: center; gap: 4px;">
-                            <span>Indice UV</span> <span class="sort-icon-h" id="h-sort-uv">⇅</span>
-                        </div>
-                    </th>
-                </tr>
-            </thead>
-            <tbody id="history-tbody-elem">
-                {% for r in records %}
-                <tr class="history-item-row"
-                    data-time="{{ r.timestamp or '' }}"
-                    data-temp="{{ r.temp_c if r.temp_c is not none else -999 }}"
-                    data-hum="{{ r.humidity if r.humidity is not none else -999 }}"
-                    data-temp-in="{{ r.temp_in_c if r.temp_in_c is not none else -999 }}"
-                    data-hum-in="{{ r.humidity_in if r.humidity_in is not none else -999 }}"
-                    data-dew="{{ r.dew_point_c if r.dew_point_c is not none else -999 }}"
-                    data-press="{{ r.pressure_rel_hpa if r.pressure_rel_hpa is not none else -999 }}"
-                    data-wind="{{ r.wind_speed_kmh if r.wind_speed_kmh is not none else -999 }}"
-                    data-gust="{{ r.wind_gust_kmh if r.wind_gust_kmh is not none else -999 }}"
-                    data-rain="{{ r.daily_rain_mm if r.daily_rain_mm is not none else 0 }}"
-                    data-solar="{{ r.solar_radiation if r.solar_radiation is not none else 0 }}"
-                    data-uv="{{ r.uv_index if r.uv_index is not none else 0 }}"
-                    data-search="{{ r.timestamp | local_dt }} {{ r.temp_c }} {{ r.humidity }} {{ r.temp_in_c }} {{ r.humidity_in }} {{ r.dew_point_c }} {{ r.pressure_rel_hpa }} {{ r.wind_speed_kmh }} {{ r.wind_gust_kmh }} {{ r.daily_rain_mm }} {{ r.solar_radiation }} {{ r.uv_index }}">
-                    <td class="history-col-time"><strong>{{ r.timestamp | local_dt }}</strong></td>
-                    <td class="history-col-temp"><strong>{{ r.temp_c if r.temp_c is not none else '--' }} °C</strong></td>
-                    <td>{{ r.humidity if r.humidity is not none else '--' }} %</td>
-                    <td style="color: #f59e0b;"><strong>{{ r.temp_in_c if r.temp_in_c is not none else '--' }} °C</strong></td>
-                    <td>{{ r.humidity_in if r.humidity_in is not none else '--' }} %</td>
-                    <td>{{ r.dew_point_c if r.dew_point_c is not none else '--' }} °C</td>
-                    <td>{{ r.pressure_rel_hpa if r.pressure_rel_hpa is not none else '--' }} hPa</td>
-                    <td>{{ r.wind_speed_kmh if r.wind_speed_kmh is not none else '--' }} km/h</td>
-                    <td style="color: var(--gold);">{{ r.wind_gust_kmh if r.wind_gust_kmh is not none else '--' }} km/h</td>
-                    <td style="color: #38bdf8;"><strong>{{ r.daily_rain_mm if r.daily_rain_mm is not none else '0.0' }} mm</strong></td>
-                    <td>{{ r.solar_radiation if r.solar_radiation is not none else '0' }} W/m²</td>
-                    <td>{{ r.uv_index if r.uv_index is not none else '0' }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <!-- RIGA NESSUN RISULTATO FILTRO NELLA PAGINA -->
-    <div id="history-filter-empty" style="display: none; padding: 2.5rem 1rem; text-align: center;">
-        <div style="font-size: 2.2rem; margin-bottom: 0.5rem; opacity: 0.7;">🔍</div>
-        <div style="font-weight: 700; color: var(--text); font-size: 1.05rem;">Nessuna rilevazione trovata</div>
-        <p style="color: var(--text-dim); font-size: 0.88rem; margin-top: 4px;">Nessun record nella pagina corrente corrisponde ai filtri di ricerca impostati.</p>
-        <button type="button" onclick="clearHistoryLiveSearch(true)" class="btn btn-primary" style="margin-top: 1rem; padding: 0.45rem 1rem; font-size: 0.85rem;">
-            Azzera ricerca e filtri
+        <!-- PULSANTE TOGGLE DATE PERSONALIZZATE (ACCORDION SALVASPAZIO) -->
+        <button type="button" class="btn-toggle-custom-dates {% if start_date or end_date %}has-filter{% endif %}" id="btn-toggle-dates" onclick="toggleCustomDates()">
+            <span class="cal-icon">📅</span>
+            <span id="label-toggle-dates">
+                {% if start_date or end_date %}
+                    Periodo: {{ start_date or 'Inizio' }} ➔ {{ end_date or 'Oggi' }}
+                {% else %}
+                    Imposta Date Personalizzate
+                {% endif %}
+            </span>
+            <span class="chevron-arrow" id="chevron-dates">▼</span>
         </button>
     </div>
 
-    <!-- BARRA DI PAGINAZIONE TOUCH-FRIENDLY -->
-    <div class="history-pagination-bar">
-        {% if page > 1 %}
-        <a href="/history?page={{ page - 1 }}&start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-secondary pagination-btn">
-            ← Precedente
-        </a>
-        {% else %}
-        <span class="btn btn-secondary pagination-btn disabled">← Precedente</span>
-        {% endif %}
+    <!-- 3. PANNELLO A SCOMPARSA DATE PERSONALIZZATE -->
+    <div class="history-custom-dates-panel {% if start_date or end_date %}open{% endif %}" id="custom-dates-panel">
+        <form method="GET" action="/history" id="history-filter-form" class="history-form-grid">
+            <div class="form-group">
+                <label for="start_date">Data Inizio:</label>
+                <input type="date" id="start_date" name="start_date" class="form-control" value="{{ start_date or '' }}">
+            </div>
+            <div class="form-group">
+                <label for="end_date">Data Fine:</label>
+                <input type="date" id="end_date" name="end_date" class="form-control" value="{{ end_date or '' }}">
+            </div>
+            <div class="history-btn-group">
+                <button type="submit" class="btn btn-primary" style="flex: 1 1 auto; min-height: 40px;">🔍 Filtra</button>
+                <a href="/history" class="btn btn-secondary" style="flex: 1 1 auto; min-height: 40px; text-align: center; text-decoration: none;">🔄 Azzera</a>
+            </div>
+        </form>
+    </div>
 
-        <div class="pagination-info">
-            Pagina <strong>{{ page }}</strong> di <strong>{{ max_pages }}</strong>
+    <!-- 4. RIEPILOGO PARAMETRI DEL PERIODO (ACCORDION SALVASPAZIO) -->
+    {% if kpis and kpis.total_records > 0 %}
+    <div class="history-kpi-wrapper">
+        <!-- BANNER SINTESI RAPIDA COMPATTA -->
+        <div class="history-kpi-summary-bar" onclick="toggleKpiDetails()">
+            <div class="kpi-summary-left">
+                <span class="kpi-sum-icon">📊</span>
+                <div class="kpi-sum-text">
+                    <strong>Riepilogo Parametri del Periodo:</strong>
+                    <span>Temp Media: <strong style="color:#38bdf8;">{{ kpis.avg_temp if kpis.avg_temp is not none else '--' }}°C</strong></span>
+                    <span class="kpi-sum-sep">•</span>
+                    <span>Pioggia: <strong style="color:#38bdf8;">{{ kpis.total_rain or '0.0' }} mm</strong></span>
+                    <span class="kpi-sum-sep">•</span>
+                    <span>Max: <strong style="color:#f87171;">{{ kpis.max_temp or '--' }}°C</strong></span>
+                </div>
+            </div>
+            <button type="button" class="btn-kpi-expand" id="btn-kpi-expand" title="Espandi o comprimi tutti i dettagli">
+                <span id="kpi-expand-lbl">Dettagli</span>
+                <span class="chevron-arrow" id="kpi-chevron">▼</span>
+            </button>
         </div>
 
-        {% if page < max_pages %}
-        <a href="/history?page={{ page + 1 }}&start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-secondary pagination-btn">
-            Successivo →
-        </a>
-        {% else %}
-        <span class="btn btn-secondary pagination-btn disabled">Successivo →</span>
-        {% endif %}
-    </div>
+        <!-- GRIGLIA COMPLETA 8 KPI (A SCOMPARSA SU RICHIESTA) -->
+        <div class="history-kpi-details-grid" id="kpi-details-grid">
+            <!-- KPI 1: TEMPERATURA ESTERNA -->
+            <div class="history-kpi-card">
+                <div class="kpi-card-top">
+                    <span class="kpi-tag">🌡️ Temp Esterna</span>
+                    <span class="kpi-stat-avg">Media: <strong>{{ kpis.avg_temp if kpis.avg_temp is not none else '--' }}°C</strong></span>
+                </div>
+                <div class="kpi-dual-values">
+                    <div class="kpi-val-box max">
+                        <span class="kpi-lbl">MAX</span>
+                        <span class="kpi-val">{{ kpis.max_temp if kpis.max_temp is not none else '--' }}<small>°C</small></span>
+                    </div>
+                    <div class="kpi-val-box min">
+                        <span class="kpi-lbl">MIN</span>
+                        <span class="kpi-val">{{ kpis.min_temp if kpis.min_temp is not none else '--' }}<small>°C</small></span>
+                    </div>
+                </div>
+            </div>
 
-    {% else %}
-    <div class="history-empty-state">
-        <span style="font-size: 2.5rem; display: block; margin-bottom: 0.5rem;">🔍</span>
-        <h3>Nessuna lettura trovata</h3>
-        <p>Non ci sono dati registrati per l'intervallo temporale selezionato. Prova a modificare le date o premi "Azzera".</p>
-        <a href="/history" class="btn btn-primary" style="margin-top: 1rem; display: inline-block;">Mostra Tutte le Letture</a>
+            <!-- KPI 2: UMIDITÀ ESTERNA -->
+            <div class="history-kpi-card">
+                <div class="kpi-card-top">
+                    <span class="kpi-tag">💧 Umidità Esterna</span>
+                    <span class="kpi-stat-avg">Media: <strong>{{ kpis.avg_hum if kpis.avg_hum is not none else '--' }}%</strong></span>
+                </div>
+                <div class="kpi-dual-values">
+                    <div class="kpi-val-box max">
+                        <span class="kpi-lbl">MAX</span>
+                        <span class="kpi-val">{{ kpis.max_hum if kpis.max_hum is not none else '--' }}<small>%</small></span>
+                    </div>
+                    <div class="kpi-val-box min">
+                        <span class="kpi-lbl">MIN</span>
+                        <span class="kpi-val">{{ kpis.min_hum if kpis.min_hum is not none else '--' }}<small>%</small></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KPI 3: VENTO & RAFFICHE -->
+            <div class="history-kpi-card">
+                <div class="kpi-card-top">
+                    <span class="kpi-tag">💨 Vento & Raffiche</span>
+                    <span class="kpi-stat-avg">Media: <strong>{{ kpis.avg_wind if kpis.avg_wind is not none else '--' }} km/h</strong></span>
+                </div>
+                <div class="kpi-dual-values">
+                    <div class="kpi-val-box wind-gust">
+                        <span class="kpi-lbl">MAX RAFFICA</span>
+                        <span class="kpi-val" style="color: var(--gold);">{{ kpis.max_gust if kpis.max_gust is not none else '--' }}<small>km/h</small></span>
+                    </div>
+                    <div class="kpi-val-box max">
+                        <span class="kpi-lbl">MAX VENTO</span>
+                        <span class="kpi-val">{{ kpis.max_wind if kpis.max_wind is not none else '--' }}<small>km/h</small></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KPI 4: PIOGGIA NEL PERIODO -->
+            <div class="history-kpi-card">
+                <div class="kpi-card-top">
+                    <span class="kpi-tag">🌧️ Pioggia Periodo</span>
+                    <span class="kpi-stat-avg">Rate: <strong>{{ kpis.max_rain_rate or '0.0' }} mm/h</strong></span>
+                </div>
+                <div class="kpi-single-value">
+                    <span class="kpi-val highlight-blue">{{ kpis.total_rain if kpis.total_rain is not none else '0.0' }} <small>mm</small></span>
+                    <span class="kpi-sub-text">Accumulo totale stimato</span>
+                </div>
+            </div>
+
+            <!-- KPI 5: PRESSIONE BAROMETRICA -->
+            <div class="history-kpi-card">
+                <div class="kpi-card-top">
+                    <span class="kpi-tag">📈 Pressione</span>
+                    <span class="kpi-stat-avg">Media: <strong>{{ kpis.avg_press if kpis.avg_press is not none else '--' }} hPa</strong></span>
+                </div>
+                <div class="kpi-dual-values">
+                    <div class="kpi-val-box max">
+                        <span class="kpi-lbl">MAX</span>
+                        <span class="kpi-val">{{ kpis.max_press if kpis.max_press is not none else '--' }}<small>hPa</small></span>
+                    </div>
+                    <div class="kpi-val-box min">
+                        <span class="kpi-lbl">MIN</span>
+                        <span class="kpi-val">{{ kpis.min_press if kpis.min_press is not none else '--' }}<small>hPa</small></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KPI 6: RADIAZIONE & UV -->
+            <div class="history-kpi-card">
+                <div class="kpi-card-top">
+                    <span class="kpi-tag">☀️ Sole & Radiazione</span>
+                    <span class="kpi-stat-avg">UV Max: <strong>{{ kpis.max_uv or '0' }}</strong></span>
+                </div>
+                <div class="kpi-dual-values">
+                    <div class="kpi-val-box solar-box">
+                        <span class="kpi-lbl">MAX RAD.</span>
+                        <span class="kpi-val" style="color: #fde047;">{{ kpis.max_solar or '0' }}<small>W/m²</small></span>
+                    </div>
+                    <div class="kpi-val-box uv-box">
+                        <span class="kpi-lbl">INDICE UV</span>
+                        <span class="kpi-val" style="color: #fb923c;">{{ kpis.max_uv or '0' }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KPI 7: AMBIENTE CASA -->
+            <div class="history-kpi-card">
+                <div class="kpi-card-top">
+                    <span class="kpi-tag">🏠 Clima Casa</span>
+                    <span class="kpi-stat-avg">Umidità: <strong>{{ kpis.avg_hum_in or '--' }}%</strong></span>
+                </div>
+                <div class="kpi-dual-values">
+                    <div class="kpi-val-box max">
+                        <span class="kpi-lbl">MAX CASA</span>
+                        <span class="kpi-val" style="color: #f59e0b;">{{ kpis.max_temp_in or '--' }}<small>°C</small></span>
+                    </div>
+                    <div class="kpi-val-box min">
+                        <span class="kpi-lbl">MIN CASA</span>
+                        <span class="kpi-val" style="color: #fcd34d;">{{ kpis.min_temp_in or '--' }}<small>°C</small></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KPI 8: NOTTI TROPICALI -->
+            <div class="history-kpi-card" style="border-left: 3px solid #f97316;">
+                <div class="kpi-card-top">
+                    <span class="kpi-tag" style="color: #f97316;">🌴 Notti Tropicali</span>
+                    <span class="kpi-stat-avg">Min &ge; 20.0°C</span>
+                </div>
+                <div class="kpi-dual-values">
+                    <div class="kpi-val-box">
+                        <span class="kpi-lbl">TROPICALI</span>
+                        <span class="kpi-val" style="color: #f97316;">{{ kpis.tropical_nights or 0 }}<small>notti</small></span>
+                    </div>
+                    <div class="kpi-val-box">
+                        <span class="kpi-lbl">ROVENTI (&ge;25°)</span>
+                        <span class="kpi-val" style="color: #ef4444;">{{ kpis.very_hot_nights or 0 }}<small>notti</small></span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
     {% endif %}
+
+    <!-- 5. REGISTRO LETTURE (RISULTATI) -->
+    <div class="card history-results-card">
+        <div class="history-results-header">
+            <div class="history-results-title">
+                <span>📋 Risultati: <strong>{{ total_count }}</strong> letture</span>
+                <span class="history-page-badge">Pag {{ page }} / {{ max_pages }}</span>
+            </div>
+
+            <!-- TOGGLE VISTA COMPATTA LISTA / TABELLA -->
+            <div class="history-view-toggle">
+                <button type="button" id="btn-view-cards" class="view-toggle-btn active" onclick="setHistoryView('cards')" title="Vista Lista Compatta con Dettagli al tocco">📱 Compatta</button>
+                <button type="button" id="btn-view-table" class="view-toggle-btn" onclick="setHistoryView('table')" title="Vista Tabella">📊 Tabella</button>
+            </div>
+        </div>
+
+        {% if records %}
+        <!-- TOOLBAR RICERCA LIVE & FILTRI RAPIDI NELLA PAGINA -->
+        <div class="history-toolbar">
+            <div class="history-search-wrap">
+                <span class="search-icon">🔍</span>
+                <input 
+                    type="text" 
+                    id="history-live-search" 
+                    placeholder="Cerca nella pagina (es. pioggia, 28°C, 15:30)..." 
+                    class="history-search-input"
+                >
+                <button 
+                    id="history-live-clear" 
+                    type="button" 
+                    onclick="clearHistoryLiveSearch()" 
+                    class="history-search-clear" 
+                    title="Azzera ricerca"
+                >✕</button>
+            </div>
+
+            <!-- FILTRI RAPIDI A SCORRIMENTO ORIZZONTALE -->
+            <div class="history-quick-filters-scroll">
+                <button class="history-quick-filter-btn active" data-filter="all" onclick="applyHistoryQuickFilter('all', this)">Tutti</button>
+                <button class="history-quick-filter-btn" data-filter="rain" onclick="applyHistoryQuickFilter('rain', this)">🌧️ Con Pioggia</button>
+                <button class="history-quick-filter-btn" data-filter="wind" onclick="applyHistoryQuickFilter('wind', this)">💨 Vento &ge;15 km/h</button>
+                <button class="history-quick-filter-btn" data-filter="hot" onclick="applyHistoryQuickFilter('hot', this)">🔥 Caldo &ge;28°C</button>
+                <button class="history-quick-filter-btn" data-filter="cold" onclick="applyHistoryQuickFilter('cold', this)">❄️ Freddo &le;5°C</button>
+            </div>
+        </div>
+
+        <!-- A. VISTA LISTA METEO COMPATTA CON DETTAGLI AL TAP (PROGRESSIVE DISCLOSURE) -->
+        <div id="history-cards-container" class="history-compact-list">
+            {% for r in records %}
+            <div class="history-compact-item history-record-card history-item-row"
+                data-id="rec-{{ loop.index }}"
+                data-time="{{ r.timestamp or '' }}"
+                data-temp="{{ r.temp_c if r.temp_c is not none else -999 }}"
+                data-hum="{{ r.humidity if r.humidity is not none else -999 }}"
+                data-temp-in="{{ r.temp_in_c if r.temp_in_c is not none else -999 }}"
+                data-hum-in="{{ r.humidity_in if r.humidity_in is not none else -999 }}"
+                data-dew="{{ r.dew_point_c if r.dew_point_c is not none else -999 }}"
+                data-press="{{ r.pressure_rel_hpa if r.pressure_rel_hpa is not none else -999 }}"
+                data-wind="{{ r.wind_speed_kmh if r.wind_speed_kmh is not none else -999 }}"
+                data-gust="{{ r.wind_gust_kmh if r.wind_gust_kmh is not none else -999 }}"
+                data-rain="{{ r.daily_rain_mm if r.daily_rain_mm is not none else 0 }}"
+                data-solar="{{ r.solar_radiation if r.solar_radiation is not none else 0 }}"
+                data-uv="{{ r.uv_index if r.uv_index is not none else 0 }}"
+                data-search="{{ r.timestamp | local_dt }} {{ r.temp_c }} {{ r.humidity }} {{ r.temp_in_c }} {{ r.humidity_in }} {{ r.dew_point_c }} {{ r.pressure_rel_hpa }} {{ r.wind_speed_kmh }} {{ r.wind_gust_kmh }} {{ r.daily_rain_mm }} {{ r.solar_radiation }} {{ r.uv_index }}"
+                onclick="toggleReadingDetail(this)">
+                
+                <!-- RIGA PRINCIPALE ESSENZIALE (SEMPRE VISIBILE, ZERO SCROLL) -->
+                <div class="compact-main-row">
+                    <div class="compact-time-col">
+                        <span class="compact-dot"></span>
+                        <div class="compact-time-texts">
+                            <strong class="compact-time">{{ r.timestamp | local_time }}</strong>
+                            <span class="compact-date">{{ r.timestamp | local_date }}</span>
+                        </div>
+                    </div>
+
+                    <!-- BADGE SALIENTI SE PRESENTI -->
+                    <div class="compact-badges-col">
+                        {% if r.daily_rain_mm and r.daily_rain_mm > 0 %}
+                        <span class="comp-badge badge-rain">🌧️ {{ r.daily_rain_mm }} mm</span>
+                        {% endif %}
+                        {% if r.wind_gust_kmh and r.wind_gust_kmh >= 20 %}
+                        <span class="comp-badge badge-wind">💨 {{ r.wind_gust_kmh }}k</span>
+                        {% endif %}
+                        {% if r.uv_index and r.uv_index >= 3 %}
+                        <span class="comp-badge badge-uv">☀️ UV {{ r.uv_index }}</span>
+                        {% endif %}
+                    </div>
+
+                    <!-- TEMPERATURA & CHEVRON -->
+                    <div class="compact-temp-col">
+                        <span class="compact-temp-val {% if r.temp_c is not none %}{% if r.temp_c >= 28 %}hot-temp{% elif r.temp_c <= 5 %}cold-temp{% elif r.temp_c >= 20 %}warm-temp{% else %}mild-temp{% endif %}{% endif %}">
+                            {{ r.temp_c if r.temp_c is not none else '--' }}<small>°C</small>
+                        </span>
+                        <span class="compact-chevron">▼</span>
+                    </div>
+                </div>
+
+                <!-- PANNELLO DETTAGLI A SCOMPARSA (APERTO SOLO AL TAP) -->
+                <div class="compact-details-drawer">
+                    <div class="drawer-grid">
+                        <div class="drawer-cell">
+                            <span class="d-lbl">💧 Umidità Esterna</span>
+                            <span class="d-val">{{ r.humidity if r.humidity is not none else '--' }}%</span>
+                            <span class="d-sub">Rugiada: {{ r.dew_point_c or '--' }}°C</span>
+                        </div>
+
+                        <div class="drawer-cell">
+                            <span class="d-lbl">🏠 Clima Casa</span>
+                            <span class="d-val" style="color: #f59e0b;">{{ r.temp_in_c if r.temp_in_c is not none else '--' }}°C</span>
+                            <span class="d-sub">Umidità: {{ r.humidity_in or '--' }}%</span>
+                        </div>
+
+                        <div class="drawer-cell">
+                            <span class="d-lbl">💨 Vento & Raffica</span>
+                            <span class="d-val">{{ r.wind_speed_kmh or '0.0' }} <small>km/h</small></span>
+                            <span class="d-sub">Raffica: <strong style="color: var(--gold);">{{ r.wind_gust_kmh or '0.0' }} km/h</strong></span>
+                        </div>
+
+                        <div class="drawer-cell">
+                            <span class="d-lbl">🌧️ Pioggia & Rate</span>
+                            <span class="d-val" style="color: #38bdf8;">{{ r.daily_rain_mm or '0.0' }} <small>mm</small></span>
+                            <span class="d-sub">Rate: {{ r.rain_rate_mm_hr or '0.0' }} mm/h</span>
+                        </div>
+
+                        <div class="drawer-cell">
+                            <span class="d-lbl">📈 Pressione</span>
+                            <span class="d-val">{{ r.pressure_rel_hpa or '--' }} <small>hPa</small></span>
+                            <span class="d-sub">Relativa</span>
+                        </div>
+
+                        <div class="drawer-cell">
+                            <span class="d-lbl">☀️ Sole & UV</span>
+                            <span class="d-val" style="color: #fde047;">{{ r.solar_radiation or '0' }} <small>W/m²</small></span>
+                            <span class="d-sub">Indice UV: {{ r.uv_index or '0' }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- B. VISTA TABELLA TRADIZIONALE RESPONSIVE -->
+        <div id="history-table-container" class="history-table-container table-responsive" style="display: none;">
+            <table class="weather-table history-table" id="history-table-elem">
+                <thead>
+                    <tr>
+                        <th class="sortable-hist-th active-sort" data-col="time" onclick="sortHistoryRecords('time')" title="Ordina per Data & Ora">
+                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                <span>Data & Ora</span> <span class="sort-icon-h" id="h-sort-time">▼</span>
+                            </div>
+                        </th>
+                        <th class="sortable-hist-th" data-col="temp" onclick="sortHistoryRecords('temp')" title="Ordina per Temp Out">
+                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                <span>Temp Out</span> <span class="sort-icon-h" id="h-sort-temp">⇅</span>
+                            </div>
+                        </th>
+                        <th class="sortable-hist-th" data-col="hum" onclick="sortHistoryRecords('hum')" title="Ordina per Umidità">
+                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                <span>Umidità</span> <span class="sort-icon-h" id="h-sort-hum">⇅</span>
+                            </div>
+                        </th>
+                        <th class="sortable-hist-th" data-col="temp-in" onclick="sortHistoryRecords('temp-in')" title="Ordina per Temp Casa">
+                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                <span>Temp Casa</span> <span class="sort-icon-h" id="h-sort-temp-in">⇅</span>
+                            </div>
+                        </th>
+                        <th class="sortable-hist-th" data-col="hum-in" onclick="sortHistoryRecords('hum-in')" title="Ordina per Umidità Casa">
+                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                <span>Umid. Casa</span> <span class="sort-icon-h" id="h-sort-hum-in">⇅</span>
+                            </div>
+                        </th>
+                        <th class="sortable-hist-th" data-col="dew" onclick="sortHistoryRecords('dew')" title="Ordina per Punto Rugiada">
+                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                <span>P. Rugiada</span> <span class="sort-icon-h" id="h-sort-dew">⇅</span>
+                            </div>
+                        </th>
+                        <th class="sortable-hist-th" data-col="press" onclick="sortHistoryRecords('press')" title="Ordina per Pressione">
+                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                <span>Pressione</span> <span class="sort-icon-h" id="h-sort-press">⇅</span>
+                            </div>
+                        </th>
+                        <th class="sortable-hist-th" data-col="wind" onclick="sortHistoryRecords('wind')" title="Ordina per Vento">
+                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                <span>Vento</span> <span class="sort-icon-h" id="h-sort-wind">⇅</span>
+                            </div>
+                        </th>
+                        <th class="sortable-hist-th" data-col="gust" onclick="sortHistoryRecords('gust')" title="Ordina per Raffica">
+                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                <span>Raffica</span> <span class="sort-icon-h" id="h-sort-gust">⇅</span>
+                            </div>
+                        </th>
+                        <th class="sortable-hist-th" data-col="rain" onclick="sortHistoryRecords('rain')" title="Ordina per Pioggia">
+                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                <span>Pioggia</span> <span class="sort-icon-h" id="h-sort-rain">⇅</span>
+                            </div>
+                        </th>
+                        <th class="sortable-hist-th" data-col="solar" onclick="sortHistoryRecords('solar')" title="Ordina per Radiazione Solare">
+                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                <span>Rad. Solare</span> <span class="sort-icon-h" id="h-sort-solar">⇅</span>
+                            </div>
+                        </th>
+                        <th class="sortable-hist-th" data-col="uv" onclick="sortHistoryRecords('uv')" title="Ordina per Indice UV">
+                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                <span>Indice UV</span> <span class="sort-icon-h" id="h-sort-uv">⇅</span>
+                            </div>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="history-tbody-elem">
+                    {% for r in records %}
+                    <tr class="history-item-row"
+                        data-time="{{ r.timestamp or '' }}"
+                        data-temp="{{ r.temp_c if r.temp_c is not none else -999 }}"
+                        data-hum="{{ r.humidity if r.humidity is not none else -999 }}"
+                        data-temp-in="{{ r.temp_in_c if r.temp_in_c is not none else -999 }}"
+                        data-hum-in="{{ r.humidity_in if r.humidity_in is not none else -999 }}"
+                        data-dew="{{ r.dew_point_c if r.dew_point_c is not none else -999 }}"
+                        data-press="{{ r.pressure_rel_hpa if r.pressure_rel_hpa is not none else -999 }}"
+                        data-wind="{{ r.wind_speed_kmh if r.wind_speed_kmh is not none else -999 }}"
+                        data-gust="{{ r.wind_gust_kmh if r.wind_gust_kmh is not none else -999 }}"
+                        data-rain="{{ r.daily_rain_mm if r.daily_rain_mm is not none else 0 }}"
+                        data-solar="{{ r.solar_radiation if r.solar_radiation is not none else 0 }}"
+                        data-uv="{{ r.uv_index if r.uv_index is not none else 0 }}"
+                        data-search="{{ r.timestamp | local_dt }} {{ r.temp_c }} {{ r.humidity }} {{ r.temp_in_c }} {{ r.humidity_in }} {{ r.dew_point_c }} {{ r.pressure_rel_hpa }} {{ r.wind_speed_kmh }} {{ r.wind_gust_kmh }} {{ r.daily_rain_mm }} {{ r.solar_radiation }} {{ r.uv_index }}">
+                        <td class="history-col-time"><strong>{{ r.timestamp | local_dt }}</strong></td>
+                        <td class="history-col-temp"><strong>{{ r.temp_c if r.temp_c is not none else '--' }} °C</strong></td>
+                        <td>{{ r.humidity if r.humidity is not none else '--' }} %</td>
+                        <td style="color: #f59e0b;"><strong>{{ r.temp_in_c if r.temp_in_c is not none else '--' }} °C</strong></td>
+                        <td>{{ r.humidity_in if r.humidity_in is not none else '--' }} %</td>
+                        <td>{{ r.dew_point_c if r.dew_point_c is not none else '--' }} °C</td>
+                        <td>{{ r.pressure_rel_hpa if r.pressure_rel_hpa is not none else '--' }} hPa</td>
+                        <td>{{ r.wind_speed_kmh if r.wind_speed_kmh is not none else '--' }} km/h</td>
+                        <td style="color: var(--gold);">{{ r.wind_gust_kmh if r.wind_gust_kmh is not none else '--' }} km/h</td>
+                        <td style="color: #38bdf8;"><strong>{{ r.daily_rain_mm if r.daily_rain_mm is not none else '0.0' }} mm</strong></td>
+                        <td>{{ r.solar_radiation if r.solar_radiation is not none else '0' }} W/m²</td>
+                        <td>{{ r.uv_index if r.uv_index is not none else '0' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- STATO NESSUN RISULTATO FILTRO NELLA PAGINA -->
+        <div id="history-filter-empty" style="display: none; padding: 2rem 1rem; text-align: center;">
+            <div style="font-size: 2rem; margin-bottom: 0.3rem; opacity: 0.7;">🔍</div>
+            <div style="font-weight: 700; color: var(--text); font-size: 1rem;">Nessuna rilevazione trovata</div>
+            <p style="color: var(--text-dim); font-size: 0.84rem; margin-top: 2px;">Nessun record nella pagina corrente corrisponde ai filtri impostati.</p>
+            <button type="button" onclick="clearHistoryLiveSearch(true)" class="btn btn-primary btn-sm" style="margin-top: 0.8rem;">
+                Azzera ricerca e filtri
+            </button>
+        </div>
+
+        <!-- BARRA PAGINAZIONE TOUCH-FRIENDLY -->
+        <div class="history-pagination-bar">
+            {% if page > 1 %}
+            <a href="/history?page={{ page - 1 }}&start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-secondary pagination-btn">
+                ← Precedente
+            </a>
+            {% else %}
+            <span class="btn btn-secondary pagination-btn disabled">← Precedente</span>
+            {% endif %}
+
+            <div class="pagination-info">
+                Pagina <strong>{{ page }}</strong> di <strong>{{ max_pages }}</strong>
+            </div>
+
+            {% if page < max_pages %}
+            <a href="/history?page={{ page + 1 }}&start_date={{ start_date or '' }}&end_date={{ end_date or '' }}" class="btn btn-secondary pagination-btn">
+                Successivo →
+            </a>
+            {% else %}
+            <span class="btn btn-secondary pagination-btn disabled">Successivo →</span>
+            {% endif %}
+        </div>
+
+        {% else %}
+        <div class="history-empty-state">
+            <span style="font-size: 2.2rem; display: block; margin-bottom: 0.4rem;">🔍</span>
+            <h3>Nessuna lettura trovata</h3>
+            <p>Non ci sono dati registrati per l'intervallo temporale selezionato. Prova a modificare le date o premi "Azzera".</p>
+            <a href="/history" class="btn btn-primary" style="margin-top: 0.8rem; display: inline-block;">Mostra Tutte le Letture</a>
+        </div>
+        {% endif %}
+    </div>
 </div>
 
+<!-- ==========================================================================
+     STILI CSS DEDICATI ARCHIVIO & STORICO MOBILE-FIRST
+     ========================================================================== -->
 <style>
-.history-quick-filter-btn {
+.history-page-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    width: 100%;
+}
+
+.history-header-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 1.1rem 1.35rem;
+    border-radius: var(--radius-lg, 18px);
+}
+.history-export-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.84rem;
+    font-weight: 700;
+    border-radius: 10px;
+    white-space: nowrap;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* BARRA PRESET & ACCORDION DATE PERSONALIZZATE */
+.history-presets-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 0.65rem 0.85rem;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    width: 100%;
+}
+.history-presets-scroll {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+}
+.history-presets-scroll::-webkit-scrollbar {
+    display: none;
+}
+.preset-pill {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    color: var(--text-dim);
-    padding: 4px 10px;
-    border-radius: 6px;
+    color: var(--text-dim, #94a3b8);
+    padding: 5px 12px;
+    border-radius: 8px;
     font-size: 0.78rem;
-    font-weight: 600;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+.preset-pill:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text, #f1f5f9);
+}
+.preset-pill.active {
+    background: rgba(56, 189, 248, 0.18);
+    border-color: #38bdf8;
+    color: #38bdf8;
+}
+
+/* PULSANTE TOGGLE DATE PERSONALIZZATE */
+.btn-toggle-custom-dates {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 6px 10px;
+    color: var(--text-dim, #94a3b8);
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    width: 100%;
+}
+.btn-toggle-custom-dates:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text, #f1f5f9);
+}
+.btn-toggle-custom-dates.has-filter {
+    background: rgba(245, 158, 11, 0.12);
+    border-color: rgba(245, 158, 11, 0.35);
+    color: #f59e0b;
+}
+.chevron-arrow {
+    font-size: 0.7rem;
+    transition: transform 0.25s ease;
+}
+.btn-toggle-custom-dates.open .chevron-arrow,
+.history-kpi-summary-bar.open .chevron-arrow {
+    transform: rotate(180deg);
+}
+
+/* PANNELLO DATE PERSONALIZZATE */
+.history-custom-dates-panel {
+    display: none;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid var(--card-border, #1e293b);
+    border-radius: 12px;
+    padding: 0.85rem;
+    animation: fadeInSlide 0.2s ease;
+}
+.history-custom-dates-panel.open {
+    display: block;
+}
+@keyframes fadeInSlide {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.history-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.65rem;
+    align-items: flex-end;
+}
+.history-btn-group {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* RIEPILOGO KPI BANNER A SCOMPARSA */
+.history-kpi-wrapper {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 14px;
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.history-kpi-summary-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    padding: 4px 2px;
+    gap: 0.5rem;
+}
+.kpi-summary-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.kpi-sum-icon {
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+.kpi-sum-text {
+    font-size: 0.78rem;
+    color: var(--text-dim, #94a3b8);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+.kpi-sum-sep {
+    opacity: 0.4;
+}
+.btn-kpi-expand {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text, #f1f5f9);
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.history-kpi-details-grid {
+    display: none;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.55rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    animation: fadeInSlide 0.2s ease;
+}
+.history-kpi-details-grid.open {
+    display: grid;
+}
+
+.history-kpi-card {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 10px;
+    padding: 0.65rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.kpi-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.3rem;
+}
+.kpi-tag {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-dim, #94a3b8);
+}
+.kpi-stat-avg {
+    font-size: 0.70rem;
+    color: var(--text, #f1f5f9);
+}
+.kpi-dual-values {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.4rem;
+}
+.kpi-val-box {
+    display: flex;
+    flex-direction: column;
+}
+.kpi-val-box .kpi-lbl {
+    font-size: 0.60rem;
+    font-weight: 700;
+    color: var(--text-dim, #94a3b8);
+}
+.kpi-val-box .kpi-val {
+    font-size: 1.15rem;
+    font-weight: 800;
+}
+.kpi-single-value {
+    display: flex;
+    flex-direction: column;
+}
+.kpi-sub-text {
+    font-size: 0.68rem;
+    color: var(--text-dim, #94a3b8);
+}
+
+/* RESULTS HEADER & TOGGLE */
+.history-results-card {
+    padding: 1.1rem;
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+.history-results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.history-results-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.88rem;
+    color: #fff;
+}
+.history-page-badge {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-dim, #94a3b8);
+    font-size: 0.72rem;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-weight: 700;
+}
+.history-view-toggle {
+    display: flex;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid var(--card-border, #1e293b);
+    border-radius: 8px;
+    padding: 2px;
+}
+.view-toggle-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim, #94a3b8);
+    font-size: 0.74rem;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s ease;
 }
+.view-toggle-btn.active {
+    background: var(--accent, #38bdf8);
+    color: #0b0f19;
+}
+
+/* TOOLBAR & RICERCA LIVE */
+.history-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    background: rgba(0, 0, 0, 0.22);
+    padding: 0.6rem 0.75rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.history-search-wrap {
+    position: relative;
+    width: 100%;
+}
+.history-search-wrap .search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.88rem;
+    color: var(--text-dim, #94a3b8);
+    pointer-events: none;
+}
+.history-search-input {
+    width: 100%;
+    padding: 0.48rem 2.2rem 0.48rem 2.3rem;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid var(--card-border, #1e293b);
+    border-radius: 8px;
+    color: var(--text, #f1f5f9);
+    font-size: 0.84rem;
+    outline: none;
+    transition: all 0.2s ease;
+}
+.history-search-input:focus {
+    border-color: var(--accent, #38bdf8);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+}
+.history-search-clear {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-dim, #94a3b8);
+    font-size: 0.95rem;
+    cursor: pointer;
+    display: none;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.history-quick-filters-scroll {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+.history-quick-filters-scroll::-webkit-scrollbar {
+    display: none;
+}
+.history-quick-filter-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-dim, #94a3b8);
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
 .history-quick-filter-btn:hover {
     background: rgba(255, 255, 255, 0.1);
-    color: var(--text);
-    border-color: rgba(255, 255, 255, 0.15);
+    color: var(--text, #f1f5f9);
 }
 .history-quick-filter-btn.active {
-    background: rgba(56, 189, 248, 0.15);
+    background: rgba(56, 189, 248, 0.18);
     border-color: #38bdf8;
     color: #38bdf8;
+}
+
+/* ==========================================================================
+   VISTA LISTA COMPATTA CON PROGRESSIVE DISCLOSURE (TOUCH-FRIENDLY)
+   ========================================================================== */
+.history-compact-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    width: 100%;
+}
+.history-compact-item {
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: background 0.15s ease, border-color 0.15s ease;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.history-compact-item:hover, .history-compact-item:active {
+    background: rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+.history-compact-item.expanded {
+    border-color: rgba(56, 189, 248, 0.35);
+    background: rgba(15, 23, 42, 0.75);
+}
+
+.compact-main-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0.85rem;
+    gap: 0.5rem;
+}
+.compact-time-col {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+.compact-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #38bdf8;
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+}
+.compact-time-texts {
+    display: flex;
+    flex-direction: column;
+}
+.compact-time {
+    font-size: 0.92rem;
+    color: #fff;
+    line-height: 1.15;
+}
+.compact-date {
+    font-size: 0.70rem;
+    color: var(--text-dim, #94a3b8);
+}
+.compact-badges-col {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    flex: 1;
+    justify-content: flex-start;
+    padding: 0 4px;
+}
+.comp-badge {
+    font-size: 0.66rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+.badge-rain { background: rgba(56, 189, 248, 0.18); color: #38bdf8; }
+.badge-wind { background: rgba(245, 158, 11, 0.18); color: #f59e0b; }
+.badge-uv { background: rgba(234, 179, 8, 0.18); color: #fde047; }
+
+.compact-temp-col {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+.compact-temp-val {
+    font-size: 1.35rem;
+    font-weight: 800;
+    line-height: 1;
+}
+.hot-temp { color: #f87171; }
+.warm-temp { color: #fb923c; }
+.mild-temp { color: #38bdf8; }
+.cold-temp { color: #818cf8; }
+
+.compact-chevron {
+    font-size: 0.68rem;
+    color: var(--text-dim, #94a3b8);
+    transition: transform 0.2s ease;
+}
+.history-compact-item.expanded .compact-chevron {
+    transform: rotate(180deg);
+    color: var(--accent, #38bdf8);
+}
+
+/* CASSETTO DETTAGLI PROGRESSIVI (DRAWER) */
+.compact-details-drawer {
+    display: none;
+    padding: 0.65rem 0.85rem 0.75rem 0.85rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.25);
+    animation: fadeInSlide 0.2s ease;
+}
+.history-compact-item.expanded .compact-details-drawer {
+    display: block;
+}
+.drawer-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.55rem;
+}
+.drawer-cell {
+    background: rgba(255, 255, 255, 0.03);
+    padding: 0.45rem 0.55rem;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+.d-lbl {
+    font-size: 0.64rem;
+    font-weight: 700;
+    color: var(--text-dim, #94a3b8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.d-val {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: #fff;
+}
+.d-sub {
+    font-size: 0.66rem;
+    color: var(--text-dim, #94a3b8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* PAGINAZIONE */
+.history-pagination-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding-top: 0.65rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.pagination-btn {
+    min-height: 38px;
+    padding: 6px 14px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+}
+.pagination-info {
+    font-size: 0.8rem;
+    color: var(--text-dim, #94a3b8);
 }
 .sortable-hist-th {
     cursor: pointer;
@@ -535,12 +1100,46 @@
     color: #f59e0b;
     font-weight: bold;
 }
-</style>
-{% endblock %}
 
-{% block scripts %}
+/* MEDIA QUERIES SMARTPHONE */
+@media (max-width: 768px) {
+    .drawer-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.45rem;
+    }
+    .compact-main-row {
+        padding: 0.65rem 0.75rem;
+    }
+    .compact-temp-val {
+        font-size: 1.25rem;
+    }
+    .history-export-btn {
+        width: 100%;
+        text-align: center;
+        justify-content: center;
+    }
+}
+@media (max-width: 480px) {
+    .compact-main-row {
+        padding: 0.6rem 0.65rem;
+    }
+    .compact-time {
+        font-size: 0.86rem;
+    }
+    .compact-temp-val {
+        font-size: 1.15rem;
+    }
+    .history-results-card {
+        padding: 0.85rem;
+    }
+}
+</style>
+
+<!-- ==========================================================================
+     SCRIPT JS GESTIONE FILTRI, ACCORDION E RICERCA
+     ========================================================================== -->
 <script>
-    // Gestione Preset Rapidi per le Date
+    // 1. GESTIONE PRESET RAPIDI DATE
     function applyPreset(type) {
         const now = new Date();
         const startInput = document.getElementById('start_date');
@@ -581,7 +1180,34 @@
         form.submit();
     }
 
-    // Gestione Switch Vista: Schede (Mobile) vs Tabella (Desktop)
+    // 2. TOGGLE DATE PERSONALIZZATE ACCORDION
+    function toggleCustomDates() {
+        const panel = document.getElementById('custom-dates-panel');
+        const btn = document.getElementById('btn-toggle-dates');
+        if (!panel || !btn) return;
+        const isOpen = panel.classList.contains('open');
+        panel.classList.toggle('open', !isOpen);
+        btn.classList.toggle('open', !isOpen);
+    }
+
+    // 3. TOGGLE DETTAGLI KPI BANNER
+    function toggleKpiDetails() {
+        const grid = document.getElementById('kpi-details-grid');
+        const bar = document.querySelector('.history-kpi-summary-bar');
+        const lbl = document.getElementById('kpi-expand-lbl');
+        if (!grid) return;
+        const isOpen = grid.classList.contains('open');
+        grid.classList.toggle('open', !isOpen);
+        if (bar) bar.classList.toggle('open', !isOpen);
+        if (lbl) lbl.textContent = isOpen ? 'Dettagli' : 'Chiudi';
+    }
+
+    // 4. TOGGLE SINGOLA RIGA DETTAGLIO METEO (PROGRESSIVE DISCLOSURE)
+    function toggleReadingDetail(elem) {
+        elem.classList.toggle('expanded');
+    }
+
+    // 5. GESTIONE SWITCH VISTA: LISTA COMPATTA VS TABELLA
     function setHistoryView(view) {
         const cardsEl = document.getElementById('history-cards-container');
         const tableEl = document.getElementById('history-table-container');
@@ -597,7 +1223,7 @@
             btnCards.classList.remove('active');
             localStorage.setItem('history_view_pref', 'table');
         } else {
-            cardsEl.style.display = 'grid';
+            cardsEl.style.display = 'flex';
             tableEl.style.display = 'none';
             btnCards.classList.add('active');
             btnTable.classList.remove('active');
@@ -605,7 +1231,7 @@
         }
     }
 
-    // LIVE SEARCH & QUICK FILTER & SORTING
+    // 6. LIVE SEARCH & QUICK FILTER & SORTING
     let currentHistFilter = 'all';
     let currentHistSortCol = 'time';
     let currentHistSortOrder = 'desc';
@@ -670,7 +1296,7 @@
 
         cardItems.forEach(card => {
             const matches = checkMatch(card);
-            card.style.display = matches ? '' : 'none';
+            card.style.display = matches ? 'flex' : 'none';
             if (matches) visibleCount++;
         });
 
@@ -695,7 +1321,7 @@
                 if (cardsContainer) cardsContainer.style.display = 'none';
                 if (tableContainer) tableContainer.style.display = 'block';
             } else {
-                if (cardsContainer) cardsContainer.style.display = 'grid';
+                if (cardsContainer) cardsContainer.style.display = 'flex';
                 if (tableContainer) tableContainer.style.display = 'none';
             }
         }
@@ -758,13 +1384,12 @@
         cards.forEach(c => cardsCont.appendChild(c));
     }
 
-    // Inizializza la visualizzazione in base a preferenza o larghezza schermo
+    // Inizializza la visualizzazione
     document.addEventListener('DOMContentLoaded', () => {
         const savedView = localStorage.getItem('history_view_pref');
         if (savedView) {
             setHistoryView(savedView);
         } else {
-            // Su schermi piccoli <= 768px usa cards, altrimenti tabella
             if (window.innerWidth <= 768) {
                 setHistoryView('cards');
             } else {
