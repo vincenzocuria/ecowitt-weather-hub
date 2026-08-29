@@ -43,6 +43,13 @@
                 {% endif %}
             </span>
         </button>
+        <button type="button" class="dash-tab-btn" id="tab_btn_health" onclick="switchDashboardTab('health')">
+            <span class="tab-icon">🩺</span>
+            <span>Salute & Cardio</span>
+            <span class="dash-tab-badge" id="tab_badge_health" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">
+                {{ "{:,}".format(health.steps.daily if health and health.steps else 0).replace(',', '.') }} 👟
+            </span>
+        </button>
         <button type="button" class="dash-tab-btn" id="tab_btn_astro_comfort" onclick="switchDashboardTab('astro-comfort')">
             <span class="tab-icon">🌅</span>
             <span>Sole & Benessere</span>
@@ -1317,8 +1324,147 @@
         </div>
     </div>
 
+    <!-- SEZIONE DISPOSITIVI SMART LIFE (TUYA) & PRESE MISURATE -->
+    {% if tuya_enabled %}
+    <div class="smart-appliances-hero" id="tuya_dashboard_section" style="margin-top: 1.25rem;">
+        <div class="appliances-header">
+            <div class="appliances-title-group">
+                <span class="appliances-header-icon">🔌</span>
+                <div>
+                    <h2>Dispositivi Smart Life & Prese Misurate</h2>
+                    <div class="appliances-sub-header">
+                        Integrazione <strong>Tuya Smart Life</strong> • Monitoraggio consumi carichi, clima e controllo interruttori
+                    </div>
+                </div>
+            </div>
+            <div class="appliances-header-badges">
+                <span class="presence-badge badge-present" id="tuya_total_power_badge" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8;">
+                    ⚡ Assorbimento Prese: <strong id="tuya_total_w_val" style="margin-left: 4px;">{{ tuya.total_plug_power_w if tuya else '0.0' }} W</strong>
+                </span>
+                <div class="climate-status-badge" id="tuya_sync_btn" onclick="syncTuyaLiveDevices()" title="Sincronizza stato dispositivi Tuya Cloud">
+                    <span class="pulse-dot"></span> <span id="tuya_status_text">🟢 {{ tuya.enabled_devices_count if tuya else 0 }} Attivi</span>
+                </div>
+            </div>
+        </div>
+
+        {% if tuya and tuya.enabled_devices %}
+        <div class="appliances-grid" id="tuya_appliances_grid">
+            {% for dev in tuya.enabled_devices %}
+            <div class="appliance-card {% if dev.is_on %}is-on{% elif dev.is_on is not none %}is-standby{% endif %}" id="tuya_card_{{ dev.id }}">
+                <div class="appliance-card-top">
+                    <div class="appliance-info">
+                        <span class="appliance-icon">{{ dev.icon }}</span>
+                        <div>
+                            <div class="appliance-name">{{ dev.name }}</div>
+                            <span class="appliance-model-tag">{{ dev.type_label }} • {{ dev.product_name or dev.model or 'Tuya' }}</span>
+                        </div>
+                    </div>
+                    {% if dev.is_on is not none %}
+                    <button type="button" class="appliance-status-pill {% if dev.is_on %}pill-active{% else %}pill-standby{% endif %}" id="tuya_pill_{{ dev.id }}" onclick="toggleTuyaFromDashboard('{{ dev.id }}')" style="cursor: pointer; border: none;" title="Clicca per accendere o spegnere">
+                        {% if dev.is_on %}🟢 ON{% else %}⚪ OFF{% endif %}
+                    </button>
+                    {% else %}
+                    <span class="appliance-status-pill pill-standby">🟢 Connesso</span>
+                    {% endif %}
+                </div>
+
+                <!-- METRICHE DETTAGLIATE PER DISPOSITIVO -->
+                <div class="appliance-cycle-showcase">
+                    {% if dev.category == 'cz' %}
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Potenza Live</span>
+                        <strong class="app-metric-val" id="tuya_p_{{ dev.id }}" style="color: {% if dev.power_w > 50 %}#38bdf8{% else %}var(--text){% endif %};">{{ dev.power_w }} W</strong>
+                    </div>
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Tensione</span>
+                        <strong class="app-metric-val" id="tuya_v_{{ dev.id }}">{{ dev.voltage_v }} V</strong>
+                    </div>
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Corrente</span>
+                        <strong class="app-metric-val" id="tuya_i_{{ dev.id }}">{{ dev.current_a }} A</strong>
+                    </div>
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Stato</span>
+                        <strong class="app-metric-val" id="tuya_state_{{ dev.id }}">{% if dev.is_on %}Alimentato{% else %}Spento{% endif %}</strong>
+                    </div>
+                    {% elif dev.category == 'wk' %}
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Temp. Rilevata</span>
+                        <strong class="app-metric-val" id="tuya_temp_cur_{{ dev.id }}">{{ dev.temp_current or '--' }} °C</strong>
+                    </div>
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Set-Point</span>
+                        <strong class="app-metric-val" id="tuya_temp_set_{{ dev.id }}">{{ dev.temp_set or '--' }} °C</strong>
+                    </div>
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Modalità</span>
+                        <strong class="app-metric-val">{% if dev.raw_status.eco %}Eco 🍃{% else %}Standard{% endif %}</strong>
+                    </div>
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Stato Termostato</span>
+                        <strong class="app-metric-val">{% if dev.is_on %}Attivo 🔥{% else %}Standby{% endif %}</strong>
+                    </div>
+                    {% elif dev.category == 'sfkzq' %}
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Stato Valvola</span>
+                        <strong class="app-metric-val">{% if dev.is_on %}Aperta 💧{% else %}Chiusa 🔒{% endif %}</strong>
+                    </div>
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Batteria</span>
+                        <strong class="app-metric-val" style="color: #10b981;">🔋 {{ dev.battery_pct }}%</strong>
+                    </div>
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Stato Lavoro</span>
+                        <strong class="app-metric-val">{{ dev.work_state or 'In riposo' }}</strong>
+                    </div>
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Ritardo Pioggia</span>
+                        <strong class="app-metric-val">{% if dev.weather_delay != 'cancel' %}Attivo 🌧️{% else %}Disattivato{% endif %}</strong>
+                    </div>
+                    {% elif dev.type == 'curtain' or dev.category in ('cl', 'clkg', 'bl', 'cs') %}
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Stato Persiana</span>
+                        <strong class="app-metric-val">{% if dev.curtain_state %}{{ dev.curtain_state|capitalize }}{% elif dev.is_on is true %}Aperta 🪟{% elif dev.is_on is false %}Chiusa 🔒{% else %}Online 🟢{% endif %}</strong>
+                    </div>
+                    <div class="appliance-metric-item" style="grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.25rem;">
+                        <span class="app-metric-label" style="margin: 0;">Comandi:</span>
+                        <div style="display: flex; gap: 0.4rem;">
+                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="controlTuyaCurtain('{{ dev.id }}', 'open')">🔼 Apri</button>
+                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="controlTuyaCurtain('{{ dev.id }}', 'stop')">⏸️ Stop</button>
+                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="controlTuyaCurtain('{{ dev.id }}', 'close')">🔽 Chiudi</button>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Tipologia</span>
+                        <strong class="app-metric-val">{{ dev.type_label }}</strong>
+                    </div>
+                    <div class="appliance-metric-item">
+                        <span class="app-metric-label">Stato</span>
+                        <strong class="app-metric-val">{% if dev.is_on %}Acceso 🟢{% elif dev.is_on is not none %}Spento ⚪{% else %}Online{% endif %}</strong>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div style="background: rgba(255,255,255,0.03); border: 1px dashed var(--card-border); border-radius: 12px; padding: 1.5rem; text-align: center; color: var(--text-dim); font-size: 0.9rem;">
+            🔌 <strong>Nessun dispositivo Smart Life attivo nella Dashboard.</strong><br>
+            Puoi selezionare quali dispositivi mostrare andando nella pagina <a href="/settings#tuya_settings_card" style="color: var(--accent); text-decoration: underline;">⚙️ Impostazioni</a>.
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- ==========================================================================
+     TAB 3: SALUTE & BIOMETRIA (SAMSUNG HEALTH & GOOGLE HEALTH CONNECT)
+     ========================================================================== -->
+<div class="dashboard-tab-pane" id="pane_health">
+
     <!-- SEZIONE SALUTE & ATTIVITÀ FISICA SAMSUNG HEALTH & HEALTH CONNECT -->
-    <div class="smart-appliances-hero health-hero-card" id="health_dashboard_section" style="margin-top: 1.25rem; {% if not hass_enabled %}display: none;{% endif %}">
+    <div class="smart-appliances-hero health-hero-card" id="health_dashboard_section" style="margin-top: 0;">
         <div class="appliances-header">
             <div class="appliances-title-group">
                 <span class="appliances-header-icon health-glow-icon">🩺</span>
@@ -1542,143 +1688,10 @@
             </div>
         </div>
     </div>
-
-    <!-- SEZIONE DISPOSITIVI SMART LIFE (TUYA) & PRESE MISURATE -->
-    {% if tuya_enabled %}
-    <div class="smart-appliances-hero" id="tuya_dashboard_section" style="margin-top: 1.25rem;">
-        <div class="appliances-header">
-            <div class="appliances-title-group">
-                <span class="appliances-header-icon">🔌</span>
-                <div>
-                    <h2>Dispositivi Smart Life & Prese Misurate</h2>
-                    <div class="appliances-sub-header">
-                        Integrazione <strong>Tuya Smart Life</strong> • Monitoraggio consumi carichi, clima e controllo interruttori
-                    </div>
-                </div>
-            </div>
-            <div class="appliances-header-badges">
-                <span class="presence-badge badge-present" id="tuya_total_power_badge" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8;">
-                    ⚡ Assorbimento Prese: <strong id="tuya_total_w_val" style="margin-left: 4px;">{{ tuya.total_plug_power_w if tuya else '0.0' }} W</strong>
-                </span>
-                <div class="climate-status-badge" id="tuya_sync_btn" onclick="syncTuyaLiveDevices()" title="Sincronizza stato dispositivi Tuya Cloud">
-                    <span class="pulse-dot"></span> <span id="tuya_status_text">🟢 {{ tuya.enabled_devices_count if tuya else 0 }} Attivi</span>
-                </div>
-            </div>
-        </div>
-
-        {% if tuya and tuya.enabled_devices %}
-        <div class="appliances-grid" id="tuya_appliances_grid">
-            {% for dev in tuya.enabled_devices %}
-            <div class="appliance-card {% if dev.is_on %}is-on{% elif dev.is_on is not none %}is-standby{% endif %}" id="tuya_card_{{ dev.id }}">
-                <div class="appliance-card-top">
-                    <div class="appliance-info">
-                        <span class="appliance-icon">{{ dev.icon }}</span>
-                        <div>
-                            <div class="appliance-name">{{ dev.name }}</div>
-                            <span class="appliance-model-tag">{{ dev.type_label }} • {{ dev.product_name or dev.model or 'Tuya' }}</span>
-                        </div>
-                    </div>
-                    {% if dev.is_on is not none %}
-                    <button type="button" class="appliance-status-pill {% if dev.is_on %}pill-active{% else %}pill-standby{% endif %}" id="tuya_pill_{{ dev.id }}" onclick="toggleTuyaFromDashboard('{{ dev.id }}')" style="cursor: pointer; border: none;" title="Clicca per accendere o spegnere">
-                        {% if dev.is_on %}🟢 ON{% else %}⚪ OFF{% endif %}
-                    </button>
-                    {% else %}
-                    <span class="appliance-status-pill pill-standby">🟢 Connesso</span>
-                    {% endif %}
-                </div>
-
-                <!-- METRICHE DETTAGLIATE PER DISPOSITIVO -->
-                <div class="appliance-cycle-showcase">
-                    {% if dev.category == 'cz' %}
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Potenza Live</span>
-                        <strong class="app-metric-val" id="tuya_p_{{ dev.id }}" style="color: {% if dev.power_w > 50 %}#38bdf8{% else %}var(--text){% endif %};">{{ dev.power_w }} W</strong>
-                    </div>
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Tensione</span>
-                        <strong class="app-metric-val" id="tuya_v_{{ dev.id }}">{{ dev.voltage_v }} V</strong>
-                    </div>
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Corrente</span>
-                        <strong class="app-metric-val" id="tuya_i_{{ dev.id }}">{{ dev.current_a }} A</strong>
-                    </div>
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Stato</span>
-                        <strong class="app-metric-val" id="tuya_state_{{ dev.id }}">{% if dev.is_on %}Alimentato{% else %}Spento{% endif %}</strong>
-                    </div>
-                    {% elif dev.category == 'wk' %}
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Temp. Rilevata</span>
-                        <strong class="app-metric-val" id="tuya_temp_cur_{{ dev.id }}">{{ dev.temp_current or '--' }} °C</strong>
-                    </div>
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Set-Point</span>
-                        <strong class="app-metric-val" id="tuya_temp_set_{{ dev.id }}">{{ dev.temp_set or '--' }} °C</strong>
-                    </div>
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Modalità</span>
-                        <strong class="app-metric-val">{% if dev.raw_status.eco %}Eco 🍃{% else %}Standard{% endif %}</strong>
-                    </div>
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Stato Termostato</span>
-                        <strong class="app-metric-val">{% if dev.is_on %}Attivo 🔥{% else %}Standby{% endif %}</strong>
-                    </div>
-                    {% elif dev.category == 'sfkzq' %}
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Stato Valvola</span>
-                        <strong class="app-metric-val">{% if dev.is_on %}Aperta 💧{% else %}Chiusa 🔒{% endif %}</strong>
-                    </div>
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Batteria</span>
-                        <strong class="app-metric-val" style="color: #10b981;">🔋 {{ dev.battery_pct }}%</strong>
-                    </div>
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Stato Lavoro</span>
-                        <strong class="app-metric-val">{{ dev.work_state or 'In riposo' }}</strong>
-                    </div>
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Ritardo Pioggia</span>
-                        <strong class="app-metric-val">{% if dev.weather_delay != 'cancel' %}Attivo 🌧️{% else %}Disattivato{% endif %}</strong>
-                    </div>
-                    {% elif dev.type == 'curtain' or dev.category in ('cl', 'clkg', 'bl', 'cs') %}
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Stato Persiana</span>
-                        <strong class="app-metric-val">{% if dev.curtain_state %}{{ dev.curtain_state|capitalize }}{% elif dev.is_on is true %}Aperta 🪟{% elif dev.is_on is false %}Chiusa 🔒{% else %}Online 🟢{% endif %}</strong>
-                    </div>
-                    <div class="appliance-metric-item" style="grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.25rem;">
-                        <span class="app-metric-label" style="margin: 0;">Comandi:</span>
-                        <div style="display: flex; gap: 0.4rem;">
-                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="controlTuyaCurtain('{{ dev.id }}', 'open')">🔼 Apri</button>
-                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="controlTuyaCurtain('{{ dev.id }}', 'stop')">⏸️ Stop</button>
-                            <button type="button" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="controlTuyaCurtain('{{ dev.id }}', 'close')">🔽 Chiudi</button>
-                        </div>
-                    </div>
-                    {% else %}
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Tipologia</span>
-                        <strong class="app-metric-val">{{ dev.type_label }}</strong>
-                    </div>
-                    <div class="appliance-metric-item">
-                        <span class="app-metric-label">Stato</span>
-                        <strong class="app-metric-val">{% if dev.is_on %}Acceso 🟢{% elif dev.is_on is not none %}Spento ⚪{% else %}Online{% endif %}</strong>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div style="background: rgba(255,255,255,0.03); border: 1px dashed var(--card-border); border-radius: 12px; padding: 1.5rem; text-align: center; color: var(--text-dim); font-size: 0.9rem;">
-            🔌 <strong>Nessun dispositivo Smart Life attivo nella Dashboard.</strong><br>
-            Puoi selezionare quali dispositivi mostrare andando nella pagina <a href="/settings#tuya_settings_card" style="color: var(--accent); text-decoration: underline;">⚙️ Impostazioni</a>.
-        </div>
-        {% endif %}
-    </div>
-    {% endif %}
 </div>
 
 <!-- ==========================================================================
-     TAB 3: SOLE & BENESSERE
+     TAB 4: SOLE & BENESSERE
      ========================================================================== -->
 <div class="dashboard-tab-pane" id="pane_astro_comfort">
 

@@ -1947,6 +1947,15 @@ function switchDashboardTab(tabId) {
             if (typeof fetchAndRenderDashboardBreakdown === 'function') {
                 fetchAndRenderDashboardBreakdown(false);
             }
+        } else if (cleanId === 'health') {
+            if (typeof loadHealthHistoryOnStartup === 'function') {
+                loadHealthHistoryOnStartup();
+            }
+            if (window.healthStepsChartInstance) {
+                try {
+                    window.healthStepsChartInstance.resize();
+                } catch (e) {}
+            }
         }
     }
 }
@@ -1964,7 +1973,7 @@ function initDashboardTabs() {
         savedTab = localStorage.getItem('ecowitt_dashboard_active_tab');
     } catch (e) {}
 
-    const validTabs = ['weather', 'energy-home', 'astro-comfort'];
+    const validTabs = ['weather', 'energy-home', 'health', 'astro-comfort'];
     const initialTab = (hash && validTabs.includes(hash)) ? hash : ((savedTab && validTabs.includes(savedTab)) ? savedTab : 'weather');
 
     switchDashboardTab(initialTab);
