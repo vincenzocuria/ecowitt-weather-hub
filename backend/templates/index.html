@@ -23,40 +23,6 @@
 </div>
 {% endif %}
 
-<!-- 🧠 SEZIONE INTELLIGENZA DOMESTICA: COSA DEVO SAPERE ORA -->
-<div class="now-intelligence-hero" id="now_intelligence_section">
-    <div class="now-intelligence-header">
-        <div class="now-intelligence-title">
-            <span class="pulse-dot"></span>
-            <span>🧠 Cosa devi sapere adesso</span>
-        </div>
-        <span style="font-size: 0.76rem; color: var(--text-dim);">Live Weather & Home Intelligence</span>
-    </div>
-    <div class="now-pills-grid" id="now_pills_container">
-        {% if analytics and analytics.now_highlights %}
-            {% for pill in analytics.now_highlights %}
-            <div class="now-pill">
-                <div class="now-pill-icon">{{ pill.icon }}</div>
-                <div class="now-pill-content">
-                    <div class="now-pill-action">{{ pill.action_text }}</div>
-                    <div class="now-pill-title">{{ pill.title }}</div>
-                    <div class="now-pill-sub">{{ pill.subtitle }}</div>
-                </div>
-            </div>
-            {% endfor %}
-        {% else %}
-            <div class="now-pill">
-                <div class="now-pill-icon">🌤️</div>
-                <div class="now-pill-content">
-                    <div class="now-pill-action">Meteo</div>
-                    <div class="now-pill-title">Analisi in tempo reale</div>
-                    <div class="now-pill-sub">Tutti i parametri nella norma.</div>
-                </div>
-            </div>
-        {% endif %}
-    </div>
-</div>
-
 <!-- DASHBOARD TABS NAVIGATION -->
 <div class="dashboard-tabs-wrapper">
     <div class="dashboard-tabs-nav" id="dashboard_tabs">
@@ -359,80 +325,70 @@
             </div>
         </div>
 
-        <!-- 5. CLIMA INTERNO CASA & CLIMATIZZATORI LG THINQ -->
+
+        <!-- 5. TEMPERATURE INTERNE: SOGGIORNO (ECOWITT) • STANZETTA (LG) • CAMERA (LG) -->
         <div class="card">
             <div class="card-header">
-                <span>🏠 Clima Interno & Clima LG</span>
+                <span>🏠 Temperature Interne (3 Ambienti)</span>
                 <span class="sub-badge {{ analytics.comfort.indoor.badge_class if analytics and analytics.comfort.indoor else 'badge-neutral' }}" id="indoor_comfort_badge">
                     {{ analytics.comfort.indoor.icon if analytics and analytics.comfort.indoor else '🏠' }} {{ analytics.comfort.indoor.title if analytics and analytics.comfort.indoor else 'Ambiente Casa' }}
                 </span>
             </div>
-            <div class="main-stat">
-                <span class="val" id="temp_in_c">{{ latest.temp_in_c if latest.temp_in_c is not none else '--' }}</span>
-                <span class="unit">°C</span>
-            </div>
 
-            <!-- DIFFERENZIALE MIN/MAX INTERNA OGGI & DELTA VS FUORI -->
-            <div class="today-extremes-box">
-                <div class="extreme-item">
-                    <span class="extreme-label">Min Casa</span>
-                    <span class="extreme-val min-t" id="today_in_min">{{ analytics.today_extremes.temp_in_min if analytics and analytics.today_extremes.temp_min is not none else '--' }}°C</span>
-                    <span class="extreme-time" id="today_in_min_time">{{ analytics.today_extremes.temp_in_min_time or '--:--' }}</span>
+            <!-- GRIGLIA 3 AMBIENTI: SOGGIORNO, CAMERA DA LETTO, STANZETTA -->
+            <div class="indoor-rooms-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
+                <!-- 1. SOGGIORNO (ECOWITT CONSOLE) -->
+                <div class="indoor-room-box" style="background: rgba(0,0,0,0.25); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between;">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <strong style="font-size: 0.82rem; color: #38bdf8;">🛋️ Soggiorno</strong>
+                            <span class="badge" style="font-size: 0.60rem; padding: 1px 5px; background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3);">Ecowitt</span>
+                        </div>
+                        <div style="font-size: 1.55rem; font-weight: 800; color: #fff; line-height: 1.1; margin: 4px 0;" id="temp_in_c">
+                            {{ latest.temp_in_c if latest.temp_in_c is not none else '--' }}<span style="font-size: 0.85rem; font-weight: 600; color: var(--text-dim);">°C</span>
+                        </div>
+                    </div>
+                    <div style="font-size: 0.72rem; color: var(--text-dim); line-height: 1.35; margin-top: 4px;">
+                        <span>Umidità: <strong id="humidity_in" style="color: #e2e8f0;">{{ latest.humidity_in if latest.humidity_in is not none else '--' }}%</strong></span><br>
+                        <span>Min/Max: <span class="min-t" id="today_in_min">{{ analytics.today_extremes.temp_in_min or '--' }}°</span> / <span class="max-t" id="today_in_max">{{ analytics.today_extremes.temp_in_max or '--' }}°</span></span>
+                    </div>
                 </div>
-                <div class="extreme-item">
-                    <span class="extreme-label">Max Casa</span>
-                    <span class="extreme-val max-t" id="today_in_max">{{ analytics.today_extremes.temp_in_max if analytics and analytics.today_extremes.temp_max is not none else '--' }}°C</span>
-                    <span class="extreme-time" id="today_in_max_time">{{ analytics.today_extremes.temp_in_max_time or '--:--' }}</span>
-                </div>
-                <div class="extreme-item">
-                    <span class="extreme-label">vs Fuori</span>
-                    <span class="delta-badge {% if analytics and analytics.comfort.indoor and analytics.comfort.indoor.get('diff_c') is not none and analytics.comfort.indoor.get('diff_c') > 0 %}warmer{% elif analytics and analytics.comfort.indoor and analytics.comfort.indoor.get('diff_c') is not none and analytics.comfort.indoor.get('diff_c') < 0 %}cooler{% else %}neutral{% endif %}" id="indoor_delta_badge">
-                        {% if analytics and analytics.comfort.indoor and analytics.comfort.indoor.get('diff_c') is not none %}
-                            {{ "%+0.1f"|format(analytics.comfort.indoor.get('diff_c')) }}°C
-                        {% else %}
-                            --
-                        {% endif %}
-                    </span>
-                </div>
-            </div>
 
-            <div class="item-list">
-                <div class="item"><span>Umidità Interna:</span> <strong id="humidity_in">{{ latest.humidity_in if latest.humidity_in is not none else '--' }} %</strong></div>
-                <div class="item"><span>Punto di Rugiada:</span> <strong id="dew_point_in">{{ analytics.dew_point_in_c if analytics and analytics.dew_point_in_c is not none else '--' }} °C</strong></div>
-                <div class="item"><span>Stato Microclima:</span> <strong id="indoor_status_desc">{{ analytics.comfort.indoor.desc if analytics and analytics.comfort.indoor else 'Regolare' }}</strong></div>
-            </div>
-
-            <!-- SEZIONE TEMPERATURE INTERNE DEI 2 CLIMA LG THINQ -->
-            {% if climate_devices %}
-            <div class="climate-split-subgrid" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <span style="font-size: 0.74rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.3px;">❄️ Climatizzatori LG (Temp Interne):</span>
-                    <span style="font-size: 0.70rem; color: #34d399; font-weight: 600;">LG ThinQ</span>
-                </div>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px;">
+                <!-- 2 & 3. CLIMATIZZATORI LG THINQ: CAMERA DA LETTO & STANZETTA/CAMERETTA -->
+                {% if climate_devices %}
                     {% for dev in climate_devices %}
                         {% if dev.device_type == 'DEVICE_AIR_CONDITIONER' %}
-                        <div class="climate-mini-room-card" style="background: rgba(0,0,0,0.22); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 7px 9px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <strong style="font-size: 0.82rem; color: #f8fafc; font-weight: 700;">{{ dev.alias }}</strong>
-                                <span class="badge" style="font-size: 0.62rem; padding: 1px 5px; border-radius: 4px; {% if dev.is_on %}background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.4);{% else %}background: rgba(255,255,255,0.05); color: var(--text-dim); border: 1px solid rgba(255,255,255,0.1);{% endif %}">
-                                    {{ 'ACCESO' if dev.is_on else 'SPENTO' }}
-                                </span>
+                        <div class="indoor-room-box" style="background: rgba(0,0,0,0.25); border: 1px solid {% if dev.is_on %}rgba(16, 185, 129, 0.35){% else %}rgba(255, 255, 255, 0.08){% endif %}; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <strong style="font-size: 0.82rem; color: #fff;">
+                                        {% if 'camer' in dev.alias.lower() or 'stanz' in dev.alias.lower() %}🧸 Stanzetta
+                                        {% elif 'letto' in dev.alias.lower() or 'camera' in dev.alias.lower() %}🛏️ Camera da letto
+                                        {% else %}❄️ {{ dev.alias }}{% endif %}
+                                    </strong>
+                                    <span class="badge" style="font-size: 0.60rem; padding: 1px 5px; {% if dev.is_on %}background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.4);{% else %}background: rgba(255,255,255,0.05); color: var(--text-dim); border: 1px solid rgba(255,255,255,0.1);{% endif %}">
+                                        {{ 'ACCESO' if dev.is_on else 'SPENTO' }}
+                                    </span>
+                                </div>
+                                <div style="font-size: 1.55rem; font-weight: 800; color: {% if dev.is_on %}#38bdf8{% else %}#e2e8f0{% endif %}; line-height: 1.1; margin: 4px 0;" id="curr_temp_mini_{{ dev.device_id }}">
+                                    {{ dev.current_temp or '--' }}<span style="font-size: 0.85rem; font-weight: 600; color: var(--text-dim);">°C</span>
+                                </div>
                             </div>
-                            <div style="display: flex; align-items: baseline; justify-content: space-between; margin-top: 4px;">
-                                <span style="font-size: 0.72rem; color: var(--text-dim);">Temp:</span>
-                                <strong style="font-size: 1.15rem; font-weight: 800; color: {% if dev.is_on %}#38bdf8{% else %}#e2e8f0{% endif %};" id="curr_temp_mini_{{ dev.device_id }}">{{ dev.current_temp or '--' }}°C</strong>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">
-                                <span>Target: <strong>{{ dev.target_temp or 26 }}°C</strong></span>
-                                <span>{{ dev.mode }}</span>
+                            <div style="font-size: 0.72rem; color: var(--text-dim); line-height: 1.35; margin-top: 4px;">
+                                <span>Target: <strong style="color: #e2e8f0;">{{ dev.target_temp or 26 }}°C</strong></span><br>
+                                <span>Modo: <strong style="color: #94a3b8;">{{ dev.mode }}</strong> (LG ThinQ)</span>
                             </div>
                         </div>
                         {% endif %}
                     {% endfor %}
-                </div>
+                {% endif %}
             </div>
-            {% endif %}
+
+            <div class="item-list" style="margin-top: 4px;">
+                <div class="item"><span>Isolamento / Delta vs Fuori:</span> <strong id="indoor_delta_badge" style="color: {% if analytics and analytics.comfort.indoor and analytics.comfort.indoor.get('diff_c') and analytics.comfort.indoor.get('diff_c') < 0 %}#38bdf8{% else %}#f59e0b{% endif %};">{{ "%+0.1f"|format(analytics.comfort.indoor.get('diff_c')) if analytics and analytics.comfort.indoor and analytics.comfort.indoor.get('diff_c') is not none else '--' }}°C</strong></div>
+                <div class="item"><span>Punto di Rugiada Soggiorno:</span> <strong id="dew_point_in">{{ analytics.dew_point_in_c if analytics and analytics.dew_point_in_c is not none else '--' }} °C</strong></div>
+                <div class="item"><span>Stato Microclima:</span> <strong id="indoor_status_desc">{{ analytics.comfort.indoor.desc if analytics and analytics.comfort.indoor else 'Regolare' }}</strong></div>
+            </div>
         </div>
 
         <!-- 6. CONSUMO ATTUALE & FLUSSO ENERGETICO (ATON GREEN STORAGE) -->
@@ -453,7 +409,7 @@
                 <div class="extreme-item">
                     <span class="extreme-label">☀️ Solare FV</span>
                     <span class="extreme-val" style="color: #eab308;" id="p_solare_quick_val">{{ energy_latest.p_solare | int if energy_latest and energy_latest.p_solare is defined else '0' }} W</span>
-                    <span class="extreme-time">{{ energy_summary.solar_today_kwh or '0.0' }} kWh</span>
+                    <span class="extreme-time">{{ energy_summary.solar_today_kwh or '0.0' }} kWh oggi</span>
                 </div>
                 <div class="extreme-item">
                     <span class="extreme-label">🔋 Batteria</span>
@@ -493,26 +449,92 @@
             </div>
         </div>
 
-        <!-- 7. SENSORI MULTICANALE, FULMINI & TERRENO -->
+        <!-- 7. SENSORI SUOLO & UMIDITÀ AIUOLA (WH51) -->
         <div class="card">
             <div class="card-header">
-                <span>⚡ Fulmini & Sensori Suolo</span>
+                <span>🌱 Umidità Aiuola & Terreno</span>
+                <span class="sub-badge" id="soil_badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.35);">
+                    🌱 WH51 • Live
+                </span>
+            </div>
+
+            <div id="soil_moisture_container">
+            {% if analytics and analytics.soil_summary and analytics.soil_summary.has_sensors %}
+                {% for ch, info in analytics.soil_summary.channels.items() %}
+                <div class="main-stat" style="margin-bottom: 6px;">
+                    <span class="val" style="color: #34d399;">{{ info.value }}</span>
+                    <span class="unit">% ({{ info.name }})</span>
+                </div>
+                <div class="today-extremes-box" style="margin-bottom: 8px;">
+                    <div class="extreme-item">
+                        <span class="extreme-label">Stato Suolo</span>
+                        <span class="badge {{ info.badge_class }}" style="font-size: 0.76rem; padding: 2px 8px; margin-top: 2px;">{{ info.status_label }}</span>
+                    </div>
+                    <div class="extreme-item">
+                        <span class="extreme-label">Variazione 24h</span>
+                        <span class="extreme-val" style="font-size: 0.95rem; color: var(--text);">{{ info.trend_icon }} {{ '+' if info.diff_24h > 0 else '' }}{{ info.diff_24h }}%</span>
+                    </div>
+                    <div class="extreme-item">
+                        <span class="extreme-label">Evapotraspirazione</span>
+                        <span class="extreme-val" style="font-size: 0.95rem; color: #38bdf8;">{{ analytics.evapotranspiration_mm or '2.3' }} mm/d</span>
+                    </div>
+                </div>
+                {% endfor %}
+            {% elif soil_moisture %}
+                {% for ch, val in soil_moisture.items() %}
+                <div class="main-stat">
+                    <span class="val" style="color: #34d399;">{{ val }}</span>
+                    <span class="unit">% (Suolo {{ ch }})</span>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="item" style="padding: 1rem 0; color: var(--text-dim);">
+                    <span>🌱 Sensori Umidità Terreno: In attesa di WH51</span>
+                </div>
+            {% endif %}
+            </div>
+
+            <!-- CONSIGLIO IRRIGAZIONE INTELLIGENTE -->
+            {% if analytics and analytics.irrigation_advice %}
+            <div class="smart-irrigation-card" style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 8px 10px; margin-top: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.82rem; font-weight: 700; color: #34d399;">{{ analytics.irrigation_advice.icon }} {{ analytics.irrigation_advice.title }}</span>
+                    <span style="font-size: 0.72rem; color: var(--text-dim);">ET: <strong>{{ analytics.evapotranspiration_mm }} mm/d</strong></span>
+                </div>
+                <p style="font-size: 0.78rem; color: var(--text); margin: 4px 0 0 0; line-height: 1.35;">{{ analytics.irrigation_advice.desc }}</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- 8. RILEVATORE FULMINI (WH57) -->
+        <div class="card">
+            <div class="card-header">
+                <span>⚡ Rilevatore Fulmini</span>
                 <span class="sub-badge" id="lightning_badge">
                     {% if latest.lightning_distance_km is not none %}
-                        ⚡ In Rilevamento
+                        ⚡ Rilevamento Attivo
                     {% else %}
-                        WH57 / WH51
+                        WH57 • Tempesta
+                    {% endif %}
+                </span>
+            </div>
+            <div class="main-stat">
+                <span class="val" id="lightning_dist_val">
+                    {% if latest.lightning_distance_km is not none %}
+                        {{ latest.lightning_distance_km }} <span class="unit">km</span>
+                    {% else %}
+                        0 <span class="unit">Scariche</span>
                     {% endif %}
                 </span>
             </div>
             <div class="item-list">
                 <div class="item">
-                    <span>Rilevatore Fulmini (WH57):</span>
+                    <span>Stato Rilevamento (WH57):</span>
                     <strong id="lightning">
                         {% if latest.lightning_distance_km is not none %}
-                            ⚡ {{ latest.lightning_distance_km }} km ({{ latest.lightning_count or 0 }} totali)
+                            ⚡ Distanza: {{ latest.lightning_distance_km }} km ({{ latest.lightning_count or 0 }} totali)
                         {% else %}
-                            <span style="color: var(--text-muted); font-size: 0.85rem;">In attesa di fulmini / GW3000</span>
+                            <span style="color: var(--text-muted); font-size: 0.85rem;">Nessun fulmine nelle vicinanze</span>
                         {% endif %}
                     </strong>
                 </div>
@@ -520,50 +542,22 @@
                     <span>Ultima Scarica Rilevata:</span>
                     <strong id="lightning_time">{{ latest.lightning_last_time or 'Nessuna recente' }}</strong>
                 </div>
-                <div class="divider"></div>
-                <div id="soil_moisture_container">
-                {% if analytics and analytics.soil_summary and analytics.soil_summary.has_sensors %}
-                    {% for ch, info in analytics.soil_summary.channels.items() %}
-                    <div class="item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span>🌱 {{ info.name }}:</span>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <strong>{{ info.value }}%</strong>
-                            <span class="badge {{ info.badge_class }}" style="font-size: 0.72rem; padding: 2px 6px;">{{ info.status_label }}</span>
-                            <span style="font-size: 0.75rem; color: var(--text-dim);" title="Variazione 24h">{{ info.trend_icon }} {{ '+' if info.diff_24h > 0 else '' }}{{ info.diff_24h }}%</span>
-                        </div>
-                    </div>
-                    {% endfor %}
-                {% elif soil_moisture %}
-                    {% for ch, val in soil_moisture.items() %}
-                    <div class="item"><span>🌱 Umidità Suolo {{ ch }}:</span> <strong>{{ val }}%</strong></div>
-                    {% endfor %}
-                {% else %}
-                    <div class="item"><span>🌱 Sensori Umidità Terreno:</span> <span style="color: var(--text-muted); font-size: 0.85rem;">In attesa di WH51</span></div>
-                {% endif %}
+                <div class="item">
+                    <span>Scariche Totali Oggi:</span>
+                    <strong id="lightning_count_today">{{ latest.lightning_count or 0 }}</strong>
                 </div>
-
-                <!-- 🌱 CONSIGLIO IRRIGAZIONE INTELLIGENTE (ET + PIOGGIA PREVISTA) -->
-                {% if analytics and analytics.irrigation_advice %}
-                <div class="divider"></div>
-                <div class="smart-irrigation-card" style="background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 8px; padding: 8px 10px; margin-top: 6px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-size: 0.82rem; font-weight: 700; color: #34d399;">{{ analytics.irrigation_advice.icon }} {{ analytics.irrigation_advice.title }}</span>
-                        <span style="font-size: 0.75rem; color: var(--text-dim);">ET: <strong>{{ analytics.evapotranspiration_mm }} mm/die</strong></span>
-                    </div>
-                    <p style="font-size: 0.78rem; color: var(--text); margin: 4px 0 0 0; line-height: 1.35;">{{ analytics.irrigation_advice.desc }}</p>
-                </div>
-                {% endif %}
             </div>
         </div>
 
-        <!-- 8. QUALITÀ DELL'ARIA & POLLINI CAMS -->
+        <!-- 9. QUALITÀ DELL'ARIA & POLLINI CAMS -->
         <div class="card">
             <div class="card-header">
                 <span>🌬️ Qualità dell'Aria & Pollini</span>
                 <span class="aqi-summary-badge {{ analytics.air_quality.eaqi.badge_class if analytics and analytics.air_quality else 'badge-success' }}" id="aqi_badge">
                     {{ analytics.air_quality.eaqi.icon if analytics and analytics.air_quality else '🟢' }} {{ analytics.air_quality.eaqi.label if analytics and analytics.air_quality else 'Buona' }}
                 </span>
-            </div>
+        
+    </div>
 
             <!-- PARTICOLATO & INQUINANTI (CAMS) -->
             <div class="pollutants-mini-grid">
@@ -775,6 +769,43 @@
         </div>
         {% endif %}
     </div>
+
+
+<!-- 🧠 SEZIONE INTELLIGENZA DOMESTICA: COSA DEVO SAPERE ORA -->
+<div class="now-intelligence-hero" id="now_intelligence_section">
+    <div class="now-intelligence-header">
+        <div class="now-intelligence-title">
+            <span class="pulse-dot"></span>
+            <span>🧠 Cosa devi sapere adesso</span>
+        </div>
+        <span style="font-size: 0.76rem; color: var(--text-dim);">Live Weather & Home Intelligence</span>
+    </div>
+    <div class="now-pills-grid" id="now_pills_container">
+        {% if analytics and analytics.now_highlights %}
+            {% for pill in analytics.now_highlights %}
+            <div class="now-pill">
+                <div class="now-pill-icon">{{ pill.icon }}</div>
+                <div class="now-pill-content">
+                    <div class="now-pill-action">{{ pill.action_text }}</div>
+                    <div class="now-pill-title">{{ pill.title }}</div>
+                    <div class="now-pill-sub">{{ pill.subtitle }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="now-pill">
+                <div class="now-pill-icon">🌤️</div>
+                <div class="now-pill-content">
+                    <div class="now-pill-action">Meteo</div>
+                    <div class="now-pill-title">Analisi in tempo reale</div>
+                    <div class="now-pill-sub">Tutti i parametri nella norma.</div>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+
 
     <!-- MINI GRAFICO ANDAMENTO RAPIDO 24H -->
     <div class="card" style="margin-top: 0.25rem;">
