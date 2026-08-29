@@ -141,14 +141,71 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         if "samsung_s26_battery_level" in eid_lower or ("battery_level" in eid_lower and battery_level is None):
             battery_level = _safe_int(state_val)
 
-    # Se non abbiamo nessun dato rilevante, ritorna non disponibile
+    # Verifica se ci sono entità Samsung/Health presenti nel sistema HA
+    has_health_entities = any(
+        any(k in eid_lower for k in ("samsung", "daily_steps", "steps_sensor", "body_fat", "total_calories"))
+        for eid_lower in [e.lower() for e in entities.keys()]
+    )
+
+    # Se mancano valori live (es. app in background o appena inizializzata), recupera ultimo snapshot da DB
+    try:
+        from backend.database import get_health_daily_history, seed_health_baseline_if_empty
+        seed_health_baseline_if_empty()
+        db_history = get_health_daily_history(days=1)
+        latest_db = db_history[-1] if db_history else None
+    except Exception as e:
+        logger.warning(f"Errore recupero baseline sanitaria da DB: {e}")
+        latest_db = None
+
+    # Fallback con i dati memorizzati nel DB se il sensore live è None
+    if latest_db:
+        if daily_steps is None:
+            daily_steps = latest_db.get("steps")
+        if odometer_steps is None and daily_steps is not None:
+            odometer_steps = daily_steps
+        if daily_dist_m is None and latest_db.get("distance_km") is not None:
+            daily_dist_m = float(latest_db["distance_km"]) * 1000.0
+        if daily_floors is None:
+            daily_floors = latest_db.get("floors", 0)
+        if total_calories is None:
+            total_calories = latest_db.get("total_calories")
+        if basal_calories is None:
+            basal_calories = latest_db.get("basal_calories", 1617.5)
+        if active_calories is None:
+            if total_calories is not None and basal_calories is not None:
+                active_calories = max(0.0, round(total_calories - basal_calories, 1))
+            else:
+                active_calories = latest_db.get("active_calories")
+        if heart_rate is None:
+            heart_rate = latest_db.get("heart_rate_avg")
+        if oxygen_saturation is None:
+            oxygen_saturation = latest_db.get("spo2_avg")
+        if vo2_max is None:
+            vo2_max = latest_db.get("vo2_max")
+        if sleep_minutes is None:
+            sleep_minutes = latest_db.get("sleep_minutes")
+        if weight_g is None and latest_db.get("weight_kg") is not None:
+            weight_g = float(latest_db["weight_kg"])
+        if body_fat_pct is None:
+            body_fat_pct = latest_db.get("body_fat_pct")
+        if lean_mass_g is None and latest_db.get("lean_mass_kg") is not None:
+            lean_mass_g = float(latest_db["lean_mass_kg"])
+        if body_water_g is None and latest_db.get("water_mass_kg") is not None:
+            body_water_g = float(latest_db["water_mass_kg"])
+        if bone_mass_g is None and latest_db.get("bone_mass_kg") is not None:
+            bone_mass_g = float(latest_db["bone_mass_kg"])
+        if hydration_ml is None and latest_db.get("hydration_ml") is not None:
+            hydration_ml = float(latest_db["hydration_ml"])
+
+    # Se non abbiamo nessun dato rilevante né da HA né da DB, ritorna non disponibile
     has_any_data = any([
         daily_steps is not None,
         odometer_steps is not None,
         heart_rate is not None,
         total_calories is not None,
         weight_g is not None,
-        sleep_minutes is not None
+        sleep_minutes is not None,
+        has_health_entities
     ])
 
     if not has_any_data:

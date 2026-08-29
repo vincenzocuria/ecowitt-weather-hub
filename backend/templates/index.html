@@ -1537,7 +1537,7 @@
                     <span class="health-progress-badge pill-cal" id="health_active_pct_badge">{{ health.calories.active_pct if health and health.calories else 0 }}% attive</span>
                 </div>
                 <div class="health-main-stat">
-                    <span class="health-stat-num" id="health_total_cal">{{ int(health.calories.total_kcal) if health and health.calories and health.calories.total_kcal is not none else '--' }}</span>
+                    <span class="health-stat-num" id="health_total_cal">{{ health.calories.total_kcal|int if health and health.calories and health.calories.total_kcal is not none else '--' }}</span>
                     <span class="health-stat-unit">kcal totali</span>
                 </div>
                 <!-- Progress bar calorie attive -->
@@ -1551,7 +1551,7 @@
                     </div>
                     <div class="submetric-item">
                         <span class="submetric-label">Metabolismo Basale</span>
-                        <strong class="submetric-val" id="health_basal_cal">{{ int(health.calories.basal_kcal) if health and health.calories and health.calories.basal_kcal is not none else '--' }} kcal</strong>
+                        <strong class="submetric-val" id="health_basal_cal">{{ health.calories.basal_kcal|int if health and health.calories and health.calories.basal_kcal is not none else '--' }} kcal</strong>
                     </div>
                 </div>
             </div>
