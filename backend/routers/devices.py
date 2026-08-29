@@ -233,6 +233,15 @@ async def api_health_summary():
     """Restituisce il riepilogo in tempo reale di parametri biometrici, passi, calorie e sonno da Samsung Health."""
     return homeassistant_service.parse_health_data()
 
+@router.get("/api/health/history")
+async def api_health_history(days: int = 30):
+    """Restituisce lo storico giornaliero e le aggregazioni statistiche (medie 7gg/30gg, mese corrente, record)."""
+    from backend.database import get_health_daily_history, get_health_stats_summary
+    return {
+        "history": get_health_daily_history(days=days),
+        "analytics": get_health_stats_summary()
+    }
+
 @router.post("/api/health/sync")
 @router.get("/api/health/sync")
 async def api_health_sync():

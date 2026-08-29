@@ -1533,6 +1533,13 @@ class TestEcowittHub(unittest.TestCase):
         self.assertEqual(resp_live.status_code, 200)
         self.assertIn("health", resp_live.json())
 
+        # 6. Test API GET /api/health/history
+        resp_hist = client.get("/api/health/history?days=14")
+        self.assertEqual(resp_hist.status_code, 200)
+        self.assertIn("history", resp_hist.json())
+        self.assertIn("analytics", resp_hist.json())
+        self.assertIn("avg_daily_steps_7d", resp_hist.json()["analytics"])
+
 
 if __name__ == "__main__":
     unittest.main()

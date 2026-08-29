@@ -252,9 +252,20 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
             "water_mass_kg": water_mass_kg,
             "bone_mass_kg": bone_mass_kg
         },
-        "hydration": {
+            "hydration": {
             "daily_ml": int(round(hydration_ml)) if hydration_ml is not None else 0,
             "goal_ml": 2000,
             "pct": min(100.0, round(((hydration_ml or 0) / 2000) * 100, 1)) if hydration_ml else 0.0
         }
     }
+
+    # Persistenza snapshot su SQLite e aggregazione statistiche
+    try:
+        from backend.database import record_health_snapshot, get_health_stats_summary
+        record_health_snapshot(result)
+        result["analytics"] = get_health_stats_summary()
+    except Exception as e:
+        logger.warning(f"[HEALTH] Errore integrazione statistiche DB salute: {e}")
+        result["analytics"] = {}
+
+    return result

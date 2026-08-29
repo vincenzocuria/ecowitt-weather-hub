@@ -1318,7 +1318,7 @@
     </div>
 
     <!-- SEZIONE SALUTE & ATTIVITÀ FISICA SAMSUNG HEALTH & HEALTH CONNECT -->
-    <div class="smart-appliances-hero health-hero-card" id="health_dashboard_section" style="margin-top: 1.25rem; {% if not health or not health.is_available %}display: none;{% endif %}">
+    <div class="smart-appliances-hero health-hero-card" id="health_dashboard_section" style="margin-top: 1.25rem; {% if not hass_enabled %}display: none;{% endif %}">
         <div class="appliances-header">
             <div class="appliances-title-group">
                 <span class="appliances-header-icon health-glow-icon">🩺</span>
@@ -1330,11 +1330,9 @@
                 </div>
             </div>
             <div class="appliances-header-badges">
-                {% if health and health.battery_pct is not none %}
-                <span class="presence-badge badge-present" id="health_battery_badge" style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.25); color: #34d399;">
-                    🔋 Batteria: <strong id="health_battery_val" style="margin-left: 4px;">{{ health.battery_pct }}%</strong>
+                <span class="presence-badge badge-present" id="health_battery_badge" style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.25); color: #34d399; {% if not health or health.battery_pct is none %}display: none;{% endif %}">
+                    🔋 Batteria: <strong id="health_battery_val" style="margin-left: 4px;">{{ health.battery_pct if health and health.battery_pct is not none else '--' }}%</strong>
                 </span>
-                {% endif %}
                 <div class="climate-status-badge" id="health_sync_btn" onclick="syncHealthLiveMetrics()" title="Sincronizza metriche sanitarie con Home Assistant">
                     <span class="pulse-dot"></span> <span id="health_status_text">🟢 Sincronizzato</span>
                 </div>
@@ -1478,6 +1476,70 @@
                 </div>
             </div>
 
+        </div>
+
+        <!-- BANNER STATISTICHE & MEDIE MENSILI / GIORNALIERE -->
+        <div class="health-analytics-container" style="margin-top: 1rem; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.25rem;">📊</span>
+                    <strong style="color: #f1f5f9; font-size: 0.95rem;">Medie Storiche & Andamento Passi</strong>
+                </div>
+                <div style="font-size: 0.8rem; color: #94a3b8;">
+                    Statistiche consolidate da Samsung Health & Health Connect
+                </div>
+            </div>
+
+            <!-- KPI ROW MEDIE -->
+            <div class="health-kpi-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 1rem;">
+                <div class="health-kpi-pill" style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 10px; padding: 10px 14px;">
+                    <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;">📈 Media 7 Giorni</div>
+                    <div style="display: flex; align-items: baseline; gap: 6px;">
+                        <strong id="health_kpi_avg_7d" style="font-size: 1.25rem; color: #38bdf8;">{{ "{:,}".format(health_stats.avg_daily_steps_7d if health_stats else 0).replace(',', '.') }}</strong>
+                        <span style="font-size: 0.75rem; color: #64748b;">passi/die</span>
+                    </div>
+                    <div style="font-size: 0.7rem; color: #cbd5e1; margin-top: 2px;" id="health_kpi_avg_cal_7d">~{{ health_stats.avg_daily_cal_7d if health_stats else 0 }} kcal/die</div>
+                </div>
+
+                <div class="health-kpi-pill" style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 10px; padding: 10px 14px;">
+                    <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;">📅 Media Mese Corrente</div>
+                    <div style="display: flex; align-items: baseline; gap: 6px;">
+                        <strong id="health_kpi_avg_month" style="font-size: 1.25rem; color: #10b981;">{{ "{:,}".format(health_stats.current_month_avg_daily_steps if health_stats else 0).replace(',', '.') }}</strong>
+                        <span style="font-size: 0.75rem; color: #64748b;">passi/die</span>
+                    </div>
+                    <div style="font-size: 0.7rem; color: #cbd5e1; margin-top: 2px;">
+                        Totale: <strong id="health_kpi_tot_month">{{ "{:,}".format(health_stats.current_month_total_steps if health_stats else 0).replace(',', '.') }}</strong> passi
+                    </div>
+                </div>
+
+                <div class="health-kpi-pill" style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 10px; padding: 10px 14px;">
+                    <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;">🏆 Record Storico Passi</div>
+                    <div style="display: flex; align-items: baseline; gap: 6px;">
+                        <strong id="health_kpi_max_steps" style="font-size: 1.25rem; color: #f59e0b;">{{ "{:,}".format(health_stats.max_steps_record.steps if health_stats and health_stats.max_steps_record else 0).replace(',', '.') }}</strong>
+                        <span style="font-size: 0.75rem; color: #64748b;">passi</span>
+                    </div>
+                    <div style="font-size: 0.7rem; color: #cbd5e1; margin-top: 2px;" id="health_kpi_max_date">il {{ health_stats.max_steps_record.date if health_stats and health_stats.max_steps_record else '--' }}</div>
+                </div>
+
+                <div class="health-kpi-pill" style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 10px; padding: 10px 14px;">
+                    <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;">😴 Media Sonno (7gg)</div>
+                    <div style="display: flex; align-items: baseline; gap: 6px;">
+                        <strong id="health_kpi_avg_sleep" style="font-size: 1.25rem; color: #a78bfa;">{{ health_stats.avg_sleep_7d if health_stats else '--' }}</strong>
+                    </div>
+                    <div style="font-size: 0.7rem; color: #cbd5e1; margin-top: 2px;">Recupero notturno</div>
+                </div>
+            </div>
+
+            <!-- GRAFICO ANDAMENTO PASSI 14 GIORNI -->
+            <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 12px; position: relative;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Andamento Passi Giornalieri (Ultime 2 Settimane)</span>
+                    <span style="font-size: 0.7rem; color: #38bdf8; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.2); padding: 2px 8px; border-radius: 6px;">🎯 Obiettivo: 8.000 passi</span>
+                </div>
+                <div style="height: 140px; width: 100%;">
+                    <canvas id="healthStepsMiniChart"></canvas>
+                </div>
+            </div>
         </div>
     </div>
 

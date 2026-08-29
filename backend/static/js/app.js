@@ -455,18 +455,18 @@ function startDashboardPolling() {
                     }
 
                     // Elettrodomestici SmartThings
-                    if (data.smartthings) {
-                        updateSmartThingsUI(data.smartthings);
+                    if (d.smartthings) {
+                        updateSmartThingsUI(d.smartthings);
                     }
 
                     // Dati Salute & Attività Samsung Health
-                    if (data.health) {
-                        updateHealthUI(data.health);
+                    if (d.health) {
+                        updateHealthUI(d.health);
                     }
 
                     // Dispositivi Smart Life (Tuya)
-                    if (data.tuya) {
-                        updateTuyaUI(data.tuya);
+                    if (d.tuya) {
+                        updateTuyaUI(d.tuya);
                     }
 
                     // Protezione Civile
@@ -1528,16 +1528,88 @@ function syncSmartThingsDevices() {
         });
 }
 
+let healthStepsChartInstance = null;
+
+function renderHealthStepsMiniChart(chartData) {
+    const canvas = document.getElementById('healthStepsMiniChart');
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (!chartData || !chartData.labels || !chartData.labels.length) return;
+
+    const ctx = canvas.getContext('2d');
+    if (healthStepsChartInstance) {
+        healthStepsChartInstance.data.labels = chartData.labels;
+        healthStepsChartInstance.data.datasets[0].data = chartData.steps;
+        healthStepsChartInstance.data.datasets[0].backgroundColor = chartData.steps.map(s => s >= 8000 ? 'rgba(16, 185, 129, 0.85)' : 'rgba(56, 189, 248, 0.8)');
+        healthStepsChartInstance.update('none');
+        return;
+    }
+
+    healthStepsChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: chartData.labels,
+            datasets: [{
+                label: 'Passi Giornalieri',
+                data: chartData.steps,
+                backgroundColor: chartData.steps.map(s => s >= 8000 ? 'rgba(16, 185, 129, 0.85)' : 'rgba(56, 189, 248, 0.8)'),
+                borderRadius: 4,
+                borderSkipped: false,
+                maxBarThickness: 18
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#f8fafc',
+                    bodyColor: '#38bdf8',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    callbacks: {
+                        label: function(ctx) {
+                            const steps = ctx.raw || 0;
+                            const cal = chartData.calories ? chartData.calories[ctx.dataIndex] : 0;
+                            const res = [`👟 ${Number(steps).toLocaleString('it-IT')} passi`];
+                            if (cal) res.push(`🔥 ${cal} kcal`);
+                            return res;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { color: '#64748b', font: { size: 10 } }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                    ticks: {
+                        color: '#64748b',
+                        font: { size: 10 },
+                        callback: function(val) {
+                            return (val >= 1000) ? (val / 1000) + 'k' : val;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
 function updateHealthUI(health) {
     if (!health) return;
     const sec = document.getElementById('health_dashboard_section');
     if (!sec) return;
 
     if (!health.is_available) {
-        sec.style.display = 'none';
-        return;
+        // Non nascondere se la dashboard è già caricata con baseline
+    } else {
+        sec.style.display = 'block';
     }
-    sec.style.display = 'block';
 
     if (health.device_name) {
         const dName = document.getElementById('health_device_name');
@@ -1623,6 +1695,30 @@ function updateHealthUI(health) {
         if (waterEl && b.water_mass_kg !== undefined && b.water_mass_kg !== null) waterEl.innerText = `${b.water_mass_kg} kg`;
         if (boneEl && b.bone_mass_kg !== undefined && b.bone_mass_kg !== null) boneEl.innerText = `${b.bone_mass_kg} kg`;
     }
+
+    // 5. Medie Storiche & KPI Analitici
+    if (health.analytics) {
+        const a = health.analytics;
+        const avg7d = document.getElementById('health_kpi_avg_7d');
+        const avgCal7d = document.getElementById('health_kpi_avg_cal_7d');
+        const avgM = document.getElementById('health_kpi_avg_month');
+        const totM = document.getElementById('health_kpi_tot_month');
+        const maxSteps = document.getElementById('health_kpi_max_steps');
+        const maxDate = document.getElementById('health_kpi_max_date');
+        const avgSleep = document.getElementById('health_kpi_avg_sleep');
+
+        if (avg7d && a.avg_daily_steps_7d !== undefined) avg7d.innerText = Number(a.avg_daily_steps_7d).toLocaleString('it-IT');
+        if (avgCal7d && a.avg_daily_cal_7d !== undefined) avgCal7d.innerText = `~${a.avg_daily_cal_7d} kcal/die`;
+        if (avgM && a.current_month_avg_daily_steps !== undefined) avgM.innerText = Number(a.current_month_avg_daily_steps).toLocaleString('it-IT');
+        if (totM && a.current_month_total_steps !== undefined) totM.innerText = Number(a.current_month_total_steps).toLocaleString('it-IT');
+        if (maxSteps && a.max_steps_record && a.max_steps_record.steps !== undefined) maxSteps.innerText = Number(a.max_steps_record.steps).toLocaleString('it-IT');
+        if (maxDate && a.max_steps_record && a.max_steps_record.date) maxDate.innerText = `il ${a.max_steps_record.date}`;
+        if (avgSleep && a.avg_sleep_7d !== undefined) avgSleep.innerText = a.avg_sleep_7d;
+
+        if (a.chart_data_14d) {
+            renderHealthStepsMiniChart(a.chart_data_14d);
+        }
+    }
 }
 
 function syncHealthLiveMetrics() {
@@ -1641,6 +1737,19 @@ function syncHealthLiveMetrics() {
                 btn2.innerHTML = `<span class="pulse-dot"></span> <span id="health_status_text">🟢 Sincronizzato</span>`;
             }
         });
+}
+
+function loadHealthHistoryOnStartup() {
+    const canvas = document.getElementById('healthStepsMiniChart');
+    if (!canvas) return;
+    fetch('/api/health/history?days=14')
+        .then(r => r.json())
+        .then(data => {
+            if (data && data.analytics && data.analytics.chart_data_14d) {
+                renderHealthStepsMiniChart(data.analytics.chart_data_14d);
+            }
+        })
+        .catch(err => console.warn('Errore caricamento storico salute:', err));
 }
 
 function updateTuyaUI(tuya) {
@@ -2506,6 +2615,7 @@ async function refreshCivilProtectionLive(showFeedback = false) {
 
 document.addEventListener('DOMContentLoaded', () => {
     initDashboardTabs();
+    loadHealthHistoryOnStartup();
 });
 
 

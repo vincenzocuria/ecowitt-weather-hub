@@ -22,7 +22,8 @@ from backend.database import (
     get_sensor_aliases, get_database_stats, get_today_energy_summary,
     get_latest_energy, get_climate_automations_config, get_irrigation_automations_config,
     get_tuya_local_devices, to_local_datetime_str,
-    get_monthly_records, get_all_monthly_summaries
+    get_monthly_records, get_all_monthly_summaries,
+    get_health_stats_summary, get_health_daily_history
 )
 from backend.analytics import (
     calc_apparent_temp, deg_to_compass, calc_current_weather_condition, calc_sun_ephemeris
@@ -120,7 +121,14 @@ async def dashboard_page(request: Request):
     energy_summary = get_today_energy_summary()
 
     # Dati Smart Home & Elettrodomestici (Home Assistant Locale)
+    if homeassistant_service.enabled and not homeassistant_service.entities:
+        try:
+            await homeassistant_service.fetch_states()
+        except Exception:
+            pass
     ha_summary = homeassistant_service.get_summary(energy_latest, analytics.get("drying_index") if analytics else None)
+    health_data = ha_summary.get("health", {})
+    health_stats = get_health_stats_summary()
 
     return templates.TemplateResponse(
         request=request,
@@ -150,8 +158,9 @@ async def dashboard_page(request: Request):
             "smartthings_enabled": True,
             "tuya": ha_summary,
             "tuya_enabled": True,
-            "health": ha_summary.get("health", {}),
-            "health_enabled": bool(ha_summary.get("health", {}).get("is_available")),
+            "health": health_data,
+            "health_stats": health_stats,
+            "health_enabled": bool(health_data.get("is_available")),
             "hass_enabled": settings.HASS_ENABLED,
             "sensor_aliases": get_sensor_aliases(),
             "db_stats": get_database_stats(),
