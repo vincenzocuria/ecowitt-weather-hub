@@ -657,6 +657,23 @@ function startDashboardPolling() {
                 if (pUtenzeEl && d.p_utenze !== undefined) {
                     pUtenzeEl.innerHTML = `${Math.round(d.p_utenze)} <span class="unit">W</span>`;
                 }
+                const pUtenzeMain = document.getElementById('p_utenze_main_val');
+                if (pUtenzeMain && d.p_utenze !== undefined) {
+                    pUtenzeMain.innerText = Math.round(d.p_utenze);
+                }
+                const pSolareQuick = document.getElementById('p_solare_quick_val');
+                if (pSolareQuick && d.p_solare !== undefined) {
+                    pSolareQuick.innerText = `${Math.round(d.p_solare)} W`;
+                }
+                const pBattPctQuick = document.getElementById('battery_pct_quick_val');
+                if (pBattPctQuick && d.soc !== undefined) {
+                    pBattPctQuick.innerText = `${Math.round(d.soc)}%`;
+                }
+                const pReteQuick = document.getElementById('p_rete_quick_val');
+                if (pReteQuick && d.p_rete !== undefined) {
+                    const w = Math.round(d.p_rete_in || d.p_rete || 0);
+                    pReteQuick.innerText = `${w} W`;
+                }
 
                 // 4. Rete Elettrica
                 const pReteEl = document.getElementById('p_rete_val');
@@ -694,6 +711,8 @@ function startDashboardPolling() {
                 if (!s) return;
                 const autEl = document.getElementById('autarky_val');
                 if (autEl && s.autarky_pct !== undefined) autEl.innerText = s.autarky_pct + '%';
+                const autQuick = document.getElementById('autarky_quick_val');
+                if (autQuick && s.autarky_pct !== undefined) autQuick.innerText = s.autarky_pct + '%';
 
                 const selfEl = document.getElementById('self_cons_val');
                 if (selfEl && s.self_consumption_pct !== undefined) selfEl.innerText = s.self_consumption_pct + '%';
@@ -780,6 +799,10 @@ function updateSingleACUI(dev) {
     const currEl = document.getElementById(`curr_temp_${id}`);
     if (currEl && dev.current_temp !== undefined && dev.current_temp !== null) {
         currEl.innerText = `${dev.current_temp}°C`;
+    }
+    const currMiniEl = document.getElementById(`curr_temp_mini_${id}`);
+    if (currMiniEl && dev.current_temp !== undefined && dev.current_temp !== null) {
+        currMiniEl.innerText = `${dev.current_temp}°C`;
     }
 
     // Target Temp
