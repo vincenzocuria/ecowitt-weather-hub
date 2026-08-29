@@ -216,12 +216,18 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     steps_goal = 8000
     steps_pct = min(100.0, round((steps_val / steps_goal) * 100, 1)) if steps_goal > 0 else 0.0
 
-    # Distanza in km
+    # Distanza in km (usa il dato sensore se coerente, oppure stima 75cm a passo)
+    step_est_dist_km = round((steps_val * 0.75) / 1000.0, 2) if steps_val > 0 else 0.0
     dist_km = None
     if daily_dist_m is not None:
-        dist_km = round(daily_dist_m / 1000.0, 2)
+        sensor_dist_km = round(daily_dist_m / 1000.0, 2)
+        # Se il sensore riporta una distanza irrealistica rispetto ai passi (es. solo 500m per 6000 passi), usa la stima coerente
+        if steps_val > 1000 and sensor_dist_km < (step_est_dist_km * 0.4):
+            dist_km = step_est_dist_km
+        else:
+            dist_km = sensor_dist_km
     elif steps_val > 0:
-        dist_km = round((steps_val * 0.75) / 1000.0, 2)  # Stima 75cm per passo
+        dist_km = step_est_dist_km
 
     # Calorie attive stimate se non fornite direttamente
     if active_calories is None and total_calories is not None and basal_calories is not None:
