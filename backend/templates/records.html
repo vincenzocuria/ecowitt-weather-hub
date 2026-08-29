@@ -1,214 +1,418 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="header-card" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, #0f172a 100%); border-color: rgba(245, 158, 11, 0.3);">
+<!-- HEADER CARD -->
+<div class="header-card records-header-card">
     <div class="header-title">
-        <h1 style="color: #f59e0b;">🏆 Albo dei Record Meteorologici</h1>
-        <p>I valori estremi assoluti registrati dalla tua stazione meteo. Se un record viene battuto, viene aggiornato all'istante e memorizzato nella cronologia.</p>
+        <div class="records-header-badges">
+            <span class="badge badge-gold-glow">🏆 Hall of Fame Meteo</span>
+            <span class="badge badge-accent-glow">{{ records|length }} Record Attivi</span>
+        </div>
+        <h1>Albo dei Record Meteorologici</h1>
+        <p>I valori estremi assoluti registrati dalla stazione meteo Ecowitt & Sainlogic e dall'impianto solare Aton.</p>
     </div>
-    <a href="/api/export/records-csv" class="btn btn-gold" style="padding: 0.6rem 1.2rem;">📥 Esporta Record in Excel</a>
+    <div class="header-actions">
+        <a href="/api/export/records-csv" class="btn btn-gold records-export-btn" title="Esporta tutti i record in formato CSV per Excel">
+            📥 Esporta Record CSV
+        </a>
+    </div>
 </div>
 
-<!-- SEZIONE ESTREMI DI OGGI (GIORNALIERI) -->
-<div class="card" style="margin-top: 1.2rem; background: linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(14, 165, 233, 0.04) 100%); border-left: 4px solid #38bdf8;">
-    <div class="card-header" style="border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.8rem; margin-bottom: 1rem;">
-        <div style="display: flex; align-items: center; gap: 0.6rem;">
-            <span style="font-size: 1.5rem;">📅</span>
+<!-- BARRA DI NAVIGAZIONE RAPIDA AD ANCHOR (1-TAP SU MOBILE) -->
+<nav class="records-quick-nav" aria-label="Navigazione sezioni record">
+    <a href="#sec-today" class="records-nav-pill">📅 Oggi</a>
+    <a href="#sec-climate" class="records-nav-pill">📊 Clima</a>
+    <a href="#sec-tropical" class="records-nav-pill">🌴 Tropicali</a>
+    <a href="#sec-alltime" class="records-nav-pill">🏆 All-Time</a>
+    <a href="#sec-monthly" class="records-nav-pill">👑 Mesi Record</a>
+    {% if monthly_summaries %}
+    <a href="#sec-archive" class="records-nav-pill">📚 Archivio Mesi</a>
+    {% endif %}
+    {% if history %}
+    <a href="#sec-history" class="records-nav-pill">📜 Cronologia</a>
+    {% endif %}
+</nav>
+
+<!-- 1. SEZIONE ESTREMI DI OGGI (GIORNALIERI) -->
+<section id="sec-today" class="records-section-card today-section">
+    <div class="records-section-header">
+        <div class="records-header-left">
+            <span class="section-emoji">📅</span>
             <div>
-                <strong style="font-size: 1.1rem; color: #38bdf8;">Estremi Giornalieri di Oggi</strong>
-                <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Minime, massime ed escursione termica registrate nelle 24 ore odierne.</p>
+                <h2>Estremi Giornalieri di Oggi</h2>
+                <p>Minime, massime ed escursione termica registrate nelle 24 ore odierne.</p>
             </div>
         </div>
-        <span class="badge badge-info" style="font-size: 0.8rem; padding: 4px 10px;">
+        <span class="badge badge-info-pill">
             Oggi {{ climate_stats.today_avg_temp or '--' }}°C media
         </span>
     </div>
 
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.8rem;">
-        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
-            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Minima Oggi</span>
-            <div style="font-size: 1.7rem; font-weight: 800; color: #38bdf8; margin-top: 4px;">{{ today_extremes.temp_min if today_extremes and today_extremes.temp_min is not none else '--' }}°C</div>
-            <span style="font-size: 0.75rem; color: var(--text-dim);">ore {{ today_extremes.temp_min_time or '--:--' }}</span>
+    <div class="records-kpi-grid">
+        <div class="records-kpi-box temp-min">
+            <span class="kpi-mini-label">Minima Oggi</span>
+            <div class="kpi-main-val min-color">{{ today_extremes.temp_min if today_extremes and today_extremes.temp_min is not none else '--' }}<span class="kpi-unit">°C</span></div>
+            <span class="kpi-sub-label">ore {{ today_extremes.temp_min_time or '--:--' }}</span>
         </div>
 
-        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
-            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Massima Oggi</span>
-            <div style="font-size: 1.7rem; font-weight: 800; color: #f87171; margin-top: 4px;">{{ today_extremes.temp_max if today_extremes and today_extremes.temp_max is not none else '--' }}°C</div>
-            <span style="font-size: 0.75rem; color: var(--text-dim);">ore {{ today_extremes.temp_max_time or '--:--' }}</span>
+        <div class="records-kpi-box temp-max">
+            <span class="kpi-mini-label">Massima Oggi</span>
+            <div class="kpi-main-val max-color">{{ today_extremes.temp_max if today_extremes and today_extremes.temp_max is not none else '--' }}<span class="kpi-unit">°C</span></div>
+            <span class="kpi-sub-label">ore {{ today_extremes.temp_max_time or '--:--' }}</span>
         </div>
 
-        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
-            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Escursione Termica</span>
-            <div style="font-size: 1.7rem; font-weight: 800; color: #eab308; margin-top: 4px;">Δ {{ today_extremes.temp_range if today_extremes and today_extremes.temp_range is not none else '--' }}°C</div>
-            <span style="font-size: 0.75rem; color: var(--text-dim);">delta giorno</span>
+        <div class="records-kpi-box temp-delta">
+            <span class="kpi-mini-label">Escursione Termica</span>
+            <div class="kpi-main-val delta-color">Δ {{ today_extremes.temp_range if today_extremes and today_extremes.temp_range is not none else '--' }}<span class="kpi-unit">°C</span></div>
+            <span class="kpi-sub-label">delta 24h</span>
         </div>
 
-        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
-            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Raffica Max Oggi</span>
-            <div style="font-size: 1.7rem; font-weight: 800; color: #f59e0b; margin-top: 4px;">{{ today_extremes.max_gust if today_extremes and today_extremes.max_gust is not none else '--' }} <span style="font-size: 0.9rem; font-weight: normal;">km/h</span></div>
-            <span style="font-size: 0.75rem; color: var(--text-dim);">vento massimo</span>
+        <div class="records-kpi-box wind-gust">
+            <span class="kpi-mini-label">Raffica Max Oggi</span>
+            <div class="kpi-main-val wind-color">{{ today_extremes.max_gust if today_extremes and today_extremes.max_gust is not none else '--' }} <span class="kpi-unit">km/h</span></div>
+            <span class="kpi-sub-label">vento massimo</span>
         </div>
     </div>
-</div>
+</section>
 
-<!-- SEZIONE CONFRONTI CLIMATICI & STATISTICHE STORICHE -->
-<div class="climate-comp-card">
-    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 0.8rem;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 1.5rem;">📊</span>
+<!-- 2. SEZIONE CONFRONTI CLIMATICI & STATISTICHE STORICHE -->
+<section id="sec-climate" class="records-section-card climate-section">
+    <div class="records-section-header">
+        <div class="records-header-left">
+            <span class="section-emoji">📊</span>
             <div>
-                <strong style="font-size: 1.1rem; color: #818cf8;">Confronti Climatici & Medie Storiche</strong>
-                <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">{{ climate_stats.diff_30d_str }}</p>
+                <h2>Confronti Climatici & Medie Storiche</h2>
+                <p>{{ climate_stats.diff_30d_str }}</p>
             </div>
         </div>
-        <span class="badge" style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.4);">
+        <span class="badge badge-purple-pill">
             {{ climate_stats.month_name }}
         </span>
     </div>
 
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.8rem;">
-        <div style="background: rgba(0,0,0,0.25); padding: 0.8rem; border-radius: 8px;">
-            <span style="font-size: 0.75rem; color: var(--text-dim);">Giorni Caldi &ge; 30°C:</span>
-            <div style="font-size: 1.4rem; font-weight: 800; color: #f59e0b; margin-top: 2px;">{{ climate_stats.days_above_30 }} gg</div>
-            <span style="font-size: 0.72rem; color: var(--text-dim);">nel mese di {{ climate_stats.month_name }}</span>
+    <div class="records-kpi-grid">
+        <div class="records-kpi-box">
+            <span class="kpi-mini-label">Giorni Caldi &ge; 30°C</span>
+            <div class="kpi-main-val" style="color: #f59e0b;">{{ climate_stats.days_above_30 }} <span class="kpi-unit">gg</span></div>
+            <span class="kpi-sub-label">nel mese di {{ climate_stats.month_name }}</span>
         </div>
 
-        <div style="background: rgba(0,0,0,0.25); padding: 0.8rem; border-radius: 8px;">
-            <span style="font-size: 0.75rem; color: var(--text-dim);">Giorni Roventi &ge; 35°C:</span>
-            <div style="font-size: 1.4rem; font-weight: 800; color: #ef4444; margin-top: 2px;">{{ climate_stats.days_above_35 }} gg</div>
-            <span style="font-size: 0.72rem; color: var(--text-dim);">caldo estremo diurno</span>
+        <div class="records-kpi-box">
+            <span class="kpi-mini-label">Giorni Roventi &ge; 35°C</span>
+            <div class="kpi-main-val" style="color: #ef4444;">{{ climate_stats.days_above_35 }} <span class="kpi-unit">gg</span></div>
+            <span class="kpi-sub-label">caldo estremo diurno</span>
         </div>
 
-        <div style="background: rgba(0,0,0,0.25); padding: 0.8rem; border-radius: 8px;">
-            <span style="font-size: 0.75rem; color: var(--text-dim);">Giorni di Pioggia (&ge;1mm):</span>
-            <div style="font-size: 1.4rem; font-weight: 800; color: #38bdf8; margin-top: 2px;">{{ climate_stats.days_rain }} gg</div>
-            <span style="font-size: 0.72rem; color: var(--text-dim);">frequenza precipitazioni</span>
+        <div class="records-kpi-box">
+            <span class="kpi-mini-label">Giorni Pioggia (&ge;1mm)</span>
+            <div class="kpi-main-val" style="color: #38bdf8;">{{ climate_stats.days_rain }} <span class="kpi-unit">gg</span></div>
+            <span class="kpi-sub-label">frequenza piogge</span>
         </div>
 
-        <div style="background: rgba(0,0,0,0.25); padding: 0.8rem; border-radius: 8px;">
-            <span style="font-size: 0.75rem; color: var(--text-dim);">Media Ultimi 30 Giorni:</span>
-            <div style="font-size: 1.4rem; font-weight: 800; color: #a78bfa; margin-top: 2px;">{{ climate_stats.last_30d_avg_temp or '--' }}°C</div>
-            <span style="font-size: 0.72rem; color: var(--text-dim);">baseline storico DB</span>
+        <div class="records-kpi-box">
+            <span class="kpi-mini-label">Media Ultimi 30 Giorni</span>
+            <div class="kpi-main-val" style="color: #a78bfa;">{{ climate_stats.last_30d_avg_temp or '--' }}<span class="kpi-unit">°C</span></div>
+            <span class="kpi-sub-label">baseline storico DB</span>
         </div>
     </div>
-</div>
+</section>
 
-<!-- SEZIONE NOTTI TROPICALI & CLIMATOLOGIA -->
-<div class="card" style="margin-top: 1.2rem; background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(245, 158, 11, 0.06) 50%, var(--bg-card) 100%); border-left: 4px solid #f97316;">
-    <div class="card-header" style="border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.8rem; margin-bottom: 1rem;">
-        <div style="display: flex; align-items: center; gap: 0.6rem;">
-            <span style="font-size: 1.5rem;">🌴</span>
+<!-- 3. SEZIONE NOTTI TROPICALI & CLIMATOLOGIA -->
+<section id="sec-tropical" class="records-section-card tropical-section">
+    <div class="records-section-header">
+        <div class="records-header-left">
+            <span class="section-emoji">🌴</span>
             <div>
-                <strong style="font-size: 1.1rem; color: #f97316;">Climatologia Notti Tropicali (Anno {{ tropical_stats.year }})</strong>
-                <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Standard OMM/WMO: Minima notturna/giornaliera &ge; 20.0°C • Notti Roventi &ge; 25.0°C</p>
+                <h2>Climatologia Notti Tropicali ({{ tropical_stats.year }})</h2>
+                <p>Standard OMM/WMO: Minima notturna &ge; 20.0°C • Notti Roventi &ge; 25.0°C</p>
             </div>
         </div>
         {% if tropical_stats.today_is_tropical %}
-        <span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); font-size: 0.8rem; padding: 4px 10px;">
+        <span class="badge badge-tropical-live">
             🔥 Notte Tropicale Oggi
         </span>
         {% endif %}
     </div>
 
     <!-- KPI NOTTI TROPICALI -->
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.8rem; margin-bottom: 1.2rem;">
-        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
-            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Notti Tropicali (&ge;20°)</span>
-            <div style="font-size: 1.8rem; font-weight: 800; color: #f97316; margin-top: 4px;">{{ tropical_stats.total_tropical_nights }}</div>
-            <span style="font-size: 0.75rem; color: var(--text-dim);">nell'anno {{ tropical_stats.year }}</span>
+    <div class="records-kpi-grid" style="margin-bottom: 1rem;">
+        <div class="records-kpi-box">
+            <span class="kpi-mini-label">Notti Tropicali (&ge;20°)</span>
+            <div class="kpi-main-val" style="color: #f97316;">{{ tropical_stats.total_tropical_nights }}</div>
+            <span class="kpi-sub-label">anno {{ tropical_stats.year }}</span>
         </div>
 
-        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
-            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Notti Roventi (&ge;25°)</span>
-            <div style="font-size: 1.8rem; font-weight: 800; color: #ef4444; margin-top: 4px;">{{ tropical_stats.total_super_tropical_nights }}</div>
-            <span style="font-size: 0.75rem; color: var(--text-dim);">caldo estremo notturno</span>
+        <div class="records-kpi-box">
+            <span class="kpi-mini-label">Notti Roventi (&ge;25°)</span>
+            <div class="kpi-main-val" style="color: #ef4444;">{{ tropical_stats.total_super_tropical_nights }}</div>
+            <span class="kpi-sub-label">caldo notturno estremo</span>
         </div>
 
-        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
-            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Serie Consecutiva (Streak)</span>
-            <div style="font-size: 1.8rem; font-weight: 800; color: #eab308; margin-top: 4px;">
-                {{ tropical_stats.current_streak }}<span style="font-size: 1rem; font-weight: normal; color: var(--text-dim);"> gg</span>
+        <div class="records-kpi-box">
+            <span class="kpi-mini-label">Serie Consecutiva (Streak)</span>
+            <div class="kpi-main-val" style="color: #eab308;">
+                {{ tropical_stats.current_streak }}<span class="kpi-unit"> gg</span>
             </div>
-            <span style="font-size: 0.75rem; color: var(--text-dim);">Record anno: <strong>{{ tropical_stats.max_streak }} gg</strong></span>
+            <span class="kpi-sub-label">Record anno: <strong>{{ tropical_stats.max_streak }} gg</strong></span>
         </div>
 
-        <div style="background: rgba(0,0,0,0.25); padding: 0.9rem; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05);">
-            <span style="font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase;">Minima Più Alta</span>
-            <div style="font-size: 1.8rem; font-weight: 800; color: #ec4899; margin-top: 4px;">
-                {% if tropical_stats.highest_min_temp is not none %}{{ tropical_stats.highest_min_temp }}°C{% else %}--{% endif %}
+        <div class="records-kpi-box">
+            <span class="kpi-mini-label">Minima Più Alta</span>
+            <div class="kpi-main-val" style="color: #ec4899;">
+                {% if tropical_stats.highest_min_temp is not none %}{{ tropical_stats.highest_min_temp }}<span class="kpi-unit">°C</span>{% else %}--{% endif %}
             </div>
-            <span style="font-size: 0.75rem; color: var(--text-dim);">{% if tropical_stats.highest_min_day %}{{ tropical_stats.highest_min_day }}{% else %}In attesa dati{% endif %}</span>
+            <span class="kpi-sub-label">{% if tropical_stats.highest_min_day %}{{ tropical_stats.highest_min_day }}{% else %}In attesa dati{% endif %}</span>
         </div>
     </div>
 
-    <!-- DISTRIBUZIONE MENSILE -->
-    <div style="background: rgba(0,0,0,0.2); padding: 0.8rem 1rem; border-radius: 8px;">
-        <span style="font-size: 0.82rem; font-weight: 600; color: var(--text-dim); display: block; margin-bottom: 0.5rem;">
-            📅 Ripartizione Mensile Notti Tropicali:
+    <!-- RIPARTIZIONE MENSILE GRIGLIA PULITA -->
+    <div class="tropical-months-box">
+        <span class="tropical-months-title">
+            📅 Ripartizione Mensile Notti Tropicali ({{ tropical_stats.year }}):
         </span>
-        <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+        <div class="tropical-months-grid">
             {% for m in tropical_stats.monthly_stats %}
-            <div style="flex: 1 1 80px; background: rgba(255,255,255,0.04); padding: 6px 10px; border-radius: 6px; text-align: center; border: 1px solid rgba(255,255,255,0.04);">
-                <div style="font-size: 0.74rem; color: var(--text-dim);">{{ m.name }}</div>
-                <div style="font-size: 1.1rem; font-weight: 700; color: {% if m.count > 0 %}#f97316{% else %}var(--text-muted){% endif %}; margin-top: 2px;">
-                    {{ m.count }}
-                </div>
+            <div class="tropical-month-pill {% if m.count > 0 %}has-tropical{% endif %}">
+                <span class="month-name">{{ m.name }}</span>
+                <span class="month-count">{{ m.count }}</span>
             </div>
             {% endfor %}
         </div>
     </div>
-</div>
+</section>
 
-<!-- SEZIONE RECORD MENSILI STORICI -->
-<div class="card" style="margin-top: 1.5rem; background: linear-gradient(135deg, rgba(234, 179, 8, 0.08) 0%, rgba(245, 158, 11, 0.04) 100%); border-left: 4px solid #eab308;">
-    <div class="card-header" style="border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.8rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem;">
-        <div style="display: flex; align-items: center; gap: 0.6rem;">
-            <span style="font-size: 1.5rem;">👑</span>
+<!-- 4. SEZIONE RECORD STORICI ASSOLUTI (ALL-TIME) CON FILTRI E RICERCA -->
+<section id="sec-alltime" class="records-section-card alltime-section">
+    <div class="records-section-header">
+        <div class="records-header-left">
+            <span class="section-emoji">🏆</span>
             <div>
-                <strong style="font-size: 1.15rem; color: #f59e0b;">Albo dei Record Mensili Storici (All-Time)</strong>
-                <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">I mesi estremi e i primati storici assoluti registrati dalla stazione Ecowitt e dall'impianto Aton.</p>
+                <h2>Record Storici Assoluti (All-Time)</h2>
+                <p>I massimi e minimi di sempre registrati dalla stazione sul campo.</p>
             </div>
         </div>
-        <button onclick="rebuildMonthlyRecords()" class="btn btn-sm" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); font-size: 0.78rem; padding: 4px 10px; cursor: pointer; border-radius: 6px;">
-            🔄 Ricalcola Primati Mensili
+        <span id="alltime-counter-badge" class="badge badge-gold-pill">
+            {{ records|length }} primati
+        </span>
+    </div>
+
+    <!-- TOOLBAR RICERCA & CATEGORIE -->
+    <div class="records-toolbar">
+        <!-- Input Ricerca -->
+        <div class="records-search-wrapper">
+            <span class="search-icon">🔍</span>
+            <input 
+                type="text" 
+                id="alltime-search-input" 
+                placeholder="Cerca record (es. Raffica, Temperatura, 38.5, Pioggia)..." 
+                aria-label="Cerca nei record storici"
+                class="records-search-input"
+            >
+            <button 
+                id="alltime-search-clear" 
+                type="button" 
+                onclick="clearAllTimeSearch()" 
+                class="records-search-clear" 
+                title="Azzera ricerca"
+            >✕</button>
+        </div>
+
+        <!-- Filtri Categoria Rapidi -->
+        <div class="records-filter-pills" id="alltime-category-pills">
+            <button type="button" class="rec-filter-pill active" data-cat="all" onclick="filterAllTimeCategory('all', this)">Tutti</button>
+            <button type="button" class="rec-filter-pill" data-cat="temperature" onclick="filterAllTimeCategory('temperature', this)">🌡️ Temperature</button>
+            <button type="button" class="rec-filter-pill" data-cat="wind" onclick="filterAllTimeCategory('wind', this)">💨 Vento</button>
+            <button type="button" class="rec-filter-pill" data-cat="rain" onclick="filterAllTimeCategory('rain', this)">🌧️ Pioggia</button>
+            <button type="button" class="rec-filter-pill" data-cat="pressure" onclick="filterAllTimeCategory('pressure', this)">⏲️ Pressione</button>
+            <button type="button" class="rec-filter-pill" data-cat="solar" onclick="filterAllTimeCategory('solar', this)">☀️ Sole & UV</button>
+            <button type="button" class="rec-filter-pill" data-cat="lightning" onclick="filterAllTimeCategory('lightning', this)">⚡ Fulmini</button>
+        </div>
+    </div>
+
+    <!-- GRIGLIA RECORD OTTIMIZZATA MOBILE (2 COLONNE COMPATTE SU SMARTPHONE) -->
+    <div class="records-alltime-grid" id="alltime-grid">
+        {% for r in records %}
+        <div class="rec-item-card cat-{{ r.category }}" 
+             data-category="{{ r.category }}" 
+             data-key="{{ r.key }}"
+             data-title="{{ r.title }}"
+             data-value="{{ r.value if r.value is not none else '' }}"
+             data-search="{{ r.title }} {{ r.category }} {{ r.value }} {{ r.unit }} {{ r.timestamp | local_dt }}">
+            
+            <div class="rec-item-header">
+                <span class="rec-item-title">{{ r.title }}</span>
+                <span class="rec-item-cat-badge badge-{{ r.category }}">{{ r.category }}</span>
+            </div>
+
+            <div class="rec-item-val-wrap">
+                <span class="rec-item-val">
+                    {% if r.value is not none %}{{ r.value }}{% else %}--{% endif %}
+                </span>
+                <span class="rec-item-unit">{{ r.unit }}</span>
+            </div>
+
+            <div class="rec-item-meta">
+                <div class="rec-meta-row">
+                    <span class="meta-icon">📅</span>
+                    <span class="meta-text">
+                        {% if r.timestamp %}{{ r.timestamp | local_dt }}{% else %}<em class="muted-text">In attesa dati</em>{% endif %}
+                    </span>
+                </div>
+
+                {% if r.details and r.details.dir %}
+                <div class="rec-meta-row">
+                    <span class="meta-icon">🧭</span>
+                    <span class="meta-text">Direzione: <strong>{{ r.details.dir }}</strong></span>
+                </div>
+                {% endif %}
+
+                {% if r.details and r.details.date %}
+                <div class="rec-meta-row">
+                    <span class="meta-icon">🗓️</span>
+                    <span class="meta-text">Giorno evento: <strong>{{ r.details.date }}</strong></span>
+                </div>
+                {% endif %}
+
+                {% if r.details and r.details.count %}
+                <div class="rec-meta-row">
+                    <span class="meta-icon">⚡</span>
+                    <span class="meta-text">Scariche: <strong>{{ r.details.count }}</strong></span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- STATO NESSUN RISULTATO RICERCA RECORD -->
+    <div id="alltime-no-results" class="records-empty-state" style="display: none;">
+        <span class="empty-icon">🔍</span>
+        <h3>Nessun record trovato</h3>
+        <p>Nessun record corrisponde ai filtri o al testo cercato.</p>
+        <button type="button" onclick="clearAllTimeSearch(true)" class="btn btn-primary btn-sm" style="margin-top: 0.8rem;">
+            Azzera Filtri
+        </button>
+    </div>
+</section>
+
+<!-- 5. SEZIONE RECORD MENSILI STORICI -->
+<section id="sec-monthly" class="records-section-card monthly-section">
+    <div class="records-section-header">
+        <div class="records-header-left">
+            <span class="section-emoji">👑</span>
+            <div>
+                <h2>Albo dei Record Mensili Storici (All-Time)</h2>
+                <p>I mesi estremi e i primati mensili registrati dalla stazione e dall'impianto Aton.</p>
+            </div>
+        </div>
+        <button type="button" onclick="rebuildMonthlyRecords()" class="btn btn-sm btn-recalc-monthly" title="Ricalcola tutti i bilanci mensili storici e aggiorna i record">
+            🔄 Ricalcola Primati
         </button>
     </div>
 
-    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.8rem;">
+    <div class="records-monthly-grid">
         {% for mr in monthly_records %}
-        <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 1rem; border-left: 3px solid {% if mr.category == 'temperature' %}#ef4444{% elif mr.category == 'solar_energy' %}#eab308{% elif mr.category == 'rain' %}#38bdf8{% elif mr.category == 'climate' %}#f97316{% else %}#10b981{% endif %};">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
-                <span style="font-size: 0.78rem; color: var(--text-dim); font-weight: 600;">{{ mr.title }}</span>
-                <span class="badge" style="font-size: 0.68rem; padding: 2px 6px; background: rgba(255,255,255,0.06); text-transform: uppercase;">{{ mr.category }}</span>
+        <div class="monthly-rec-card cat-{{ mr.category }}">
+            <div class="monthly-rec-header">
+                <span class="monthly-rec-title">{{ mr.title }}</span>
+                <span class="badge badge-monthly-cat">{{ mr.category }}</span>
             </div>
-            <div style="font-size: 1.6rem; font-weight: 800; color: #fff; margin: 4px 0;">
-                {% if mr.value is not none %}{{ mr.value }} <span style="font-size: 0.85rem; font-weight: normal; color: var(--text-dim);">{{ mr.unit }}</span>{% else %}<span style="color: var(--text-muted);">--</span>{% endif %}
+            <div class="monthly-rec-val-wrap">
+                <span class="monthly-rec-val">
+                    {% if mr.value is not none %}{{ mr.value }}{% else %}--{% endif %}
+                </span>
+                <span class="monthly-rec-unit">{{ mr.unit }}</span>
             </div>
-            <div style="font-size: 0.78rem; color: #f59e0b; font-weight: 600; margin-top: 4px;">
+            <div class="monthly-rec-date">
                 📅 {{ mr.month_name if mr.month_name else 'In attesa dati' }}
             </div>
         </div>
         {% endfor %}
     </div>
-</div>
+</section>
 
-<!-- ARCHIVIO RIEPILOGHI MENSILI (TABELLA RIEPILOGATIVA) -->
+<!-- 6. ARCHIVIO RIEPILOGHI MENSILI (SCHEDE MOBILE + TABELLA DESKTOP) -->
 {% if monthly_summaries %}
-<div class="card" style="margin-top: 1.5rem;">
-    <div class="card-header" style="border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.8rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem;">
-        <div style="display: flex; align-items: center; gap: 0.6rem;">
-            <span style="font-size: 1.5rem;">📚</span>
+<section id="sec-archive" class="records-section-card archive-section">
+    <div class="records-section-header">
+        <div class="records-header-left">
+            <span class="section-emoji">📚</span>
             <div>
-                <strong style="font-size: 1.1rem; color: #38bdf8;">Archivio Storico dei Mesi (Riepiloghi Mensili)</strong>
-                <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Tutti i mesi consolidati con medie meteo e bilanci energetici Aton.</p>
+                <h2>Archivio Storico dei Mesi (Riepiloghi)</h2>
+                <p>Tutti i mesi consolidati con medie climatiche ed energia solare.</p>
             </div>
         </div>
-        <span class="badge badge-info" style="font-size: 0.8rem; padding: 4px 10px;">
-            {{ monthly_summaries|length }} mesi registrati
-        </span>
+
+        <!-- TOGGLE VISTA SCHEDE / TABELLA -->
+        <div class="archive-header-actions">
+            <span class="badge badge-info-pill">{{ monthly_summaries|length }} mesi</span>
+            <div class="archive-view-toggle">
+                <button type="button" id="btn-archive-cards" class="view-toggle-btn active" onclick="setArchiveView('cards')" title="Vista Schede (ideale per smartphone)">📱 Schede</button>
+                <button type="button" id="btn-archive-table" class="view-toggle-btn" onclick="setArchiveView('table')" title="Vista Tabella Densa">📊 Tabella</button>
+            </div>
+        </div>
     </div>
 
-    <div class="table-responsive">
+    <!-- VISTA A SCHEDE (DEFAULT SU SMARTPHONE) -->
+    <div id="archive-cards-view" class="archive-cards-grid">
+        {% for ms in monthly_summaries %}
+        <div class="archive-month-card">
+            <div class="archive-card-header">
+                <div class="archive-month-title">
+                    <span class="month-icon">🗓️</span>
+                    <strong>{{ ms.month_name }}</strong>
+                </div>
+                {% if ms.autarky_pct and ms.autarky_pct > 0 %}
+                <span class="badge badge-autarky">{{ ms.autarky_pct }}% Autarchia</span>
+                {% endif %}
+            </div>
+
+            <div class="archive-metrics-grid">
+                <!-- Temperatura -->
+                <div class="archive-metric-item">
+                    <span class="arch-lbl">🌡️ Temp Media</span>
+                    <span class="arch-val temp-avg">{{ ms.avg_temp if ms.avg_temp is not none else '--' }}°C</span>
+                    <span class="arch-sub"><span style="color:#38bdf8;">{{ ms.min_temp or '--' }}°</span> / <span style="color:#f87171;">{{ ms.max_temp or '--' }}°C</span></span>
+                </div>
+
+                <!-- Pioggia -->
+                <div class="archive-metric-item">
+                    <span class="arch-lbl">🌧️ Pioggia Totale</span>
+                    <span class="arch-val rain-val">{{ ms.total_rain_mm }} <small>mm</small></span>
+                    <span class="arch-sub">{{ ms.rainy_days_count }} giorni di pioggia</span>
+                </div>
+
+                <!-- Notti Tropicali -->
+                <div class="archive-metric-item">
+                    <span class="arch-lbl">🌴 Notti Tropicali</span>
+                    <span class="arch-val tropical-val">
+                        {% if ms.tropical_nights_count > 0 %}{{ ms.tropical_nights_count }} <small>notti</small>{% else %}0{% endif %}
+                    </span>
+                    <span class="arch-sub">min &ge; 20.0°C</span>
+                </div>
+
+                <!-- Solare Aton -->
+                <div class="archive-metric-item">
+                    <span class="arch-lbl">☀️ Solare Aton</span>
+                    <span class="arch-val solar-val">{{ ms.solar_total_kwh }} <small>kWh</small></span>
+                    <span class="arch-sub">{% if ms.solar_max_w %}Picco: {{ (ms.solar_max_w / 1000.0)|round(2) }} kW{% else %}Produzione{% endif %}</span>
+                </div>
+
+                <!-- Vento Max -->
+                <div class="archive-metric-item" style="grid-column: span 2;">
+                    <span class="arch-lbl">💨 Raffica Massima</span>
+                    <span class="arch-val wind-val">
+                        {{ ms.max_wind_gust_kmh if ms.max_wind_gust_kmh else '--' }} <small>km/h</small>
+                        {% if ms.max_wind_gust_dir %}<span class="wind-dir-tag">({{ ms.max_wind_gust_dir }})</span>{% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- VISTA A TABELLA DENSE -->
+    <div id="archive-table-view" class="table-responsive" style="display: none;">
         <table class="weather-table">
             <thead>
                 <tr>
@@ -244,10 +448,8 @@
                         {% if ms.solar_max_w %}<div style="font-size: 0.72rem; color: var(--text-dim);">Picco: {{ (ms.solar_max_w / 1000.0)|round(2) }} kW</div>{% endif %}
                     </td>
                     <td>
-                        {% if ms.autarky_pct > 0 %}
-                        <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">
-                            {{ ms.autarky_pct }}%
-                        </span>
+                        {% if ms.autarky_pct and ms.autarky_pct > 0 %}
+                        <span class="badge badge-autarky">{{ ms.autarky_pct }}%</span>
                         {% else %}
                         <span style="color: var(--text-muted);">--</span>
                         {% endif %}
@@ -261,99 +463,122 @@
             </tbody>
         </table>
     </div>
-</div>
+</section>
 {% endif %}
 
-<!-- CATEGORIE RECORD -->
-<h2 style="font-size: 1.3rem; margin-top: 1.5rem; color: var(--accent);">🏆 Record Storici Assoluti (All-Time)</h2>
-
-<div class="grid">
-    {% for r in records %}
-    <div class="card" style="border-left: 4px solid {% if r.key == 'temp_min_highest' %}#f97316{% elif r.category == 'temperature' %}#ef4444{% elif r.category == 'wind' %}#f59e0b{% elif r.category == 'rain' %}#38bdf8{% elif r.category == 'pressure' %}#8b5cf6{% elif r.category == 'lightning' %}#eab308{% else %}#10b981{% endif %};">
-        <div class="card-header">
-            <span>{{ r.title }}</span>
-            <span style="font-size: 0.75rem; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.06); color: var(--text-dim);">
-                {{ r.category }}
-            </span>
-        </div>
-        <div class="main-stat">
-            <span class="val" style="color: {% if r.value is not none %}#fff{% else %}var(--text-muted){% endif %};">
-                {% if r.value is not none %}{{ r.value }}{% else %}--{% endif %}
-            </span>
-            <span class="unit">{{ r.unit }}</span>
-        </div>
-        <div class="item-list">
-            <div class="item">
-                <span>Stabilito il:</span>
-                <strong>{% if r.timestamp %}{{ r.timestamp | local_dt }}{% else %}<span style="color: var(--text-muted);">In attesa di rilevamento</span>{% endif %}</strong>
-            </div>
-            {% if r.details and r.details.dir %}
-            <div class="item"><span>Direzione associata:</span> <strong>{{ r.details.dir }}</strong></div>
-            {% endif %}
-            {% if r.details and r.details.date %}
-            <div class="item"><span>Data evento:</span> <strong>{{ r.details.date }}</strong></div>
-            {% endif %}
-            {% if r.details and r.details.count %}
-            <div class="item"><span>Scariche associate:</span> <strong>{{ r.details.count }}</strong></div>
-            {% endif %}
-        </div>
-    </div>
-    {% endfor %}
-</div>
-
-<!-- CRONOLOGIA DEI RECORD INFRANTI (SOLO DESKTOP CON RICERCA E ORDINAMENTO) -->
-<div class="card desktop-only" style="margin-top: 1.5rem;" id="records-history-section">
-    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.9rem; margin-bottom: 1rem;">
-        <div style="display: flex; align-items: center; gap: 0.6rem;">
-            <span style="font-size: 1.5rem;">📜</span>
+<!-- 7. CRONOLOGIA DEI RECORD INFRANTI (PIENAMENTE DISPONIBILE SU MOBILE & DESKTOP) -->
+<section id="sec-history" class="records-section-card history-section">
+    <div class="records-section-header">
+        <div class="records-header-left">
+            <span class="section-emoji">📜</span>
             <div>
-                <strong style="font-size: 1.1rem; color: #f59e0b;">Cronologia dei Record Infranti nel Tempo</strong>
-                <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Storico dettagliato dei primati battuti e degli aggiornamenti registrati</p>
+                <h2>Cronologia dei Record Infranti</h2>
+                <p>Storico completo dei primati battuti nel tempo e aggiornamenti.</p>
             </div>
         </div>
-        <div style="display: flex; align-items: center; gap: 0.6rem;">
-            <span id="history-total-count" class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); font-size: 0.82rem; padding: 4px 10px;">
-                {{ history|length }} record registrati
+        <div class="archive-header-actions">
+            <span id="history-total-count" class="badge badge-gold-pill">
+                {{ history|length }} record
             </span>
+            <div class="archive-view-toggle">
+                <button type="button" id="btn-hist-cards" class="view-toggle-btn active" onclick="setHistoryView('cards')" title="Vista Cronologia Schede">📱 Schede</button>
+                <button type="button" id="btn-hist-table" class="view-toggle-btn" onclick="setHistoryView('table')" title="Vista Tabella Densa">📊 Tabella</button>
+            </div>
         </div>
     </div>
     
     {% if history %}
-    <!-- TOOLBAR RICERCA E FILTRI RAPIDI -->
-    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.8rem; margin-bottom: 1rem; background: rgba(0,0,0,0.25); padding: 0.8rem 1rem; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05);">
+    <!-- TOOLBAR RICERCA E FILTRI RAPIDI CRONOLOGIA -->
+    <div class="records-toolbar">
         <!-- Barra di Ricerca -->
-        <div style="position: relative; flex: 1; min-width: 260px; max-width: 480px;">
-            <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 0.95rem; color: var(--text-dim); pointer-events: none;">🔍</span>
+        <div class="records-search-wrapper">
+            <span class="search-icon">🔍</span>
             <input 
                 type="text" 
                 id="history-search-input" 
-                placeholder="Cerca per tipo, data, valore... (es. Raffica, 35.4, 2026)" 
-                style="width: 100%; padding: 0.55rem 2.2rem 0.55rem 2.4rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-size: 0.88rem; outline: none; transition: border-color 0.2s, box-shadow 0.2s;"
-                onfocus="this.style.borderColor='var(--accent)'; this.style.boxShadow='0 0 0 3px rgba(56, 189, 248, 0.15)';"
-                onblur="this.style.borderColor='var(--card-border)'; this.style.boxShadow='none';"
+                placeholder="Cerca nella cronologia (es. Raffica, 35.4, 2026)..." 
+                aria-label="Cerca nella cronologia record"
+                class="records-search-input"
             >
             <button 
                 id="history-search-clear" 
                 type="button" 
                 onclick="clearHistorySearch()" 
-                style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-dim); font-size: 1rem; cursor: pointer; display: none; padding: 2px 6px; border-radius: 4px;"
+                class="records-search-clear" 
                 title="Azzera ricerca"
             >✕</button>
         </div>
 
         <!-- Categorie Rapide -->
-        <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
-            <button class="history-filter-btn active" data-category="all" onclick="filterHistoryCategory('all', this)">Tutti</button>
-            <button class="history-filter-btn" data-category="temperature" onclick="filterHistoryCategory('temperature', this)">🌡️ Temperature</button>
-            <button class="history-filter-btn" data-category="wind" onclick="filterHistoryCategory('wind', this)">💨 Vento</button>
-            <button class="history-filter-btn" data-category="rain" onclick="filterHistoryCategory('rain', this)">🌧️ Pioggia</button>
-            <button class="history-filter-btn" data-category="pressure" onclick="filterHistoryCategory('pressure', this)">⏲️ Pressione</button>
-            <button class="history-filter-btn" data-category="lightning" onclick="filterHistoryCategory('lightning', this)">⚡ Fulmini</button>
+        <div class="records-filter-pills" id="history-category-pills">
+            <button type="button" class="rec-filter-pill active" data-category="all" onclick="filterHistoryCategory('all', this)">Tutti</button>
+            <button type="button" class="rec-filter-pill" data-category="temperature" onclick="filterHistoryCategory('temperature', this)">🌡️ Temperature</button>
+            <button type="button" class="rec-filter-pill" data-category="wind" onclick="filterHistoryCategory('wind', this)">💨 Vento</button>
+            <button type="button" class="rec-filter-pill" data-category="rain" onclick="filterHistoryCategory('rain', this)">🌧️ Pioggia</button>
+            <button type="button" class="rec-filter-pill" data-category="pressure" onclick="filterHistoryCategory('pressure', this)">⏲️ Pressione</button>
+            <button type="button" class="rec-filter-pill" data-category="lightning" onclick="filterHistoryCategory('lightning', this)">⚡ Fulmini</button>
         </div>
     </div>
 
-    <!-- TABELLA ORDINABILE -->
-    <div class="table-responsive">
+    <!-- VISTA TIMELINE / SCHEDE PER MOBILE & TOUCH -->
+    <div id="history-cards-view" class="history-cards-timeline">
+        {% for h in history %}
+        <div class="history-event-card cat-{{ h.category or 'gen' }}"
+             data-category="{{ h.category or '' }}"
+             data-time="{{ h.timestamp or '' }}"
+             data-title="{{ h.title or '' }}"
+             data-old-val="{{ h.old_value if h.old_value is not none else -999999 }}"
+             data-new-val="{{ h.new_value if h.new_value is not none else 0 }}"
+             data-search="{{ h.title }} {{ h.timestamp | local_dt }} {{ h.old_value }} {{ h.new_value }} {{ h.unit }} {{ h.details.dir if (h.details and h.details.dir) else '' }}">
+            
+            <div class="hist-card-top">
+                <div class="hist-card-title-row">
+                    <span class="hist-badge badge-{{ h.category or 'gen' }}">{{ h.category or 'Record' }}</span>
+                    <strong class="hist-title-text">{{ h.title }}</strong>
+                </div>
+                <div class="hist-time-tag">
+                    🕒 {{ h.timestamp | local_dt }}
+                </div>
+            </div>
+
+            <div class="hist-values-comparison">
+                <div class="hist-val-box old-val">
+                    <span class="hist-val-label">PRECEDENTE</span>
+                    <span class="hist-val-num">
+                        {% if h.old_value is not none %}
+                            <del>{{ h.old_value }}</del> <small>{{ h.unit }}</small>
+                        {% else %}
+                            <em style="font-size: 0.75rem; color: var(--text-muted);">Prima rilevazione</em>
+                        {% endif %}
+                    </span>
+                </div>
+
+                <div class="hist-arrow">➔</div>
+
+                <div class="hist-val-box new-val">
+                    <span class="hist-val-label">NUOVO RECORD BATTUTO</span>
+                    <span class="hist-val-num gold-highlight">
+                        {{ h.new_value }} <small>{{ h.unit }}</small>
+                    </span>
+                </div>
+            </div>
+
+            {% if (h.details and h.details.dir) or (h.details and h.details.count) %}
+            <div class="hist-details-row">
+                {% if h.details and h.details.dir %}
+                <span class="hist-detail-pill">💨 Vento da <strong>{{ h.details.dir }}</strong></span>
+                {% endif %}
+                {% if h.details and h.details.count %}
+                <span class="hist-detail-pill">⚡ <strong>{{ h.details.count }}</strong> scariche</span>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- TABELLA ORDINABILE PER DESKTOP / TABLET -->
+    <div id="history-table-view" class="table-responsive" style="display: none;">
         <table class="weather-table" id="history-table">
             <thead>
                 <tr>
@@ -398,7 +623,7 @@
                         <div style="font-weight: 600; color: var(--text);">{{ h.timestamp | local_dt }}</div>
                     </td>
                     <td>
-                        <span class="badge" style="background: rgba(255,255,255,0.06); color: {% if h.category == 'temperature' %}#ef4444{% elif h.category == 'wind' %}#f59e0b{% elif h.category == 'rain' %}#38bdf8{% elif h.category == 'pressure' %}#8b5cf6{% elif h.category == 'lightning' %}#eab308{% else %}#10b981{% endif %}; font-size: 0.72rem; text-transform: uppercase; margin-right: 6px;">
+                        <span class="badge badge-{{ h.category or 'gen' }}" style="font-size: 0.72rem; text-transform: uppercase; margin-right: 6px;">
                             {{ h.category }}
                         </span>
                         <strong>{{ h.title }}</strong>
@@ -431,28 +656,381 @@
         </table>
     </div>
 
-    <!-- RIGA NESSUN RISULTATO RICERCA -->
-    <div id="history-no-results" style="display: none; padding: 2.5rem 1rem; text-align: center;">
-        <div style="font-size: 2.2rem; margin-bottom: 0.5rem; opacity: 0.7;">🔍</div>
-        <div style="font-weight: 700; color: var(--text); font-size: 1.05rem;">Nessun record trovato</div>
-        <p style="color: var(--text-dim); font-size: 0.88rem; margin-top: 4px;">Nessun evento della cronologia corrisponde ai filtri selezionati.</p>
-        <button type="button" onclick="clearHistorySearch(true)" class="btn btn-primary" style="margin-top: 1rem; padding: 0.45rem 1rem; font-size: 0.85rem;">
-            Azzera ricerca e filtri
+    <!-- RIGA NESSUN RISULTATO RICERCA CRONOLOGIA -->
+    <div id="history-no-results" class="records-empty-state" style="display: none;">
+        <span class="empty-icon">🔍</span>
+        <h3>Nessun record trovato</h3>
+        <p>Nessun evento della cronologia corrisponde ai filtri selezionati.</p>
+        <button type="button" onclick="clearHistorySearch(true)" class="btn btn-primary btn-sm" style="margin-top: 0.8rem;">
+            Azzera Ricerca e Filtri
         </button>
     </div>
 
     {% else %}
-    <p style="color: var(--text-dim); padding: 1.5rem; text-align: center;">
-        Nessun record infranto finora. I nuovi primati registrati dalla stazione appariranno qui automaticamente con data e vecchio valore sostituito.
+    <p class="muted-text" style="padding: 2rem; text-align: center;">
+        Nessun record infranto finora. I nuovi primati registrati appariranno qui automaticamente con data e vecchio valore.
     </p>
     {% endif %}
-</div>
+</section>
 
+<!-- STILI DEDICATI RECORDS & OTTIMIZZAZIONE RESPONSIVE MOBILE -->
 <style>
-.history-filter-btn {
+/* ==========================================================================
+   RECORDS PAGE MODERN MOBILE & DESKTOP STYLES
+   ========================================================================== */
+
+/* HEADER CARD */
+.records-header-card {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(15, 23, 42, 0.95) 100%);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: var(--radius-lg, 20px);
+    padding: 1.25rem 1.5rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.records-header-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.4rem;
+}
+.badge-gold-glow {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+}
+.badge-accent-glow {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+}
+.records-export-btn {
+    padding: 0.55rem 1.15rem;
+    font-size: 0.88rem;
+    font-weight: 700;
+    border-radius: 10px;
+    white-space: nowrap;
+    text-decoration: none;
+}
+
+/* BARRA DI NAVIGAZIONE RAPIDA */
+.records-quick-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding: 0.35rem 0.2rem;
+    margin: -0.25rem 0 0.5rem 0;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.records-quick-nav::-webkit-scrollbar {
+    display: none;
+}
+.records-nav-pill {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-dim, #94a3b8);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+.records-nav-pill:hover, .records-nav-pill:active {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: #38bdf8;
+    color: #38bdf8;
+}
+
+/* SECTION CARDS */
+.records-section-card {
+    background: var(--card-bg, #131b2e);
+    border: 1px solid var(--card-border, #1e293b);
+    border-radius: 18px;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+.today-section {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(14, 165, 233, 0.03) 100%);
+    border-left: 4px solid #38bdf8;
+}
+.climate-section {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.03) 100%);
+    border-left: 4px solid #6366f1;
+}
+.tropical-section {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(245, 158, 11, 0.05) 50%, var(--card-bg, #131b2e) 100%);
+    border-left: 4px solid #f97316;
+}
+.alltime-section {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.06) 0%, var(--card-bg, #131b2e) 100%);
+    border-left: 4px solid #f59e0b;
+}
+.monthly-section {
+    background: linear-gradient(135deg, rgba(234, 179, 8, 0.08) 0%, rgba(245, 158, 11, 0.03) 100%);
+    border-left: 4px solid #eab308;
+}
+.archive-section {
+    border-left: 4px solid #0ea5e9;
+}
+.history-section {
+    border-left: 4px solid #f59e0b;
+}
+
+/* SECTION HEADER */
+.records-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding-bottom: 0.75rem;
+}
+.records-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+.section-emoji {
+    font-size: 1.5rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+.records-header-left h2 {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1.25;
+}
+.records-header-left p {
+    font-size: 0.8rem;
+    color: var(--text-dim, #94a3b8);
+    margin-top: 2px;
+}
+
+/* BADGES */
+.badge-info-pill {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    font-size: 0.8rem;
+    padding: 3px 9px;
+    border-radius: 6px;
+    font-weight: 700;
+}
+.badge-purple-pill {
+    background: rgba(99, 102, 241, 0.2);
+    color: #818cf8;
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    font-size: 0.8rem;
+    padding: 3px 9px;
+    border-radius: 6px;
+    font-weight: 700;
+}
+.badge-tropical-live {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    font-size: 0.8rem;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: 700;
+}
+.badge-gold-pill {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    font-size: 0.8rem;
+    padding: 3px 9px;
+    border-radius: 6px;
+    font-weight: 700;
+}
+.badge-autarky {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    font-size: 0.72rem;
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-weight: 700;
+}
+
+/* KPI GRIDS (2 COLONNE COMPATTE SU MOBILE, 4 SU DESKTOP) */
+.records-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+}
+.records-kpi-box {
+    background: rgba(0, 0, 0, 0.25);
+    padding: 0.85rem;
+    border-radius: 12px;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+}
+.kpi-mini-label {
+    font-size: 0.74rem;
+    color: var(--text-dim, #94a3b8);
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.kpi-main-val {
+    font-size: 1.65rem;
+    font-weight: 800;
+    margin: 3px 0;
+    line-height: 1.15;
+}
+.kpi-unit {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-dim, #94a3b8);
+}
+.kpi-sub-label {
+    font-size: 0.74rem;
+    color: var(--text-dim, #94a3b8);
+}
+.min-color { color: #38bdf8; }
+.max-color { color: #f87171; }
+.delta-color { color: #eab308; }
+.wind-color { color: #f59e0b; }
+
+/* RIPARTIZIONE MENSILE NOTTI TROPICALI */
+.tropical-months-box {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 0.85rem 1rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+}
+.tropical-months-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-dim, #94a3b8);
+    display: block;
+    margin-bottom: 0.6rem;
+}
+.tropical-months-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.5rem;
+}
+.tropical-month-pill {
+    background: rgba(255, 255, 255, 0.04);
+    padding: 6px 8px;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.tropical-month-pill.has-tropical {
+    background: rgba(249, 115, 22, 0.12);
+    border-color: rgba(249, 115, 22, 0.3);
+}
+.tropical-month-pill .month-name {
+    font-size: 0.72rem;
+    color: var(--text-dim, #94a3b8);
+}
+.tropical-month-pill .month-count {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text-muted, #64748b);
+    margin-top: 2px;
+}
+.tropical-month-pill.has-tropical .month-count {
+    color: #f97316;
+}
+
+/* TOOLBAR RICERCA E FILTRI RAPIDI */
+.records-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.records-search-wrapper {
+    position: relative;
+    flex: 1 1 240px;
+    max-width: 460px;
+}
+.records-search-wrapper .search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.95rem;
+    color: var(--text-dim, #94a3b8);
+    pointer-events: none;
+}
+.records-search-input {
+    width: 100%;
+    padding: 0.52rem 2.2rem 0.52rem 2.3rem;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid var(--card-border, #1e293b);
+    border-radius: 8px;
+    color: var(--text, #f1f5f9);
+    font-size: 0.86rem;
+    outline: none;
+    transition: all 0.2s ease;
+}
+.records-search-input:focus {
+    border-color: var(--accent, #38bdf8);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+}
+.records-search-clear {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-dim, #94a3b8);
+    font-size: 0.95rem;
+    cursor: pointer;
+    display: none;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.records-filter-pills {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+.rec-filter-pill {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    color: var(--text-dim);
+    color: var(--text-dim, #94a3b8);
     padding: 4px 10px;
     border-radius: 6px;
     font-size: 0.78rem;
@@ -460,87 +1038,700 @@
     cursor: pointer;
     transition: all 0.2s ease;
 }
-.history-filter-btn:hover {
+.rec-filter-pill:hover {
     background: rgba(255, 255, 255, 0.1);
-    color: var(--text);
+    color: var(--text, #f1f5f9);
     border-color: rgba(255, 255, 255, 0.15);
 }
-.history-filter-btn.active {
+.rec-filter-pill.active {
     background: rgba(56, 189, 248, 0.15);
     border-color: #38bdf8;
     color: #38bdf8;
 }
+
+/* GRIGLIA RECORD ALL-TIME (2 COLONNE SU MOBILE, 3-4 SU DESKTOP) */
+.records-alltime-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 0.85rem;
+}
+.rec-item-card {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 0.95rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.6rem;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    border-left: 3px solid #10b981;
+}
+.rec-item-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+/* COLORI CATEGORIA ACCENT BORDI & BADGES */
+.cat-temperature { border-left-color: #ef4444 !important; }
+.cat-wind { border-left-color: #f59e0b !important; }
+.cat-rain { border-left-color: #38bdf8 !important; }
+.cat-pressure { border-left-color: #8b5cf6 !important; }
+.cat-solar { border-left-color: #eab308 !important; }
+.cat-lightning { border-left-color: #eab308 !important; }
+.cat-climate { border-left-color: #f97316 !important; }
+
+.badge-temperature { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+.badge-wind { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.badge-rain { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
+.badge-pressure { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+.badge-solar { background: rgba(234, 179, 8, 0.15); color: #fde047; }
+.badge-lightning { background: rgba(234, 179, 8, 0.15); color: #fde047; }
+.badge-climate { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+.badge-gen { background: rgba(255, 255, 255, 0.08); color: var(--text-dim, #94a3b8); }
+
+.rec-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+.rec-item-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text, #f1f5f9);
+    line-height: 1.3;
+}
+.rec-item-cat-badge {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.rec-item-val-wrap {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    margin: 2px 0;
+}
+.rec-item-val {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1.1;
+}
+.rec-item-unit {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-dim, #94a3b8);
+}
+.rec-item-meta {
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding-top: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+.rec-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.74rem;
+    color: var(--text-dim, #94a3b8);
+}
+.meta-icon {
+    font-size: 0.8rem;
+    flex-shrink: 0;
+}
+.meta-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* RECORD MENSILI GRIGLIA */
+.btn-recalc-monthly {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 4px 10px;
+    cursor: pointer;
+    border-radius: 8px;
+    white-space: nowrap;
+}
+.btn-recalc-monthly:hover {
+    background: rgba(245, 158, 11, 0.25);
+    color: #fff;
+}
+.records-monthly-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.75rem;
+}
+.monthly-rec-card {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 0.9rem;
+    border-left: 3px solid #10b981;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+.monthly-rec-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.3rem;
+}
+.monthly-rec-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text-dim, #94a3b8);
+}
+.badge-monthly-cat {
+    font-size: 0.65rem;
+    padding: 2px 5px;
+    background: rgba(255, 255, 255, 0.06);
+    text-transform: uppercase;
+    border-radius: 4px;
+    color: var(--text-dim, #94a3b8);
+}
+.monthly-rec-val-wrap {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #fff;
+    margin: 2px 0;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+}
+.monthly-rec-val {
+    color: #fff;
+}
+.monthly-rec-unit {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-dim, #94a3b8);
+}
+.monthly-rec-date {
+    font-size: 0.76rem;
+    color: #f59e0b;
+    font-weight: 700;
+    margin-top: 4px;
+}
+
+/* ARCHIVIO MESI CARDS & TABLE */
+.archive-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+.archive-view-toggle {
+    display: flex;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid var(--card-border, #1e293b);
+    border-radius: 8px;
+    padding: 2px;
+}
+.view-toggle-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim, #94a3b8);
+    font-size: 0.76rem;
+    font-weight: 700;
+    padding: 4px 9px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.view-toggle-btn.active {
+    background: var(--accent, #38bdf8);
+    color: #0b0f19;
+}
+.archive-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 0.85rem;
+}
+.archive-month-card {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 0.95rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+.archive-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 0.5rem;
+}
+.archive-month-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.95rem;
+    color: #fff;
+}
+.archive-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.65rem;
+}
+.archive-metric-item {
+    background: rgba(255, 255, 255, 0.03);
+    padding: 0.5rem 0.65rem;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.arch-lbl {
+    font-size: 0.68rem;
+    color: var(--text-dim, #94a3b8);
+    font-weight: 600;
+}
+.arch-val {
+    font-size: 1.15rem;
+    font-weight: 800;
+    line-height: 1.15;
+}
+.arch-sub {
+    font-size: 0.7rem;
+    color: var(--text-dim, #94a3b8);
+}
+.temp-avg { color: #38bdf8; }
+.rain-val { color: #38bdf8; }
+.tropical-val { color: #f97316; }
+.solar-val { color: #eab308; }
+.wind-val { color: #f59e0b; }
+.wind-dir-tag {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-dim, #94a3b8);
+}
+
+/* CRONOLOGIA INFRANTI SCHEDE & TIMELINE */
+.history-cards-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+.history-event-card {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 0.95rem;
+    border-left: 3px solid #f59e0b;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.history-event-card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+}
+.hist-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.hist-card-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.hist-badge {
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+}
+.hist-title-text {
+    font-size: 0.92rem;
+    color: #fff;
+}
+.hist-time-tag {
+    font-size: 0.74rem;
+    color: var(--text-dim, #94a3b8);
+    font-weight: 600;
+}
+.hist-values-comparison {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 0.6rem 0.8rem;
+    border-radius: 8px;
+}
+.hist-val-box {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.hist-val-box.old-val {
+    color: var(--text-muted, #64748b);
+}
+.hist-val-label {
+    font-size: 0.64rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--text-dim, #94a3b8);
+}
+.hist-val-num {
+    font-size: 1.15rem;
+    font-weight: 800;
+}
+.hist-arrow {
+    font-size: 1.1rem;
+    color: #f59e0b;
+    font-weight: 800;
+}
+.gold-highlight {
+    color: #f59e0b;
+}
+.hist-details-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.hist-detail-pill {
+    background: rgba(255, 255, 255, 0.04);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.76rem;
+    color: var(--text, #f1f5f9);
+}
+
+/* EMPTY STATE */
+.records-empty-state {
+    padding: 2.5rem 1rem;
+    text-align: center;
+}
+.empty-icon {
+    font-size: 2.2rem;
+    opacity: 0.7;
+    display: block;
+    margin-bottom: 0.4rem;
+}
+.records-empty-state h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #fff;
+}
+.records-empty-state p {
+    font-size: 0.85rem;
+    color: var(--text-dim, #94a3b8);
+    margin-top: 3px;
+}
+.muted-text {
+    color: var(--text-muted, #64748b);
+}
+
+/* SORTABLE TABLE */
 .sortable-th {
     transition: background 0.2s ease, color 0.2s ease;
 }
 .sortable-th:hover {
     background: rgba(56, 189, 248, 0.08) !important;
-    color: var(--accent) !important;
+    color: var(--accent, #38bdf8) !important;
 }
 .sort-icon {
     display: inline-block;
     font-size: 0.82rem;
-    color: var(--text-muted);
+    color: var(--text-muted, #64748b);
 }
 .sortable-th.active-sort .sort-icon {
     color: #f59e0b;
     font-weight: bold;
 }
+
+/* ==========================================================================
+   MEDIA QUERIES OTTIMIZZATE PER SMARTPHONE (< 768px e < 480px)
+   ========================================================================== */
+@media (max-width: 768px) {
+    .records-header-card {
+        padding: 1rem 1.1rem;
+    }
+    .records-header-card h1 {
+        font-size: 1.25rem;
+    }
+    .records-export-btn {
+        width: 100%;
+        text-align: center;
+    }
+    .records-kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.55rem;
+    }
+    .records-kpi-box {
+        padding: 0.7rem 0.5rem;
+    }
+    .kpi-main-val {
+        font-size: 1.4rem;
+    }
+    .tropical-months-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.4rem;
+    }
+    .records-alltime-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.6rem;
+    }
+    .rec-item-card {
+        padding: 0.75rem;
+    }
+    .rec-item-title {
+        font-size: 0.78rem;
+    }
+    .rec-item-val {
+        font-size: 1.45rem;
+    }
+    .records-monthly-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.6rem;
+    }
+    .monthly-rec-card {
+        padding: 0.75rem;
+    }
+    .monthly-rec-val-wrap {
+        font-size: 1.35rem;
+    }
+    .archive-cards-grid {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .records-section-card {
+        padding: 0.9rem;
+        border-radius: 14px;
+        gap: 0.85rem;
+    }
+    .records-header-left h2 {
+        font-size: 1.05rem;
+    }
+    .section-emoji {
+        font-size: 1.3rem;
+    }
+    .tropical-months-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    .rec-item-val {
+        font-size: 1.3rem;
+    }
+    .kpi-main-val {
+        font-size: 1.25rem;
+    }
+    .records-alltime-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.5rem;
+    }
+    .rec-item-card {
+        padding: 0.65rem;
+    }
+    .rec-item-title {
+        font-size: 0.75rem;
+    }
+    .rec-item-cat-badge {
+        font-size: 0.6rem;
+        padding: 1px 4px;
+    }
+    .records-monthly-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.5rem;
+    }
+}
 </style>
 
+<!-- SCRIPT DI CONTROLLO INTERATTIVO -->
 <script>
 (function() {
-    let currentCategory = 'all';
-    let currentSortCol = 'time';
-    let currentSortOrder = 'desc';
+    // --- 1. GESTIONE RECORD ALL-TIME (FILTRI E RICERCA) ---
+    let currentAllTimeCategory = 'all';
+    const allTimeSearchInput = document.getElementById('alltime-search-input');
+    const allTimeSearchClear = document.getElementById('alltime-search-clear');
+    const allTimeGrid = document.getElementById('alltime-grid');
+    const allTimeNoResults = document.getElementById('alltime-no-results');
+    const allTimeCounterBadge = document.getElementById('alltime-counter-badge');
 
-    const searchInput = document.getElementById('history-search-input');
-    const searchClearBtn = document.getElementById('history-search-clear');
-    const tbody = document.getElementById('history-tbody');
-    const noResultsDiv = document.getElementById('history-no-results');
-    const totalCountBadge = document.getElementById('history-total-count');
-
-    window.filterHistoryCategory = function(cat, btnElem) {
-        currentCategory = cat;
-        document.querySelectorAll('.history-filter-btn').forEach(b => b.classList.remove('active'));
+    window.filterAllTimeCategory = function(cat, btnElem) {
+        currentAllTimeCategory = cat;
+        document.querySelectorAll('#alltime-category-pills .rec-filter-pill').forEach(b => b.classList.remove('active'));
         if (btnElem) btnElem.classList.add('active');
-        applyFiltersAndSearch();
+        applyAllTimeFilters();
     };
 
-    window.clearHistorySearch = function(resetCategory) {
-        if (searchInput) {
-            searchInput.value = '';
-            if (searchClearBtn) searchClearBtn.style.display = 'none';
+    window.clearAllTimeSearch = function(resetCategory) {
+        if (allTimeSearchInput) {
+            allTimeSearchInput.value = '';
+            if (allTimeSearchClear) allTimeSearchClear.style.display = 'none';
         }
         if (resetCategory) {
-            currentCategory = 'all';
-            document.querySelectorAll('.history-filter-btn').forEach(b => {
-                b.classList.toggle('active', b.getAttribute('data-category') === 'all');
+            currentAllTimeCategory = 'all';
+            document.querySelectorAll('#alltime-category-pills .rec-filter-pill').forEach(b => {
+                b.classList.toggle('active', b.getAttribute('data-cat') === 'all');
             });
         }
-        applyFiltersAndSearch();
+        applyAllTimeFilters();
     };
 
-    if (searchInput) {
-        searchInput.addEventListener('input', function() {
-            if (searchClearBtn) {
-                searchClearBtn.style.display = this.value.trim() ? 'block' : 'none';
+    if (allTimeSearchInput) {
+        allTimeSearchInput.addEventListener('input', function() {
+            if (allTimeSearchClear) {
+                allTimeSearchClear.style.display = this.value.trim() ? 'block' : 'none';
             }
-            applyFiltersAndSearch();
+            applyAllTimeFilters();
         });
     }
 
-    function applyFiltersAndSearch() {
-        if (!tbody) return;
-        const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
-        const rows = Array.from(tbody.querySelectorAll('.history-row'));
+    function applyAllTimeFilters() {
+        if (!allTimeGrid) return;
+        const query = allTimeSearchInput ? allTimeSearchInput.value.toLowerCase().trim() : '';
+        const cards = Array.from(allTimeGrid.querySelectorAll('.rec-item-card'));
         let visibleCount = 0;
 
+        cards.forEach(card => {
+            const cardCat = (card.getAttribute('data-category') || '').toLowerCase();
+            const searchData = (card.getAttribute('data-search') || '').toLowerCase();
+
+            const matchCat = (currentAllTimeCategory === 'all' || cardCat === currentAllTimeCategory);
+            const matchQuery = !query || searchData.includes(query);
+
+            if (matchCat && matchQuery) {
+                card.style.display = 'flex';
+                visibleCount++;
+            } else {
+                card.style.display = 'none';
+            }
+        });
+
+        if (allTimeNoResults) {
+            allTimeNoResults.style.display = (visibleCount === 0 && cards.length > 0) ? 'block' : 'none';
+        }
+
+        if (allTimeCounterBadge) {
+            if (query || currentAllTimeCategory !== 'all') {
+                allTimeCounterBadge.textContent = `${visibleCount} di ${cards.length} record`;
+            } else {
+                allTimeCounterBadge.textContent = `${cards.length} primati`;
+            }
+        }
+    }
+
+
+    // --- 2. GESTIONE ARCHIVIO MESI (TOGGLE VISTA SCHEDE/TABELLA) ---
+    window.setArchiveView = function(view) {
+        const cardsView = document.getElementById('archive-cards-view');
+        const tableView = document.getElementById('archive-table-view');
+        const btnCards = document.getElementById('btn-archive-cards');
+        const btnTable = document.getElementById('btn-archive-table');
+
+        if (view === 'cards') {
+            if (cardsView) cardsView.style.display = 'grid';
+            if (tableView) tableView.style.display = 'none';
+            if (btnCards) btnCards.classList.add('active');
+            if (btnTable) btnTable.classList.remove('active');
+        } else {
+            if (cardsView) cardsView.style.display = 'none';
+            if (tableView) tableView.style.display = 'block';
+            if (btnCards) btnCards.classList.remove('active');
+            if (btnTable) btnTable.classList.add('active');
+        }
+    };
+
+
+    // --- 3. GESTIONE CRONOLOGIA RECORD (FILTRI, RICERCA, ORDINAMENTO, VISTA) ---
+    let currentHistoryCategory = 'all';
+    let currentSortCol = 'time';
+    let currentSortOrder = 'desc';
+
+    const historySearchInput = document.getElementById('history-search-input');
+    const historySearchClear = document.getElementById('history-search-clear');
+    const historyTbody = document.getElementById('history-tbody');
+    const historyCardsContainer = document.getElementById('history-cards-view');
+    const historyNoResults = document.getElementById('history-no-results');
+    const historyTotalCount = document.getElementById('history-total-count');
+
+    window.setHistoryView = function(view) {
+        const cardsView = document.getElementById('history-cards-view');
+        const tableView = document.getElementById('history-table-view');
+        const btnCards = document.getElementById('btn-hist-cards');
+        const btnTable = document.getElementById('btn-hist-table');
+
+        if (view === 'cards') {
+            if (cardsView) cardsView.style.display = 'flex';
+            if (tableView) tableView.style.display = 'none';
+            if (btnCards) btnCards.classList.add('active');
+            if (btnTable) btnTable.classList.remove('active');
+        } else {
+            if (cardsView) cardsView.style.display = 'none';
+            if (tableView) tableView.style.display = 'block';
+            if (btnCards) btnCards.classList.remove('active');
+            if (btnTable) btnTable.classList.add('active');
+        }
+    };
+
+    window.filterHistoryCategory = function(cat, btnElem) {
+        currentHistoryCategory = cat;
+        document.querySelectorAll('#history-category-pills .rec-filter-pill').forEach(b => b.classList.remove('active'));
+        if (btnElem) btnElem.classList.add('active');
+        applyHistoryFilters();
+    };
+
+    window.clearHistorySearch = function(resetCategory) {
+        if (historySearchInput) {
+            historySearchInput.value = '';
+            if (historySearchClear) historySearchClear.style.display = 'none';
+        }
+        if (resetCategory) {
+            currentHistoryCategory = 'all';
+            document.querySelectorAll('#history-category-pills .rec-filter-pill').forEach(b => {
+                b.classList.toggle('active', b.getAttribute('data-category') === 'all');
+            });
+        }
+        applyHistoryFilters();
+    };
+
+    if (historySearchInput) {
+        historySearchInput.addEventListener('input', function() {
+            if (historySearchClear) {
+                historySearchClear.style.display = this.value.trim() ? 'block' : 'none';
+            }
+            applyHistoryFilters();
+        });
+    }
+
+    function applyHistoryFilters() {
+        const query = historySearchInput ? historySearchInput.value.toLowerCase().trim() : '';
+        const rows = historyTbody ? Array.from(historyTbody.querySelectorAll('.history-row')) : [];
+        const cards = historyCardsContainer ? Array.from(historyCardsContainer.querySelectorAll('.history-event-card')) : [];
+        
+        let visibleCount = 0;
+
+        // Filtra righe tabella
         rows.forEach(row => {
             const rowCat = (row.getAttribute('data-category') || '').toLowerCase();
             const searchData = (row.getAttribute('data-search') || '').toLowerCase();
 
-            const matchCat = (currentCategory === 'all' || rowCat === currentCategory);
+            const matchCat = (currentHistoryCategory === 'all' || rowCat === currentHistoryCategory);
             const matchQuery = !query || searchData.includes(query);
 
             if (matchCat && matchQuery) {
@@ -551,8 +1742,21 @@
             }
         });
 
-        if (noResultsDiv) {
-            noResultsDiv.style.display = (visibleCount === 0 && rows.length > 0) ? 'block' : 'none';
+        // Filtra schede mobile
+        cards.forEach(card => {
+            const cardCat = (card.getAttribute('data-category') || '').toLowerCase();
+            const searchData = (card.getAttribute('data-search') || '').toLowerCase();
+
+            const matchCat = (currentHistoryCategory === 'all' || cardCat === currentHistoryCategory);
+            const matchQuery = !query || searchData.includes(query);
+
+            card.style.display = (matchCat && matchQuery) ? 'flex' : 'none';
+        });
+
+        const totalItems = rows.length || cards.length;
+
+        if (historyNoResults) {
+            historyNoResults.style.display = (visibleCount === 0 && totalItems > 0) ? 'block' : 'none';
         }
 
         const table = document.getElementById('history-table');
@@ -560,11 +1764,11 @@
             table.style.display = visibleCount === 0 ? 'none' : '';
         }
 
-        if (totalCountBadge) {
-            if (query || currentCategory !== 'all') {
-                totalCountBadge.textContent = `${visibleCount} di ${rows.length} record`;
+        if (historyTotalCount) {
+            if (query || currentHistoryCategory !== 'all') {
+                historyTotalCount.textContent = `${visibleCount} di ${totalItems} record`;
             } else {
-                totalCountBadge.textContent = `${rows.length} record registrati`;
+                historyTotalCount.textContent = `${totalItems} record registrati`;
             }
         }
     }
@@ -578,7 +1782,7 @@
         }
 
         updateSortIndicators();
-        applySorting();
+        applyHistorySorting();
     };
 
     function updateSortIndicators() {
@@ -598,9 +1802,9 @@
         });
     }
 
-    function applySorting() {
-        if (!tbody) return;
-        const rows = Array.from(tbody.querySelectorAll('.history-row'));
+    function applyHistorySorting() {
+        if (!historyTbody) return;
+        const rows = Array.from(historyTbody.querySelectorAll('.history-row'));
 
         rows.sort((a, b) => {
             let valA, valB;
@@ -628,7 +1832,7 @@
             return 0;
         });
 
-        rows.forEach(r => tbody.appendChild(r));
+        rows.forEach(r => historyTbody.appendChild(r));
     }
 
     window.rebuildMonthlyRecords = function() {
@@ -643,6 +1847,12 @@
                 alert('Errore durante il ricalcolo: ' + err);
             });
     };
+
+    // Auto-select Table view on wide screens by default, Cards on mobile
+    if (window.innerWidth > 768) {
+        setArchiveView('table');
+        setHistoryView('table');
+    }
 
     // Set initial sorting state indicator
     updateSortIndicators();
