@@ -188,7 +188,8 @@ async def records_page(request: Request):
     climate_stats = get_climate_comparisons()
     today_extremes = get_today_extremes()
     monthly_records = get_monthly_records()
-    monthly_summaries = get_all_monthly_summaries(limit=24)
+    monthly_summaries = get_all_monthly_summaries(limit=36)
+    available_years = sorted(list({ms["year"] for ms in monthly_summaries if ms.get("year")}), reverse=True)
     return templates.TemplateResponse(
         request=request,
         name="records.html",
@@ -202,7 +203,8 @@ async def records_page(request: Request):
             "climate_stats": climate_stats,
             "today_extremes": today_extremes,
             "monthly_records": monthly_records,
-            "monthly_summaries": monthly_summaries
+            "monthly_summaries": monthly_summaries,
+            "available_years": available_years
         }
     )
 

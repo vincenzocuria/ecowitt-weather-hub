@@ -331,58 +331,235 @@
     </div>
 </section>
 
-<!-- 6. ARCHIVIO RIEPILOGHI MENSILI (SCHEDE MOBILE + TABELLA DESKTOP) -->
+<!-- 6. ARCHIVIO RIEPILOGHI MENSILI CON RICERCA & SELETTORE MESE/ANNO NO-SCROLL -->
 {% if monthly_summaries %}
 <section id="sec-archive" class="records-section-card archive-section">
     <div class="records-section-header">
         <div class="records-header-left">
             <span class="section-emoji">📚</span>
             <div>
-                <h2>Archivio Storico dei Mesi (Riepiloghi)</h2>
-                <p>Tutti i mesi consolidati con medie climatiche ed energia solare.</p>
+                <h2>Archivio Storico dei Mesi</h2>
+                <p>Consulta i bilanci mensili completi selezionando o cercando mese e anno.</p>
             </div>
         </div>
 
-        <!-- TOGGLE VISTA SCHEDE / TABELLA -->
+        <!-- TOGGLE VISTA SCHEDA SINGOLA / LISTA COMPLETA / TABELLA -->
         <div class="archive-header-actions">
-            <span class="badge badge-info-pill">{{ monthly_summaries|length }} mesi</span>
             <div class="archive-view-toggle">
-                <button type="button" id="btn-archive-cards" class="view-toggle-btn active" onclick="setArchiveView('cards')" title="Vista Schede (ideale per smartphone)">📱 Schede</button>
-                <button type="button" id="btn-archive-table" class="view-toggle-btn" onclick="setArchiveView('table')" title="Vista Tabella Densa">📊 Tabella</button>
+                <button type="button" id="btn-archive-spotlight" class="view-toggle-btn active" onclick="setArchiveViewMode('spotlight')" title="Visualizza un mese singolo alla volta (Zero Scroll)">🎯 Mese</button>
+                <button type="button" id="btn-archive-grid" class="view-toggle-btn" onclick="setArchiveViewMode('grid')" title="Visualizza elenco schede">📱 Schede</button>
+                <button type="button" id="btn-archive-table" class="view-toggle-btn" onclick="setArchiveViewMode('table')" title="Visualizza tabella densa">📊 Tabella</button>
             </div>
         </div>
     </div>
 
-    <!-- VISTA A SCHEDE (DEFAULT SU SMARTPHONE) -->
-    <div id="archive-cards-view" class="archive-cards-grid">
+    <!-- TOOLBAR RICERCA E FILTRI ANNO/MESE ARCHIVIO -->
+    <div class="archive-filter-toolbar">
+        <!-- Anno Selector Pills -->
+        <div class="archive-year-pills" id="archive-year-pills">
+            <span class="filter-mini-lbl">Anno:</span>
+            <button type="button" class="arch-year-pill active" data-year="all" onclick="filterArchiveYear('all', this)">Tutti</button>
+            {% for y in available_years %}
+            <button type="button" class="arch-year-pill" data-year="{{ y }}" onclick="filterArchiveYear('{{ y }}', this)">{{ y }}</button>
+            {% endfor %}
+        </div>
+
+        <!-- Selettore Diretto Mese & Ricerca Veloce -->
+        <div class="archive-select-row">
+            <div class="archive-select-wrap">
+                <label for="archive-month-select" class="sr-only">Seleziona Mese:</label>
+                <select id="archive-month-select" class="archive-month-dropdown" onchange="onArchiveMonthSelect(this.value)">
+                    {% for ms in monthly_summaries %}
+                    <option value="{{ ms.year_month }}" data-year="{{ ms.year }}">
+                        🗓️ {{ ms.month_name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="records-search-wrapper" style="flex: 1 1 180px;">
+                <span class="search-icon">🔍</span>
+                <input 
+                    type="text" 
+                    id="archive-search-input" 
+                    placeholder="Cerca mese o anno (es. Agosto, 2025)..." 
+                    aria-label="Cerca mese o anno"
+                    class="records-search-input"
+                >
+                <button 
+                    id="archive-search-clear" 
+                    type="button" 
+                    onclick="clearArchiveSearch()" 
+                    class="records-search-clear" 
+                    title="Azzera ricerca"
+                >✕</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6A. VISTA SPOTLIGHT: MESE SINGOLO IN PRIMO PIANO (ZERO SCROLL) -->
+    <div id="archive-spotlight-container" class="archive-spotlight-box">
         {% for ms in monthly_summaries %}
-        <div class="archive-month-card">
+        <div class="archive-spotlight-card {% if loop.first %}active{% endif %}" 
+             id="spotlight-card-{{ ms.year_month }}"
+             data-index="{{ loop.index0 }}"
+             data-ym="{{ ms.year_month }}"
+             data-year="{{ ms.year }}"
+             data-month-name="{{ ms.month_name }}"
+             data-search="{{ ms.month_name }} {{ ms.year }} {{ ms.avg_temp }} {{ ms.total_rain_mm }} {{ ms.max_wind_gust_kmh }}">
+            
+            <!-- Barra Navigazione Mese Precedente / Mese Successivo -->
+            <div class="spotlight-nav-header">
+                <button type="button" class="btn-spotlight-nav" onclick="navigateSpotlight(-1)" title="Vai al mese successivo cronologicamente">
+                    ◀ Mese Più Recente
+                </button>
+                
+                <div class="spotlight-current-title">
+                    <span class="spotlight-calendar-icon">🗓️</span>
+                    <h3>{{ ms.month_name }}</h3>
+                    {% if ms.autarky_pct and ms.autarky_pct > 0 %}
+                    <span class="badge badge-autarky">{{ ms.autarky_pct }}% Autarchia</span>
+                    {% endif %}
+                </div>
+
+                <button type="button" class="btn-spotlight-nav" onclick="navigateSpotlight(1)" title="Vai al mese precedente cronologicamente">
+                    Mese Più Vecchio ▶
+                </button>
+            </div>
+
+            <!-- Griglia Metriche Dettagliata del Mese -->
+            <div class="spotlight-metrics-grid">
+                <!-- 1. Temperatura & Estremi -->
+                <div class="spotlight-metric-card temp-block">
+                    <div class="sp-metric-header">
+                        <span>🌡️ Temperatura</span>
+                        <span class="sp-stat-badge">Media: <strong>{{ ms.avg_temp if ms.avg_temp is not none else '--' }}°C</strong></span>
+                    </div>
+                    <div class="sp-dual-box">
+                        <div class="sp-val-item">
+                            <span class="sp-lbl">MINIMA</span>
+                            <span class="sp-val" style="color: #38bdf8;">{{ ms.min_temp if ms.min_temp is not none else '--' }}<small>°C</small></span>
+                            <span class="sp-sub-text">{% if ms.min_temp_time %}{{ ms.min_temp_time | local_dt_short }}{% else %}--{% endif %}</span>
+                        </div>
+                        <div class="sp-val-item">
+                            <span class="sp-lbl">MASSIMA</span>
+                            <span class="sp-val" style="color: #f87171;">{{ ms.max_temp if ms.max_temp is not none else '--' }}<small>°C</small></span>
+                            <span class="sp-sub-text">{% if ms.max_temp_time %}{{ ms.max_temp_time | local_dt_short }}{% else %}--{% endif %}</span>
+                        </div>
+                    </div>
+                    <div class="sp-bottom-note">
+                        Escursione Termica: <strong>Δ {{ ms.temp_range or '--' }}°C</strong>
+                    </div>
+                </div>
+
+                <!-- 2. Precipitazioni & Pioggia -->
+                <div class="spotlight-metric-card rain-block">
+                    <div class="sp-metric-header">
+                        <span>🌧️ Precipitazioni</span>
+                        <span class="sp-stat-badge">{{ ms.rainy_days_count }} giorni di pioggia</span>
+                    </div>
+                    <div class="sp-main-single">
+                        <span class="sp-lbl">ACCUMULO MENSILE</span>
+                        <span class="sp-val" style="color: #38bdf8;">{{ ms.total_rain_mm }} <small>mm</small></span>
+                    </div>
+                    <div class="sp-sub-grid">
+                        <div>Max Giorno: <strong>{{ ms.max_daily_rain_mm or '0.0' }} mm</strong> <small>({{ ms.max_daily_rain_date or '--' }})</small></div>
+                        <div>Rain Rate Max: <strong>{{ ms.max_rain_rate_mm_hr or '0.0' }} mm/h</strong></div>
+                    </div>
+                </div>
+
+                <!-- 3. Notti Tropicali & Caldo Notturno -->
+                <div class="spotlight-metric-card tropical-block">
+                    <div class="sp-metric-header">
+                        <span>🌴 Notti Tropicali</span>
+                        <span class="sp-stat-badge">min &ge; 20.0°C</span>
+                    </div>
+                    <div class="sp-dual-box">
+                        <div class="sp-val-item">
+                            <span class="sp-lbl">TROPICALI (&ge;20°)</span>
+                            <span class="sp-val" style="color: #f97316;">{{ ms.tropical_nights_count }} <small>notti</small></span>
+                        </div>
+                        <div class="sp-val-item">
+                            <span class="sp-lbl">ROVENTI (&ge;25°)</span>
+                            <span class="sp-val" style="color: #ef4444;">{{ ms.super_tropical_nights_count or 0 }} <small>notti</small></span>
+                        </div>
+                    </div>
+                    <div class="sp-bottom-note">
+                        {% if ms.tropical_nights_count > 0 %}Caldo notturno significativo registrato{% else %}Nessuna notte tropicale nel mese{% endif %}
+                    </div>
+                </div>
+
+                <!-- 4. Solare Aton & Autarchia -->
+                <div class="spotlight-metric-card solar-block">
+                    <div class="sp-metric-header">
+                        <span>☀️ Solare & Impianto Aton</span>
+                        {% if ms.autarky_pct and ms.autarky_pct > 0 %}
+                        <span class="sp-stat-badge" style="color: #34d399;">{{ ms.autarky_pct }}% Autarchia</span>
+                        {% endif %}
+                    </div>
+                    <div class="sp-main-single">
+                        <span class="sp-lbl">PRODUZIONE TOTALE</span>
+                        <span class="sp-val" style="color: #eab308;">{{ ms.solar_total_kwh }} <small>kWh</small></span>
+                    </div>
+                    <div class="sp-sub-grid">
+                        <div>Picco Solare: <strong>{% if ms.solar_max_w %}{{ (ms.solar_max_w / 1000.0)|round(2) }} kW{% else %}--{% endif %}</strong></div>
+                        <div>Autoconsumo: <strong>{{ ms.self_consumption_pct or 100 }}%</strong></div>
+                    </div>
+                </div>
+
+                <!-- 5. Vento & Raffiche Massime -->
+                <div class="spotlight-metric-card wind-block" style="grid-column: span 2;">
+                    <div class="sp-metric-header">
+                        <span>💨 Vento & Raffiche</span>
+                        <span class="sp-stat-badge">Vento Medio: {{ ms.avg_wind_speed_kmh or '--' }} km/h</span>
+                    </div>
+                    <div class="sp-wind-row">
+                        <div class="sp-wind-val">
+                            <span class="sp-lbl">RAFFICA MASSIMA BATTUTA</span>
+                            <span class="sp-val" style="color: #f59e0b;">{{ ms.max_wind_gust_kmh if ms.max_wind_gust_kmh else '--' }} <small>km/h</small></span>
+                        </div>
+                        <div class="sp-wind-details">
+                            {% if ms.max_wind_gust_dir %}<div>Direzione: <strong>{{ ms.max_wind_gust_dir }}</strong></div>{% endif %}
+                            {% if ms.max_wind_gust_time %}<div>Registrata il: <strong>{{ ms.max_wind_gust_time | local_dt_short }}</strong></div>{% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- 6B. VISTA A GRIGLIA SCHEDE (PER CONSULTAZIONE MULTIPLA) -->
+    <div id="archive-cards-view" class="archive-cards-grid" style="display: none;">
+        {% for ms in monthly_summaries %}
+        <div class="archive-month-card" 
+             data-ym="{{ ms.year_month }}" 
+             data-year="{{ ms.year }}"
+             data-search="{{ ms.month_name }} {{ ms.year }} {{ ms.avg_temp }} {{ ms.total_rain_mm }} {{ ms.max_wind_gust_kmh }}">
+            
             <div class="archive-card-header">
                 <div class="archive-month-title">
                     <span class="month-icon">🗓️</span>
                     <strong>{{ ms.month_name }}</strong>
                 </div>
-                {% if ms.autarky_pct and ms.autarky_pct > 0 %}
-                <span class="badge badge-autarky">{{ ms.autarky_pct }}% Autarchia</span>
-                {% endif %}
+                <button type="button" class="btn-open-spotlight" onclick="openMonthInSpotlight('{{ ms.year_month }}')" title="Apri dettagli completi del mese">
+                    Dettagli ➔
+                </button>
             </div>
 
             <div class="archive-metrics-grid">
-                <!-- Temperatura -->
                 <div class="archive-metric-item">
                     <span class="arch-lbl">🌡️ Temp Media</span>
                     <span class="arch-val temp-avg">{{ ms.avg_temp if ms.avg_temp is not none else '--' }}°C</span>
                     <span class="arch-sub"><span style="color:#38bdf8;">{{ ms.min_temp or '--' }}°</span> / <span style="color:#f87171;">{{ ms.max_temp or '--' }}°C</span></span>
                 </div>
 
-                <!-- Pioggia -->
                 <div class="archive-metric-item">
                     <span class="arch-lbl">🌧️ Pioggia Totale</span>
                     <span class="arch-val rain-val">{{ ms.total_rain_mm }} <small>mm</small></span>
                     <span class="arch-sub">{{ ms.rainy_days_count }} giorni di pioggia</span>
                 </div>
 
-                <!-- Notti Tropicali -->
                 <div class="archive-metric-item">
                     <span class="arch-lbl">🌴 Notti Tropicali</span>
                     <span class="arch-val tropical-val">
@@ -391,14 +568,12 @@
                     <span class="arch-sub">min &ge; 20.0°C</span>
                 </div>
 
-                <!-- Solare Aton -->
                 <div class="archive-metric-item">
                     <span class="arch-lbl">☀️ Solare Aton</span>
                     <span class="arch-val solar-val">{{ ms.solar_total_kwh }} <small>kWh</small></span>
                     <span class="arch-sub">{% if ms.solar_max_w %}Picco: {{ (ms.solar_max_w / 1000.0)|round(2) }} kW{% else %}Produzione{% endif %}</span>
                 </div>
 
-                <!-- Vento Max -->
                 <div class="archive-metric-item" style="grid-column: span 2;">
                     <span class="arch-lbl">💨 Raffica Massima</span>
                     <span class="arch-val wind-val">
@@ -411,9 +586,9 @@
         {% endfor %}
     </div>
 
-    <!-- VISTA A TABELLA DENSE -->
+    <!-- 6C. VISTA A TABELLA DENSA -->
     <div id="archive-table-view" class="table-responsive" style="display: none;">
-        <table class="weather-table">
+        <table class="weather-table" id="archive-summary-table">
             <thead>
                 <tr>
                     <th>Mese / Anno</th>
@@ -428,8 +603,15 @@
             </thead>
             <tbody>
                 {% for ms in monthly_summaries %}
-                <tr>
-                    <td><strong>{{ ms.month_name }}</strong></td>
+                <tr class="archive-table-row" 
+                    data-ym="{{ ms.year_month }}" 
+                    data-year="{{ ms.year }}"
+                    data-search="{{ ms.month_name }} {{ ms.year }} {{ ms.avg_temp }} {{ ms.total_rain_mm }} {{ ms.max_wind_gust_kmh }}">
+                    <td>
+                        <button type="button" class="btn-link-table" onclick="openMonthInSpotlight('{{ ms.year_month }}')">
+                            <strong>{{ ms.month_name }}</strong>
+                        </button>
+                    </td>
                     <td><span style="font-weight: 700; color: #38bdf8;">{{ ms.avg_temp if ms.avg_temp is not none else '--' }}°C</span></td>
                     <td>
                         <span style="color: #38bdf8;">{{ ms.min_temp if ms.min_temp is not none else '--' }}°</span> / 
@@ -463,10 +645,20 @@
             </tbody>
         </table>
     </div>
+
+    <!-- STATO NESSUN MESE TROVATO -->
+    <div id="archive-no-results" class="records-empty-state" style="display: none;">
+        <span class="empty-icon">🔍</span>
+        <h3>Nessun mese trovato</h3>
+        <p>Nessun riepilogo mensile corrisponde all'anno o al termine cercato.</p>
+        <button type="button" onclick="clearArchiveSearch(true)" class="btn btn-primary btn-sm" style="margin-top: 0.8rem;">
+            Azzera Filtro Mesi
+        </button>
+    </div>
 </section>
 {% endif %}
 
-<!-- 7. CRONOLOGIA DEI RECORD INFRANTI (PIENAMENTE DISPONIBILE SU MOBILE & DESKTOP) -->
+<!-- 7. CRONOLOGIA DEI RECORD INFRANTI (CON RICERCA, FILTRI E CONTROLLO SCROLL) -->
 <section id="sec-history" class="records-section-card history-section">
     <div class="records-section-header">
         <div class="records-header-left">
@@ -523,7 +715,7 @@
     <!-- VISTA TIMELINE / SCHEDE PER MOBILE & TOUCH -->
     <div id="history-cards-view" class="history-cards-timeline">
         {% for h in history %}
-        <div class="history-event-card cat-{{ h.category or 'gen' }}"
+        <div class="history-event-card cat-{{ h.category or 'gen' }} {% if loop.index > 6 %}hist-collapsed-item{% endif %}"
              data-category="{{ h.category or '' }}"
              data-time="{{ h.timestamp or '' }}"
              data-title="{{ h.title or '' }}"
@@ -575,6 +767,15 @@
             {% endif %}
         </div>
         {% endfor %}
+
+        <!-- Pulsante Espandi Tutti i Record Infranti -->
+        {% if history|length > 6 %}
+        <div id="history-expand-wrapper" style="text-align: center; margin-top: 0.5rem;">
+            <button type="button" id="btn-history-expand" onclick="toggleHistoryExpand()" class="btn btn-secondary btn-sm" style="width: 100%; max-width: 320px; margin: 0 auto;">
+                📜 Mostra tutti i record infranti ({{ history|length }})
+            </button>
+        </div>
+        {% endif %}
     </div>
 
     <!-- TABELLA ORDINABILE PER DESKTOP / TABLET -->
@@ -1227,7 +1428,7 @@
     margin-top: 4px;
 }
 
-/* ARCHIVIO MESI CARDS & TABLE */
+/* ARCHIVIO MESI CARDS, TOOLBAR & SPOTLIGHT */
 .archive-header-actions {
     display: flex;
     align-items: center;
@@ -1255,6 +1456,240 @@
     background: var(--accent, #38bdf8);
     color: #0b0f19;
 }
+
+.archive-filter-toolbar {
+    background: rgba(0, 0, 0, 0.25);
+    padding: 0.85rem 1rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+.archive-year-pills {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+.filter-mini-lbl {
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: var(--text-dim, #94a3b8);
+    text-transform: uppercase;
+}
+.arch-year-pill {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-dim, #94a3b8);
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.arch-year-pill:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text, #f1f5f9);
+}
+.arch-year-pill.active {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: #38bdf8;
+    color: #38bdf8;
+}
+.archive-select-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+.archive-select-wrap {
+    flex: 1 1 200px;
+    max-width: 320px;
+}
+.archive-month-dropdown {
+    width: 100%;
+    padding: 0.52rem 0.85rem;
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid var(--card-border, #1e293b);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.86rem;
+    font-weight: 700;
+    outline: none;
+    cursor: pointer;
+}
+.archive-month-dropdown:focus {
+    border-color: var(--accent, #38bdf8);
+}
+
+/* SPOTLIGHT CARD STYLING */
+.archive-spotlight-box {
+    position: relative;
+}
+.archive-spotlight-card {
+    display: none;
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.08) 0%, rgba(15, 23, 42, 0.95) 100%);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 14px;
+    padding: 1.1rem;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+.archive-spotlight-card.active {
+    display: flex;
+    animation: fadeInSpotlight 0.25s ease;
+}
+@keyframes fadeInSpotlight {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.spotlight-nav-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding-bottom: 0.75rem;
+}
+.btn-spotlight-nav {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text, #f1f5f9);
+    padding: 5px 10px;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+.btn-spotlight-nav:hover {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: #38bdf8;
+    color: #38bdf8;
+}
+.btn-spotlight-nav:disabled {
+    opacity: 0.3;
+    pointer-events: none;
+}
+.spotlight-current-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+.spotlight-calendar-icon {
+    font-size: 1.25rem;
+}
+.spotlight-current-title h3 {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: #fff;
+    margin: 0;
+}
+.spotlight-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+}
+.spotlight-metric-card {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.sp-metric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text-dim, #94a3b8);
+}
+.sp-stat-badge {
+    font-size: 0.74rem;
+    color: var(--text, #f1f5f9);
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.sp-dual-box {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 0.5rem 0.65rem;
+    border-radius: 8px;
+}
+.sp-val-item {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.sp-lbl {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--text-dim, #94a3b8);
+    text-transform: uppercase;
+}
+.sp-val {
+    font-size: 1.25rem;
+    font-weight: 800;
+}
+.sp-sub-text {
+    font-size: 0.68rem;
+    color: var(--text-muted, #64748b);
+}
+.sp-bottom-note {
+    font-size: 0.72rem;
+    color: var(--text-dim, #94a3b8);
+}
+.sp-main-single {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 0.5rem 0.65rem;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.sp-sub-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 0.74rem;
+    color: var(--text-dim, #94a3b8);
+}
+.sp-wind-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 0.6rem 0.75rem;
+    border-radius: 8px;
+}
+.sp-wind-val {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.sp-wind-details {
+    font-size: 0.76rem;
+    color: var(--text-dim, #94a3b8);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/* GRIGLIA SCHEDE COMPATTA MULTI-MESE */
 .archive-cards-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -1282,6 +1717,30 @@
     gap: 6px;
     font-size: 0.95rem;
     color: #fff;
+}
+.btn-open-spotlight {
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    color: #38bdf8;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+.btn-open-spotlight:hover {
+    background: rgba(56, 189, 248, 0.25);
+    color: #fff;
+}
+.btn-link-table {
+    background: none;
+    border: none;
+    color: #38bdf8;
+    font-size: inherit;
+    cursor: pointer;
+    padding: 0;
+    text-align: left;
+    text-decoration: underline;
 }
 .archive-metrics-grid {
     display: grid;
@@ -1337,6 +1796,9 @@
     flex-direction: column;
     gap: 0.6rem;
     transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.history-event-card.hist-collapsed-item {
+    display: none;
 }
 .history-event-card:hover {
     border-color: rgba(255, 255, 255, 0.12);
@@ -1517,6 +1979,16 @@
         grid-template-columns: 1fr;
         gap: 0.75rem;
     }
+    .spotlight-metrics-grid {
+        grid-template-columns: 1fr;
+        gap: 0.65rem;
+    }
+    .spotlight-metric-card.wind-block {
+        grid-column: span 1 !important;
+    }
+    .archive-select-wrap {
+        max-width: 100%;
+    }
 }
 
 @media (max-width: 480px) {
@@ -1557,6 +2029,10 @@
     .records-monthly-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 0.5rem;
+    }
+    .btn-spotlight-nav {
+        padding: 4px 8px;
+        font-size: 0.7rem;
     }
 }
 </style>
@@ -1637,31 +2113,233 @@
     }
 
 
-    // --- 2. GESTIONE ARCHIVIO MESI (TOGGLE VISTA SCHEDE/TABELLA) ---
-    window.setArchiveView = function(view) {
-        const cardsView = document.getElementById('archive-cards-view');
-        const tableView = document.getElementById('archive-table-view');
-        const btnCards = document.getElementById('btn-archive-cards');
+    // --- 2. GESTIONE ARCHIVIO MESI (SPOTLIGHT, RICERCA, ANNO, VISTA) ---
+    let currentArchiveYear = 'all';
+    let currentArchiveView = 'spotlight'; // spotlight | grid | table
+    let spotlightIndex = 0;
+
+    const archiveSearchInput = document.getElementById('archive-search-input');
+    const archiveSearchClear = document.getElementById('archive-search-clear');
+    const archiveMonthSelect = document.getElementById('archive-month-select');
+    const spotlightCards = Array.from(document.querySelectorAll('.archive-spotlight-card'));
+    const archiveGridCards = Array.from(document.querySelectorAll('#archive-cards-view .archive-month-card'));
+    const archiveTableRows = Array.from(document.querySelectorAll('#archive-table-view .archive-table-row'));
+    const archiveNoResults = document.getElementById('archive-no-results');
+
+    window.setArchiveViewMode = function(mode) {
+        currentArchiveView = mode;
+        const spContainer = document.getElementById('archive-spotlight-container');
+        const gridContainer = document.getElementById('archive-cards-view');
+        const tableContainer = document.getElementById('archive-table-view');
+
+        const btnSp = document.getElementById('btn-archive-spotlight');
+        const btnGrid = document.getElementById('btn-archive-grid');
         const btnTable = document.getElementById('btn-archive-table');
 
-        if (view === 'cards') {
-            if (cardsView) cardsView.style.display = 'grid';
-            if (tableView) tableView.style.display = 'none';
-            if (btnCards) btnCards.classList.add('active');
-            if (btnTable) btnTable.classList.remove('active');
-        } else {
-            if (cardsView) cardsView.style.display = 'none';
-            if (tableView) tableView.style.display = 'block';
-            if (btnCards) btnCards.classList.remove('active');
-            if (btnTable) btnTable.classList.add('active');
+        if (btnSp) btnSp.classList.toggle('active', mode === 'spotlight');
+        if (btnGrid) btnGrid.classList.toggle('active', mode === 'grid');
+        if (btnTable) btnTable.classList.toggle('active', mode === 'table');
+
+        if (spContainer) spContainer.style.display = (mode === 'spotlight') ? 'block' : 'none';
+        if (gridContainer) gridContainer.style.display = (mode === 'grid') ? 'grid' : 'none';
+        if (tableContainer) tableContainer.style.display = (mode === 'table') ? 'block' : 'none';
+
+        applyArchiveFilters();
+    };
+
+    window.filterArchiveYear = function(year, btnElem) {
+        currentArchiveYear = year;
+        document.querySelectorAll('#archive-year-pills .arch-year-pill').forEach(b => b.classList.remove('active'));
+        if (btnElem) btnElem.classList.add('active');
+
+        // Filtra opzioni del select
+        if (archiveMonthSelect) {
+            let firstVisibleVal = null;
+            Array.from(archiveMonthSelect.options).forEach(opt => {
+                const optYear = opt.getAttribute('data-year') || '';
+                const show = (year === 'all' || optYear === year);
+                opt.style.display = show ? '' : 'none';
+                if (show && !firstVisibleVal) firstVisibleVal = opt.value;
+            });
+
+            if (firstVisibleVal) {
+                archiveMonthSelect.value = firstVisibleVal;
+                onArchiveMonthSelect(firstVisibleVal);
+            }
+        }
+
+        applyArchiveFilters();
+    };
+
+    window.onArchiveMonthSelect = function(ym) {
+        const targetIndex = spotlightCards.findIndex(c => c.getAttribute('data-ym') === ym);
+        if (targetIndex !== -1) {
+            showSpotlightByIndex(targetIndex);
         }
     };
 
+    window.openMonthInSpotlight = function(ym) {
+        setArchiveViewMode('spotlight');
+        if (archiveMonthSelect) archiveMonthSelect.value = ym;
+        const targetIndex = spotlightCards.findIndex(c => c.getAttribute('data-ym') === ym);
+        if (targetIndex !== -1) {
+            showSpotlightByIndex(targetIndex);
+        }
+        const section = document.getElementById('sec-archive');
+        if (section) section.scrollIntoView({ behavior: 'smooth' });
+    };
 
-    // --- 3. GESTIONE CRONOLOGIA RECORD (FILTRI, RICERCA, ORDINAMENTO, VISTA) ---
+    window.navigateSpotlight = function(direction) {
+        // Ottieni gli indici delle card visibili coi filtri correnti
+        const visibleIndices = spotlightCards
+            .map((card, idx) => {
+                const y = card.getAttribute('data-year');
+                const matchYear = (currentArchiveYear === 'all' || y === currentArchiveYear);
+                return matchYear ? idx : null;
+            })
+            .filter(i => i !== null);
+
+        if (visibleIndices.length === 0) return;
+
+        const currentPosInVisible = visibleIndices.indexOf(spotlightIndex);
+        let nextPos = currentPosInVisible + direction;
+
+        if (nextPos >= 0 && nextPos < visibleIndices.length) {
+            showSpotlightByIndex(visibleIndices[nextPos]);
+        }
+    };
+
+    function showSpotlightByIndex(index) {
+        if (!spotlightCards[index]) return;
+        spotlightIndex = index;
+
+        spotlightCards.forEach((c, idx) => {
+            c.classList.toggle('active', idx === index);
+        });
+
+        const activeYm = spotlightCards[index].getAttribute('data-ym');
+        if (archiveMonthSelect && archiveMonthSelect.value !== activeYm) {
+            archiveMonthSelect.value = activeYm;
+        }
+
+        // Aggiorna stato pulsanti prev/next
+        const visibleIndices = spotlightCards
+            .map((card, idx) => {
+                const y = card.getAttribute('data-year');
+                return (currentArchiveYear === 'all' || y === currentArchiveYear) ? idx : null;
+            })
+            .filter(i => i !== null);
+
+        const currentPos = visibleIndices.indexOf(index);
+        document.querySelectorAll('.btn-spotlight-nav').forEach(btn => {
+            if (btn.textContent.includes('Recente')) {
+                btn.disabled = (currentPos <= 0);
+            } else if (btn.textContent.includes('Vecchio')) {
+                btn.disabled = (currentPos >= visibleIndices.length - 1);
+            }
+        });
+    }
+
+    window.clearArchiveSearch = function(resetAll) {
+        if (archiveSearchInput) {
+            archiveSearchInput.value = '';
+            if (archiveSearchClear) archiveSearchClear.style.display = 'none';
+        }
+        if (resetAll) {
+            currentArchiveYear = 'all';
+            document.querySelectorAll('#archive-year-pills .arch-year-pill').forEach(b => {
+                b.classList.toggle('active', b.getAttribute('data-year') === 'all');
+            });
+            if (archiveMonthSelect) {
+                Array.from(archiveMonthSelect.options).forEach(opt => opt.style.display = '');
+                if (spotlightCards[0]) {
+                    archiveMonthSelect.value = spotlightCards[0].getAttribute('data-ym');
+                    showSpotlightByIndex(0);
+                }
+            }
+        }
+        applyArchiveFilters();
+    };
+
+    if (archiveSearchInput) {
+        archiveSearchInput.addEventListener('input', function() {
+            if (archiveSearchClear) {
+                archiveSearchClear.style.display = this.value.trim() ? 'block' : 'none';
+            }
+            applyArchiveFilters();
+        });
+    }
+
+    function applyArchiveFilters() {
+        const query = archiveSearchInput ? archiveSearchInput.value.toLowerCase().trim() : '';
+        let visibleCount = 0;
+
+        // 1. Filtro Cards Griglia
+        archiveGridCards.forEach(card => {
+            const cardYear = card.getAttribute('data-year') || '';
+            const searchData = (card.getAttribute('data-search') || '').toLowerCase();
+
+            const matchYear = (currentArchiveYear === 'all' || cardYear === currentArchiveYear);
+            const matchQuery = !query || searchData.includes(query);
+
+            if (matchYear && matchQuery) {
+                card.style.display = 'flex';
+                visibleCount++;
+            } else {
+                card.style.display = 'none';
+            }
+        });
+
+        // 2. Filtro Tabella
+        archiveTableRows.forEach(row => {
+            const rowYear = row.getAttribute('data-year') || '';
+            const searchData = (row.getAttribute('data-search') || '').toLowerCase();
+
+            const matchYear = (currentArchiveYear === 'all' || rowYear === currentArchiveYear);
+            const matchQuery = !query || searchData.includes(query);
+
+            row.style.display = (matchYear && matchQuery) ? '' : 'none';
+        });
+
+        // 3. Spotlight
+        if (currentArchiveView === 'spotlight') {
+            const activeCard = spotlightCards[spotlightIndex];
+            if (activeCard) {
+                const y = activeCard.getAttribute('data-year') || '';
+                const searchData = (activeCard.getAttribute('data-search') || '').toLowerCase();
+                const matchYear = (currentArchiveYear === 'all' || y === currentArchiveYear);
+                const matchQuery = !query || searchData.includes(query);
+
+                if (!matchYear || !matchQuery) {
+                    // Trova il primo mese compatibile
+                    const firstMatchIdx = spotlightCards.findIndex(c => {
+                        const cy = c.getAttribute('data-year') || '';
+                        const cs = (c.getAttribute('data-search') || '').toLowerCase();
+                        return (currentArchiveYear === 'all' || cy === currentArchiveYear) && (!query || cs.includes(query));
+                    });
+                    if (firstMatchIdx !== -1) {
+                        showSpotlightByIndex(firstMatchIdx);
+                        visibleCount = 1;
+                    } else {
+                        visibleCount = 0;
+                    }
+                } else {
+                    visibleCount = 1;
+                }
+            }
+        }
+
+        if (archiveNoResults) {
+            archiveNoResults.style.display = (visibleCount === 0) ? 'block' : 'none';
+        }
+    }
+
+
+    // --- 3. GESTIONE CRONOLOGIA RECORD (FILTRI, RICERCA, ORDINAMENTO, ESPANSIONE) ---
     let currentHistoryCategory = 'all';
     let currentSortCol = 'time';
     let currentSortOrder = 'desc';
+    let isHistoryExpanded = false;
 
     const historySearchInput = document.getElementById('history-search-input');
     const historySearchClear = document.getElementById('history-search-clear');
@@ -1669,6 +2347,20 @@
     const historyCardsContainer = document.getElementById('history-cards-view');
     const historyNoResults = document.getElementById('history-no-results');
     const historyTotalCount = document.getElementById('history-total-count');
+
+    window.toggleHistoryExpand = function() {
+        isHistoryExpanded = !isHistoryExpanded;
+        const btn = document.getElementById('btn-history-expand');
+        const collapsedItems = document.querySelectorAll('.history-event-card.hist-collapsed-item');
+
+        collapsedItems.forEach(item => {
+            item.style.display = isHistoryExpanded ? 'flex' : 'none';
+        });
+
+        if (btn) {
+            btn.textContent = isHistoryExpanded ? '▲ Riduci cronologia' : `📜 Mostra tutti i record infranti (${document.querySelectorAll('.history-event-card').length})`;
+        }
+    };
 
     window.setHistoryView = function(view) {
         const cardsView = document.getElementById('history-cards-view');
@@ -1743,14 +2435,21 @@
         });
 
         // Filtra schede mobile
-        cards.forEach(card => {
+        cards.forEach((card, idx) => {
             const cardCat = (card.getAttribute('data-category') || '').toLowerCase();
             const searchData = (card.getAttribute('data-search') || '').toLowerCase();
 
             const matchCat = (currentHistoryCategory === 'all' || cardCat === currentHistoryCategory);
             const matchQuery = !query || searchData.includes(query);
 
-            card.style.display = (matchCat && matchQuery) ? 'flex' : 'none';
+            const isCollapsed = !isHistoryExpanded && card.classList.contains('hist-collapsed-item');
+
+            if (matchCat && matchQuery && (!isCollapsed || query || currentHistoryCategory !== 'all')) {
+                card.style.display = 'flex';
+                visibleCount++;
+            } else {
+                card.style.display = 'none';
+            }
         });
 
         const totalItems = rows.length || cards.length;
@@ -1848,14 +2547,16 @@
             });
     };
 
-    // Auto-select Table view on wide screens by default, Cards on mobile
+    // Auto-select Table view on wide screens by default for history, spotlight for archive
     if (window.innerWidth > 768) {
-        setArchiveView('table');
         setHistoryView('table');
     }
 
     // Set initial sorting state indicator
     updateSortIndicators();
+    if (spotlightCards.length > 0) {
+        showSpotlightByIndex(0);
+    }
 })();
 </script>
 {% endblock %}
