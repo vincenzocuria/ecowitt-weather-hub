@@ -214,6 +214,24 @@ class CatalogHelper:
             base_key = entity_id.split(".")[1].replace("_socket_1", "").replace("_presa", "").replace("_valve", "")
             power_w = float(attributes.get("current_power_w") or attributes.get("power") or attributes.get("current_consumption") or power_map.get(base_key, 0.0))
 
+            # Riconoscimento avanzato tipologia tramite device_class e parole chiave
+            ent_lower = entity_id.lower()
+            name_lower = friendly_name.lower()
+            dev_class = str(attributes.get("device_class") or "").lower()
+
+            is_shutter = domain == "cover" or (
+                domain == "switch" and (
+                    dev_class in ("curtain", "blind", "shutter", "shade", "awning", "door", "window", "gate") or
+                    any(k in ent_lower or k in name_lower for k in ("tenda", "persiana", "tapparella", "curtain", "shutter", "blind", "serranda"))
+                )
+            )
+            is_irrigation = domain == "valve" or (
+                domain == "switch" and (
+                    dev_class == "valve" or
+                    any(k in ent_lower or k in name_lower for k in ("valvola", "valve", "irrigazione", "irrigation", "aiuola", "sprinkler", "annaffiat", "irrigatore"))
+                )
+            )
+
             extra_fields: Dict[str, Any] = {}
 
             if domain == "climate":
@@ -248,23 +266,29 @@ class CatalogHelper:
                     "fan_modes": attributes.get("fan_modes", []),
                     "swing_mode": attributes.get("swing_mode")
                 }
-            elif domain in ("switch", "light"):
-                cat = "plugs"
-                is_on = state_str in ("on", "open", "cleaning", "cooling", "heating", "playing") if is_online else None
-                icon = "💡" if domain == "light" else "🔌"
-                cat_label = "Luce Smart" if domain == "light" else "Presa Smart"
+            elif is_shutter:
+                cat = "shutters"
+                is_on = state_str in ("open", "on")
+                icon = "🪟"
+                cat_label = "Persiana / Tenda"
                 status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
-            elif domain == "valve":
+            elif is_irrigation:
                 cat = "irrigation"
-                is_on = state_str == "open"
+                is_on = state_str in ("open", "on")
                 icon = "💧"
                 cat_label = "Elettrovalvola / Irrigazione"
                 status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
-            elif domain == "cover":
-                cat = "shutters"
-                is_on = state_str == "open"
-                icon = "🪟"
-                cat_label = "Persiana / Tenda"
+            elif domain == "light" or dev_class == "light":
+                cat = "plugs"
+                is_on = state_str in ("on", "open") if is_online else None
+                icon = "💡"
+                cat_label = "Luce Smart"
+                status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
+            elif domain == "switch":
+                cat = "plugs"
+                is_on = state_str in ("on", "open") if is_online else None
+                icon = "🔌"
+                cat_label = "Presa Smart"
                 status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
             elif domain == "media_player":
                 cat = "appliances"

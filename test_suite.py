@@ -807,6 +807,40 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIn("hass_presence", cat_ids)
         self.assertIn("hass_valve.aiuola_valve", cat_ids)
 
+        valve_dev = next(d for d in catalog if d["id"] == "hass_valve.aiuola_valve")
+        self.assertEqual(valve_dev["category"], "irrigation")
+        self.assertEqual(valve_dev["icon"], "💧")
+
+        # Verifica che il parser di irrigazione NON generi valvole fittizie se vuoto
+        empty_irr = ha.parse_irrigation_data()
+        self.assertEqual(len(empty_irr["valves"]), 1) # solo la reale valve.aiuola_valve
+        self.assertEqual(empty_irr["valves"][0]["id"], "valve.aiuola_valve")
+
+    def test_homeassistant_shutters_and_irrigation_categorization(self):
+        from backend.homeassistant import CatalogHelper, parse_irrigation_data
+        
+        entities = {
+            "cover.persiana_camera": {"state": "open", "attributes": {"friendly_name": "Persiana Camera"}},
+            "switch.tenda_balcone": {"state": "off", "attributes": {"friendly_name": "Tenda Balcone", "device_class": "curtain"}},
+            "switch.valvola_irrigazione_orto": {"state": "off", "attributes": {"friendly_name": "Valvola Irrigazione Orto"}},
+            "switch.presa_tv": {"state": "on", "attributes": {"friendly_name": "Presa TV"}}
+        }
+
+        devices = CatalogHelper.get_catalog_devices(entities)
+        dev_by_id = {d["raw_id"]: d for d in devices}
+
+        self.assertEqual(dev_by_id["cover.persiana_camera"]["category"], "shutters")
+        self.assertEqual(dev_by_id["cover.persiana_camera"]["icon"], "🪟")
+        self.assertEqual(dev_by_id["switch.tenda_balcone"]["category"], "shutters")
+        self.assertEqual(dev_by_id["switch.valvola_irrigazione_orto"]["category"], "irrigation")
+        self.assertEqual(dev_by_id["switch.valvola_irrigazione_orto"]["icon"], "💧")
+        self.assertEqual(dev_by_id["switch.presa_tv"]["category"], "plugs")
+
+        # Verifica che senza entità di irrigazione restituisca 0 valvole (nessun mock)
+        no_valves_irr = parse_irrigation_data({"switch.presa_tv": {"state": "on"}})
+        self.assertEqual(len(no_valves_irr["valves"]), 0)
+        self.assertFalse(no_valves_irr["is_open"])
+
     def test_homeassistant_modular_package(self):
         from backend.homeassistant import (
             HomeAssistantClient, CatalogHelper, DeviceController, SynergiesHelper,

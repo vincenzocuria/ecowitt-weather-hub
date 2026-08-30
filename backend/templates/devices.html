@@ -63,7 +63,7 @@
         <button class="filter-chip" data-filter="climate">
             <span>❄️ Climatizzazione</span>
         </button>
-        <button class="filter-chip" data-filter="curtains">
+        <button class="filter-chip" data-filter="shutters">
             <span>🪟 Persiane & Tende</span>
         </button>
         <button class="filter-chip" data-filter="appliances">
@@ -150,7 +150,7 @@
                         {% elif dev.category == 'climate' and dev.temp_current is not none %}
                             <span class="metric-tag tag-temp">🌡️ {{ dev.temp_current }}°C</span>
                             {% if dev.temp_set %}<span class="metric-tag tag-target">🎯 {{ dev.temp_set }}°C</span>{% endif %}
-                        {% elif dev.category == 'curtains' %}
+                        {% elif dev.category in ('shutters', 'curtains') %}
                             <div style="display: flex; gap: 4px; width: 100%; justify-content: space-between;" onclick="event.stopPropagation();">
                                 <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="controlTuyaCurtain('{{ dev.raw_id }}', 'open')">🔼 Apri</button>
                                 <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="controlTuyaCurtain('{{ dev.raw_id }}', 'stop')">⏸️ Stop</button>
@@ -304,7 +304,10 @@ function filterDevicesGrid(filter) {
     const cards = document.querySelectorAll('.device-card');
     cards.forEach(card => {
         const cat = card.getAttribute('data-category');
-        if (filter === 'all' || cat === filter) {
+        const isMatch = (filter === 'all' || cat === filter || 
+            ((filter === 'shutters' || filter === 'curtains') && (cat === 'shutters' || cat === 'curtains'))
+        );
+        if (isMatch) {
             card.style.display = 'flex';
         } else {
             card.style.display = 'none';
@@ -1249,7 +1252,7 @@ function renderTuyaDetail(dev) {
     const pW = dev.power_w || 0;
     const vV = dev.voltage_v || '--';
     const aA = dev.current_a || '--';
-    const cType = (dev.category === 'curtains' || raw.type === 'curtain') ? 'curtain' : ((dev.category === 'climate' || raw.type === 'thermostat') ? 'thermostat' : (raw.type || (raw.category_meta ? raw.category_meta.type : 'plug')));
+    const cType = (dev.category === 'curtains' || dev.category === 'shutters' || raw.type === 'curtain') ? 'curtain' : ((dev.category === 'climate' || raw.type === 'thermostat') ? 'thermostat' : (raw.type || (raw.category_meta ? raw.category_meta.type : 'plug')));
 
     let html = '';
 

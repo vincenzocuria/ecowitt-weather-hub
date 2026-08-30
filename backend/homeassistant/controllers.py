@@ -96,8 +96,9 @@ class DeviceController:
         return await self.client.call_service("climate", "set_fan_mode", clean_id, {"fan_mode": str(fan_mode).lower()})
 
     async def open_irrigation(self, entity_id: str = "valve.aiuola_valve", duration_minutes: int = 10) -> Dict[str, Any]:
-        """Apre l'elettrovalvola di irrigazione specificata su Home Assistant."""
+        """Apre l'elettrovalvola o switch di irrigazione specificato su Home Assistant."""
         clean_id = self.resolve_entity_id(entity_id)
+        domain = clean_id.split(".")[0]
         if "aiuola" in clean_id and "number.aiuola_irrigation_duration" in self.client.entities:
             try:
                 await self.client.call_service(
@@ -108,11 +109,16 @@ class DeviceController:
                 )
             except Exception:
                 pass
+        if domain == "switch":
+            return await self.client.call_service("switch", "turn_on", clean_id)
         return await self.client.call_service("valve", "open_valve", clean_id)
 
     async def close_irrigation(self, entity_id: str = "valve.aiuola_valve") -> Dict[str, Any]:
-        """Chiude l'elettrovalvola di irrigazione su Home Assistant."""
+        """Chiude l'elettrovalvola o switch di irrigazione su Home Assistant."""
         clean_id = self.resolve_entity_id(entity_id)
+        domain = clean_id.split(".")[0]
+        if domain == "switch":
+            return await self.client.call_service("switch", "turn_off", clean_id)
         return await self.client.call_service("valve", "close_valve", clean_id)
 
     async def control_cover(self, entity_id: str = "cover.persiana_tenda", action: str = "open") -> Dict[str, Any]:
