@@ -14,6 +14,8 @@ def parse_irrigation_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]
         return {"is_open": False, "valves": []}
 
     for entity_id, state_obj in entities.items():
+        if "aiuola_valve_2" in entity_id:
+            continue
         domain = entity_id.split(".")[0]
         attrs = state_obj.get("attributes", {})
         friendly_name = attrs.get("friendly_name") or entity_id

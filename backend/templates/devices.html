@@ -176,9 +176,14 @@
                             <span class="metric-tag tag-solar">☀️ {{ dev.solar_power_w|int }} W</span>
                             <span class="metric-tag tag-batt">🔋 {{ dev.battery_soc_pct|int }}%</span>
                         {% elif dev.category == 'health' %}
-                            <span class="metric-tag tag-info">👟 {{ dev.health_data.steps.daily if dev.health_data and dev.health_data.steps else '--' }} passi</span>
-                            <span class="metric-tag tag-temp">❤️ {{ dev.health_data.heart.rate_bpm if dev.health_data and dev.health_data.heart else '--' }} bpm</span>
-                            <span class="metric-tag tag-solar">🔥 {{ dev.health_data.calories.total_kcal|int if dev.health_data and dev.health_data.calories and dev.health_data.calories.total_kcal else '--' }} kcal</span>
+                            {% if dev.id == 'hass_smart_scale' or dev.body_data or 'bilancia' in dev.name|lower or 'scale' in dev.name|lower %}
+                                <span class="metric-tag tag-temp">⚖️ {{ dev.body_data.weight_kg if dev.body_data and dev.body_data.weight_kg else (dev.health_data.body.weight_kg if dev.health_data and dev.health_data.body and dev.health_data.body.weight_kg else '--') }} kg</span>
+                                <span class="metric-tag tag-power">🥩 {{ dev.body_data.fat_pct if dev.body_data and dev.body_data.fat_pct else (dev.health_data.body.fat_pct if dev.health_data and dev.health_data.body and dev.health_data.body.fat_pct else '--') }}%</span>
+                            {% else %}
+                                <span class="metric-tag tag-info">👟 {{ dev.health_data.steps.daily if dev.health_data and dev.health_data.steps else '--' }} passi</span>
+                                <span class="metric-tag tag-temp">❤️ {{ dev.health_data.heart.rate_bpm if dev.health_data and dev.health_data.heart else '--' }} bpm</span>
+                                <span class="metric-tag tag-solar">🔥 {{ dev.health_data.calories.total_kcal|int if dev.health_data and dev.health_data.calories and dev.health_data.calories.total_kcal else '--' }} kcal</span>
+                            {% endif %}
                         {% elif dev.category == 'presence' and dev.battery_pct is not none %}
                             <span class="metric-tag tag-batt">🔋 {{ dev.battery_pct }}%</span>
                         {% else %}
@@ -806,699 +811,448 @@ function closeDeviceDetail(e) {
 async function refreshCurrentDeviceDetail() {
     if (!currentOpenDeviceId) return;
     const btn = document.getElementById('modal-refresh-btn');
-    btn.classList.add('btn-loading');
+    if (btn) btn.classList.add('btn-loading');
     await fetchDevicesData();
-    btn.classList.remove('btn-loading');
+    if (btn) btn.classList.remove('btn-loading');
 }
 
+// =========================================================================
+// CLASSIFICAZIONE CAPACITA' & MODALITA' DISPOSITIVO UNIFICATA
+// =========================================================================
+function getDeviceType(dev) {
+    if (!dev) return 'generic';
+    const cat = (dev.category || '').toLowerCase();
+    const raw = dev.raw || {};
+    const rawId = (String(dev.raw_id || dev.id || '')).toLowerCase();
+    const name = (dev.name || '').toLowerCase();
+    const origName = (dev.original_name || '').toLowerCase();
+    const devType = (raw.type || raw.device_type || '').toLowerCase();
+
+    // 1. Bilancia Smart & Analisi Composizione Corporea BIA
+    if (dev.id === 'hass_smart_scale' || dev.body_data || dev.type === 'scale' || devType === 'scale' || devType === 'tzc1' || devType === 'tzc' ||
+        name.includes('bilancia') || origName.includes('bilancia') || name.includes('scale') || origName.includes('scale') ||
+        rawId.includes('scale') || rawId.includes('bilancia')) {
+        return 'scale';
+    }
+
+    // 2. Parametri Sanitari & Fitness Tracker (Samsung Health / Health Connect)
+    if (cat === 'health' || dev.id === 'hass_health_samsung' || dev.health_data || name.includes('health') || name.includes('galaxy') || name.includes('watch')) {
+        return 'health';
+    }
+
+    // 3. Sensore Presenza GPS / Wi-Fi Smartphone
+    if (cat === 'presence' || dev.id === 'hass_presence' || devType === 'presence' || rawId.includes('presence') || name.includes('presenza') || origName.includes('presenza')) {
+        return 'presence';
+    }
+
+    // 4. Frigorifero Smart (LG ThinQ / Home Assistant)
+    if (devType === 'device_refrigerator' || dev.id === 'hass_frigorifero' || rawId.includes('frigorifero') || rawId.includes('fridge') || name.includes('frigorifero') || name.includes('fridge')) {
+        return 'refrigerator';
+    }
+
+    // 5. Climatizzatori, Pompe di Calore, Cronotermostati (Climate)
+    if (cat === 'climate' || devType === 'thermostat' || devType === 'device_air_conditioner' || rawId.startsWith('climate.') || dev.ecosystem === 'thinq' || devType === 'wk' || name.includes('clima') || name.includes('termostat') || name.includes('condizionat')) {
+        return 'climate';
+    }
+
+    // 6. Grandi Elettrodomestici (Lavatrice, Lavastoviglie, Asciugatrice)
+    if (cat === 'appliances' || dev.id === 'hass_washer' || dev.id === 'hass_dishwasher' || rawId.includes('washer') || rawId.includes('dishwasher') || rawId.includes('lavatrice') || rawId.includes('lavastoviglie') || name.includes('lavatrice') || name.includes('lavastoviglie')) {
+        return 'appliance';
+    }
+
+    // 7. Persiane, Tapparelle, Tende Motorizzate (Shutters / Curtains / Covers)
+    if (cat === 'shutters' || cat === 'curtains' || devType === 'curtain' || rawId.startsWith('cover.') || ['cl', 'clkg', 'bl', 'cs'].includes(devType) || name.includes('persian') || name.includes('tapparel') || name.includes('tenda')) {
+        return 'shutter';
+    }
+
+    // 8. Irrigazione / Elettrovalvole
+    if (cat === 'irrigation' || devType === 'irrigation' || devType === 'sfkzq' || rawId.startsWith('valve.') || rawId.includes('irrig') || rawId.includes('valvola') || name.includes('irrig') || name.includes('valvola')) {
+        return 'irrigation';
+    }
+
+    // 9. Fotovoltaico & Accumulo Batteria (Aton Solar Hub)
+    if (cat === 'energy' || dev.ecosystem === 'aton' || dev.id === 'aton_storage_hub') {
+        return 'energy';
+    }
+
+    // 10. Luci & Strisce LED
+    if (cat === 'lights' || devType === 'light' || devType === 'dj' || devType === 'dd' || rawId.startsWith('light.') || name.includes('luce') || name.includes('lampada') || name.includes('led') || name.includes('striscia')) {
+        return 'light';
+    }
+
+    // 11. Prese Smart con Misuratore di Potenza
+    if ((cat === 'plugs' || devType === 'plug' || devType === 'cz' || devType === 'pc' || rawId.startsWith('switch.presa') || rawId.startsWith('switch.plug')) && (dev.power_w !== undefined || dev.voltage_v !== undefined || dev.current_a !== undefined)) {
+        return 'plug';
+    }
+
+    // 12. Interruttori Smart / Relè Semplici
+    if (cat === 'switches' || devType === 'switch' || devType === 'jd' || devType === 'kg' || rawId.startsWith('switch.')) {
+        return 'switch';
+    }
+
+    // 13. Sensori Contatto / Porta / Finestra / Movimento
+    if (cat === 'sensors' || devType === 'contact' || devType === 'mc' || devType === 'pir' || rawId.startsWith('binary_sensor.')) {
+        return 'sensor';
+    }
+
+    return 'generic';
+}
+
+// =========================================================================
+// DISPATCHER PRINCIPALE DEL MODALE DI DETTAGLIO
+// =========================================================================
 function renderModalContent(deviceId) {
     const dev = devicesCatalog.find(d => d.id === deviceId);
     if (!dev) return;
 
     document.getElementById('modal-device-name').textContent = dev.name;
-    document.getElementById('modal-device-meta').textContent = `${dev.category_label} • ${dev.ecosystem.toUpperCase()}`;
-    document.getElementById('modal-icon-badge').textContent = dev.icon;
+    document.getElementById('modal-device-meta').textContent = `${dev.category_label || 'Dispositivo Smart'} • ${dev.ecosystem ? dev.ecosystem.toUpperCase() : 'HUB'}`;
+    document.getElementById('modal-icon-badge').textContent = dev.icon || '📱';
 
     const bodyEl = document.getElementById('modal-device-body');
+    const dtype = getDeviceType(dev);
     let html = '';
 
-    // Render in base all'ecosistema e categoria
-    if (dev.ecosystem === 'homeassistant') {
-        html = renderHomeAssistantDetail(dev);
-    } else if (dev.ecosystem === 'tuya') {
-        html = renderTuyaDetail(dev);
-    } else if (dev.ecosystem === 'thinq') {
-        html = renderThinQDetail(dev);
-    } else if (dev.ecosystem === 'smartthings') {
-        html = renderSmartThingsDetail(dev);
-    } else if (dev.ecosystem === 'aton') {
-        html = renderAtonDetail(dev);
-    } else {
-        html = renderGenericDetail(dev);
+    switch (dtype) {
+        case 'scale':
+            html = renderScaleDetail(dev);
+            break;
+        case 'health':
+            html = renderHealthDetail(dev);
+            break;
+        case 'presence':
+            html = renderPresenceDetail(dev);
+            break;
+        case 'refrigerator':
+            html = renderRefrigeratorDetail(dev);
+            break;
+        case 'climate':
+            html = renderClimateDetail(dev);
+            break;
+        case 'appliance':
+            html = renderApplianceDetail(dev);
+            break;
+        case 'shutter':
+            html = renderShutterDetail(dev);
+            break;
+        case 'irrigation':
+            html = renderIrrigationDetail(dev);
+            break;
+        case 'energy':
+            html = renderAtonDetail(dev);
+            break;
+        case 'light':
+            html = renderLightDetail(dev);
+            break;
+        case 'plug':
+            html = renderPlugDetail(dev);
+            break;
+        case 'switch':
+            html = renderSwitchDetail(dev);
+            break;
+        case 'sensor':
+            html = renderSensorDetail(dev);
+            break;
+        default:
+            html = renderGenericDetail(dev);
+            break;
     }
 
-    // Aggiungi sezione Programmazione & Timer per tutti i dispositivi commutabili / climatizzatori / prese / persiane / valvole
-    if (dev.can_toggle || ['plugs', 'climate', 'appliances', 'irrigation', 'shutters', 'curtains'].includes(dev.category)) {
+    // Aggiungi sezione Programmazione & Timer SOLO per dispositivi idonei
+    const schedulableTypes = ['plug', 'switch', 'light', 'climate', 'shutter', 'irrigation'];
+    if (schedulableTypes.includes(dtype) || (dev.can_toggle && !['scale', 'health', 'presence', 'energy', 'sensor'].includes(dtype))) {
         html += renderDeviceScheduleBox(dev);
     }
 
     bodyEl.innerHTML = html;
 }
 
-// 0. Dettaglio Home Assistant (Hub Locale Unificato)
-function renderHomeAssistantDetail(dev) {
+// 1. Bilancia Smart BIA & Composizione Corporea
+function renderScaleDetail(dev) {
     const raw = dev.raw || {};
-    const isOn = dev.is_on;
-    const pW = dev.power_w || 0;
-    const cat = dev.category;
-    const entityId = dev.raw_id;
+    const h = dev.health_data || (raw.health_data ? raw.health_data : raw);
+    const b = dev.body_data || (h && h.body ? h.body : {});
+    const cal = (h && h.calories) ? h.calories : {};
 
-    // 0.1 Climatizzatori / Termostati
-    if (cat === 'climate' || entityId.startsWith('climate.')) {
-        const curTemp = dev.temp_current !== null && dev.temp_current !== undefined ? `${dev.temp_current}°C` : '--';
-        const targetTemp = dev.temp_set !== null && dev.temp_set !== undefined ? dev.temp_set : 24.0;
-        const mode = (dev.job_mode || dev.mode || 'COOL').toUpperCase();
-        const fanSpeed = (dev.fan_speed || 'LOW').toUpperCase();
+    const weight = (b.weight_kg !== null && b.weight_kg !== undefined) ? `${b.weight_kg} kg` : '-- kg';
+    const fat = (b.fat_pct !== null && b.fat_pct !== undefined) ? `${b.fat_pct}%` : '-- %';
+    const lean = (b.lean_mass_kg !== null && b.lean_mass_kg !== undefined) ? `${b.lean_mass_kg} kg` : '-- kg';
+    const water = (b.water_mass_kg !== null && b.water_mass_kg !== undefined) ? `${b.water_mass_kg} kg` : '-- kg';
+    const bone = (b.bone_mass_kg !== null && b.bone_mass_kg !== undefined) ? `${b.bone_mass_kg} kg` : '-- kg';
+    const bmr = cal.basal_kcal ? `${Math.round(cal.basal_kcal)} kcal` : (b.bmr ? `${Math.round(b.bmr)} kcal` : '-- kcal');
+    const src = b.source_label || (dev.ecosystem === 'tuya' ? 'Tuya Smart Life' : 'Samsung Health');
 
-        return `
-            <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
-                <div class="state-card-info">
-                    <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
-                    <span class="state-text">${isOn ? 'Clima Acceso' : 'Clima Spento'}</span>
-                </div>
-                <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
-                    ${isOn ? 'Spegni' : 'Accendi'}
-                </button>
-            </div>
-
-            <div class="clima-dial-wrap">
-                <div class="clima-temps-row">
-                    <div class="clima-temp-box">
-                        <span class="clima-sub">Temp. Rilevata</span>
-                        <span class="clima-big-val">${curTemp}</span>
-                    </div>
-                    <div class="clima-temp-box">
-                        <span class="clima-sub">Temp. Target</span>
-                        <div class="clima-target-ctrl">
-                            <button type="button" class="btn-step" onclick="setThinQTemp('${dev.raw_id}', ${targetTemp - 1})">-</button>
-                            <span class="clima-target-val">${targetTemp}°C</span>
-                            <button type="button" class="btn-step" onclick="setThinQTemp('${dev.raw_id}', ${targetTemp + 1})">+</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="clima-options-section">
-                <span class="section-title">Modalità Operativa</span>
-                <div class="clima-pill-grid">
-                    <button class="pill-opt ${mode === 'COOL' ? 'active' : ''}" onclick="setThinQMode('${dev.raw_id}', 'cool')">❄️ Cool</button>
-                    <button class="pill-opt ${mode === 'HEAT' ? 'active' : ''}" onclick="setThinQMode('${dev.raw_id}', 'heat')">🔥 Heat</button>
-                    <button class="pill-opt ${mode === 'DRY' ? 'active' : ''}" onclick="setThinQMode('${dev.raw_id}', 'dry')">💧 Dry</button>
-                    <button class="pill-opt ${mode === 'FAN_ONLY' || mode === 'FAN' ? 'active' : ''}" onclick="setThinQMode('${dev.raw_id}', 'fan_only')">💨 Fan</button>
-                    <button class="pill-opt ${mode === 'AUTO' ? 'active' : ''}" onclick="setThinQMode('${dev.raw_id}', 'auto')">🔄 Auto</button>
-                </div>
-
-                <span class="section-title" style="margin-top: 1rem;">Velocità Ventilazione</span>
-                <div class="clima-pill-grid">
-                    <button class="pill-opt ${fanSpeed === 'LOW' ? 'active' : ''}" onclick="setThinQFan('${dev.raw_id}', 'low')">Bassa</button>
-                    <button class="pill-opt ${fanSpeed === 'MEDIUM' || fanSpeed === 'MID' ? 'active' : ''}" onclick="setThinQFan('${dev.raw_id}', 'medium')">Media</button>
-                    <button class="pill-opt ${fanSpeed === 'HIGH' ? 'active' : ''}" onclick="setThinQFan('${dev.raw_id}', 'high')">Alta</button>
-                    <button class="pill-opt ${fanSpeed === 'AUTO' ? 'active' : ''}" onclick="setThinQFan('${dev.raw_id}', 'auto')">Auto</button>
-                </div>
-            </div>
-        `;
+    let bmiVal = '--';
+    if (b.bmi) {
+        bmiVal = `${b.bmi} kg/m²`;
+    } else if (b.weight_kg) {
+        const hM = 1.78;
+        bmiVal = `${(b.weight_kg / (hM * hM)).toFixed(1)} kg/m²`;
     }
 
-    // 0.2 Frigorifero LG ThinQ via Home Assistant
-    if (dev.id === 'hass_frigorifero' || entityId.includes('frigorifero') || entityId.includes('fridge')) {
-        const doorOpen = dev.door_open || raw.door_open || false;
-        const expressMode = dev.express_mode || raw.express_mode || false;
-        const targetTemp = dev.temp_set !== null && dev.temp_set !== undefined ? dev.temp_set : (raw.target_temp || 4);
-
-        return `
-            <div class="modal-quick-state-card ${doorOpen ? 'state-card-off' : (expressMode ? 'state-card-on' : 'state-card-off')}" style="${doorOpen ? 'background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4);' : ''}">
-                <div class="state-card-info">
-                    <span class="state-indicator-dot ${doorOpen ? 'dot-off pulse' : (expressMode ? 'dot-on pulse' : 'dot-off')}" style="${doorOpen ? 'background: #ef4444; box-shadow: 0 0 10px #ef4444;' : ''}"></span>
-                    <span class="state-text" style="${doorOpen ? 'color: #f87171; font-weight: 700;' : ''}">
-                        ${doorOpen ? '⚠️ PORTA APERTA' : '🟢 Porta Chiusa'} ${expressMode ? '• Express Cool ATTIVO ❄️' : ''}
-                    </span>
+    return `
+        <div class="modal-presence-box" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(16, 185, 129, 0.12) 100%); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 14px; padding: 1.25rem;">
+            <div class="presence-status-large" style="text-align: center;">
+                <span class="presence-icon" style="font-size: 2.2rem; display: block; margin-bottom: 0.35rem;">⚖️</span>
+                <div class="presence-title" style="font-size: 1.15rem; font-weight: 700; color: var(--text);">${dev.name}</div>
+                <p class="presence-sub" style="font-size: 0.82rem; color: var(--text-dim); margin-top: 0.25rem;">
+                    Analisi Impedenza Bioelettrica (BIA) • Sincronizzazione ${src}
+                </p>
+            </div>
+            
+            <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+                <div class="telemetry-card" style="background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.3);">
+                    <span class="tel-label">⚖️ Peso Corporeo</span>
+                    <span class="tel-val text-warning" style="font-size: 1.35rem; font-weight: 800;">${weight}</span>
                 </div>
-                <button type="button" class="btn ${expressMode ? 'btn-danger' : 'btn-primary'}" onclick="toggleThinQFridgeExpress('${dev.raw_id}', ${!expressMode})">
-                    ${expressMode ? 'Disattiva Express' : 'Attiva Express Cool ❄️'}
+                <div class="telemetry-card" style="background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.3);">
+                    <span class="tel-label">🥩 Massa Grassa</span>
+                    <span class="tel-val text-danger" style="font-size: 1.35rem; font-weight: 800;">${fat}</span>
+                </div>
+                <div class="telemetry-card" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.3);">
+                    <span class="tel-label">💪 Massa Magra</span>
+                    <span class="tel-val text-accent" style="font-size: 1.15rem; font-weight: 700;">${lean}</span>
+                </div>
+                <div class="telemetry-card" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.3);">
+                    <span class="tel-label">💧 Acqua Corporea</span>
+                    <span class="tel-val" style="color: #38bdf8; font-size: 1.15rem; font-weight: 700;">${water}</span>
+                </div>
+                <div class="telemetry-card" style="background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.3);">
+                    <span class="tel-label">🦴 Massa Ossea</span>
+                    <span class="tel-val text-success" style="font-size: 1.15rem; font-weight: 700;">${bone}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🧬 Metabolismo BMR</span>
+                    <span class="tel-val" style="font-size: 1.15rem; font-weight: 700;">${bmr}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">📐 Indice BMI</span>
+                    <span class="tel-val" style="font-size: 1.15rem; font-weight: 700;">${bmiVal}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🟢 Connessione</span>
+                    <span class="tel-val text-success">${dev.is_online ? 'Sincronizzato 🟢' : 'Offline 🔴'}</span>
+                </div>
+            </div>
+
+            <div style="margin-top: 1.25rem; display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap;">
+                <button type="button" class="btn btn-action-primary" onclick="syncHealthLiveMetrics()" style="padding: 8px 18px; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
+                    <span>🔄 Sincronizza Bilancia con Home Assistant</span>
                 </button>
             </div>
+        </div>
+    `;
+}
 
-            <div class="clima-dial-wrap" style="margin-top: 1.25rem;">
-                <div class="clima-temps-row" style="justify-content: center;">
-                    <div class="clima-temp-box" style="flex: 1 1 220px; max-width: 300px;">
-                        <span class="clima-sub">Temperatura Target Vano Frigo</span>
-                        <div class="clima-target-ctrl">
-                            <button type="button" class="btn-step" onclick="setThinQFridgeTemp('${dev.raw_id}', ${targetTemp - 1})">-</button>
-                            <span class="clima-target-val">${targetTemp}°C</span>
-                            <button type="button" class="btn-step" onclick="setThinQFridgeTemp('${dev.raw_id}', ${targetTemp + 1})">+</button>
-                        </div>
-                    </div>
-                </div>
+// 2. Parametri Sanitari & Fitness Tracker
+function renderHealthDetail(dev) {
+    const raw = dev.raw || {};
+    const h = dev.health_data || raw || {};
+    const steps = h.steps || {};
+    const cal = h.calories || {};
+    const heart = h.heart || {};
+    const sleep = h.sleep || {};
+    const batt = dev.battery_pct !== null && dev.battery_pct !== undefined ? `${dev.battery_pct}%` : (h.battery_pct !== null && h.battery_pct !== undefined ? `${h.battery_pct}%` : 'N/D');
+
+    return `
+        <div class="modal-presence-box" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(56, 189, 248, 0.08) 100%); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 14px; padding: 1.25rem;">
+            <div class="presence-status-large" style="text-align: center;">
+                <span class="presence-icon" style="font-size: 2.2rem; display: block; margin-bottom: 0.35rem;">🩺</span>
+                <div class="presence-title" style="font-size: 1.15rem; font-weight: 700; color: var(--text);">${dev.name}</div>
+                <p class="presence-sub" style="font-size: 0.82rem; color: var(--text-dim); margin-top: 0.25rem;">
+                    ${h.device_name || 'Galaxy S26'} • Sincronizzazione Google Health Connect & Samsung Health
+                </p>
             </div>
-
             <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
                 <div class="telemetry-card">
-                    <span class="tel-label">Sensore Porta</span>
-                    <span class="tel-val ${doorOpen ? 'text-danger' : 'text-success'}">${doorOpen ? 'Aperta ⚠️' : 'Chiusa 🟢'}</span>
+                    <span class="tel-label">👟 Passi Giornalieri</span>
+                    <span class="tel-val text-accent">${(steps.daily || 0).toLocaleString('it-IT')} / 8.000 (${steps.pct || 0}%)</span>
                 </div>
                 <div class="telemetry-card">
-                    <span class="tel-label">Raffreddamento Rapido</span>
-                    <span class="tel-val ${expressMode ? 'text-accent' : ''}">${expressMode ? 'Express ON ❄️' : 'Disattivato'}</span>
+                    <span class="tel-label">📏 Distanza Percorsa</span>
+                    <span class="tel-val">${steps.distance_km || '--'} km (Piani: ${steps.floors || 0})</span>
                 </div>
                 <div class="telemetry-card">
-                    <span class="tel-label">Integrazione</span>
-                    <span class="tel-val text-success">Home Assistant ⚡</span>
+                    <span class="tel-label">🔥 Calorie Totali</span>
+                    <span class="tel-val text-warning">${cal.total_kcal ? Math.round(cal.total_kcal) + ' kcal' : '--'}</span>
                 </div>
                 <div class="telemetry-card">
-                    <span class="tel-label">Modello</span>
-                    <span class="tel-val" style="font-size: 0.85rem;">LG Smart Refrigerator</span>
-                </div>
-            </div>
-        `;
-    }
-
-    // 0.3 Sensore Presenza Smartphone
-    if (cat === 'presence' || dev.id === 'hass_presence') {
-        const isPresent = dev.is_present !== undefined ? dev.is_present : (raw.is_present !== undefined ? raw.is_present : true);
-        const batt = dev.battery_pct !== null && dev.battery_pct !== undefined ? `${dev.battery_pct}%` : (raw.battery_pct !== null && raw.battery_pct !== undefined ? `${raw.battery_pct}%` : 'N/D');
-
-        return `
-            <div class="modal-presence-box">
-                <div class="presence-status-large">
-                    <span class="presence-icon">${isPresent ? '🟢' : '📍'}</span>
-                    <div class="presence-title">${isPresent ? 'In Casa / Rilevato' : 'Fuori Casa / Fuori Raggio'}</div>
-                    <p class="presence-sub">${dev.status_text || 'Monitoraggio posizione GPS & Wi-Fi'}</p>
-                </div>
-                <div class="modal-telemetry-grid" style="margin-top:1.25rem;">
-                    <div class="telemetry-card">
-                        <span class="tel-label">Batteria Smartphone</span>
-                        <span class="tel-val ${dev.battery_pct < 20 ? 'text-danger' : 'text-success'}">🔋 ${batt}</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">Fonte Telemetria</span>
-                        <span class="tel-val text-success">Home Assistant Companion ⚡</span>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    // 0.35 Bilancia Smart BIA & Composizione Corporea
-    if (dev.id === 'hass_smart_scale') {
-        const h = dev.health_data || raw || {};
-        const b = dev.body_data || h.body || {};
-        const cal = h.calories || {};
-        return `
-            <div class="modal-presence-box" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(16, 185, 129, 0.1) 100%);">
-                <div class="presence-status-large">
-                    <span class="presence-icon">⚖️</span>
-                    <div class="presence-title">${dev.name}</div>
-                    <p class="presence-sub">Analisi Impedenza Bioelettrica (BIA) • Sincronizzazione Samsung Health</p>
-                </div>
-                <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
-                    <div class="telemetry-card">
-                        <span class="tel-label">⚖️ Peso Corporeo</span>
-                        <span class="tel-val text-warning" style="font-size: 1.25rem; font-weight: 800;">${b.weight_kg ? b.weight_kg + ' kg' : '--'}</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">🥩 Massa Grassa</span>
-                        <span class="tel-val text-danger" style="font-size: 1.25rem; font-weight: 800;">${b.fat_pct ? b.fat_pct + '%' : '--'}</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">💪 Massa Magra</span>
-                        <span class="tel-val text-accent">${b.lean_mass_kg ? b.lean_mass_kg + ' kg' : '--'}</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">💧 Acqua Corporea Totale</span>
-                        <span class="tel-val text-info">${b.water_mass_kg ? b.water_mass_kg + ' kg' : '--'}</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">🦴 Massa Ossea</span>
-                        <span class="tel-val text-success">${b.bone_mass_kg ? b.bone_mass_kg + ' kg' : '--'}</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">🧬 Metabolismo Basale BMR</span>
-                        <span class="tel-val">${cal.basal_kcal ? Math.round(cal.basal_kcal) + ' kcal' : '--'}</span>
-                    </div>
-                </div>
-                <div style="margin-top: 1rem; text-align: center;">
-                    <button type="button" class="btn btn-action-primary" onclick="syncHealthLiveMetrics()" style="padding: 6px 14px; font-size: 0.82rem;">
-                        🔄 Sincronizza Bilancia con Home Assistant
-                    </button>
-                </div>
-            </div>
-        `;
-    }
-
-    // 0.4 Salute & Parametri Biometrici (Samsung Health & Health Connect)
-    if (cat === 'health' || dev.id === 'hass_health_samsung') {
-        const h = dev.health_data || raw || {};
-        const steps = h.steps || {};
-        const cal = h.calories || {};
-        const heart = h.heart || {};
-        const sleep = h.sleep || {};
-        const body = h.body || {};
-        const batt = dev.battery_pct !== null && dev.battery_pct !== undefined ? `${dev.battery_pct}%` : 'N/D';
-
-        return `
-            <div class="modal-presence-box" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(56, 189, 248, 0.08) 100%);">
-                <div class="presence-status-large">
-                    <span class="presence-icon">🩺</span>
-                    <div class="presence-title">${dev.name}</div>
-                    <p class="presence-sub">${h.device_name || 'Galaxy S26'} • Sincronizzazione Google Health Connect & Samsung Health</p>
-                </div>
-                <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
-                    <div class="telemetry-card">
-                        <span class="tel-label">👟 Passi Giornalieri</span>
-                        <span class="tel-val text-accent">${(steps.daily || 0).toLocaleString('it-IT')} / 8.000 (${steps.pct || 0}%)</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">📏 Distanza Percorsa</span>
-                        <span class="tel-val">${steps.distance_km || '--'} km (Piani: ${steps.floors || 0})</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">🔥 Calorie Totali</span>
-                        <span class="tel-val text-warning">${cal.total_kcal ? Math.round(cal.total_kcal) + ' kcal' : '--'}</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">⚡ Calorie Attive / BMR</span>
-                        <span class="tel-val">${cal.active_kcal || '--'} / ${cal.basal_kcal ? Math.round(cal.basal_kcal) : '--'} kcal</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">❤️ Frequenza Cardiaca</span>
-                        <span class="tel-val text-danger">${heart.rate_bpm || '--'} bpm (${heart.status || 'Normale'})</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">🫁 SpO2 / VO2 Max</span>
-                        <span class="tel-val text-info">${heart.spo2_pct ? heart.spo2_pct + '%' : '--'} • VO2: ${heart.vo2_max || '--'}</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">😴 Sonno Monitorato</span>
-                        <span class="tel-val text-success">${sleep.duration_formatted || '--'}</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">⚖️ Peso & Grasso Corporeo</span>
-                        <span class="tel-val">${body.weight_kg ? body.weight_kg + ' kg' : '--'} (${body.fat_pct ? body.fat_pct + '%' : '--'})</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">🥩 Massa Magra / Acqua</span>
-                        <span class="tel-val">${body.lean_mass_kg ? body.lean_mass_kg + ' kg' : '--'} / ${body.water_mass_kg ? body.water_mass_kg + ' kg' : '--'}</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">🔋 Batteria Dispositivo</span>
-                        <span class="tel-val text-success">🔋 ${batt}</span>
-                    </div>
-                </div>
-                <div style="margin-top: 1rem; text-align: center;">
-                    <button type="button" class="btn btn-action-primary" onclick="syncHealthLiveMetrics()" style="padding: 6px 14px; font-size: 0.82rem;">
-                        🔄 Forza Sincronizzazione Dati Salute
-                    </button>
-                </div>
-            </div>
-        `;
-    }
-
-    // 0.5 Grandi Elettrodomestici (Lavatrice Samsung / Lavastoviglie Samsung)
-    if (cat === 'appliances' || dev.id === 'hass_washer' || dev.id === 'hass_dishwasher') {
-        const isRunning = dev.is_on || raw.is_running || false;
-        const stateTxt = dev.status_text || raw.job_state_label || 'In Standby';
-        const cycle = dev.cycle_name || raw.cycle_name || 'Standard';
-        const compTime = dev.completion_time || raw.completion_time || '--';
-
-        return `
-            <div class="modal-quick-state-card ${isRunning ? 'state-card-on' : 'state-card-off'}">
-                <div class="state-card-info">
-                    <span class="state-indicator-dot ${isRunning ? 'dot-on pulse' : 'dot-off'}"></span>
-                    <span class="state-text">${stateTxt}</span>
-                </div>
-                ${dev.can_toggle ? `
-                    <button type="button" class="btn ${dev.is_on ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${dev.is_on ? 'true' : 'false'})">
-                        ${dev.is_on ? 'Spegni' : 'Accendi'}
-                    </button>
-                ` : ''}
-            </div>
-
-            <div class="modal-telemetry-grid" style="margin-top:1rem;">
-                <div class="telemetry-card">
-                    <span class="tel-label">Ciclo / Programma</span>
-                    <span class="tel-val text-accent">${cycle}</span>
+                    <span class="tel-label">⚡ Calorie Attive / BMR</span>
+                    <span class="tel-val">${cal.active_kcal || '--'} / ${cal.basal_kcal ? Math.round(cal.basal_kcal) : '--'} kcal</span>
                 </div>
                 <div class="telemetry-card">
-                    <span class="tel-label">Completamento Stimato</span>
-                    <span class="tel-val">${compTime}</span>
+                    <span class="tel-label">❤️ Frequenza Cardiaca</span>
+                    <span class="tel-val text-danger">${heart.rate_bpm || '--'} bpm (${heart.status || 'Normale'})</span>
                 </div>
                 <div class="telemetry-card">
-                    <span class="tel-label">Potenza Assorbita</span>
-                    <span class="tel-val ${pW > 10 ? 'text-accent' : ''}">${pW > 0 ? pW.toFixed(1) + ' W' : '0.0 W'}</span>
+                    <span class="tel-label">🫁 SpO2 / VO2 Max</span>
+                    <span class="tel-val" style="color: #38bdf8;">${heart.spo2_pct ? heart.spo2_pct + '%' : '--'} • VO2: ${heart.vo2_max || '--'}</span>
                 </div>
                 <div class="telemetry-card">
-                    <span class="tel-label">Stato Ciclo</span>
-                    <span class="tel-val">${isRunning ? 'In Funzione 🫧' : 'Pronto / Standby'}</span>
+                    <span class="tel-label">😴 Sonno Monitorato</span>
+                    <span class="tel-val text-success">${sleep.duration_formatted || '--'}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🔋 Batteria Dispositivo</span>
+                    <span class="tel-val ${dev.battery_pct && dev.battery_pct < 20 ? 'text-danger' : 'text-success'}">🔋 ${batt}</span>
                 </div>
             </div>
-        `;
-    }
-
-    // 0.5 Tapparelle / Persiane / Cover
-    if (cat === 'shutters' || entityId.startsWith('cover.')) {
-        const stateStr = (raw.state || 'N/D').toUpperCase();
-        const pos = raw.attributes ? (raw.attributes.current_position !== undefined ? raw.attributes.current_position : null) : null;
-        const posLabel = pos !== null ? `${pos}%` : stateStr;
-
-        return `
-            <div class="modal-quick-state-card state-card-on" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.3);">
-                <div class="state-card-info">
-                    <span class="state-indicator-dot dot-on" style="background: #38bdf8; box-shadow: 0 0 8px #38bdf8;"></span>
-                    <span class="state-text">Persiana / Tenda: <strong>${posLabel}</strong></span>
-                </div>
-                <span class="badge-tag" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; font-size: 0.8rem;">HA Locale ⚡</span>
-            </div>
-
-            <div class="curtain-controls-box" style="margin-top: 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 14px; padding: 1.25rem; text-align: center;">
-                <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Comandi Rapidi Posizione</div>
-                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
-                    <button type="button" class="btn btn-action-primary" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px;" onclick="controlHassCover('${entityId}', 'open_cover')">
-                        <span style="font-size: 1.35rem;">🔼</span>
-                        <span>Apri</span>
-                    </button>
-                    <button type="button" class="btn btn-outline" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px; border-color: #38bdf8; color: #38bdf8;" onclick="controlHassCover('${entityId}', 'set_cover_position', 50)">
-                        <span style="font-size: 1.35rem;">🌓</span>
-                        <span>A Metà (50%)</span>
-                    </button>
-                    <button type="button" class="btn btn-outline" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px; border-color: rgba(255,255,255,0.2);" onclick="controlHassCover('${entityId}', 'stop_cover')">
-                        <span style="font-size: 1.35rem;">⏸️</span>
-                        <span>Stop</span>
-                    </button>
-                    <button type="button" class="btn btn-action-danger" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px;" onclick="controlHassCover('${entityId}', 'close_cover')">
-                        <span style="font-size: 1.35rem;">🔽</span>
-                        <span>Chiudi</span>
-                    </button>
-                </div>
-
-                <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06);">
-                    <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-dim); margin-bottom: 6px;">
-                        <span>Regolazione Fine Posizione:</span>
-                        <strong id="hass-cover-slider-val-${entityId}" style="color: #38bdf8;">${pos !== null ? pos : 50}%</strong>
-                    </div>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="range" min="0" max="100" value="${pos !== null ? pos : 50}" style="flex: 1; accent-color: #38bdf8;" oninput="document.getElementById('hass-cover-slider-val-${entityId}').textContent = this.value + '%'" id="hass-cover-slider-${entityId}">
-                        <button type="button" class="btn btn-primary btn-sm" onclick="controlHassCover('${entityId}', 'set_cover_position', parseInt(document.getElementById('hass-cover-slider-${entityId}').value))">
-                            Imposta
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    // 0.6 Elettrovalvole / Irrigazione
-    if (cat === 'irrigation' || entityId.startsWith('valve.')) {
-        const isWatering = (raw.state === 'open' || raw.state === 'opening');
-        return `
-            <div class="modal-quick-state-card ${isWatering ? 'state-card-on' : 'state-card-off'}" style="${isWatering ? 'background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.4);' : ''}">
-                <div class="state-card-info">
-                    <span class="state-indicator-dot ${isWatering ? 'dot-on pulse' : 'dot-off'}" style="${isWatering ? 'background: #10b981; box-shadow: 0 0 10px #10b981;' : ''}"></span>
-                    <span class="state-text">Elettrovalvola: <strong>${isWatering ? 'Aperta / In Irrigazione 💧' : 'Chiusa / Standby 💤'}</strong></span>
-                </div>
-                <button type="button" class="btn ${isWatering ? 'btn-danger' : 'btn-success'}" onclick="controlHassValve('${entityId}', '${isWatering ? 'close_valve' : 'open_valve'}')">
-                    ${isWatering ? '🛑 Chiudi' : '💧 Apri'}
+            <div style="margin-top: 1.25rem; display: flex; justify-content: center;">
+                <button type="button" class="btn btn-action-primary" onclick="syncHealthLiveMetrics()" style="padding: 8px 18px; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
+                    <span>🔄 Forza Sincronizzazione Dati Salute</span>
                 </button>
             </div>
-        `;
-    }
+        </div>
+    `;
+}
 
-    // 0.7 Prese Smart & Luci su Home Assistant
+// 3. Sensore Presenza GPS Smartphone
+function renderPresenceDetail(dev) {
+    const raw = dev.raw || {};
+    const isPresent = dev.is_present !== undefined ? dev.is_present : (raw.is_present !== undefined ? raw.is_present : (dev.is_on !== undefined ? dev.is_on : true));
+    const batt = dev.battery_pct !== null && dev.battery_pct !== undefined ? `${dev.battery_pct}%` : (raw.battery_pct !== null && raw.battery_pct !== undefined ? `${raw.battery_pct}%` : 'N/D');
+    const subText = raw.presence_text || dev.status_text || 'Monitoraggio posizione GPS & Wi-Fi';
+    const src = dev.ecosystem === 'smartthings' ? 'SmartThings Cloud 🟢' : 'Home Assistant Companion ⚡';
+
     return `
-        <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
-            <div class="state-card-info">
-                <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
-                <span class="state-text">${isOn ? 'Dispositivo Acceso' : 'Dispositivo Spento'}</span>
+        <div class="modal-presence-box" style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 14px; padding: 1.25rem;">
+            <div class="presence-status-large" style="text-align: center;">
+                <span class="presence-icon" style="font-size: 2.2rem; display: block; margin-bottom: 0.35rem;">${isPresent ? '🟢' : '📍'}</span>
+                <div class="presence-title" style="font-size: 1.15rem; font-weight: 700; color: var(--text);">${isPresent ? 'In Casa / Rilevato' : 'Fuori Casa / Fuori Raggio'}</div>
+                <p class="presence-sub" style="font-size: 0.82rem; color: var(--text-dim); margin-top: 0.25rem;">${subText}</p>
             </div>
-            <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
-                ${isOn ? 'Spegni' : 'Accendi'}
+            <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+                <div class="telemetry-card">
+                    <span class="tel-label">🔋 Batteria Smartphone</span>
+                    <span class="tel-val ${dev.battery_pct && dev.battery_pct < 20 ? 'text-danger' : 'text-success'}">🔋 ${batt}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">📍 Stato Posizione</span>
+                    <span class="tel-val ${isPresent ? 'text-success' : 'text-warning'}">${isPresent ? 'A Casa 🏠' : 'Fuori Zona 🚶'}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">📡 Fonte Telemetria</span>
+                    <span class="tel-val text-success">${src}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🟢 Connessione</span>
+                    <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// 4. Frigorifero Smart LG ThinQ
+function renderRefrigeratorDetail(dev) {
+    const raw = dev.raw || {};
+    const doorOpen = dev.door_open || raw.door_open || false;
+    const expressMode = dev.express_mode || raw.express_mode || false;
+    const targetTemp = dev.temp_set !== null && dev.temp_set !== undefined ? dev.temp_set : (raw.target_temp || 4);
+
+    return `
+        <div class="modal-quick-state-card ${doorOpen ? 'state-card-off' : (expressMode ? 'state-card-on' : 'state-card-off')}" style="${doorOpen ? 'background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4);' : ''}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${doorOpen ? 'dot-off pulse' : (expressMode ? 'dot-on pulse' : 'dot-off')}" style="${doorOpen ? 'background: #ef4444; box-shadow: 0 0 10px #ef4444;' : ''}"></span>
+                <span class="state-text" style="${doorOpen ? 'color: #f87171; font-weight: 700;' : ''}">
+                    ${doorOpen ? '⚠️ PORTA APERTA' : '🟢 Porta Chiusa'} ${expressMode ? '• Express Cool ATTIVO ❄️' : ''}
+                </span>
+            </div>
+            <button type="button" class="btn ${expressMode ? 'btn-danger' : 'btn-primary'}" onclick="toggleThinQFridgeExpress('${dev.raw_id}', ${!expressMode})">
+                ${expressMode ? 'Disattiva Express' : 'Attiva Express Cool ❄️'}
             </button>
+        </div>
+
+        <div class="clima-dial-wrap" style="margin-top: 1.25rem;">
+            <div class="clima-temps-row" style="justify-content: center;">
+                <div class="clima-temp-box" style="flex: 1 1 220px; max-width: 300px;">
+                    <span class="clima-sub">Temperatura Target Vano Frigo</span>
+                    <div class="clima-target-ctrl">
+                        <button type="button" class="btn-step" onclick="setThinQFridgeTemp('${dev.raw_id}', ${targetTemp - 1})">-</button>
+                        <span class="clima-target-val">${targetTemp}°C</span>
+                        <button type="button" class="btn-step" onclick="setThinQFridgeTemp('${dev.raw_id}', ${targetTemp + 1})">+</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
             <div class="telemetry-card">
-                <span class="tel-label">Potenza Assorbita</span>
-                <span class="tel-val ${pW > 0 ? 'text-accent' : ''}">${pW > 0 ? pW.toFixed(1) + ' W' : '0.0 W'}</span>
+                <span class="tel-label">🚪 Sensore Porta</span>
+                <span class="tel-val ${doorOpen ? 'text-danger' : 'text-success'}">${doorOpen ? 'Aperta ⚠️' : 'Chiusa 🟢'}</span>
             </div>
             <div class="telemetry-card">
-                <span class="tel-label">Protocollo Hub</span>
-                <span class="tel-val" style="color: #4ade80;">Home Assistant LAN ⚡</span>
+                <span class="tel-label">❄️ Raffreddamento Rapido</span>
+                <span class="tel-val ${expressMode ? 'text-accent' : ''}">${expressMode ? 'Express ON ❄️' : 'Disattivato'}</span>
             </div>
             <div class="telemetry-card">
-                <span class="tel-label">Entità HA</span>
-                <span class="tel-val" style="font-size: 0.8rem; font-family: monospace;">${entityId}</span>
+                <span class="tel-label">🎯 Range Regolazione</span>
+                <span class="tel-val">0°C - 6°C</span>
             </div>
             <div class="telemetry-card">
-                <span class="tel-label">Stato Connessione</span>
-                <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+                <span class="tel-label">🧊 Modello Elettrodomestico</span>
+                <span class="tel-val" style="font-size: 0.85rem;">${raw.model_name || raw.name || dev.name || 'LG Smart Fridge'}</span>
             </div>
         </div>
     `;
 }
 
-// 1. Dettaglio Tuya
-function renderTuyaDetail(dev) {
+// 5. Climatizzatori, Pompe di Calore & Cronotermostati
+function renderClimateDetail(dev) {
     const raw = dev.raw || {};
     const isOn = dev.is_on;
-    const pW = dev.power_w || 0;
-    const vV = dev.voltage_v || '--';
-    const aA = dev.current_a || '--';
-    const cType = (dev.category === 'curtains' || dev.category === 'shutters' || raw.type === 'curtain') ? 'curtain' : ((dev.category === 'climate' || raw.type === 'thermostat') ? 'thermostat' : (raw.type || (raw.category_meta ? raw.category_meta.type : 'plug')));
+    const curTemp = dev.temp_current !== null && dev.temp_current !== undefined ? `${dev.temp_current}°C` : (raw.temp_current !== null && raw.temp_current !== undefined ? `${raw.temp_current}°C` : '--');
+    const targetTemp = dev.temp_set !== null && dev.temp_set !== undefined ? dev.temp_set : (raw.temp_set !== null && raw.temp_set !== undefined ? raw.temp_set : 24.0);
+    const mode = (dev.job_mode || dev.mode || raw.mode || 'COOL').toUpperCase();
+    const fanSpeed = (dev.fan_speed || raw.fan_speed || 'LOW').toUpperCase();
 
-    let html = '';
+    const isThermostat = dev.category === 'thermostat' || raw.type === 'thermostat' || dev.type === 'wk';
 
-    if (cType === 'curtain') {
-        const curState = dev.curtain_state || raw.curtain_state || 'Pronta 🪟';
-        html += `
-            <div class="modal-quick-state-card state-card-on" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.3);">
+    if (isThermostat) {
+        return `
+            <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
                 <div class="state-card-info">
-                    <span class="state-indicator-dot dot-on" style="background: #38bdf8; box-shadow: 0 0 8px #38bdf8;"></span>
-                    <span class="state-text">Persiana / Tenda: <strong>${curState}</strong></span>
+                    <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
+                    <span class="state-text">${isOn ? 'Cronotermostato Attivo' : 'Cronotermostato Spento / Antigelo'}</span>
                 </div>
-                <span class="badge-tag" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; font-size: 0.8rem;">Cloud Tuya 🟢</span>
-            </div>
-
-            <div class="curtain-controls-box" style="margin-top: 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 14px; padding: 1.25rem; text-align: center;">
-                <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Comandi Rapidi Motorizzazione</div>
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem;">
-                    <button type="button" class="btn btn-action-primary" style="padding: 1rem 0.5rem; font-size: 1rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; border-radius: 12px;" onclick="controlTuyaCurtain('${dev.raw_id}', 'open')">
-                        <span style="font-size: 1.6rem;">🔼</span>
-                        <span>Apri</span>
+                ${dev.can_toggle ? `
+                    <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
+                        ${isOn ? 'Spegni' : 'Accendi'}
                     </button>
-                    <button type="button" class="btn btn-outline" style="padding: 1rem 0.5rem; font-size: 1rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; border-radius: 12px; border-color: rgba(255,255,255,0.2);" onclick="controlTuyaCurtain('${dev.raw_id}', 'stop')">
-                        <span style="font-size: 1.6rem;">⏸️</span>
-                        <span>Pausa / Stop</span>
-                    </button>
-                    <button type="button" class="btn btn-action-danger" style="padding: 1rem 0.5rem; font-size: 1rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; border-radius: 12px;" onclick="controlTuyaCurtain('${dev.raw_id}', 'close')">
-                        <span style="font-size: 1.6rem;">🔽</span>
-                        <span>Chiudi</span>
-                    </button>
-                </div>
+                ` : ''}
             </div>
 
-            <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
-                <div class="telemetry-card">
-                    <span class="tel-label">Dispositivo</span>
-                    <span class="tel-val" style="font-size: 0.9rem;">${dev.name}</span>
-                </div>
-                <div class="telemetry-card">
-                    <span class="tel-label">Stato Connessione</span>
-                    <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Cloud Online 🟢' : 'Offline 🔴'}</span>
-                </div>
-            </div>
-        `;
-        return html;
-    }
-
-    if (cType === 'irrigation') {
-        const isWatering = isOn || (raw.work_state === 'watering' || raw.work_state === 'spray' || raw.work_state === 'manual' || raw.work_state === 'auto');
-        const battPct = dev.battery_pct !== null && dev.battery_pct !== undefined ? `${dev.battery_pct}%` : (raw.battery_pct !== null ? `${raw.battery_pct}%` : '--');
-        const wDelay = raw.weather_delay || 'cancel';
-        html += `
-            <div class="modal-quick-state-card ${isWatering ? 'state-card-on' : 'state-card-off'}" style="${isWatering ? 'background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.4);' : ''}">
-                <div class="state-card-info">
-                    <span class="state-indicator-dot ${isWatering ? 'dot-on pulse' : 'dot-off'}" style="${isWatering ? 'background: #10b981; box-shadow: 0 0 10px #10b981;' : ''}"></span>
-                    <span class="state-text">Valvola: <strong>${isWatering ? 'In Irrigazione 💧' : 'Chiusa / Standby 💤'}</strong></span>
-                </div>
-                ${isWatering ? `
-                    <button type="button" class="btn btn-danger" onclick="stopIrrigation('${dev.raw_id}')">
-                        🛑 Chiudi Valvola
-                    </button>
-                ` : `
-                    <button type="button" class="btn btn-success" onclick="startIrrigation(2, '${dev.raw_id}')">
-                        💧 Avvia Micro-Dose (2 min)
-                    </button>
-                `}
-            </div>
-
-            <!-- Box Durate Rapide per Vaso / Test Calibrazione -->
-            <div style="margin-top: 1rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                    <span style="font-size: 0.8rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600;">Micro-Dosi & Test Calibrazione Vaso</span>
-                    <span style="font-size: 0.75rem; color: #a78bfa;">🧠 Auto-Apprendimento</span>
-                </div>
-                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
-                    <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(1, '${dev.raw_id}')">🧪 1m</button>
-                    <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(1.5, '${dev.raw_id}')">🧪 1.5m</button>
-                    <button type="button" class="btn btn-action-primary" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(2, '${dev.raw_id}')">💧 2m</button>
-                    <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(3, '${dev.raw_id}')">⏱️ 3m</button>
-                </div>
-            </div>
-
-            <!-- Telemetria & Sensore WH51 -->
-            <div class="modal-telemetry-grid" style="margin-top: 1rem;">
-                <div class="telemetry-card">
-                    <span class="tel-label">Batteria Valvola</span>
-                    <span class="tel-val text-success">🔋 ${battPct}</span>
-                </div>
-                <div class="telemetry-card">
-                    <span class="tel-label">Ritardo Meteo HW</span>
-                    <span class="tel-val">${wDelay === 'cancel' ? 'Nessuno' : wDelay}</span>
-                </div>
-                <div class="telemetry-card">
-                    <span class="tel-label">Stato Connessione</span>
-                    <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Gateway BLE 🟢' : 'Offline 🔴'}</span>
-                </div>
-            </div>
-
-            <!-- Box Automazione Intelligente WH51 -->
-            <div id="irrigation-smart-advice-box" style="margin-top: 1rem; background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 12px; padding: 1rem;">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <span style="font-weight: 700; font-size: 0.88rem; color: #38bdf8;">🧠 Decisione Agrometeo WH51</span>
-                    <span class="badge-tag" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">Smart Active</span>
-                </div>
-                <p id="irrigation-smart-desc" style="font-size: 0.82rem; color: var(--text); margin: 0.5rem 0 0 0; line-height: 1.4;">
-                    Caricamento stato sensore terreno e previsioni pioggia...
-                </p>
-            </div>
-
-            <!-- Box Modello Auto-Apprendimento Vaso -->
-            <div id="irrigation-learning-box" style="margin-top: 0.75rem; background: rgba(167, 139, 250, 0.06); border: 1px solid rgba(167, 139, 250, 0.25); border-radius: 12px; padding: 1rem;">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <span style="font-weight: 700; font-size: 0.88rem; color: #a78bfa;">🪴 Modello di Risposta del Tuo Vaso</span>
-                    <span class="badge-tag" style="background: rgba(167, 139, 250, 0.2); color: #a78bfa;">Self-Learning</span>
-                </div>
-                <div id="irrigation-learning-desc" style="font-size: 0.82rem; color: var(--text); margin-top: 0.5rem; line-height: 1.5;">
-                    Calibrazione curva di percolazione in corso...
-                </div>
-            </div>
-        `;
-        setTimeout(() => loadIrrigationSmartStatus(dev.raw_id), 100);
-        return html;
-    }
-
-    html += `
-        <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
-            <div class="state-card-info">
-                <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
-                <span class="state-text">${isOn ? 'Dispositivo Acceso' : 'Dispositivo Spento'}</span>
-            </div>
-            ${dev.can_toggle ? `
-                <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
-                    ${isOn ? 'Spegni' : 'Accendi'}
-                </button>
-            ` : ''}
-        </div>
-    `;
-
-    if (cType === 'plug') {
-        html += `
-            <div class="modal-telemetry-grid">
-                <div class="telemetry-card">
-                    <span class="tel-label">Potenza Istantanea</span>
-                    <span class="tel-val ${pW > 0 ? 'text-accent' : ''}">${pW} <small>W</small></span>
-                </div>
-                <div class="telemetry-card">
-                    <span class="tel-label">Tensione di Rete</span>
-                    <span class="tel-val">${vV} <small>V</small></span>
-                </div>
-                <div class="telemetry-card">
-                    <span class="tel-label">Corrente Assorbita</span>
-                    <span class="tel-val">${aA} <small>A</small></span>
-                </div>
-                <div class="telemetry-card">
-                    <span class="tel-label">Stato Connessione</span>
-                    <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Cloud Online 🟢' : 'Offline 🔴'}</span>
-                </div>
-            </div>
-        `;
-    } else if (cType === 'thermostat') {
-        const curTemp = dev.temp_current !== null ? `${dev.temp_current}°C` : '--';
-        const setTemp = dev.temp_set !== null ? dev.temp_set : 20.0;
-        html += `
-            <div class="thermostat-modal-box">
+            <div class="thermostat-modal-box" style="margin-top: 1.25rem;">
                 <div class="thermostat-current-display">
-                    <span class="temp-label">Temperatura Ambiente</span>
+                    <span class="temp-label">Temperatura Rilevata</span>
                     <span class="temp-large-val">${curTemp}</span>
                 </div>
                 <div class="thermostat-control-dial">
-                    <button type="button" class="btn-dial" onclick="adjustThermostatTemp('${dev.raw_id}', ${setTemp - 0.5})">-</button>
+                    <button type="button" class="btn-dial" onclick="adjustClimateTemp('${dev.ecosystem}', '${dev.raw_id}', ${targetTemp - 0.5})">-</button>
                     <div class="dial-center">
                         <span class="dial-label">Target Desiderato</span>
-                        <span class="dial-val">${setTemp.toFixed(1)}°C</span>
+                        <span class="dial-val">${targetTemp.toFixed(1)}°C</span>
                     </div>
-                    <button type="button" class="btn-dial" onclick="adjustThermostatTemp('${dev.raw_id}', ${setTemp + 0.5})">+</button>
-                </div>
-            </div>
-        `;
-    }
-
-    return html;
-}
-
-// 2. Dettaglio LG ThinQ Climatizzatori
-function renderThinQDetail(dev) {
-    const raw = dev.raw || {};
-    const devType = raw.device_type || 'DEVICE_AIR_CONDITIONER';
-
-    // RENDER DETTAGLIO FRIGORIFERO LG THINQ
-    if (devType === 'DEVICE_REFRIGERATOR') {
-        const doorOpen = dev.door_open || raw.door_open || false;
-        const expressMode = dev.express_mode || raw.express_mode || false;
-        const targetTemp = dev.temp_set !== null && dev.temp_set !== undefined ? dev.temp_set : (raw.target_temp || 4);
-
-        return `
-            <div class="modal-quick-state-card ${doorOpen ? 'state-card-off' : (expressMode ? 'state-card-on' : 'state-card-off')}" style="${doorOpen ? 'background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4);' : ''}">
-                <div class="state-card-info">
-                    <span class="state-indicator-dot ${doorOpen ? 'dot-off pulse' : (expressMode ? 'dot-on pulse' : 'dot-off')}" style="${doorOpen ? 'background: #ef4444; box-shadow: 0 0 10px #ef4444;' : ''}"></span>
-                    <span class="state-text" style="${doorOpen ? 'color: #f87171; font-weight: 700;' : ''}">
-                        ${doorOpen ? '⚠️ PORTA APERTA' : '🟢 Porta Chiusa'} ${expressMode ? '• Express Cool ATTIVO ❄️' : ''}
-                    </span>
-                </div>
-                <button type="button" class="btn ${expressMode ? 'btn-danger' : 'btn-primary'}" onclick="toggleThinQFridgeExpress('${dev.raw_id}', ${!expressMode})">
-                    ${expressMode ? 'Disattiva Express' : 'Attiva Express Cool ❄️'}
-                </button>
-            </div>
-
-            <div class="clima-dial-wrap" style="margin-top: 1.25rem;">
-                <div class="clima-temps-row" style="justify-content: center;">
-                    <div class="clima-temp-box" style="flex: 1 1 220px; max-width: 300px;">
-                        <span class="clima-sub">Temperatura Target Vano Frigo</span>
-                        <div class="clima-target-ctrl">
-                            <button type="button" class="btn-step" onclick="setThinQFridgeTemp('${dev.raw_id}', ${targetTemp - 1})">-</button>
-                            <span class="clima-target-val">${targetTemp}°C</span>
-                            <button type="button" class="btn-step" onclick="setThinQFridgeTemp('${dev.raw_id}', ${targetTemp + 1})">+</button>
-                        </div>
-                    </div>
+                    <button type="button" class="btn-dial" onclick="adjustClimateTemp('${dev.ecosystem}', '${dev.raw_id}', ${targetTemp + 0.5})">+</button>
                 </div>
             </div>
 
             <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
                 <div class="telemetry-card">
-                    <span class="tel-label">Sensore Porta</span>
-                    <span class="tel-val ${doorOpen ? 'text-danger' : 'text-success'}">${doorOpen ? 'Aperta ⚠️' : 'Chiusa 🟢'}</span>
+                    <span class="tel-label">🌡️ Temperatura Ambiente</span>
+                    <span class="tel-val">${curTemp}</span>
                 </div>
                 <div class="telemetry-card">
-                    <span class="tel-label">Raffreddamento Rapido</span>
-                    <span class="tel-val ${expressMode ? 'text-accent' : ''}">${expressMode ? 'Express ON ❄️' : 'Disattivato'}</span>
+                    <span class="tel-label">🎯 Setpoint Termostato</span>
+                    <span class="tel-val text-accent">${targetTemp.toFixed(1)}°C</span>
                 </div>
                 <div class="telemetry-card">
-                    <span class="tel-label">Range Target</span>
-                    <span class="tel-val">0°C - 6°C</span>
-                </div>
-                <div class="telemetry-card">
-                    <span class="tel-label">Modello Elettrodomestico</span>
-                    <span class="tel-val" style="font-size: 0.85rem;">${raw.model_name || 'LG Smart Fridge'}</span>
+                    <span class="tel-label">🟢 Stato Connessione</span>
+                    <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
                 </div>
             </div>
         `;
     }
-
-    // RENDER DETTAGLIO CLIMATIZZATORE LG THINQ
-    const isOn = dev.is_on;
-    const curTemp = dev.temp_current !== null ? `${dev.temp_current}°C` : '--';
-    const targetTemp = dev.temp_set !== null ? dev.temp_set : 24.0;
-    const mode = dev.job_mode || 'COOL';
-    const fanSpeed = dev.fan_speed || 'LOW';
 
     return `
         <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
@@ -1506,9 +1260,11 @@ function renderThinQDetail(dev) {
                 <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
                 <span class="state-text">${isOn ? 'Clima Acceso' : 'Clima Spento'}</span>
             </div>
-            <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
-                ${isOn ? 'Spegni' : 'Accendi'}
-            </button>
+            ${dev.can_toggle ? `
+                <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
+                    ${isOn ? 'Spegni' : 'Accendi'}
+                </button>
+            ` : ''}
         </div>
 
         <div class="clima-dial-wrap">
@@ -1520,9 +1276,9 @@ function renderThinQDetail(dev) {
                 <div class="clima-temp-box">
                     <span class="clima-sub">Temp. Target</span>
                     <div class="clima-target-ctrl">
-                        <button type="button" class="btn-step" onclick="setThinQTemp('${dev.raw_id}', ${targetTemp - 1})">-</button>
+                        <button type="button" class="btn-step" onclick="adjustClimateTemp('${dev.ecosystem}', '${dev.raw_id}', ${targetTemp - 1})">-</button>
                         <span class="clima-target-val">${targetTemp}°C</span>
-                        <button type="button" class="btn-step" onclick="setThinQTemp('${dev.raw_id}', ${targetTemp + 1})">+</button>
+                        <button type="button" class="btn-step" onclick="adjustClimateTemp('${dev.ecosystem}', '${dev.raw_id}', ${targetTemp + 1})">+</button>
                     </div>
                 </div>
             </div>
@@ -1531,56 +1287,31 @@ function renderThinQDetail(dev) {
         <div class="clima-options-section">
             <span class="section-title">Modalità di Funzionamento</span>
             <div class="clima-pill-grid">
-                <button class="pill-opt ${mode === 'COOL' ? 'active' : ''}" onclick="setThinQMode('${dev.raw_id}', 'COOL')">❄️ Cool</button>
-                <button class="pill-opt ${mode === 'HEAT' ? 'active' : ''}" onclick="setThinQMode('${dev.raw_id}', 'HEAT')">🔥 Heat</button>
-                <button class="pill-opt ${mode === 'DRY' ? 'active' : ''}" onclick="setThinQMode('${dev.raw_id}', 'DRY')">💧 Dry</button>
-                <button class="pill-opt ${mode === 'FAN' ? 'active' : ''}" onclick="setThinQMode('${dev.raw_id}', 'FAN')">💨 Fan</button>
-                <button class="pill-opt ${mode === 'AUTO' ? 'active' : ''}" onclick="setThinQMode('${dev.raw_id}', 'AUTO')">🔄 Auto</button>
+                <button class="pill-opt ${mode === 'COOL' ? 'active' : ''}" onclick="setClimateMode('${dev.ecosystem}', '${dev.raw_id}', 'cool')">❄️ Cool</button>
+                <button class="pill-opt ${mode === 'HEAT' ? 'active' : ''}" onclick="setClimateMode('${dev.ecosystem}', '${dev.raw_id}', 'heat')">🔥 Heat</button>
+                <button class="pill-opt ${mode === 'DRY' ? 'active' : ''}" onclick="setClimateMode('${dev.ecosystem}', '${dev.raw_id}', 'dry')">💧 Dry</button>
+                <button class="pill-opt ${mode === 'FAN' || mode === 'FAN_ONLY' ? 'active' : ''}" onclick="setClimateMode('${dev.ecosystem}', '${dev.raw_id}', 'fan')">💨 Fan</button>
+                <button class="pill-opt ${mode === 'AUTO' ? 'active' : ''}" onclick="setClimateMode('${dev.ecosystem}', '${dev.raw_id}', 'auto')">🔄 Auto</button>
             </div>
 
             <span class="section-title" style="margin-top: 1rem;">Velocità Ventilazione</span>
             <div class="clima-pill-grid">
-                <button class="pill-opt ${fanSpeed === 'LOW' ? 'active' : ''}" onclick="setThinQFan('${dev.raw_id}', 'LOW')">Bassa</button>
-                <button class="pill-opt ${fanSpeed === 'MID' ? 'active' : ''}" onclick="setThinQFan('${dev.raw_id}', 'MID')">Media</button>
-                <button class="pill-opt ${fanSpeed === 'HIGH' ? 'active' : ''}" onclick="setThinQFan('${dev.raw_id}', 'HIGH')">Alta</button>
-                <button class="pill-opt ${fanSpeed === 'AUTO' ? 'active' : ''}" onclick="setThinQFan('${dev.raw_id}', 'AUTO')">Auto</button>
+                <button class="pill-opt ${fanSpeed === 'LOW' ? 'active' : ''}" onclick="setClimateFan('${dev.ecosystem}', '${dev.raw_id}', 'low')">Bassa</button>
+                <button class="pill-opt ${fanSpeed === 'MID' || fanSpeed === 'MEDIUM' ? 'active' : ''}" onclick="setClimateFan('${dev.ecosystem}', '${dev.raw_id}', 'medium')">Media</button>
+                <button class="pill-opt ${fanSpeed === 'HIGH' ? 'active' : ''}" onclick="setClimateFan('${dev.ecosystem}', '${dev.raw_id}', 'high')">Alta</button>
+                <button class="pill-opt ${fanSpeed === 'AUTO' ? 'active' : ''}" onclick="setClimateFan('${dev.ecosystem}', '${dev.raw_id}', 'auto')">Auto</button>
             </div>
         </div>
     `;
 }
 
-// 3. Dettaglio Samsung SmartThings
-function renderSmartThingsDetail(dev) {
+// 6. Grandi Elettrodomestici (Lavatrice, Lavastoviglie, Asciugatrice)
+function renderApplianceDetail(dev) {
     const raw = dev.raw || {};
-    if (dev.category === 'presence') {
-        const isPresent = dev.is_present;
-        const batt = dev.battery_pct !== null ? `${dev.battery_pct}%` : 'N/D';
-        return `
-            <div class="modal-presence-box">
-                <div class="presence-status-large">
-                    <span class="presence-icon">${isPresent ? '🟢' : '📍'}</span>
-                    <div class="presence-title">${isPresent ? 'In Casa / Rilevato' : 'Fuori Casa / Fuori Raggio'}</div>
-                    <p class="presence-sub">${raw.presence_text || dev.status_text}</p>
-                </div>
-                <div class="modal-telemetry-grid" style="margin-top:1.25rem;">
-                    <div class="telemetry-card">
-                        <span class="tel-label">Batteria Telefono</span>
-                        <span class="tel-val ${dev.battery_pct < 20 ? 'text-danger' : 'text-success'}">🔋 ${batt}</span>
-                    </div>
-                    <div class="telemetry-card">
-                        <span class="tel-label">SmartThings Cloud</span>
-                        <span class="tel-val text-success">Connesso 🟢</span>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    // Lavatrice o Lavastoviglie
-    const isRunning = raw.is_running;
-    const stateTxt = raw.state_text || dev.status_text || 'In Standby';
-    const cycle = raw.cycle_name || 'Standard';
-    const compTime = raw.completion_time || '--';
+    const isRunning = dev.is_on || raw.is_running || false;
+    const stateTxt = dev.status_text || raw.job_state_label || (isRunning ? 'In Funzione 🫧' : 'In Standby / Pronto');
+    const cycle = dev.cycle_name || raw.cycle_name || 'Standard';
+    const compTime = dev.completion_time || raw.completion_time || '--';
     const pW = dev.power_w || 0;
 
     return `
@@ -1596,53 +1327,387 @@ function renderSmartThingsDetail(dev) {
             ` : ''}
         </div>
 
-        <div class="modal-telemetry-grid" style="margin-top:1rem;">
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
             <div class="telemetry-card">
-                <span class="tel-label">Ciclo Selezionato</span>
+                <span class="tel-label">🧺 Programma / Ciclo</span>
                 <span class="tel-val text-accent">${cycle}</span>
             </div>
             <div class="telemetry-card">
-                <span class="tel-label">Completamento Stimato</span>
+                <span class="tel-label">⏱️ Completamento Stimato</span>
                 <span class="tel-val">${compTime}</span>
             </div>
             <div class="telemetry-card">
-                <span class="tel-label">Potenza Assorbita</span>
-                <span class="tel-val ${pW > 10 ? 'text-accent' : ''}">${pW} <small>W</small></span>
+                <span class="tel-label">⚡ Potenza Assorbita</span>
+                <span class="tel-val ${pW > 10 ? 'text-accent' : ''}">${pW > 0 ? pW.toFixed(1) + ' W' : '0.0 W'}</span>
             </div>
             <div class="telemetry-card">
-                <span class="tel-label">Stato Elettrodomestico</span>
+                <span class="tel-label">🫧 Stato Ciclo</span>
                 <span class="tel-val">${isRunning ? 'In Funzione 🫧' : 'Pronto / Standby'}</span>
             </div>
         </div>
     `;
 }
 
-// 4. Dettaglio Aton Solar Hub
+// 7. Persiane, Tapparelle & Tende Motorizzate
+function renderShutterDetail(dev) {
+    const raw = dev.raw || {};
+    const entityId = dev.raw_id;
+    const stateStr = (dev.curtain_state || raw.curtain_state || raw.state || 'Pronta 🪟').toUpperCase();
+    const pos = raw.attributes && raw.attributes.current_position !== undefined ? raw.attributes.current_position : (raw.percent_state !== undefined ? raw.percent_state : null);
+    const posLabel = pos !== null ? `${pos}%` : stateStr;
+    const isTuya = dev.ecosystem === 'tuya';
+
+    return `
+        <div class="modal-quick-state-card state-card-on" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.3);">
+            <div class="state-card-info">
+                <span class="state-indicator-dot dot-on" style="background: #38bdf8; box-shadow: 0 0 8px #38bdf8;"></span>
+                <span class="state-text">Persiana / Tenda: <strong>${posLabel}</strong></span>
+            </div>
+            <span class="badge-tag" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; font-size: 0.8rem;">
+                ${isTuya ? 'Cloud Tuya 🟢' : 'HA Locale ⚡'}
+            </span>
+        </div>
+
+        <div class="curtain-controls-box" style="margin-top: 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 14px; padding: 1.25rem; text-align: center;">
+            <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Comandi Rapidi Motorizzazione</div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
+                <button type="button" class="btn btn-action-primary" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px;" onclick="${isTuya ? `controlTuyaCurtain('${dev.raw_id}', 'open')` : `controlHassCover('${entityId}', 'open_cover')`}">
+                    <span style="font-size: 1.35rem;">🔼</span>
+                    <span>Apri</span>
+                </button>
+                <button type="button" class="btn btn-outline" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px; border-color: #38bdf8; color: #38bdf8;" onclick="${isTuya ? `controlTuyaCurtain('${dev.raw_id}', 'half')` : `controlHassCover('${entityId}', 'set_cover_position', 50)`}">
+                    <span style="font-size: 1.35rem;">🌓</span>
+                    <span>A Metà (50%)</span>
+                </button>
+                <button type="button" class="btn btn-outline" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px; border-color: rgba(255,255,255,0.2);" onclick="${isTuya ? `controlTuyaCurtain('${dev.raw_id}', 'stop')` : `controlHassCover('${entityId}', 'stop_cover')`}">
+                    <span style="font-size: 1.35rem;">⏸️</span>
+                    <span>Stop</span>
+                </button>
+                <button type="button" class="btn btn-action-danger" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px;" onclick="${isTuya ? `controlTuyaCurtain('${dev.raw_id}', 'close')` : `controlHassCover('${entityId}', 'close_cover')`}">
+                    <span style="font-size: 1.35rem;">🔽</span>
+                    <span>Chiudi</span>
+                </button>
+            </div>
+
+            <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06);">
+                <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-dim); margin-bottom: 6px;">
+                    <span>Regolazione Fine Posizione:</span>
+                    <strong id="cover-slider-val-${dev.raw_id}" style="color: #38bdf8;">${pos !== null ? pos : 50}%</strong>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="range" min="0" max="100" value="${pos !== null ? pos : 50}" style="flex: 1; accent-color: #38bdf8;" oninput="document.getElementById('cover-slider-val-${dev.raw_id}').textContent = this.value + '%'" id="cover-slider-${dev.raw_id}">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="setShutterPosition('${dev.ecosystem}', '${dev.raw_id}', parseInt(document.getElementById('cover-slider-${dev.raw_id}').value))">
+                        Imposta
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            <div class="telemetry-card">
+                <span class="tel-label">🪟 Dispositivo</span>
+                <span class="tel-val" style="font-size: 0.9rem;">${dev.name}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">🟢 Stato Connessione</span>
+                <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+            </div>
+        </div>
+    `;
+}
+
+// 8. Irrigazione Smart & Elettrovalvole
+function renderIrrigationDetail(dev) {
+    const raw = dev.raw || {};
+    const isOn = dev.is_on;
+    const isWatering = isOn || (raw.work_state === 'watering' || raw.work_state === 'spray' || raw.work_state === 'manual' || raw.work_state === 'auto' || raw.state === 'open' || raw.state === 'opening');
+    const battPct = dev.battery_pct !== null && dev.battery_pct !== undefined ? `${dev.battery_pct}%` : (raw.battery_pct !== null ? `${raw.battery_pct}%` : '--');
+    const wDelay = raw.weather_delay || 'cancel';
+    const isHass = dev.ecosystem === 'homeassistant';
+
+    return `
+        <div class="modal-quick-state-card ${isWatering ? 'state-card-on' : 'state-card-off'}" style="${isWatering ? 'background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.4);' : ''}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${isWatering ? 'dot-on pulse' : 'dot-off'}" style="${isWatering ? 'background: #10b981; box-shadow: 0 0 10px #10b981;' : ''}"></span>
+                <span class="state-text">Valvola: <strong>${isWatering ? 'In Irrigazione 💧' : 'Chiusa / Standby 💤'}</strong></span>
+            </div>
+            ${isWatering ? `
+                <button type="button" class="btn btn-danger" onclick="${isHass ? `controlHassValve('${dev.raw_id}', 'close_valve')` : `stopIrrigation('${dev.raw_id}')`}">
+                    🛑 Chiudi Valvola
+                </button>
+            ` : `
+                <button type="button" class="btn btn-success" onclick="${isHass ? `controlHassValve('${dev.raw_id}', 'open_valve')` : `startIrrigation(2, '${dev.raw_id}')`}">
+                    💧 Avvia Micro-Dose (2 min)
+                </button>
+            `}
+        </div>
+
+        <!-- Box Durate Rapide per Vaso / Test Calibrazione -->
+        <div style="margin-top: 1rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                <span style="font-size: 0.8rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600;">Micro-Dosi & Test Calibrazione Vaso</span>
+                <span style="font-size: 0.75rem; color: #a78bfa;">🧠 Auto-Apprendimento</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
+                <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(1, '${dev.raw_id}')">🧪 1m</button>
+                <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(1.5, '${dev.raw_id}')">🧪 1.5m</button>
+                <button type="button" class="btn btn-action-primary" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(2, '${dev.raw_id}')">💧 2m</button>
+                <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(3, '${dev.raw_id}')">⏱️ 3m</button>
+            </div>
+        </div>
+
+        <!-- Telemetria & Sensore WH51 -->
+        <div class="modal-telemetry-grid" style="margin-top: 1rem;">
+            <div class="telemetry-card">
+                <span class="tel-label">🔋 Batteria Valvola</span>
+                <span class="tel-val text-success">🔋 ${battPct}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">⏱️ Ritardo Meteo HW</span>
+                <span class="tel-val">${wDelay === 'cancel' ? 'Nessuno' : wDelay}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">🟢 Stato Connessione</span>
+                <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+            </div>
+        </div>
+
+        <!-- Box Automazione Intelligente WH51 -->
+        <div id="irrigation-smart-advice-box" style="margin-top: 1rem; background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 12px; padding: 1rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-weight: 700; font-size: 0.88rem; color: #38bdf8;">🧠 Decisione Agrometeo WH51</span>
+                <span class="badge-tag" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">Smart Active</span>
+            </div>
+            <p id="irrigation-smart-desc" style="font-size: 0.82rem; color: var(--text); margin: 0.5rem 0 0 0; line-height: 1.4;">
+                Caricamento stato sensore terreno e previsioni pioggia...
+            </p>
+        </div>
+
+        <!-- Box Modello Auto-Apprendimento Vaso -->
+        <div id="irrigation-learning-box" style="margin-top: 0.75rem; background: rgba(167, 139, 250, 0.06); border: 1px solid rgba(167, 139, 250, 0.25); border-radius: 12px; padding: 1rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-weight: 700; font-size: 0.88rem; color: #a78bfa;">🪴 Modello di Risposta del Tuo Vaso</span>
+                <span class="badge-tag" style="background: rgba(167, 139, 250, 0.2); color: #a78bfa;">Self-Learning</span>
+            </div>
+            <div id="irrigation-learning-desc" style="font-size: 0.82rem; color: var(--text); margin-top: 0.5rem; line-height: 1.5;">
+                Calibrazione curva di percolazione in corso...
+            </div>
+        </div>
+    `;
+}
+
+// 9. Prese Smart con Misuratore di Potenza
+function renderPlugDetail(dev) {
+    const raw = dev.raw || {};
+    const isOn = dev.is_on;
+    const pW = dev.power_w !== undefined && dev.power_w !== null ? dev.power_w : 0;
+    const vV = dev.voltage_v !== undefined && dev.voltage_v !== null ? dev.voltage_v : (raw.voltage_v || null);
+    const aA = dev.current_a !== undefined && dev.current_a !== null ? dev.current_a : (raw.current_a || null);
+    const protocolLabel = dev.ecosystem === 'homeassistant' ? 'Home Assistant LAN ⚡' : (dev.ecosystem === 'tuya' ? 'Cloud Tuya 🟢' : `${dev.ecosystem ? dev.ecosystem.toUpperCase() : 'HUB'} 🟢`);
+
+    let telemetryCards = `
+        <div class="telemetry-card">
+            <span class="tel-label">⚡ Potenza Istantanea</span>
+            <span class="tel-val ${pW > 0 ? 'text-accent' : ''}" style="font-size: 1.25rem; font-weight: 800;">${pW > 0 ? pW.toFixed(1) : '0.0'} <small>W</small></span>
+        </div>
+    `;
+
+    if (vV !== null && vV !== '--') {
+        telemetryCards += `
+            <div class="telemetry-card">
+                <span class="tel-label">🔌 Tensione di Rete</span>
+                <span class="tel-val">${typeof vV === 'number' ? vV.toFixed(1) : vV} <small>V</small></span>
+            </div>
+        `;
+    }
+    if (aA !== null && aA !== '--') {
+        telemetryCards += `
+            <div class="telemetry-card">
+                <span class="tel-label">⚡ Corrente Assorbita</span>
+                <span class="tel-val">${typeof aA === 'number' ? aA.toFixed(2) : aA} <small>A</small></span>
+            </div>
+        `;
+    }
+
+    telemetryCards += `
+        <div class="telemetry-card">
+            <span class="tel-label">📡 Protocollo / Hub</span>
+            <span class="tel-val text-success">${protocolLabel}</span>
+        </div>
+        <div class="telemetry-card">
+            <span class="tel-label">🟢 Stato Connessione</span>
+            <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+        </div>
+    `;
+
+    return `
+        <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
+                <span class="state-text">${isOn ? 'Presa Accesa' : 'Presa Spenta'}</span>
+            </div>
+            ${dev.can_toggle ? `
+                <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
+                    ${isOn ? 'Spegni' : 'Accendi'}
+                </button>
+            ` : ''}
+        </div>
+
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            ${telemetryCards}
+        </div>
+    `;
+}
+
+// 10. Interruttori Smart / Relè Semplici
+function renderSwitchDetail(dev) {
+    const isOn = dev.is_on;
+    const protocolLabel = dev.ecosystem === 'homeassistant' ? 'Home Assistant ⚡' : (dev.ecosystem === 'tuya' ? 'Cloud Tuya 🟢' : `${dev.ecosystem ? dev.ecosystem.toUpperCase() : 'HUB'} 🟢`);
+
+    return `
+        <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
+                <span class="state-text">${isOn ? 'Interruttore Attivo (ON)' : 'Interruttore Inattivo (OFF)'}</span>
+            </div>
+            ${dev.can_toggle ? `
+                <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
+                    ${isOn ? 'Spegni' : 'Accendi'}
+                </button>
+            ` : ''}
+        </div>
+
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            <div class="telemetry-card">
+                <span class="tel-label">🔘 Stato Relè</span>
+                <span class="tel-val ${isOn ? 'text-success' : 'text-dim'}">${isOn ? 'Chiuso / ON' : 'Aperto / OFF'}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">📡 Ecosistema Hub</span>
+                <span class="tel-val text-success">${protocolLabel}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">🟢 Stato Connessione</span>
+                <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+            </div>
+        </div>
+    `;
+}
+
+// 11. Luci & Strisce LED
+function renderLightDetail(dev) {
+    const raw = dev.raw || {};
+    const isOn = dev.is_on;
+    const brightness = raw.attributes ? raw.attributes.brightness : (raw.brightness || null);
+    const brightPct = brightness !== null ? Math.round((brightness / 255) * 100) : null;
+    const pW = dev.power_w || 0;
+
+    return `
+        <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}" style="${isOn ? 'background: #fbbf24; box-shadow: 0 0 10px #fbbf24;' : ''}"></span>
+                <span class="state-text">${isOn ? 'Luce Accesa 💡' : 'Luce Spenta 🌑'}</span>
+            </div>
+            ${dev.can_toggle ? `
+                <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
+                    ${isOn ? 'Spegni' : 'Accendi'}
+                </button>
+            ` : ''}
+        </div>
+
+        ${brightPct !== null ? `
+            <div style="margin-top: 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 6px;">
+                    <span>Regolazione Luminosità:</span>
+                    <strong style="color: #fbbf24;">${brightPct}%</strong>
+                </div>
+                <input type="range" min="1" max="100" value="${brightPct}" style="width: 100%; accent-color: #fbbf24;" onchange="setLightBrightness('${dev.ecosystem}', '${dev.raw_id}', this.value)" />
+            </div>
+        ` : ''}
+
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            <div class="telemetry-card">
+                <span class="tel-label">💡 Stato Illuminazione</span>
+                <span class="tel-val ${isOn ? 'text-warning' : 'text-dim'}">${isOn ? 'Attiva' : 'Spenta'}</span>
+            </div>
+            ${brightPct !== null ? `
+                <div class="telemetry-card">
+                    <span class="tel-label">🔆 Luminosità</span>
+                    <span class="tel-val text-warning">${brightPct}%</span>
+                </div>
+            ` : ''}
+            ${pW > 0 ? `
+                <div class="telemetry-card">
+                    <span class="tel-label">⚡ Potenza Assorbita</span>
+                    <span class="tel-val text-accent">${pW.toFixed(1)} W</span>
+                </div>
+            ` : ''}
+            <div class="telemetry-card">
+                <span class="tel-label">🟢 Stato Connessione</span>
+                <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+            </div>
+        </div>
+    `;
+}
+
+// 12. Sensori di Contatto / Porta / Finestra / Movimento
+function renderSensorDetail(dev) {
+    const raw = dev.raw || {};
+    const isOpen = dev.is_on || raw.state === 'on' || raw.state === 'open' || raw.door_open || false;
+    const batt = dev.battery_pct !== null && dev.battery_pct !== undefined ? `${dev.battery_pct}%` : 'N/D';
+
+    return `
+        <div class="modal-presence-box" style="background: ${isOpen ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.08)'}; border: 1px solid ${isOpen ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}; border-radius: 14px; padding: 1.25rem;">
+            <div class="presence-status-large" style="text-align: center;">
+                <span class="presence-icon" style="font-size: 2.2rem; display: block; margin-bottom: 0.35rem;">${isOpen ? '🚪⚠️' : '🚪🟢'}</span>
+                <div class="presence-title" style="font-size: 1.15rem; font-weight: 700; color: ${isOpen ? '#f87171' : 'var(--text)'};">
+                    ${isOpen ? 'Aperto / Attivo' : 'Chiuso / Sicuro'}
+                </div>
+                <p class="presence-sub" style="font-size: 0.82rem; color: var(--text-dim); margin-top: 0.25rem;">${dev.status_text || 'Sensore di contatto'}</p>
+            </div>
+            <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+                <div class="telemetry-card">
+                    <span class="tel-label">🚪 Stato Sensore</span>
+                    <span class="tel-val ${isOpen ? 'text-danger' : 'text-success'}">${isOpen ? 'Aperto ⚠️' : 'Chiuso 🟢'}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🔋 Batteria</span>
+                    <span class="tel-val text-success">🔋 ${batt}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🟢 Connessione</span>
+                    <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// 13. Fotovoltaico & Accumulo Batteria Aton
 function renderAtonDetail(dev) {
     const raw = dev.raw || {};
     const solar = dev.solar_power_w || 0;
     const soc = dev.battery_soc_pct || 0;
     const battP = dev.battery_power_w || 0;
     const load = dev.house_load_w || 0;
-    const grid = dev.grid_power_w || 0;
 
     return `
         <div class="modal-solar-overview">
             <div class="modal-telemetry-grid">
                 <div class="telemetry-card">
-                    <span class="tel-label">Produzione Solare</span>
+                    <span class="tel-label">☀️ Produzione Solare</span>
                     <span class="tel-val text-accent">☀️ ${Math.round(solar)} <small>W</small></span>
                 </div>
                 <div class="telemetry-card">
-                    <span class="tel-label">Stato Batteria</span>
+                    <span class="tel-label">🔋 Stato Batteria</span>
                     <span class="tel-val text-success">🔋 ${Math.round(soc)} <small>%</small></span>
                 </div>
                 <div class="telemetry-card">
-                    <span class="tel-label">Flusso Batteria</span>
+                    <span class="tel-label">⚡ Flusso Batteria</span>
                     <span class="tel-val">${battP > 0 ? `Carica (+${Math.round(battP)} W)` : (battP < 0 ? `Scarica (${Math.round(battP)} W)` : 'Inattiva')}</span>
                 </div>
                 <div class="telemetry-card">
-                    <span class="tel-label">Consumo Abitazione</span>
+                    <span class="tel-label">🏠 Consumo Abitazione</span>
                     <span class="tel-val">🏠 ${Math.round(load)} <small>W</small></span>
                 </div>
             </div>
@@ -1653,19 +1718,226 @@ function renderAtonDetail(dev) {
     `;
 }
 
+// 14. Fallback Generico Pulito
 function renderGenericDetail(dev) {
-    return `
-        <div class="modal-telemetry-grid">
-            <div class="telemetry-card">
-                <span class="tel-label">Stato</span>
-                <span class="tel-val">${dev.status_text}</span>
-            </div>
-            <div class="telemetry-card">
-                <span class="tel-label">Connessione</span>
-                <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online' : 'Offline'}</span>
-            </div>
+    const isOn = dev.is_on;
+    const pW = dev.power_w;
+    const batt = dev.battery_pct;
+
+    let items = `
+        <div class="telemetry-card">
+            <span class="tel-label">Stato Attuale</span>
+            <span class="tel-val">${dev.status_text || (isOn === true ? 'Attivo' : (isOn === false ? 'Non attivo' : 'Standby'))}</span>
         </div>
     `;
+
+    if (pW !== undefined && pW !== null && pW > 0) {
+        items += `
+            <div class="telemetry-card">
+                <span class="tel-label">⚡ Potenza Rilevata</span>
+                <span class="tel-val text-accent">${pW.toFixed(1)} W</span>
+            </div>
+        `;
+    }
+
+    if (batt !== undefined && batt !== null) {
+        items += `
+            <div class="telemetry-card">
+                <span class="tel-label">🔋 Batteria</span>
+                <span class="tel-val text-success">🔋 ${batt}%</span>
+            </div>
+        `;
+    }
+
+    items += `
+        <div class="telemetry-card">
+            <span class="tel-label">🟢 Stato Connessione</span>
+            <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+        </div>
+    `;
+
+    return `
+        ${dev.can_toggle ? `
+            <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
+                <div class="state-card-info">
+                    <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
+                    <span class="state-text">${isOn ? 'Dispositivo Acceso' : 'Dispositivo Spento'}</span>
+                </div>
+                <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
+                    ${isOn ? 'Spegni' : 'Accendi'}
+                </button>
+            </div>
+        ` : ''}
+
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            ${items}
+        </div>
+    `;
+}
+
+// =========================================================================
+// GESTORI COMANDI UNIVERSALI
+// =========================================================================
+
+async function syncHealthLiveMetrics() {
+    try {
+        showToast('Sincronizzazione parametri salute e bilancia in corso... ⏳', 'info');
+        const resp = await fetch('/api/health/sync', { method: 'POST' });
+        if (resp.ok) {
+            showToast('Parametri salute e bilancia sincronizzati con successo! ⚖️', 'success');
+            await fetchDevicesData();
+        } else {
+            showToast('Errore durante la sincronizzazione dati salute', 'danger');
+        }
+    } catch (e) {
+        showToast('Errore comunicazione sincronizzazione: ' + e.message, 'danger');
+    }
+}
+
+async function adjustClimateTemp(ecosystem, rawId, newTemp) {
+    if (newTemp < 10 || newTemp > 35) return;
+    try {
+        if (ecosystem === 'thinq') {
+            await fetch(`/api/thinq/device/${rawId}/control`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({target_temp: newTemp})
+            });
+        } else if (ecosystem === 'homeassistant') {
+            await fetch('/api/homeassistant/service', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    domain: 'climate',
+                    service: 'set_temperature',
+                    entity_id: rawId,
+                    data: { temperature: newTemp }
+                })
+            });
+        } else {
+            await fetch(`/api/tuya/device/${rawId}/command`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({temp_c: newTemp})
+            });
+        }
+        showToast(`Temperatura target impostata a ${newTemp.toFixed(1)}°C`, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore impostazione temperatura clima', 'danger');
+    }
+}
+
+async function setClimateMode(ecosystem, rawId, mode) {
+    try {
+        if (ecosystem === 'thinq') {
+            await fetch(`/api/thinq/device/${rawId}/control`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({mode: mode.toUpperCase()})
+            });
+        } else if (ecosystem === 'homeassistant') {
+            await fetch('/api/homeassistant/service', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    domain: 'climate',
+                    service: 'set_hvac_mode',
+                    entity_id: rawId,
+                    data: { hvac_mode: mode.toLowerCase() }
+                })
+            });
+        } else {
+            await fetch(`/api/tuya/device/${rawId}/command`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({mode: mode})
+            });
+        }
+        showToast(`Modalità clima impostata su ${mode.toUpperCase()}`, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore impostazione modalità clima', 'danger');
+    }
+}
+
+async function setClimateFan(ecosystem, rawId, speed) {
+    try {
+        if (ecosystem === 'thinq') {
+            await fetch(`/api/thinq/device/${rawId}/control`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({fan_speed: speed.toUpperCase()})
+            });
+        } else if (ecosystem === 'homeassistant') {
+            await fetch('/api/homeassistant/service', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    domain: 'climate',
+                    service: 'set_fan_mode',
+                    entity_id: rawId,
+                    data: { fan_mode: speed.toLowerCase() }
+                })
+            });
+        } else {
+            await fetch(`/api/tuya/device/${rawId}/command`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({fan_speed: speed})
+            });
+        }
+        showToast(`Ventola impostata su ${speed.toUpperCase()}`, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore impostazione ventilazione clima', 'danger');
+    }
+}
+
+async function setShutterPosition(ecosystem, rawId, position) {
+    try {
+        if (ecosystem === 'homeassistant') {
+            await controlHassCover(rawId, 'set_cover_position', position);
+        } else {
+            await fetch(`/api/tuya/device/${rawId}/curtain`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({position: position})
+            });
+            showToast(`Persiana impostata al ${position}%`, 'success');
+            setTimeout(fetchDevicesData, 1000);
+        }
+    } catch (e) {
+        showToast('Errore impostazione posizione persiana', 'danger');
+    }
+}
+
+async function setLightBrightness(ecosystem, rawId, brightnessPct) {
+    try {
+        const val = Math.round((parseInt(brightnessPct) / 100) * 255);
+        if (ecosystem === 'homeassistant') {
+            await fetch('/api/homeassistant/service', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    domain: 'light',
+                    service: 'turn_on',
+                    entity_id: rawId,
+                    data: { brightness: val }
+                })
+            });
+        } else {
+            await fetch(`/api/tuya/device/${rawId}/command`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({brightness: parseInt(brightnessPct)})
+            });
+        }
+        showToast(`Luminosità impostata al ${brightnessPct}%`, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore impostazione luminosità', 'danger');
+    }
 }
 
 

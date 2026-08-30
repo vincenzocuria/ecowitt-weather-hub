@@ -37,6 +37,8 @@ CATEGORY_METADATA = {
     "dd": {"type": "light", "icon": "💡", "label": "Luce / Striscia LED Smart"},
     "mc": {"type": "contact", "icon": "🚪", "label": "Sensore Porta / Finestra"},
     "tzc1": {"type": "scale", "icon": "⚖️", "label": "Bilancia Smart"},
+    "tzc": {"type": "scale", "icon": "⚖️", "label": "Bilancia Smart"},
+    "wsdcg": {"type": "sensor", "icon": "🌡️", "label": "Sensore Temperatura & Umidità"},
 }
 
 
@@ -190,6 +192,21 @@ class TuyaService:
                 or status_dict.get("percent_state")
                 or ("Aperta" if is_on is True else ("Chiusa" if is_on is False else None))
             )
+
+        # Bilancia Smart ('tzc1', 'tzc' o nome con bilancia/scale)
+        if cat_lower in ("tzc1", "tzc") or any(kw in name_lower for kw in ("bilancia", "scale", "body fat", "peso")):
+            meta = {"type": "scale", "icon": "⚖️", "label": "Bilancia Smart"}
+            if is_on is None:
+                is_on = True
+            if "battery_percentage" in status_dict:
+                try:
+                    battery_pct = int(status_dict["battery_percentage"])
+                except Exception:
+                    pass
+            # Se la bilancia non ha misuratore di rete 230V, azzera o ometti W/V/A
+            power_w = 0.0
+            voltage_v = None
+            current_a = None
 
         # Nome visualizzato (alias utente se presente, altrimenti nome originale)
         custom_name = user_cfg.get("custom_name") if user_cfg else None

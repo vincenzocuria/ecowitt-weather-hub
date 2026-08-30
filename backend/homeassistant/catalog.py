@@ -179,6 +179,7 @@ class CatalogHelper:
                     "name": f"Bilancia Smart BIA • {scale_src}",
                     "icon": "⚖️",
                     "category": "health",
+                    "type": "scale",
                     "category_label": f"Bilancia Smart • {scale_src}",
                     "is_on": True,
                     "can_toggle": False,
@@ -197,11 +198,11 @@ class CatalogHelper:
             if domain not in ("switch", "light", "climate", "cover", "valve", "fan", "media_player"):
                 continue
 
-            # Filtra pulsanti e switch interni secondari di configurazione
+            # Filtra pulsanti e switch interni secondari di configurazione ed entità duplicate
             if any(k in entity_id for k in (
                 "blocco_bambini", "child_lock", "bubble_soak", "speed_booster", "sanitize",
                 "_power", "_energy_saving", "frigorifero_express_mode", "_sleep_timer",
-                "_schedule_turn_on", "_schedule_turn_off"
+                "_schedule_turn_on", "_schedule_turn_off", "aiuola_valve_2"
             )):
                 continue
 

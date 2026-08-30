@@ -2661,6 +2661,11 @@ def save_irrigation_automations_config(config_dict: Dict[str, Any]) -> Dict[str,
                 current["learned_lag_minutes"] = float(config_dict["learned_lag_minutes"])
             except (ValueError, TypeError):
                 pass
+        if "total_cycles_learned" in config_dict:
+            try:
+                current["total_cycles_learned"] = int(config_dict["total_cycles_learned"])
+            except (ValueError, TypeError):
+                pass
 
     now_iso = datetime.now(timezone.utc).isoformat()
     json_str = json.dumps(current, ensure_ascii=False)
@@ -2781,6 +2786,9 @@ def get_irrigation_learning_summary() -> Dict[str, Any]:
         ORDER BY id DESC LIMIT 10
     """)
     rows = cursor.fetchall()
+    cursor.execute("SELECT COUNT(*) as total FROM irrigation_learning_history WHERE status = 'completed'")
+    count_row = cursor.fetchone()
+    completed_total = int(count_row["total"]) if count_row else 0
     conn.close()
 
     cycles = []
@@ -2806,11 +2814,13 @@ def get_irrigation_learning_summary() -> Dict[str, Any]:
     target_deficit = max(5.0, target_th - dry_th)
     suggested_pulse = round(max(1.0, min(3.5, target_deficit / max(2.0, k_eff))), 1)
 
+    total_learned = max(int(cfg.get("total_cycles_learned", 0)), completed_total)
+
     return {
         "adaptive_learning_enabled": cfg.get("adaptive_learning_enabled", True),
         "learned_k_efficiency": k_eff,
         "learned_lag_minutes": lag_min,
-        "total_cycles_learned": cfg.get("total_cycles_learned", len([c for c in cycles if c["status"] == "completed"])),
+        "total_cycles_learned": total_learned,
         "suggested_pulse_minutes": suggested_pulse,
         "recent_cycles": cycles
     }
