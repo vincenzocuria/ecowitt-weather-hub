@@ -1806,12 +1806,14 @@ function updateHealthUI(health) {
         const leanEl = document.getElementById('health_lean_mass_val');
         const waterEl = document.getElementById('health_water_val');
         const boneEl = document.getElementById('health_bone_val');
+        const subSrc = document.getElementById('health_body_source_sub');
 
         if (wBadge && b.weight_kg !== undefined && b.weight_kg !== null) wBadge.innerText = `${b.weight_kg} kg`;
         if (fatEl && b.fat_pct !== undefined && b.fat_pct !== null) fatEl.innerText = b.fat_pct;
         if (leanEl && b.lean_mass_kg !== undefined && b.lean_mass_kg !== null) leanEl.innerText = `${b.lean_mass_kg} kg`;
         if (waterEl && b.water_mass_kg !== undefined && b.water_mass_kg !== null) waterEl.innerText = `${b.water_mass_kg} kg`;
         if (boneEl && b.bone_mass_kg !== undefined && b.bone_mass_kg !== null) boneEl.innerText = `${b.bone_mass_kg} kg`;
+        if (subSrc && b.source_label) subSrc.innerText = `Analisi BIA • ${b.source_label}`;
     }
 
     // 5. Medie Storiche & KPI Analitici

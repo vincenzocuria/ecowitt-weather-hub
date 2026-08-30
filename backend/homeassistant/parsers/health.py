@@ -78,6 +78,8 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     bone_mass_g = None
     hydration_ml = None
     battery_level = None
+    body_source_pkg = None
+    body_date = None
 
     for ent_id, ent in entities.items():
         state_val = ent.get("state")
@@ -123,11 +125,21 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         if "sleep_duration" in eid_lower or "sleep" in eid_lower:
             sleep_minutes = _safe_float(state_val)
 
-        # Composizione corporea
+        # Composizione corporea & Bilancia Smart (Tuya / Samsung / Health Connect)
         if ("sensor." in eid_lower and eid_lower.endswith("_weight")) or "body_weight" in eid_lower or "peso" in eid_lower:
             weight_g = _safe_float(state_val)
+            attrs = ent.get("attributes", {})
+            if attrs.get("source"):
+                body_source_pkg = attrs["source"]
+            if attrs.get("date"):
+                body_date = attrs["date"]
         elif "body_fat" in eid_lower or "grasso" in eid_lower:
             body_fat_pct = _safe_float(state_val)
+            attrs = ent.get("attributes", {})
+            if not body_source_pkg and attrs.get("source"):
+                body_source_pkg = attrs["source"]
+            if not body_date and attrs.get("date"):
+                body_date = attrs["date"]
         elif "lean_body_mass" in eid_lower or "massa_magra" in eid_lower:
             lean_mass_g = _safe_float(state_val)
         elif "body_water_mass" in eid_lower or "acqua_corporea" in eid_lower:
@@ -140,6 +152,18 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         # Batteria dispositivo
         if "samsung_s26_battery_level" in eid_lower or ("battery_level" in eid_lower and battery_level is None):
             battery_level = _safe_int(state_val)
+
+    # Label sorgente bilancia (es. Tuya Smart Life vs Samsung Health)
+    body_source_label = "Tuya Smart Life"
+    if body_source_pkg:
+        if "tuya" in body_source_pkg.lower() or "smartlife" in body_source_pkg.lower():
+            body_source_label = "Tuya Smart Life"
+        elif "shealth" in body_source_pkg.lower() or "samsung" in body_source_pkg.lower():
+            body_source_label = "Samsung Health"
+        elif "fitness" in body_source_pkg.lower() or "google" in body_source_pkg.lower():
+            body_source_label = "Google Health Connect"
+        else:
+            body_source_label = body_source_pkg
 
     # Verifica se ci sono entità Samsung/Health presenti nel sistema HA
     has_health_entities = any(
@@ -313,7 +337,10 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
             "fat_pct": round(body_fat_pct, 1) if body_fat_pct is not None else None,
             "lean_mass_kg": lean_mass_kg,
             "water_mass_kg": water_mass_kg,
-            "bone_mass_kg": bone_mass_kg
+            "bone_mass_kg": bone_mass_kg,
+            "source_label": body_source_label,
+            "source_pkg": body_source_pkg,
+            "measured_at": body_date
         },
             "hydration": {
             "daily_ml": int(round(hydration_ml)) if hydration_ml is not None else 0,

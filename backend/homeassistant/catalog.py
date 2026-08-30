@@ -160,9 +160,10 @@ class CatalogHelper:
                 "raw": health
             })
 
-            # 5.1 Bilancia Smart & Analisi BIA (Samsung Health / Health Connect)
+            # 5.1 Bilancia Smart & Analisi BIA (Tuya Smart Life / Home Assistant)
             body_info = health.get("body", {})
             if body_info and body_info.get("weight_kg") is not None:
+                scale_src = body_info.get("source_label", "Tuya Smart Life")
                 scale_parts = []
                 if body_info.get("weight_kg") is not None:
                     scale_parts.append(f"⚖️ {body_info['weight_kg']} kg")
@@ -173,12 +174,12 @@ class CatalogHelper:
 
                 devices.append({
                     "id": "hass_smart_scale",
-                    "raw_id": "smart_scale_bia_samsung",
-                    "ecosystem": "homeassistant",
-                    "name": "Bilancia Smart BIA • Samsung Health",
+                    "raw_id": "smart_scale_bia_tuya",
+                    "ecosystem": "tuya" if "tuya" in scale_src.lower() else "homeassistant",
+                    "name": f"Bilancia Smart BIA • {scale_src}",
                     "icon": "⚖️",
                     "category": "health",
-                    "category_label": "Bilancia Smart • Composizione Corporea BIA",
+                    "category_label": f"Bilancia Smart • {scale_src}",
                     "is_on": True,
                     "can_toggle": False,
                     "is_online": True,

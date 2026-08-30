@@ -1597,7 +1597,7 @@
                         <span class="health-card-icon">⚖️</span>
                         <div>
                             <strong>Composizione Corporea</strong>
-                            <span class="health-card-sub">Analisi BIA Galaxy</span>
+                            <span class="health-card-sub" id="health_body_source_sub">Analisi BIA • {{ health.body.source_label if health and health.body and health.body.source_label else 'Tuya Smart Life' }}</span>
                         </div>
                     </div>
                     <span class="health-progress-badge" id="health_weight_badge" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;">{{ health.body.weight_kg if health and health.body and health.body.weight_kg is not none else '--' }} kg</span>
