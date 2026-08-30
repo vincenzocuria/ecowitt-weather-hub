@@ -409,6 +409,12 @@ def init_db():
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_health_date ON health_daily_history (date)")
+
+    # Pulizia automatica baseline fittizia (rimozione campioni generati randomicamente)
+    try:
+        cursor.execute("DELETE FROM health_daily_history WHERE created_at LIKE '%2026-08-29T22:49%'")
+    except Exception:
+        pass
     
     conn.commit()
     conn.close()
@@ -3805,53 +3811,8 @@ def get_health_stats_summary() -> Dict[str, Any]:
     }
 
 def seed_health_baseline_if_empty():
-    """Genera un baseline storico realistico se il database sanitario è vuoto."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) as cnt FROM health_daily_history")
-    count = cursor.fetchone()["cnt"]
-    if count >= 3:
-        conn.close()
-        return
-
-    import random
-    base_date = settings.now_local().date()
-    now_iso = settings.now_local().isoformat()
-
-    for i in range(30, 0, -1):
-        d_str = (base_date - timedelta(days=i)).strftime("%Y-%m-%d")
-        steps = random.randint(4800, 10500)
-        dist = round((steps * 0.76), 1)
-        floors = random.randint(1, 8)
-        tot_cal = round(1750.0 + (steps * 0.042) + random.uniform(-50, 50), 1)
-        act_cal = round(tot_cal - 1617.5, 1)
-        hr_avg = round(random.uniform(68.0, 78.0), 1)
-        hr_max = random.randint(105, 138)
-        hr_min = random.randint(52, 60)
-        spo2 = round(random.uniform(96.0, 99.0), 1)
-        vo2 = round(random.uniform(36.0, 38.5), 1)
-        sleep = random.randint(390, 480)
-        weight = round(random.uniform(80.5, 81.4), 1)
-        fat = round(random.uniform(28.0, 28.9), 1)
-        water = round(random.uniform(41.8, 42.4), 1)
-        lean = round(random.uniform(57.5, 58.1), 1)
-        bone = 2.8
-
-        cursor.execute("""
-            INSERT OR IGNORE INTO health_daily_history (
-                date, steps, distance_m, total_calories, active_calories, basal_calories,
-                floors, heart_rate_avg, heart_rate_max, heart_rate_min, spo2_avg, vo2_max,
-                sleep_minutes, weight_kg, body_fat_pct, water_mass_kg, lean_mass_kg,
-                bone_mass_kg, hydration_ml, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            d_str, steps, dist, tot_cal, act_cal, 1617.5,
-            floors, hr_avg, hr_max, hr_min, spo2, vo2,
-            sleep, weight, fat, water, lean,
-            bone, 1800.0, now_iso, now_iso
-        ))
-    conn.commit()
-    conn.close()
+    """Non genera più dati fittizi: mantiene solo misurazioni reali sincronizzate dai dispositivi."""
+    pass
 
 
 
