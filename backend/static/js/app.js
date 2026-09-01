@@ -2324,6 +2324,8 @@ function renderHouseBreakdown(d) {
             let powerBadge = '';
             if (pW > 0) {
                 powerBadge = `<span class="consumer-power-tag high-power">⚡ <strong>${pW}</strong> W</span>`;
+            } else if (c.is_unmetered_active || (isClimate && c.is_on)) {
+                powerBadge = `<span class="consumer-power-tag running-climate" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">❄️ In Funzione (Totale Casa)</span>`;
             } else if (c.is_running) {
                 powerBadge = `<span class="consumer-power-tag running-app">🫧 In Funzione</span>`;
             } else if (c.is_on) {
@@ -2598,6 +2600,8 @@ function renderDashboardBreakdown(d) {
             let powerBadge = '';
             if (pW > 0) {
                 powerBadge = `<span class="consumer-power-tag high-power">⚡ <strong>${pW}</strong> W</span>`;
+            } else if (c.is_unmetered_active || (c.type === 'climate' && c.is_on)) {
+                powerBadge = `<span class="consumer-power-tag running-climate" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">❄️ In Funzione (Totale Casa)</span>`;
             } else if (c.is_running) {
                 powerBadge = `<span class="consumer-power-tag running-app">🫧 In Funzione</span>`;
             } else if (c.is_on) {

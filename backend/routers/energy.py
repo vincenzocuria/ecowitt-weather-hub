@@ -62,14 +62,54 @@ async def api_energy_house_breakdown():
     active_consumers = []
     standby_devices = []
 
+    def _normalize_dedup_key(entry: Dict[str, Any]) -> str:
+        raw_id = str(entry.get("raw_id", "")).lower()
+        d_id = str(entry.get("id", "")).lower()
+        name = str(entry.get("name", "")).lower()
+        c_type = str(entry.get("type", "")).lower()
+
+        if "camera_da_letto" in raw_id or "camera da letto" in name:
+            return "climate_camera_da_letto"
+        if "cameretta" in raw_id or "cameretta" in name:
+            return "climate_cameretta"
+        if "cucina" in raw_id or "fujitsu" in raw_id or "fglair" in raw_id or "cucina" in name:
+            if c_type == "climate" or "clima" in name or "climate" in raw_id:
+                return "climate_cucina"
+        if "frigorifero" in raw_id or "fridge" in raw_id or "frigorifero" in name:
+            return "appliance_frigorifero"
+        if "lavatrice" in raw_id or "washer" in raw_id or "lavatrice" in name:
+            return "appliance_lavatrice"
+        if "lavastoviglie" in raw_id or "dishwasher" in raw_id or "lavastoviglie" in name:
+            return "appliance_lavastoviglie"
+
+        clean_raw = raw_id.replace("tuya_", "").replace("hass_", "").replace("thinq_", "").replace("st_", "")
+        return entry.get("dedup_key") or clean_raw or d_id
+
     def _add_consumer(entry: Dict[str, Any]):
         raw_id = str(entry.get("raw_id", ""))
         d_id = str(entry.get("id", ""))
         clean_raw = raw_id.replace("tuya_", "").replace("hass_", "").replace("thinq_", "").replace("st_", "")
-        
-        # Deduplicazione tra Tuya Cloud, Tuya Local e Home Assistant
-        dedup_key = entry.get("dedup_key") or clean_raw or d_id
+
+        # Escludi esplicitamente entità non elettriche o puramente sensoriali
+        c_type = entry.get("type", "generic")
+        if c_type in ("presence", "health", "scale", "sensor", "shutter", "irrigation", "generic") and float(entry.get("power_w") or 0.0) <= 0:
+            return
+
+        # Deduplicazione intelligente tra Tuya, Home Assistant e ThinQ
+        dedup_key = _normalize_dedup_key(entry)
         if dedup_key in seen_keys:
+            # Se abbiamo già registrato questa chiave ma la nuova voce ha potenza > 0 e la precedente no, aggiorna
+            p_curr = float(entry.get("power_w") or 0.0)
+            if p_curr > 0:
+                for idx, existing in enumerate(active_consumers):
+                    if _normalize_dedup_key(existing) == dedup_key and float(existing.get("power_w") or 0.0) == 0:
+                        active_consumers[idx] = entry
+                        return
+                for idx, existing in enumerate(standby_devices):
+                    if _normalize_dedup_key(existing) == dedup_key and float(existing.get("power_w") or 0.0) == 0:
+                        standby_devices.pop(idx)
+                        active_consumers.append(entry)
+                        return
             return
         seen_keys.add(dedup_key)
 
@@ -80,22 +120,49 @@ async def api_energy_house_breakdown():
 
         is_on = entry.get("is_on")
         p_w = float(entry.get("power_w") or 0.0)
-        c_type = entry.get("type", "generic")
         is_running = entry.get("is_running", False)
 
-        if (is_on is True or is_running is True) and (p_w > 0 or c_type in ("plug", "light", "switch", "thermostat", "climate", "appliance")):
+        # Trattamento climatizzatori attivi senza wattmetro dedicato
+        if c_type in ("climate", "thermostat") and is_on is True:
+            if p_w <= 0.0:
+                entry["is_unmetered_active"] = True
+                if "Incluso nel totale casa" not in entry.get("status_text", ""):
+                    entry["status_text"] = f"{entry.get('status_text', '')} • Carico nel totale casa".strip(" •")
+            active_consumers.append(entry)
+        elif p_w > 1.0:
+            # Qualsiasi dispositivo con assorbimento reale > 1 W è un consumatore attivo
+            active_consumers.append(entry)
+        elif is_running is True:
+            # Elettrodomestici in ciclo anche con potenza non ancora rilevata
+            entry["is_unmetered_active"] = True
             active_consumers.append(entry)
         else:
+            # Prese con 0 W, luci spente, carichi a riposo
             standby_devices.append(entry)
 
     # 1. Dispositivi Home Assistant (Prese smart, Elettrodomestici Samsung, Valvole, Clima)
     if settings.HASS_ENABLED and homeassistant_service.enabled:
         for hd in homeassistant_service.get_catalog_devices():
+            hd_cat = hd.get("category", "")
+            # Esclusione sensori biometrici, presenza e salute
+            if hd_cat in ("presence", "health", "scale", "sensor"):
+                continue
+
             p_w = float(hd.get("power_w") or 0.0)
             is_on = hd.get("is_on")
             is_running = hd.get("raw", {}).get("is_running", False) if isinstance(hd.get("raw"), dict) else False
-            c_type = "appliance" if hd.get("category") == "appliances" else ("climate" if hd.get("category") == "climate" else "plug")
-            
+
+            if hd_cat == "appliances":
+                c_type = "appliance"
+            elif hd_cat == "climate":
+                c_type = "climate"
+            elif hd_cat in ("shutters", "irrigation"):
+                c_type = "shutter" if hd_cat == "shutters" else "irrigation"
+            elif hd_cat == "plugs":
+                c_type = "plug"
+            else:
+                c_type = "generic"
+
             _add_consumer({
                 "id": hd.get("id"),
                 "raw_id": hd.get("raw_id"),
@@ -118,6 +185,10 @@ async def api_energy_house_breakdown():
     if settings.LG_THINQ_ENABLED:
         thinq_devs = thinq_service.get_cached_devices()
         for d in thinq_devs:
+            d_type = d.get("device_type")
+            if d_type not in ("DEVICE_AIR_CONDITIONER", "DEVICE_THERMOSTAT", "AIR_CONDITIONER"):
+                continue
+
             is_on = d.get("is_on", False)
             mode = d.get("mode") or d.get("job_mode", "COOL")
             mode_lbl = "Raffrescamento" if mode == "COOL" else ("Riscaldamento" if mode == "HEAT" else "Deumidificatore / Ventilazione")
@@ -160,12 +231,12 @@ async def api_energy_house_breakdown():
 
     for d in active_consumers:
         p = d.get("power_w", 0.0)
-        d["percent_of_total"] = round((p / total_house_w * 100), 1) if total_house_w > 0 else 0.0
+        d["percent_of_total"] = min(100.0, round((p / total_house_w * 100), 1)) if total_house_w > 0 and p > 0 else 0.0
 
     active_consumers.sort(key=lambda x: (x.get("power_w", 0.0), 1 if x.get("is_running") or x.get("is_on") else 0), reverse=True)
 
-    monitored_pct = round((monitored_power_w / total_house_w * 100), 1) if total_house_w > 0 else 0.0
-    unmonitored_pct = round((unmonitored_power_w / total_house_w * 100), 1) if total_house_w > 0 else 0.0
+    monitored_pct = min(100.0, round((monitored_power_w / total_house_w * 100), 1)) if total_house_w > 0 else 0.0
+    unmonitored_pct = max(0.0, round(100.0 - monitored_pct, 1)) if total_house_w > 0 else 0.0
 
     return {
         "total_house_w": round(total_house_w, 1),

@@ -758,6 +758,12 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIsInstance(data["active_consumers"], list)
         self.assertIsInstance(data["standby_devices"], list)
 
+        # Verifica che nessuna entità non elettrica (presenza, salute, bilancia) sia nei consumatori attivi
+        for c in data["active_consumers"]:
+            self.assertNotIn(c.get("type"), ("presence", "health", "scale", "sensor"))
+            if c.get("power_w", 0) <= 0:
+                self.assertIn(c.get("type"), ("climate", "thermostat", "appliance"))
+
     def test_homeassistant_service_parsing(self):
         from backend.homeassistant_service import HomeAssistantService
         ha = HomeAssistantService()
