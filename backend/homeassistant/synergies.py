@@ -95,6 +95,68 @@ class SynergiesHelper:
         solar_synergy = cls.calculate_solar_synergy(p_solare, soc)
         laundry_synergy = cls.calculate_drying_synergy(washer_data, drying_index)
 
+        from .catalog import CatalogHelper
+        catalog_devs = CatalogHelper.get_catalog_devices(entities, enabled)
+
+        enabled_devs = []
+        total_plug_power_w = 0.0
+
+        for d in catalog_devs:
+            cat = d.get("category")
+            if cat in ("presence", "health", "appliances"):
+                continue
+
+            raw_id_lower = str(d.get("raw_id") or "").lower()
+            name_lower = str(d.get("name") or "").lower()
+
+            if cat == "plugs":
+                cat_code = "cz"
+                type_label = "Presa Smart"
+                if d.get("is_on"):
+                    total_plug_power_w += float(d.get("power_w") or 0.0)
+            elif cat == "climate":
+                cat_code = "wk"
+                type_label = "Cronotermostato" if "termostato" in raw_id_lower or "termostato" in name_lower else "Climatizzatore"
+            elif cat == "irrigation":
+                cat_code = "sfkzq"
+                type_label = "Elettrovalvola Irrigazione"
+            elif cat == "shutters":
+                cat_code = "clkg"
+                type_label = "Persiana / Tenda"
+            elif cat == "lights":
+                cat_code = "dj"
+                type_label = "Luce Smart"
+            else:
+                cat_code = "cz"
+                type_label = "Dispositivo Smart"
+
+            dev_id = str(d.get("raw_id") or d.get("id"))
+            enabled_devs.append({
+                "id": dev_id,
+                "raw_id": dev_id,
+                "name": d.get("name"),
+                "icon": d.get("icon", "🔌"),
+                "category": cat_code,
+                "type_label": type_label,
+                "product_name": d.get("category_label", "Home Assistant"),
+                "is_on": d.get("is_on"),
+                "power_w": round(float(d.get("power_w") or 0.0), 1),
+                "voltage_v": d.get("voltage_v"),
+                "current_a": d.get("current_a"),
+                "temp_current": d.get("current_temp"),
+                "temp_set": d.get("target_temp"),
+                "battery_pct": d.get("battery_pct"),
+                "curtain_state": "aperta" if d.get("is_on") else "chiusa",
+                "work_state": "In funzione" if d.get("is_on") else "In riposo",
+                "raw_status": {}
+            })
+
+        plugs = [d for d in enabled_devs if d.get("category") == "cz"]
+        climates = [d for d in enabled_devs if d.get("category") == "wk"]
+        irrigations = [d for d in enabled_devs if d.get("category") == "sfkzq"]
+        curtains = [d for d in enabled_devs if d.get("category") == "clkg"]
+        lights = [d for d in enabled_devs if d.get("category") == "dj"]
+
         return {
             "enabled": enabled,
             "is_connected": is_connected,
@@ -106,5 +168,15 @@ class SynergiesHelper:
             "solar_synergy": solar_synergy,
             "laundry_drying_synergy": laundry_synergy,
             "irrigation": irrigation_data,
-            "health": health_data
+            "health": health_data,
+            "total_plug_power_w": round(total_plug_power_w, 1),
+            "total_devices_count": len(enabled_devs),
+            "enabled_devices_count": len(enabled_devs),
+            "enabled_devices": enabled_devs,
+            "devices": enabled_devs,
+            "plugs": plugs,
+            "climates": climates,
+            "irrigations": irrigations,
+            "curtains": curtains,
+            "lights": lights
         }
