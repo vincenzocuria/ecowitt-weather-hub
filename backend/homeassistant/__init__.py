@@ -150,6 +150,9 @@ class HomeAssistantService:
     async def set_climate_fan_mode(self, entity_id: str, fan_mode: str) -> Dict[str, Any]:
         return await self.controller.set_climate_fan_mode(entity_id, fan_mode)
 
+    async def set_climate_swing_mode(self, entity_id: str, swing_mode: str) -> Dict[str, Any]:
+        return await self.controller.set_climate_swing_mode(entity_id, swing_mode)
+
     def find_entity_by_tuya_id(self, device_id: str) -> Optional[str]:
         return self.controller.find_entity_by_tuya_id(device_id)
 

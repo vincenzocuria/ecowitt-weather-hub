@@ -925,6 +925,54 @@ class TestEcowittHub(unittest.TestCase):
         valve_devices = [d for d in catalog["devices"] if "valve.aiuola_valve" in d.get("raw_id", "") or "valve.aiuola_valve" in d.get("id", "")]
         self.assertEqual(len(valve_devices), 1, "La valvola presente su HA deve essere inclusa nel catalogo")
 
+    def test_fujitsu_climate_cucina_integration(self):
+        from backend.homeassistant import parse_climate_data, CatalogHelper
+        from backend.routers.devices import build_devices_catalog
+        from backend.homeassistant_service import homeassistant_service
+
+        homeassistant_service.entities = {
+            "climate.cucina": {
+                "entity_id": "climate.cucina",
+                "state": "cool",
+                "attributes": {
+                    "friendly_name": "Cucina",
+                    "current_temperature": 28.5,
+                    "temperature": 26.0,
+                    "hvac_modes": ["off", "cool", "heat", "auto", "dry"],
+                    "fan_modes": ["auto", "low", "medium", "high", "diffuse"],
+                    "fan_mode": "medium",
+                    "swing_modes": ["vertical", "horizontal", "both"],
+                    "swing_mode": "vertical"
+                }
+            },
+            "sensor.climatizzatore_potenza": {"state": "450.0"},
+            "sensor.climatizzatore_energia_totale": {"state": "128.5"},
+            "sensor.climatizzatore_tensione": {"state": "230.2"},
+            "sensor.climatizzatore_corrente": {"state": "2.1"}
+        }
+
+        climates = parse_climate_data(homeassistant_service.entities)
+        self.assertEqual(len(climates), 1)
+        cucina = climates[0]
+        self.assertEqual(cucina["name"], "Cucina")
+        self.assertEqual(cucina["brand"], "Fujitsu")
+        self.assertEqual(cucina["model_name"], "Fujitsu General FGLair (AC-UTY)")
+        self.assertEqual(cucina["current_temp"], 28.5)
+        self.assertEqual(cucina["target_temp"], 26.0)
+        self.assertEqual(cucina["power_w"], 450.0)
+        self.assertEqual(cucina["voltage_v"], 230.2)
+        self.assertEqual(cucina["energy_total_kwh"], 128.5)
+        self.assertTrue(cucina["is_on"])
+        self.assertTrue(cucina["rotate_up_down"])
+
+        catalog = build_devices_catalog()
+        cucina_dev = next((d for d in catalog["devices"] if "climate.cucina" in d.get("raw_id", "")), None)
+        self.assertIsNotNone(cucina_dev)
+        self.assertEqual(cucina_dev["category"], "climate")
+        self.assertEqual(cucina_dev["category_label"], "Climatizzatore Fujitsu FGLair • HA")
+        self.assertEqual(cucina_dev["power_w"], 450.0)
+
+
     def test_tropical_nights_and_soil_moisture(self):
         from backend.database import (
             get_tropical_nights_stats, get_soil_moisture_summary,

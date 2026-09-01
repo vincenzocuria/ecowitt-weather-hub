@@ -59,16 +59,20 @@ async def watchdog_worker():
             ha_sum = homeassistant_service.get_summary(latest_e, an_ctx.get("drying_index") if an_ctx else None)
             engine.evaluate_smartthings_automations(ha_sum, latest_w, latest_e)
 
-            # Automazioni Climatizzatori LG ThinQ (Spegnimento/Accensione Autonoma & Notifiche)
-            if settings.LG_THINQ_ENABLED:
-                thinq_devs = thinq_service.get_cached_devices()
-                if thinq_devs:
-                    await engine.evaluate_climate_automations(
-                        thinq_devs,
-                        latest_w,
-                        latest_e,
-                        ha_sum.get("presence") if ha_sum else None
-                    )
+            # Automazioni Climatizzatori (Fujitsu FGLair, LG ThinQ - Spegnimento/Accensione Autonoma & Notifiche)
+            all_climates = []
+            if settings.HASS_ENABLED and homeassistant_service.enabled:
+                all_climates.extend(homeassistant_service.parse_climate_data())
+            elif settings.LG_THINQ_ENABLED:
+                all_climates.extend(thinq_service.get_cached_devices())
+
+            if all_climates:
+                await engine.evaluate_climate_automations(
+                    all_climates,
+                    latest_w,
+                    latest_e,
+                    ha_sum.get("presence") if ha_sum else None
+                )
 
             # Automazioni Irrigazione Intelligente (WH51 + Elettrovalvola Home Assistant + Meteo Predittivo)
             fc_rain = 0.0

@@ -1432,18 +1432,37 @@ class AlertEngine:
         presence_data: Optional[Dict[str, Any]]
     ):
         """
-        Motore di Intelligenza Clima: valuta regole autonome e notifiche per LG ThinQ.
+        Motore di Intelligenza Clima: valuta regole autonome e notifiche per climatizzatori (Fujitsu FGLair, LG ThinQ).
         Configurazione gestita dinamicamente da SQLite (climate_automations_config).
         """
-        if not settings.LG_THINQ_ENABLED or not climate_devices:
+        if not (settings.LG_THINQ_ENABLED or settings.HASS_ENABLED) or not climate_devices:
             return
 
         from backend.database import get_climate_automations_config
         from backend.thinq_service import thinq_service
+        from backend.homeassistant_service import homeassistant_service
 
         cfg = get_climate_automations_config()
         if not cfg.get("master_enabled", True):
             return
+
+        async def _send_ac_command(dev_obj: Dict[str, Any], cmd_payload: Dict[str, Any]):
+            dev_id = dev_obj.get("device_id") or dev_obj.get("deviceId") or dev_obj.get("raw_id") or dev_obj.get("id")
+            raw_id = str(dev_obj.get("raw_id") or dev_id)
+            if raw_id.startswith("hass_"):
+                raw_id = raw_id[5:]
+            if homeassistant_service.enabled and (raw_id in homeassistant_service.entities or f"climate.{raw_id}" in homeassistant_service.entities or "cucina" in raw_id or "fujitsu" in raw_id):
+                matched = raw_id if raw_id in homeassistant_service.entities else f"climate.{raw_id}"
+                if "power" in cmd_payload:
+                    await homeassistant_service.toggle_device(matched, bool(cmd_payload["power"]))
+                if "mode" in cmd_payload:
+                    await homeassistant_service.set_climate_hvac_mode(matched, str(cmd_payload["mode"]).lower())
+                if "target_temp" in cmd_payload:
+                    await homeassistant_service.set_climate_temp(matched, float(cmd_payload["target_temp"]))
+                if "fan_speed" in cmd_payload:
+                    await homeassistant_service.set_climate_fan_mode(matched, str(cmd_payload["fan_speed"]).lower())
+            else:
+                await thinq_service.control_device(str(dev_id), cmd_payload)
 
         now = time.time()
         now_dt = settings.now_local()
@@ -1478,7 +1497,7 @@ class AlertEngine:
                     for dev in active_climates:
                         dev_id = dev.get("device_id") or dev.get("deviceId")
                         alias = dev.get("alias", "Climatizzatore")
-                        await thinq_service.control_device(dev_id, {"power": False})
+                        await _send_ac_command(dev, {"power": False})
                         turned_off_names.append(alias)
                     
                     self.last_climate_away_alert = now
@@ -1542,7 +1561,7 @@ class AlertEngine:
                             t_info = f" (Stanza: {curr_t}°C, Setpoint: {target_t}°C)" if curr_t else ""
 
                             if runtime_action == "off":
-                                await thinq_service.control_device(dev_id, {"power": False})
+                                await _send_ac_command(dev, {"power": False})
                                 notifier.send_alert(
                                     alert_type="climate_auto_off",
                                     title=f"🤖 Spegnimento Autonomo: {alias}",
@@ -1587,7 +1606,7 @@ class AlertEngine:
                             diff_t = round(curr_in - temp_out, 1)
 
                             if night_action == "off":
-                                await thinq_service.control_device(dev_id, {"power": False})
+                                await _send_ac_command(dev, {"power": False})
                                 notifier.send_alert(
                                     alert_type="climate_night_cooling",
                                     title=f"🌙 Free Cooling Notturno: {alias} Spento",
@@ -1629,7 +1648,7 @@ class AlertEngine:
                             self._save_state()
 
                             if solar_action == "on":
-                                await thinq_service.control_device(dev_id, {
+                                await _send_ac_command(dev, {
                                     "power": True,
                                     "mode": "COOL",
                                     "target_temp": solar_target_t
@@ -1668,7 +1687,7 @@ class AlertEngine:
                     self._save_state()
 
                     if battery_action == "off":
-                        await thinq_service.control_device(dev_id, {"power": False})
+                        await _send_ac_command(dev, {"power": False})
                         notifier.send_alert(
                             alert_type="climate_battery_guard",
                             title=f"🔋 Protezione Batteria Aton: {alias} Spento",
@@ -1732,7 +1751,7 @@ class AlertEngine:
                                 icon = "🔥" if needs_cool else "❄️"
 
                                 if comfort_action == "on":
-                                    await thinq_service.control_device(dev_id, {
+                                    await _send_ac_command(dev, {
                                         "power": True,
                                         "mode": target_mode,
                                         "target_temp": comfort_target_t

@@ -1301,7 +1301,46 @@ function renderClimateDetail(dev) {
                 <button class="pill-opt ${fanSpeed === 'HIGH' ? 'active' : ''}" onclick="setClimateFan('${dev.ecosystem}', '${dev.raw_id}', 'high')">Alta</button>
                 <button class="pill-opt ${fanSpeed === 'AUTO' ? 'active' : ''}" onclick="setClimateFan('${dev.ecosystem}', '${dev.raw_id}', 'auto')">Auto</button>
             </div>
+
+            <span class="section-title" style="margin-top: 1rem;">Oscillazione Alette (Swing)</span>
+            <div class="clima-pill-grid">
+                <button class="pill-opt ${dev.rotate_up_down || (dev.swing_mode && dev.swing_mode.toLowerCase() === 'vertical') ? 'active' : ''}" onclick="setClimateSwing('${dev.ecosystem}', '${dev.raw_id}', 'vertical')">↕️ Verticale</button>
+                <button class="pill-opt ${dev.swing_mode && dev.swing_mode.toLowerCase() === 'horizontal' ? 'active' : ''}" onclick="setClimateSwing('${dev.ecosystem}', '${dev.raw_id}', 'horizontal')">↔️ Orizzontale</button>
+                <button class="pill-opt ${dev.swing_mode && (dev.swing_mode.toLowerCase() === 'both' || dev.swing_mode.toLowerCase() === 'on') ? 'active' : ''}" onclick="setClimateSwing('${dev.ecosystem}', '${dev.raw_id}', 'both')">🔄 Auto / 3D</button>
+                <button class="pill-opt ${!dev.rotate_up_down && (!dev.swing_mode || dev.swing_mode.toLowerCase() === 'off') ? 'active' : ''}" onclick="setClimateSwing('${dev.ecosystem}', '${dev.raw_id}', 'off')">⏹️ Fisso / Off</button>
+            </div>
         </div>
+
+        ${(dev.power_w !== undefined || dev.voltage_v !== undefined || dev.energy_total_kwh !== undefined) ? `
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            <div class="telemetry-card">
+                <span class="tel-label">⚡ Potenza Istantanea</span>
+                <span class="tel-val ${dev.power_w > 0 ? 'text-accent' : ''}">${dev.power_w ? dev.power_w.toFixed(0) + ' W' : '0 W'}</span>
+            </div>
+            ${dev.voltage_v ? `
+            <div class="telemetry-card">
+                <span class="tel-label">🔌 Tensione Rete</span>
+                <span class="tel-val">${dev.voltage_v.toFixed(1)} V</span>
+            </div>` : ''}
+            ${dev.current_a !== undefined && dev.current_a !== null ? `
+            <div class="telemetry-card">
+                <span class="tel-label">🔋 Corrente Assorbita</span>
+                <span class="tel-val">${dev.current_a.toFixed(2)} A</span>
+            </div>` : ''}
+            ${dev.energy_total_kwh !== undefined && dev.energy_total_kwh !== null ? `
+            <div class="telemetry-card">
+                <span class="tel-label">📊 Consumo Totale</span>
+                <span class="tel-val">${dev.energy_total_kwh} kWh</span>
+            </div>` : (dev.energy_today_wh !== undefined && dev.energy_today_wh !== null ? `
+            <div class="telemetry-card">
+                <span class="tel-label">📊 Consumo Oggi</span>
+                <span class="tel-val">${(dev.energy_today_wh / 1000).toFixed(2)} kWh</span>
+            </div>` : '')}
+            <div class="telemetry-card">
+                <span class="tel-label">🏷️ Modello & Brand</span>
+                <span class="tel-val" style="font-size: 0.85rem;">${dev.model_name || dev.brand || 'Clima Inverter'}</span>
+            </div>
+        </div>` : ''}
     `;
 }
 
@@ -1893,6 +1932,34 @@ async function setClimateFan(ecosystem, rawId, speed) {
         showToast('Errore impostazione ventilazione clima', 'danger');
     }
 }
+
+async function setClimateSwing(ecosystem, rawId, swing) {
+    try {
+        if (ecosystem === 'homeassistant') {
+            await fetch('/api/homeassistant/service', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    domain: 'climate',
+                    service: 'set_swing_mode',
+                    entity_id: rawId,
+                    data: { swing_mode: swing }
+                })
+            });
+        } else if (ecosystem === 'thinq') {
+            await fetch(`/api/thinq/device/${rawId}/control`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({rotate_up_down: swing !== 'off'})
+            });
+        }
+        showToast(`Oscillazione impostata su ${swing}`, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore impostazione oscillazione clima', 'danger');
+    }
+}
+
 
 async function setShutterPosition(ecosystem, rawId, position) {
     try {

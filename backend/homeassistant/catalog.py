@@ -33,7 +33,50 @@ class CatalogHelper:
                     power_map[base_key] = p_val
                 except (ValueError, TypeError):
                     pass
+        # Mappature logiche alias note
+        if "climatizzatore" in power_map and "cucina" not in power_map:
+            power_map["cucina"] = power_map["climatizzatore"]
         return power_map
+
+    @staticmethod
+    def build_telemetry_map(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
+        """Mappa dettagliata delle grandezze elettriche (tensione, corrente, energia totale)."""
+        telemetry: Dict[str, Dict[str, float]] = {}
+        for entity_id, state_obj in entities.items():
+            if not entity_id.startswith("sensor."):
+                continue
+            st = state_obj.get("state")
+            if st in ("unavailable", "unknown", None):
+                continue
+            try:
+                val = float(st)
+            except (ValueError, TypeError):
+                continue
+
+            ent_clean = entity_id.replace("sensor.", "")
+            base_key = None
+            field = None
+            if any(k in ent_clean for k in ("_tensione", "_voltage")):
+                base_key = ent_clean.replace("_tensione", "").replace("_voltage", "")
+                field = "voltage_v"
+            elif any(k in ent_clean for k in ("_corrente", "_current")):
+                base_key = ent_clean.replace("_corrente", "").replace("_current", "")
+                field = "current_a"
+            elif any(k in ent_clean for k in ("_energia_totale", "_energy_total", "_total_energy")):
+                base_key = ent_clean.replace("_energia_totale", "").replace("_energy_total", "").replace("_total_energy", "")
+                field = "energy_total_kwh"
+            elif any(k in ent_clean for k in ("_energy_today", "_energia_oggi")):
+                base_key = ent_clean.replace("_energy_today", "").replace("_energia_oggi", "")
+                field = "energy_today_wh"
+
+            if base_key and field:
+                if base_key not in telemetry:
+                    telemetry[base_key] = {}
+                telemetry[base_key][field] = val
+
+        if "climatizzatore" in telemetry and "cucina" not in telemetry:
+            telemetry["cucina"] = telemetry["climatizzatore"].copy()
+        return telemetry
 
     @classmethod
     def get_catalog_devices(cls, entities: Dict[str, Dict[str, Any]], enabled: bool = True) -> List[Dict[str, Any]]:
@@ -42,6 +85,7 @@ class CatalogHelper:
             return []
 
         power_map = cls.build_power_map(entities)
+        telemetry_map = cls.build_telemetry_map(entities)
         devices: List[Dict[str, Any]] = []
 
         # 1. Lavatrice Samsung
@@ -240,11 +284,41 @@ class CatalogHelper:
                 mode = state_str.upper()
                 is_on = state_str not in ("off", "unavailable", "unknown")
                 icon = "❄️" if mode == "COOL" else ("🔥" if mode == "HEAT" else "🌬️")
-                cat_label = "Climatizzatore / Termostato"
+                
+                is_fujitsu = any(k in ent_lower or k in name_lower for k in ("cucina", "fujitsu", "fglair"))
+                is_lg = any(k in ent_lower or k in name_lower for k in ("camera", "cameretta", "lg", "thinq"))
+                is_thermostat = "termostato" in ent_lower or "thermostat" in ent_lower
+
+                if is_fujitsu:
+                    cat_label = "Climatizzatore Fujitsu FGLair"
+                    model_name = "Fujitsu General FGLair (AC-UTY)"
+                    brand = "Fujitsu"
+                elif is_lg:
+                    cat_label = "Climatizzatore LG ThinQ"
+                    model_name = "LG Dual Inverter"
+                    brand = "LG"
+                elif is_thermostat:
+                    cat_label = "Cronotermostato Smart"
+                    model_name = "Cronotermostato Smart"
+                    brand = "Smart Home"
+                else:
+                    cat_label = "Climatizzatore Inverter"
+                    model_name = "Climatizzatore Inverter"
+                    brand = "Smart Home"
 
                 t_curr = attributes.get("current_temperature")
                 t_target = attributes.get("temperature")
                 fan_mode = attributes.get("fan_mode") or "AUTO"
+
+                # Recupera telemetria specifica
+                tel = telemetry_map.get(base_key, {})
+                if is_fujitsu and not tel:
+                    tel = telemetry_map.get("climatizzatore", {})
+                
+                volt_v = tel.get("voltage_v")
+                curr_a = tel.get("current_a")
+                energy_kwh = tel.get("energy_total_kwh")
+                energy_wh = tel.get("energy_today_wh")
 
                 status_parts = []
                 status_parts.append("Acceso" if is_on else "Spento")
@@ -253,6 +327,8 @@ class CatalogHelper:
                         status_parts.append(f"{t_curr}°C (Set: {t_target}°C)")
                     else:
                         status_parts.append(f"{t_curr}°C")
+                if is_on and power_w > 0:
+                    status_parts.append(f"{power_w:.0f} W")
 
                 status_text = " • ".join(status_parts)
                 extra_fields = {
@@ -265,7 +341,14 @@ class CatalogHelper:
                     "fan_speed": str(fan_mode).upper(),
                     "hvac_modes": attributes.get("hvac_modes", []),
                     "fan_modes": attributes.get("fan_modes", []),
-                    "swing_mode": attributes.get("swing_mode")
+                    "swing_mode": attributes.get("swing_mode"),
+                    "rotate_up_down": bool(attributes.get("swing_mode") and str(attributes.get("swing_mode")).lower() not in ("off", "none")),
+                    "model_name": model_name,
+                    "brand": brand,
+                    "voltage_v": volt_v,
+                    "current_a": curr_a,
+                    "energy_total_kwh": energy_kwh,
+                    "energy_today_wh": energy_wh
                 }
             elif is_shutter:
                 cat = "shutters"

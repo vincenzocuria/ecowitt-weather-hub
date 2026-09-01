@@ -95,6 +95,11 @@ class DeviceController:
         clean_id = self.resolve_entity_id(entity_id)
         return await self.client.call_service("climate", "set_fan_mode", clean_id, {"fan_mode": str(fan_mode).lower()})
 
+    async def set_climate_swing_mode(self, entity_id: str, swing_mode: str) -> Dict[str, Any]:
+        """Imposta la modalità di oscillazione alette / swing per il climatizzatore."""
+        clean_id = self.resolve_entity_id(entity_id)
+        return await self.client.call_service("climate", "set_swing_mode", clean_id, {"swing_mode": str(swing_mode)})
+
     async def open_irrigation(self, entity_id: str = "valve.aiuola_valve", duration_minutes: int = 10) -> Dict[str, Any]:
         """Apre l'elettrovalvola o switch di irrigazione specificato su Home Assistant."""
         clean_id = self.resolve_entity_id(entity_id)

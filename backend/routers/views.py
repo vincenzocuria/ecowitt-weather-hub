@@ -130,6 +130,19 @@ async def dashboard_page(request: Request):
     health_data = ha_summary.get("health", {})
     health_stats = get_health_stats_summary()
 
+    # Dati Climatizzazione (Fujitsu FGLair, LG ThinQ)
+    climate_devs = []
+    seen_climate_ids = set()
+    if settings.HASS_ENABLED and homeassistant_service.enabled:
+        for cd in homeassistant_service.parse_climate_data():
+            if cd.get("device_type") == "DEVICE_AIR_CONDITIONER":
+                climate_devs.append(cd)
+                seen_climate_ids.add(cd.get("device_id"))
+    if settings.LG_THINQ_ENABLED:
+        for cd in thinq_service.get_cached_devices():
+            if cd.get("device_id") not in seen_climate_ids and not any(k in (cd.get("alias") or "").lower() for k in ("camera", "cameretta") if any(k in s for s in seen_climate_ids)):
+                climate_devs.append(cd)
+
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -152,8 +165,9 @@ async def dashboard_page(request: Request):
             "energy_summary": energy_summary,
             "aton_enabled": settings.ATON_ENABLED,
             "aton_sn": settings.ATON_SN,
-            "thinq_enabled": settings.LG_THINQ_ENABLED,
-            "thinq_connected": thinq_service.is_connected,
+            "thinq_enabled": bool(settings.LG_THINQ_ENABLED or climate_devs),
+            "thinq_connected": bool(homeassistant_service.is_connected or thinq_service.is_connected),
+            "climate_devices": climate_devs,
             "smartthings": ha_summary,
             "smartthings_enabled": True,
             "tuya": ha_summary,

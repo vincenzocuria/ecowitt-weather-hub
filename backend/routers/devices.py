@@ -53,25 +53,46 @@ async def api_save_sensor_alias(request: Request):
 
 @router.get("/api/thinq/devices")
 async def api_thinq_devices():
-    """Restituisce la lista e lo stato in tempo reale dei dispositivi LG ThinQ."""
-    devices = thinq_service.get_cached_devices()
-    if not devices and settings.LG_THINQ_ENABLED and settings.LG_THINQ_PAT:
-        devices = await thinq_service.fetch_all_devices()
+    """Restituisce la lista e lo stato in tempo reale di tutti i climatizzatori (Fujitsu FGLair, LG ThinQ via Home Assistant o ThinQ Cloud)."""
+    devices = []
+    seen_ids = set()
+
+    # 1. Climatizzatori da Home Assistant (Hub primario locale)
+    if settings.HASS_ENABLED and homeassistant_service.enabled:
+        ha_climates = homeassistant_service.parse_climate_data()
+        for d in ha_climates:
+            if d.get("device_type") == "DEVICE_AIR_CONDITIONER":
+                dev_id = d.get("device_id")
+                seen_ids.add(dev_id)
+                seen_ids.add(f"climate.{dev_id}")
+                devices.append(d)
+
+    # 2. Climatizzatori da LG ThinQ Cloud (se non già presenti da Home Assistant)
+    if settings.LG_THINQ_ENABLED:
+        thinq_devs = thinq_service.get_cached_devices()
+        if not thinq_devs and settings.LG_THINQ_PAT:
+            thinq_devs = await thinq_service.fetch_all_devices()
+        for d in thinq_devs:
+            d_id = d.get("device_id") or d.get("deviceId")
+            d_alias = (d.get("alias") or "").lower()
+            if d_id not in seen_ids and not any(k in d_alias for k in ("camera", "cameretta") if any(k in s for s in seen_ids)):
+                devices.append(d)
+
     return {
-        "enabled": settings.LG_THINQ_ENABLED,
-        "connected": thinq_service.is_connected,
+        "enabled": bool(settings.LG_THINQ_ENABLED or (settings.HASS_ENABLED and homeassistant_service.enabled)),
+        "connected": bool(homeassistant_service.is_connected or thinq_service.is_connected),
         "devices": devices
     }
 
 @router.post("/api/thinq/device/{device_id}/control")
 async def api_thinq_control(device_id: str, request: Request):
-    """Invia comandi (Power, Temp, Mode, Fan Speed, Swing) a un condizionatore LG o dispositivo Home Assistant."""
+    """Invia comandi (Power, Temp, Mode, Fan Speed, Swing) a un condizionatore (Fujitsu, LG ThinQ) o dispositivo Home Assistant."""
     try:
         payload = await request.json()
     except Exception:
         payload = {}
 
-    # 1. Se il dispositivo corrisponde a un'entità Home Assistant (es. climate.camera_da_letto o frigorifero)
+    # 1. Se il dispositivo corrisponde a un'entità Home Assistant (es. climate.cucina, climate.camera_da_letto o frigorifero)
     clean_id = device_id
     if clean_id.startswith("thinq_"):
         clean_id = clean_id[6:]
@@ -101,10 +122,21 @@ async def api_thinq_control(device_id: str, request: Request):
             t = float(payload.get("target_temp", payload.get("temperature")))
             res = await homeassistant_service.set_climate_temp(matched_ha_id, t)
             results.append({"target_temp": t, "res": res})
-        if "fan_speed" in payload or "wind_strength" in payload:
-            f_speed = str(payload.get("fan_speed", payload.get("wind_strength"))).lower()
+        if "fan_speed" in payload or "wind_strength" in payload or "fan_mode" in payload:
+            f_speed = str(payload.get("fan_speed", payload.get("wind_strength", payload.get("fan_mode")))).lower()
             res = await homeassistant_service.set_climate_fan_mode(matched_ha_id, f_speed)
             results.append({"fan_speed": f_speed, "res": res})
+        if "swing" in payload or "rotate_up_down" in payload or "swing_mode" in payload:
+            sw = payload.get("swing_mode", payload.get("swing", payload.get("rotate_up_down")))
+            if isinstance(sw, bool):
+                if "cucina" in matched_ha_id or "fujitsu" in matched_ha_id:
+                    sw_val = "vertical" if sw else "off"
+                else:
+                    sw_val = "on" if sw else "off"
+            else:
+                sw_val = str(sw)
+            res = await homeassistant_service.set_climate_swing_mode(matched_ha_id, sw_val)
+            results.append({"swing_mode": sw_val, "res": res})
         if "express_mode" in payload or "expressMode" in payload:
             exp_on = bool(payload.get("express_mode", payload.get("expressMode")))
             res = await homeassistant_service.toggle_device("switch.frigorifero_express_mode", exp_on)
@@ -118,9 +150,12 @@ async def api_thinq_control(device_id: str, request: Request):
 @router.post("/api/thinq/sync")
 @router.get("/api/thinq/sync")
 async def api_thinq_sync():
-    """Forza la risincronizzazione con il cloud LG ThinQ."""
-    devices = await thinq_service.fetch_all_devices()
-    return {"status": "synced", "connected": thinq_service.is_connected, "devices": devices}
+    """Forza la risincronizzazione degli split con Home Assistant e ThinQ Cloud."""
+    if homeassistant_service.enabled:
+        await homeassistant_service.fetch_states()
+    if settings.LG_THINQ_ENABLED:
+        await thinq_service.fetch_all_devices()
+    return await api_thinq_devices()
 
 # --- LG ThinQ Climate Automations Endpoints ---
 
