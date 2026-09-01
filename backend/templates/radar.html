@@ -70,12 +70,9 @@
                     <!-- SELETTORE COLORI RADAR -->
                     <div class="radar-color-control">
                         <select id="radar-color-scheme" class="radar-select" onchange="changeColorScheme(this.value)">
-                            <option value="2">Palette: Universale (Meteo standard)</option>
-                            <option value="1">Palette: Originale NWS</option>
-                            <option value="3">Palette: TITAN (Temporali intensi)</option>
-                            <option value="4">Palette: TWC (The Weather Channel)</option>
-                            <option value="6">Palette: Arcobaleno NEXRAD</option>
-                            <option value="8">Palette: Scuro / Notturno</option>
+                            <option value="2" selected>Palette: Universale HD (Standard)</option>
+                            <option value="1">Palette: NWS Classic</option>
+                            <option value="8">Palette: Dark Contrast</option>
                         </select>
                     </div>
                 </div>
@@ -113,15 +110,16 @@
     // Variabili stato Radar
     let map = null;
     let stationMarker = null;
-    let radarLayers = {};
+    let currentRadarLayer = null;
     let radarFrames = [];
     let currentFrameIndex = 0;
     let isPlaying = false;
     let playInterval = null;
     let radarHost = "https://tilecache.rainviewer.com";
     let colorScheme = 2; // Default Universale
-    let radarOpacity = 0.8;
-    const PLAY_SPEED_MS = 1000; // Intervallo bilanciato per evitare superamento rate limit (100 req/min)
+    let radarOpacity = 0.85;
+    let sliderDebounceTimer = null;
+    const PLAY_SPEED_MS = 1200; // Cadenza fluida e bilanciata
 
     // Inizializzazione Mappa
     function initMap() {
@@ -173,22 +171,25 @@
         loadRainViewerData();
     }
 
-    // Caricamento API RainViewer (100% On-Demand per la pagina attiva)
+    // Caricamento API RainViewer (100% On-Demand)
     async function loadRainViewerData() {
         try {
-            document.getElementById('radar-frame-label').innerText = "Download fotogrammi radar...";
+            document.getElementById('radar-frame-label').innerText = "Caricamento fotogrammi radar...";
             const resp = await fetch('https://api.rainviewer.com/public/weather-maps.json');
             if (!resp.ok) throw new Error("Errore HTTP da RainViewer API");
             
             const data = await resp.json();
             radarHost = data.host || "https://tilecache.rainviewer.com";
 
-            // Seleziona gli ultimi 8 fotogrammi passati (i più recenti) per efficienza e limite richieste
+            // Seleziona gli ultimi 5 fotogrammi passati e 3 di nowcast (circa 80 minuti di finestra totale)
             let past = data.radar?.past || [];
-            if (past.length > 8) {
-                past = past.slice(-8);
+            if (past.length > 5) {
+                past = past.slice(-5);
             }
-            const nowcast = data.radar?.nowcast || [];
+            let nowcast = data.radar?.nowcast || [];
+            if (nowcast.length > 3) {
+                nowcast = nowcast.slice(0, 3);
+            }
 
             radarFrames = [];
             past.forEach(f => radarFrames.push({ ...f, type: 'past' }));
@@ -202,12 +203,12 @@
             const slider = document.getElementById('radar-slider');
             slider.max = radarFrames.length - 1;
             
-            // Imposta l'ultimo fotogramma rilevato (stato in tempo reale)
+            // Imposta l'ultimo fotogramma rilevato (stato reale in tempo reale)
             const lastPastIdx = past.length > 0 ? past.length - 1 : 0;
             currentFrameIndex = lastPastIdx;
             slider.value = currentFrameIndex;
 
-            // Mostra il fotogramma corrente (statico immediato)
+            // Mostra il fotogramma corrente
             showFrame(currentFrameIndex);
 
         } catch (err) {
@@ -216,35 +217,35 @@
         }
     }
 
-    // Mostra fotogramma radar specifico con gestione efficiente della cache
+    // Mostra fotogramma radar specifico con gestione sicura a singolo layer attivo
     function showFrame(index) {
         if (!radarFrames || radarFrames.length === 0 || index < 0 || index >= radarFrames.length) return;
 
         const frame = radarFrames[index];
         const slider = document.getElementById('radar-slider');
-        slider.value = index;
+        if (slider) slider.value = index;
 
-        // Crea il layer se non ancora esistente per questo frame
-        if (!radarLayers[index]) {
-            const tileUrl = `${radarHost}${frame.path}/256/{z}/{x}/{y}/${colorScheme}/1_1.png`;
-            radarLayers[index] = L.tileLayer(tileUrl, {
-                opacity: 0,
-                zIndex: 10,
-                maxNativeZoom: 7,
-                maxZoom: 14
-            });
-            radarLayers[index].addTo(map);
-        }
+        const tileUrl = `${radarHost}${frame.path}/256/{z}/{x}/{y}/${colorScheme}/1_1.png`;
 
-        // Porta a 0 l'opacità degli altri layer già in memoria per evitare distruzione DOM/richieste inutili
-        Object.keys(radarLayers).forEach(idx => {
-            const layerIndex = parseInt(idx);
-            if (layerIndex === index) {
-                radarLayers[layerIndex].setOpacity(radarOpacity);
-            } else {
-                radarLayers[layerIndex].setOpacity(0);
-            }
+        // Crea il nuovo layer
+        const newLayer = L.tileLayer(tileUrl, {
+            opacity: radarOpacity,
+            zIndex: 10,
+            maxNativeZoom: 7,
+            maxZoom: 14
         });
+
+        // Gestione morbida di eventuali errori di tassello
+        newLayer.on('tileerror', function(e) {
+            // Ignora silenziosamente errori su singoli tile per evitare interruzioni visive
+        });
+
+        // Aggiunge il nuovo layer e rimuove immediatamente il layer precedente
+        newLayer.addTo(map);
+        if (currentRadarLayer && map.hasLayer(currentRadarLayer)) {
+            map.removeLayer(currentRadarLayer);
+        }
+        currentRadarLayer = newLayer;
 
         // Formatta orario fotogramma (locale)
         const frameDate = new Date(frame.time * 1000);
@@ -257,24 +258,32 @@
         const label = document.getElementById('radar-frame-label');
 
         if (isNowcast) {
-            typeBadge.innerText = "NOWCAST PREVISIONE";
-            typeBadge.className = "radar-badge-type nowcast";
-            liveDot.className = "radar-live-dot nowcast";
-            label.innerHTML = `<strong>${timeStr}</strong> <small>(${dateStr})</small> • <span style="color:#60a5fa;">Stima Previsionale</span>`;
+            if (typeBadge) {
+                typeBadge.innerText = "NOWCAST PREVISIONE";
+                typeBadge.className = "radar-badge-type nowcast";
+            }
+            if (liveDot) liveDot.className = "radar-live-dot nowcast";
+            if (label) label.innerHTML = `<strong>${timeStr}</strong> <small>(${dateStr})</small> • <span style="color:#60a5fa;">Stima Previsionale</span>`;
         } else {
-            typeBadge.innerText = "RADAR IN DIRETTA";
-            typeBadge.className = "radar-badge-type past";
-            liveDot.className = "radar-live-dot";
-            label.innerHTML = `<strong>${timeStr}</strong> <small>(${dateStr})</small> • <span style="color:#34d399;">Rilevazione Reale</span>`;
+            if (typeBadge) {
+                typeBadge.innerText = "RADAR IN DIRETTA";
+                typeBadge.className = "radar-badge-type past";
+            }
+            if (liveDot) liveDot.className = "radar-live-dot";
+            if (label) label.innerHTML = `<strong>${timeStr}</strong> <small>(${dateStr})</small> • <span style="color:#34d399;">Rilevazione Reale</span>`;
         }
 
         currentFrameIndex = index;
     }
 
-    // Gestione Timeline & Playback
+    // Gestione Timeline & Playback con debounce
     function onSliderInput(val) {
         stopPlay();
-        showFrame(parseInt(val));
+        const idx = parseInt(val);
+        if (sliderDebounceTimer) clearTimeout(sliderDebounceTimer);
+        sliderDebounceTimer = setTimeout(() => {
+            showFrame(idx);
+        }, 40);
     }
 
     function stepFrame(step) {
@@ -296,8 +305,10 @@
     function startPlay() {
         if (isPlaying || radarFrames.length === 0) return;
         isPlaying = true;
-        document.getElementById('play-icon').innerText = "⏸️";
-        document.getElementById('btn-play-pause').classList.add('active');
+        const playIcon = document.getElementById('play-icon');
+        const playBtn = document.getElementById('btn-play-pause');
+        if (playIcon) playIcon.innerText = "⏸️";
+        if (playBtn) playBtn.classList.add('active');
 
         playInterval = setInterval(() => {
             // Se la scheda non è visibile, interrompi subito la riproduzione
@@ -327,21 +338,14 @@
     // Cambio Opacità
     function changeOpacity(val) {
         radarOpacity = parseFloat(val) / 100.0;
-        if (radarLayers[currentFrameIndex]) {
-            radarLayers[currentFrameIndex].setOpacity(radarOpacity);
+        if (currentRadarLayer) {
+            currentRadarLayer.setOpacity(radarOpacity);
         }
     }
 
     // Cambio Palette Colori
     function changeColorScheme(val) {
         colorScheme = parseInt(val);
-        // Svuota e rimuove i layer per ricaricare con la nuova palette
-        Object.keys(radarLayers).forEach(idx => {
-            if (map && map.hasLayer(radarLayers[idx])) {
-                map.removeLayer(radarLayers[idx]);
-            }
-        });
-        radarLayers = {};
         showFrame(currentFrameIndex);
     }
 
