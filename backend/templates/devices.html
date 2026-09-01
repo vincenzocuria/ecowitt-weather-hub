@@ -57,6 +57,9 @@
             <span>Tutti</span>
             <span class="filter-badge" id="badge-count-all">{{ devices|length }}</span>
         </button>
+        <button class="filter-chip" data-filter="weather">
+            <span>🌦️ Stazione & Meteo</span>
+        </button>
         <button class="filter-chip" data-filter="plugs">
             <span>🔌 Prese & Luci</span>
         </button>
@@ -87,23 +90,24 @@
     <div class="devices-grid" id="devices-container">
         {% if devices %}
             {% for dev in devices %}
-            <div class="device-card {% if dev.is_on %}device-card-on{% else %}device-card-off{% endif %} {% if not dev.is_online %}device-card-offline{% endif %} {% if dev.active_schedule %}device-card-has-timer{% endif %}" 
+            <div class="device-card {% if dev.is_on and dev.is_online %}device-card-on{% elif not dev.is_online %}device-card-offline{% else %}device-card-off{% endif %} {% if dev.active_schedule %}device-card-has-timer{% endif %}" 
                  data-id="{{ dev.id }}" 
                  data-raw-id="{{ dev.raw_id }}" 
                  data-ecosystem="{{ dev.ecosystem }}" 
                  data-category="{{ dev.category }}" 
                  data-is-on="{{ 'true' if dev.is_on else 'false' }}"
+                 data-is-online="{{ 'true' if dev.is_online else 'false' }}"
                  onclick="openDeviceDetail('{{ dev.id }}')">
                 
                 <div class="device-card-header">
-                    <div class="device-icon-box {% if dev.is_on %}icon-glow-on{% endif %}">
+                    <div class="device-icon-box {% if dev.is_on and dev.is_online %}icon-glow-on{% endif %}">
                         <span class="device-icon">{{ dev.icon }}</span>
                     </div>
                     
-                    <div class="device-status-badge {% if dev.is_on %}badge-on{% else %}badge-off{% endif %}">
+                    <div class="device-status-badge {% if not dev.is_online %}badge-offline{% elif dev.is_on %}badge-on{% else %}badge-standby{% endif %}">
                         <span class="status-dot"></span>
                         <span class="status-label">
-                            {% if dev.is_on %}ON{% elif dev.is_on is false %}OFF{% else %}STANDBY{% endif %}
+                            {% if not dev.is_online %}OFFLINE{% elif dev.is_on %}ON{% else %}STANDBY{% endif %}
                         </span>
                     </div>
 
@@ -392,7 +396,7 @@ async function performDeviceToggle(ecosystem, rawId, targetState, sourceBtn = nu
                 const toggleBtn = cardEl.querySelector('.device-toggle-btn');
 
                 if (targetState) {
-                    cardEl.classList.remove('device-card-off');
+                    cardEl.classList.remove('device-card-off', 'device-card-offline');
                     cardEl.classList.add('device-card-on');
                     if (badge) badge.className = 'device-status-badge badge-on';
                     if (label) label.textContent = 'ON';
@@ -402,10 +406,10 @@ async function performDeviceToggle(ecosystem, rawId, targetState, sourceBtn = nu
                         toggleBtn.setAttribute('onclick', `event.stopPropagation(); quickToggleDevice(this, '${ecosystem}', '${rawId}', true)`);
                     }
                 } else {
-                    cardEl.classList.remove('device-card-on');
+                    cardEl.classList.remove('device-card-on', 'device-card-offline');
                     cardEl.classList.add('device-card-off');
-                    if (badge) badge.className = 'device-status-badge badge-off';
-                    if (label) label.textContent = 'OFF';
+                    if (badge) badge.className = 'device-status-badge badge-standby';
+                    if (label) label.textContent = 'STANDBY';
                     if (iconBox) iconBox.classList.remove('icon-glow-on');
                     if (toggleBtn) {
                         toggleBtn.classList.remove('active');
@@ -564,29 +568,38 @@ function updateDevicesGridInDOM(devices) {
             renameTrigger.setAttribute('onclick', `event.stopPropagation(); quickPromptRename('${dev.id}', '${dev.raw_id}', '${safeN}', '${dev.ecosystem}')`);
         }
         
-        // Aggiorna classe ON/OFF
+        // Aggiorna classe ON/OFF/OFFLINE
+        const isOnline = dev.is_online !== false;
         const isOn = dev.is_on;
         cardEl.setAttribute('data-is-on', isOn ? 'true' : 'false');
-        if (isOn) {
-            cardEl.classList.remove('device-card-off');
+        cardEl.setAttribute('data-is-online', isOnline ? 'true' : 'false');
+        
+        if (!isOnline) {
+            cardEl.classList.remove('device-card-on', 'device-card-off');
+            cardEl.classList.add('device-card-offline');
+        } else if (isOn) {
+            cardEl.classList.remove('device-card-off', 'device-card-offline');
             cardEl.classList.add('device-card-on');
         } else {
-            cardEl.classList.remove('device-card-on');
+            cardEl.classList.remove('device-card-on', 'device-card-offline');
             cardEl.classList.add('device-card-off');
         }
         
-        // Aggiorna badge ON/OFF
+        // Aggiorna badge ON/STANDBY/OFFLINE
         const badge = cardEl.querySelector('.device-status-badge');
         const label = cardEl.querySelector('.status-label');
         if (badge && label) {
-            if (isOn === true) {
+            if (!isOnline) {
+                badge.className = 'device-status-badge badge-offline';
+                label.textContent = 'OFFLINE';
+            } else if (isOn === true) {
                 badge.className = 'device-status-badge badge-on';
                 label.textContent = 'ON';
             } else if (isOn === false) {
-                badge.className = 'device-status-badge badge-off';
-                label.textContent = 'OFF';
+                badge.className = 'device-status-badge badge-standby';
+                label.textContent = 'STANDBY';
             } else {
-                badge.className = 'device-status-badge badge-off';
+                badge.className = 'device-status-badge badge-standby';
                 label.textContent = 'STANDBY';
             }
         }
@@ -594,7 +607,7 @@ function updateDevicesGridInDOM(devices) {
         // Aggiorna glow icona
         const iconBox = cardEl.querySelector('.device-icon-box');
         if (iconBox) {
-            if (isOn) iconBox.classList.add('icon-glow-on');
+            if (isOn && isOnline) iconBox.classList.add('icon-glow-on');
             else iconBox.classList.remove('icon-glow-on');
         }
         
@@ -895,6 +908,11 @@ function getDeviceType(dev) {
         return 'sensor';
     }
 
+    // 0. Stazione Meteo Ecowitt & Sensori WH57 / WH51
+    if (cat === 'weather' || dev.ecosystem === 'ecowitt' || dev.id.startsWith('ecowitt_')) {
+        return 'weather';
+    }
+
     return 'generic';
 }
 
@@ -914,6 +932,9 @@ function renderModalContent(deviceId) {
     let html = '';
 
     switch (dtype) {
+        case 'weather':
+            html = renderWeatherDetail(dev);
+            break;
         case 'scale':
             html = renderScaleDetail(dev);
             break;
@@ -960,11 +981,95 @@ function renderModalContent(deviceId) {
 
     // Aggiungi sezione Programmazione & Timer SOLO per dispositivi idonei
     const schedulableTypes = ['plug', 'switch', 'light', 'climate', 'shutter', 'irrigation'];
-    if (schedulableTypes.includes(dtype) || (dev.can_toggle && !['scale', 'health', 'presence', 'energy', 'sensor'].includes(dtype))) {
+    if (schedulableTypes.includes(dtype) || (dev.can_toggle && !['weather', 'scale', 'health', 'presence', 'energy', 'sensor'].includes(dtype))) {
         html += renderDeviceScheduleBox(dev);
     }
 
     bodyEl.innerHTML = html;
+}
+
+// 0. Stazione Meteo Ecowitt & Sensori Wireless
+function renderWeatherDetail(dev) {
+    const raw = dev.raw || {};
+    const isOnline = dev.is_online !== false;
+    const isStation = dev.id === 'ecowitt_station_gateway';
+    const isLightning = dev.id === 'ecowitt_wh57_lightning';
+    const isSoil = dev.id.startsWith('ecowitt_wh51_');
+
+    let quickStatus = '🟢 Connesso & Funzionante';
+    if (!isOnline) {
+        quickStatus = '🔴 Disconnesso / In attesa';
+    } else if (!dev.is_on) {
+        quickStatus = '🟠 Standby / In ascolto';
+    }
+
+    let specificCards = '';
+    if (isStation) {
+        specificCards = `
+            <div class="telemetry-card">
+                <span class="tel-label">🌡️ Temp. Esterna</span>
+                <span class="tel-val text-accent" style="font-size: 1.2rem;">${dev.temp_out_c !== null && dev.temp_out_c !== undefined ? dev.temp_out_c + ' °C' : '--'}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">🏠 Temp. Interna</span>
+                <span class="tel-val" style="font-size: 1.2rem;">${dev.temp_in_c !== null && dev.temp_in_c !== undefined ? dev.temp_in_c + ' °C' : '--'}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">💧 Umidità Esterna</span>
+                <span class="tel-val">${dev.humidity_out !== null && dev.humidity_out !== undefined ? dev.humidity_out + ' %' : '--'}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">💨 Velocità Vento</span>
+                <span class="tel-val">${dev.wind_speed_kmh !== null && dev.wind_speed_kmh !== undefined ? dev.wind_speed_kmh + ' km/h' : '--'}</span>
+            </div>
+        `;
+    } else if (isLightning) {
+        const dist = dev.lightning_distance_km;
+        const count = dev.lightning_count || 0;
+        const lastTime = dev.lightning_last_time || 'Nessuna recente';
+        specificCards = `
+            <div class="telemetry-card">
+                <span class="tel-label">⚡ Distanza Fulmine</span>
+                <span class="tel-val ${dist !== null ? 'text-warning' : 'text-success'}" style="font-size: 1.2rem;">${dist !== null ? dist + ' km' : 'Nessuno vicino'}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">⚡ Scariche Oggi</span>
+                <span class="tel-val">${count}</span>
+            </div>
+            <div class="telemetry-card" style="grid-column: span 2;">
+                <span class="tel-label">⏱️ Ultima Scarica</span>
+                <span class="tel-val">${lastTime}</span>
+            </div>
+        `;
+    } else if (isSoil) {
+        const moist = dev.soil_moisture_pct;
+        specificCards = `
+            <div class="telemetry-card" style="grid-column: span 2;">
+                <span class="tel-label">🌱 Umidità Rilevata</span>
+                <span class="tel-val text-success" style="font-size: 1.3rem;">${moist !== null && moist !== undefined ? moist + ' %' : '--'}</span>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="modal-quick-state-card ${isOnline && dev.is_on ? 'state-card-on' : (isOnline ? 'state-card-standby' : 'state-card-off')}" style="${isOnline && dev.is_on ? 'background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.4);' : (isOnline ? 'background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.4);' : 'background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.4);')}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${isOnline && dev.is_on ? 'dot-on pulse' : (isOnline ? 'dot-standby' : 'dot-off')}" style="${isOnline && dev.is_on ? 'background: #10b981; box-shadow: 0 0 10px #10b981;' : (isOnline ? 'background: #f59e0b; box-shadow: 0 0 10px #f59e0b;' : 'background: #ef4444; box-shadow: 0 0 10px #ef4444;')}"></span>
+                <span class="state-text">Stato: <strong>${quickStatus}</strong></span>
+            </div>
+            <a href="/" class="btn btn-outline" style="font-size: 0.8rem; text-decoration: none; padding: 4px 10px;">
+                🌦️ Vai alla Dashboard
+            </a>
+        </div>
+
+        <div class="modal-telemetry-grid" style="margin-top: 1rem;">
+            ${specificCards}
+            <div class="telemetry-card" style="grid-column: span 2;">
+                <span class="tel-label">📡 Rete & Gateway</span>
+                <span class="tel-val text-info">${dev.status_text || 'Ecowitt RF / Wi-Fi Gateway'}</span>
+            </div>
+        </div>
+    `;
 }
 
 // 1. Bilancia Smart BIA & Composizione Corporea

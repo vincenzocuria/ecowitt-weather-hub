@@ -558,7 +558,10 @@ def save_reading(data: Dict[str, Any]) -> int:
     conn = get_connection()
     try:
         cursor = conn.cursor()
-        lightning = data.get("lightning", {})
+        lightning = data.get("lightning", {}) if isinstance(data.get("lightning"), dict) else {}
+        l_count = lightning.get("count_total") if "count_total" in lightning else data.get("lightning_count")
+        l_dist = lightning.get("distance_km") if "distance_km" in lightning else data.get("lightning_distance_km")
+        l_last = lightning.get("last_strike_time") if "last_strike_time" in lightning else data.get("lightning_last_time")
         
         ts = data.get("timestamp") or datetime.now(timezone.utc).isoformat()
         temp_c = data.get("temp_c")
@@ -594,9 +597,9 @@ def save_reading(data: Dict[str, Any]) -> int:
             data.get("solar_radiation"),
             data.get("uv_index"),
             data.get("vpd"),
-            lightning.get("count_total"),
-            lightning.get("distance_km"),
-            lightning.get("last_strike_time"),
+            l_count,
+            l_dist,
+            l_last,
             json.dumps(data.get("soil_moisture", {})),
             json.dumps({k: v for k, v in data.get("raw_payload", {}).items() if k != "PASSKEY"}) if isinstance(data.get("raw_payload"), dict) else json.dumps({})
         ))

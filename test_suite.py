@@ -1622,6 +1622,40 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIn("analytics", resp_hist.json())
         self.assertIn("avg_daily_steps_7d", resp_hist.json()["analytics"])
 
+    def test_devices_catalog_tristate_and_ecowitt(self):
+        from backend.routers.devices import build_devices_catalog
+        from backend.database import save_reading
+        
+        save_reading({
+            "temp_c": 26.5,
+            "temp_in_c": 24.0,
+            "humidity": 45.0,
+            "wind_speed_kmh": 8.0,
+            "lightning_distance_km": 15.0,
+            "lightning_count": 2,
+            "lightning_last_time": "10:15",
+            "soil_moisture": {"ch1": 58.0}
+        })
+        
+        catalog = build_devices_catalog()
+        devices = catalog.get("devices", [])
+        dev_ids = [d["id"] for d in devices]
+        
+        self.assertIn("ecowitt_station_gateway", dev_ids)
+        self.assertIn("ecowitt_wh57_lightning", dev_ids)
+        
+        gw_dev = next(d for d in devices if d["id"] == "ecowitt_station_gateway")
+        self.assertEqual(gw_dev["category"], "weather")
+        self.assertTrue(gw_dev["is_online"])
+        self.assertTrue(gw_dev["is_on"])
+        self.assertIn("Connessa & Live", gw_dev["status_text"])
+        
+        l_dev = next(d for d in devices if d["id"] == "ecowitt_wh57_lightning")
+        self.assertEqual(l_dev["category"], "weather")
+        self.assertTrue(l_dev["is_online"])
+        self.assertTrue(l_dev["is_on"]) # is_on = True because lightning distance detected
+        self.assertIn("15.0 km", l_dev["status_text"])
+
 
 if __name__ == "__main__":
     unittest.main()

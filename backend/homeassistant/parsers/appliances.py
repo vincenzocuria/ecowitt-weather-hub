@@ -71,10 +71,15 @@ def parse_washer_data(entities: Dict[str, Dict[str, Any]]) -> Optional[Dict[str,
     m_lower = machine_state.lower()
     j_lower = job_state.lower()
 
-    is_running = m_lower in ("run", "running") and j_lower not in ("none", "finish", "delay_wash", "delayend")
-    is_on = m_lower in ("run", "running", "pause", "paused", "ready") or j_lower in ("run", "wash", "rinse", "spin", "drying", "delay_wash")
-
-    job_state_label = WASHER_STATE_MAP.get(j_lower, job_state.capitalize())
+    is_connected = not (m_lower in ("unavailable", "unknown") and j_lower in ("unavailable", "unknown"))
+    if not is_connected:
+        is_running = False
+        is_on = False
+        job_state_label = "Disconnessa / Offline"
+    else:
+        is_running = m_lower in ("run", "running") and j_lower not in ("none", "finish", "delay_wash", "delayend")
+        is_on = m_lower in ("run", "running", "pause", "paused", "ready") or j_lower in ("run", "wash", "rinse", "spin", "drying", "delay_wash")
+        job_state_label = WASHER_STATE_MAP.get(j_lower, job_state.capitalize() if job_state != "none" else "In Standby / Pronta")
 
     remaining_min = None
     finish_estimate = None
@@ -114,7 +119,7 @@ def parse_washer_data(entities: Dict[str, Dict[str, Any]]) -> Optional[Dict[str,
     return {
         "device_id": "lavanderia_lavatrice",
         "name": "Lavatrice Samsung",
-        "is_connected": True,
+        "is_connected": is_connected,
         "is_on": is_on,
         "is_running": is_running,
         "machine_state": machine_state,
@@ -156,16 +161,23 @@ def parse_dishwasher_data(entities: Dict[str, Dict[str, Any]]) -> Optional[Dict[
     m_lower = machine_state.lower()
     j_lower = job_state.lower()
 
-    is_running = m_lower in ("run", "running") or j_lower in ("pre_wash", "prewash", "wash", "rinse", "dry", "drying", "cooling", "drain", "pre_drain", "sanitize")
-    is_paused = m_lower in ("pause", "paused") or j_lower in ("pause", "paused")
-    is_on = is_running or is_paused or m_lower in ("ready", "delay_start")
-
-    if is_running and j_lower in ("none", "ready"):
-        job_state_label = "Lavaggio in Corso 🍽️"
-    elif is_paused:
-        job_state_label = "In Pausa ⏸️"
+    is_connected = not (m_lower in ("unavailable", "unknown") and j_lower in ("unavailable", "unknown"))
+    if not is_connected:
+        is_running = False
+        is_paused = False
+        is_on = False
+        job_state_label = "Disconnessa / Offline"
     else:
-        job_state_label = DISHWASHER_STATE_MAP.get(j_lower, job_state.capitalize() if job_state else "In Standby / Pronto")
+        is_running = m_lower in ("run", "running") or j_lower in ("pre_wash", "prewash", "wash", "rinse", "dry", "drying", "cooling", "drain", "pre_drain", "sanitize")
+        is_paused = m_lower in ("pause", "paused") or j_lower in ("pause", "paused")
+        is_on = is_running or is_paused or m_lower in ("ready", "delay_start")
+
+        if is_running and j_lower in ("none", "ready"):
+            job_state_label = "Lavaggio in Corso 🍽️"
+        elif is_paused:
+            job_state_label = "In Pausa ⏸️"
+        else:
+            job_state_label = DISHWASHER_STATE_MAP.get(j_lower, job_state.capitalize() if job_state != "none" else "In Standby / Pronta")
 
     remaining_min = None
     finish_estimate = None
@@ -193,7 +205,7 @@ def parse_dishwasher_data(entities: Dict[str, Dict[str, Any]]) -> Optional[Dict[
     return {
         "device_id": "cucina_lavastoviglie",
         "name": "Lavastoviglie Samsung",
-        "is_connected": True,
+        "is_connected": is_connected,
         "is_on": is_on,
         "is_running": is_running,
         "is_paused": is_paused,

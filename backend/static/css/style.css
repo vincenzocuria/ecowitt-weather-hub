@@ -4540,33 +4540,59 @@ body {
 .device-status-badge {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     padding: 3px 8px;
     border-radius: 999px;
     font-size: 0.68rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.02em;
+    transition: all 0.2s ease;
 }
 .badge-on {
     background: rgba(16, 185, 129, 0.15);
-    color: #6ee7b7;
-    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}
+.badge-standby {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.35);
 }
 .badge-off {
     background: rgba(100, 116, 139, 0.15);
     color: #94a3b8;
     border: 1px solid rgba(100, 116, 139, 0.25);
 }
+.badge-offline {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+}
 
 .status-dot {
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background: currentColor;
+    display: inline-block;
+    flex-shrink: 0;
 }
 .badge-on .status-dot {
-    box-shadow: 0 0 6px #10b981;
+    background: #10b981;
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.7);
+}
+.badge-standby .status-dot {
+    background: #f59e0b;
+    box-shadow: 0 0 6px rgba(245, 158, 11, 0.7);
+}
+.badge-off .status-dot {
+    background: #94a3b8;
+    box-shadow: none;
+}
+.badge-offline .status-dot {
+    background: #ef4444;
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.7);
 }
 
 .status-label {

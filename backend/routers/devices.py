@@ -15,6 +15,7 @@ from backend.database import (
     get_sensor_aliases, save_sensor_alias,
     get_device_aliases, save_device_alias, delete_device_alias,
     get_latest_reading, get_latest_energy, get_recent_rain_totals,
+    get_station_status, get_soil_moisture_summary,
     get_tuya_local_devices, get_tuya_local_device, save_tuya_local_device, delete_tuya_local_device,
     save_tuya_device_config
 )
@@ -517,8 +518,126 @@ async def api_irrigation_stop(request: Request):
 # --- Unified Devices Hub Endpoints ---
 
 def build_devices_catalog() -> Dict[str, Any]:
-    """Genera l'elenco normalizzato e aggregato di tutti i dispositivi smart (Home Assistant come hub centrale unico, Aton Solar)."""
+    """Genera l'elenco normalizzato e aggregato di tutti i dispositivi smart (Ecowitt Meteo, Aton Solar, Home Assistant)."""
     devices = []
+
+    # 0. Stazione Meteo Ecowitt & Sensori Wireless (Gateway, WH57 Fulmini, WH51 Suolo)
+    try:
+        w_latest = get_latest_reading() or {}
+        stat_info = get_station_status()
+        st_online = bool(stat_info.get("is_online", False))
+        
+        # 0.1 Console Gateway Ecowitt
+        t_out = w_latest.get("temp_c")
+        t_in = w_latest.get("temp_in_c")
+        hum_out = w_latest.get("humidity")
+        wind_spd = w_latest.get("wind_speed_kmh")
+        
+        gw_status_parts = []
+        if st_online:
+            gw_status_parts.append("Connessa & Live 🟢")
+            if t_out is not None:
+                gw_status_parts.append(f"Est: {t_out}°C ({hum_out or '--'}%)")
+            if t_in is not None:
+                gw_status_parts.append(f"Int: {t_in}°C")
+            if wind_spd is not None:
+                gw_status_parts.append(f"Vento: {wind_spd} km/h")
+        else:
+            gw_status_parts.append(stat_info.get("text", "🔴 Stazione Offline"))
+
+        devices.append({
+            "id": "ecowitt_station_gateway",
+            "raw_id": "ecowitt_gateway",
+            "ecosystem": "ecowitt",
+            "name": settings.STATION_NAME or "Console Stazione Meteo Ecowitt",
+            "icon": "🌦️",
+            "category": "weather",
+            "category_label": "Stazione Meteo & Gateway",
+            "is_on": st_online,
+            "can_toggle": False,
+            "is_online": st_online,
+            "status_text": " • ".join(gw_status_parts),
+            "power_w": 0.0,
+            "temp_out_c": t_out,
+            "temp_in_c": t_in,
+            "humidity_out": hum_out,
+            "wind_speed_kmh": wind_spd,
+            "raw": w_latest
+        })
+
+        # 0.2 Rilevatore Fulmini WH57
+        l_dist = w_latest.get("lightning_distance_km")
+        l_count = w_latest.get("lightning_count")
+        l_time = w_latest.get("lightning_last_time")
+        
+        l_status = "In ascolto attivo • 0 Scariche"
+        l_active = False
+        if l_dist is not None:
+            l_status = f"⚡ Rilevato fulmine a {l_dist} km ({l_count or 0} totali)"
+            l_active = True
+        elif not st_online:
+            l_status = "In attesa segnale gateway"
+
+        devices.append({
+            "id": "ecowitt_wh57_lightning",
+            "raw_id": "ecowitt_wh57",
+            "ecosystem": "ecowitt",
+            "name": "Rilevatore Fulmini WH57",
+            "icon": "⚡",
+            "category": "weather",
+            "category_label": "Sensore Fulmini & Tempeste",
+            "is_on": l_active,
+            "can_toggle": False,
+            "is_online": st_online,
+            "status_text": l_status,
+            "power_w": 0.0,
+            "lightning_distance_km": l_dist,
+            "lightning_count": l_count,
+            "lightning_last_time": l_time,
+            "raw": w_latest
+        })
+
+        # 0.3 Sensori Umidità Suolo WH51
+        s_summary = get_soil_moisture_summary()
+        s_channels = (s_summary.get("channels") if s_summary else {}) or {}
+        if s_channels:
+            for ch, ch_data in s_channels.items():
+                val = ch_data.get("value")
+                name = ch_data.get("name") or f"Sensore Suolo {ch.upper()}"
+                devices.append({
+                    "id": f"ecowitt_wh51_{ch}",
+                    "raw_id": f"soil_{ch}",
+                    "ecosystem": "ecowitt",
+                    "name": name,
+                    "icon": "🌱",
+                    "category": "weather",
+                    "category_label": f"Umidità Suolo WH51 ({ch.upper()})",
+                    "is_on": bool(st_online and val is not None),
+                    "can_toggle": False,
+                    "is_online": bool(st_online and val is not None),
+                    "status_text": f"Umidità: {val}% • {ch_data.get('status_label', 'Normale')}" if val is not None else "In attesa dati",
+                    "power_w": 0.0,
+                    "soil_moisture_pct": val,
+                    "raw": ch_data
+                })
+        else:
+            devices.append({
+                "id": "ecowitt_wh51_general",
+                "raw_id": "soil_ch1",
+                "ecosystem": "ecowitt",
+                "name": "Sensore Umidità Terreno WH51",
+                "icon": "🌱",
+                "category": "weather",
+                "category_label": "Umidità Suolo WH51",
+                "is_on": False,
+                "can_toggle": False,
+                "is_online": st_online,
+                "status_text": "In ascolto canali radio (CH 1-8)",
+                "power_w": 0.0,
+                "raw": {}
+            })
+    except Exception as e:
+        logger.warning(f"Errore aggiunta dispositivi Ecowitt al catalogo: {e}")
 
     # 1. Aton Storage Fotovoltaico & Batteria (Integrazione hardware inverter dedicato)
     if settings.ATON_ENABLED:
