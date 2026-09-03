@@ -20,36 +20,8 @@ logger = logging.getLogger("SmartThingsService")
 SMARTTHINGS_API_BASE = "https://api.smartthings.com/v1"
 
 
-# Mappe etichette in italiano
-WASHER_STATE_MAP = {
-    "none": "In Standby / Pronto",
-    "weightSensing": "Pesatura Carico & Bilanciamento",
-    "wash": "Lavaggio in Corso 🫧",
-    "rinse": "Risciacquo in Corso 💧",
-    "spin": "Centrifuga in Corso 🌀",
-    "drying": "Asciugatura in Corso ♨️",
-    "finish": "Ciclo Lavaggio Completato ✅",
-    "delayEnd": "Partenza Ritardata Programmata ⏱️",
-    "freezePrevent": "Protezione Antigelo",
-}
-
-DISHWASHER_STATE_MAP = {
-    "none": "In Standby / Pronto",
-    "ready": "Pronto",
-    "prewash": "Prelavaggio 🫧",
-    "wash": "Lavaggio in Corso 🍽️",
-    "rinse": "Risciacquo 💧",
-    "dry": "Asciugatura Piatti ♨️",
-    "cooling": "Raffreddamento Piatti 🌬️",
-    "drain": "Scarico Acqua 💧",
-    "sanitize": "Ciclo Igienizzante (Sanitize 🧼)",
-    "finish": "Ciclo Lavastoviglie Terminato ✅",
-    "delayStart": "Partenza Ritardata ⏱️",
-    "paused": "In Pausa ⏸️",
-    "pause": "In Pausa ⏸️",
-    "running": "Lavaggio in Corso 🍽️",
-    "run": "Lavaggio in Corso 🍽️",
-}
+# Mappe etichette centralizzate da modulo appliances
+from backend.homeassistant.parsers.appliances import WASHER_STATE_MAP, DISHWASHER_STATE_MAP
 
 DISHWASHER_CYCLE_MAP = {
     "auto": "Auto",

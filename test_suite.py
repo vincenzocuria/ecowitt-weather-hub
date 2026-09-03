@@ -1857,6 +1857,58 @@ class TestEcowittHub(unittest.TestCase):
             )
             mock_wp.assert_called_once()
 
+    def test_centralized_helpers_and_devices_catalog(self):
+        from backend.helpers import (
+            safe_float, safe_int, f_to_c, c_to_f, inch_to_mm, mm_to_inch,
+            mph_to_kmh, kmh_to_mph, inhg_to_hpa, hpa_to_inhg, wm2_to_lux, lux_to_wm2,
+            get_month_name, get_weekday_name, to_local_datetime_str, ITALIAN_MONTHS, ITALIAN_WEEKDAYS
+        )
+        from backend.devices_catalog import build_devices_catalog
+        from backend.homeassistant.parsers.appliances import WASHER_STATE_MAP, DISHWASHER_STATE_MAP
+
+        # 1. Conversions & Safe Parsing
+        self.assertEqual(safe_float("12.5"), 12.5)
+        self.assertEqual(safe_float(None, 0.0), 0.0)
+        self.assertEqual(safe_float("", 5.5), 5.5)
+        self.assertEqual(safe_float("bad", 9.9), 9.9)
+
+        self.assertEqual(safe_int("42"), 42)
+        self.assertEqual(safe_int(None, 0), 0)
+        self.assertEqual(safe_int("", 7), 7)
+        self.assertEqual(safe_int("bad", -1), -1)
+
+        self.assertEqual(f_to_c(32.0), 0.0)
+        self.assertEqual(c_to_f(0.0), 32.0)
+        self.assertEqual(inch_to_mm(1.0), 25.4)
+        self.assertEqual(mm_to_inch(25.4), 1.0)
+        self.assertEqual(mph_to_kmh(10.0), 16.1)
+        self.assertEqual(kmh_to_mph(16.0934), 10.0)
+        self.assertEqual(inhg_to_hpa(29.92), 1013.2)
+        self.assertEqual(hpa_to_inhg(1013.2), 29.92)
+        self.assertEqual(wm2_to_lux(10.0), 1267.0)
+        self.assertEqual(lux_to_wm2(1267.0), 10.0)
+
+        # 2. Date Localization
+        self.assertEqual(get_month_name(1), "Gennaio")
+        self.assertEqual(get_month_name(8), "Agosto")
+        self.assertEqual(get_weekday_name(0), "Lunedì")
+        self.assertEqual(get_weekday_name(6), "Domenica")
+        self.assertIn("2026-07-15", to_local_datetime_str("2026-07-15T12:00:00Z"))
+
+        # 3. Appliance State Maps
+        self.assertIn("weightSensing", WASHER_STATE_MAP)
+        self.assertIn("delay_wash", WASHER_STATE_MAP)
+        self.assertIn("delayStart", DISHWASHER_STATE_MAP)
+        self.assertIn("pre_wash", DISHWASHER_STATE_MAP)
+
+        # 4. Devices Catalog Aggregator
+        catalog = build_devices_catalog()
+        self.assertIn("devices", catalog)
+        self.assertIn("active_schedules", catalog)
+        self.assertIn("stats", catalog)
+        self.assertIsInstance(catalog["devices"], list)
+        self.assertGreaterEqual(len(catalog["devices"]), 1)
+
 if __name__ == "__main__":
     unittest.main()
 

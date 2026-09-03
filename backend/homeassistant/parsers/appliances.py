@@ -10,6 +10,7 @@ WASHER_STATE_MAP = {
     "ready": "Pronto",
     "weight_sensing": "Pesatura Carico & Bilanciamento",
     "weightsensing": "Pesatura Carico & Bilanciamento",
+    "weightSensing": "Pesatura Carico & Bilanciamento",
     "wash": "Lavaggio in Corso 🫧",
     "rinse": "Risciacquo in Corso 💧",
     "spin": "Centrifuga in Corso 🌀",
@@ -17,7 +18,9 @@ WASHER_STATE_MAP = {
     "finish": "Ciclo Lavaggio Completato ✅",
     "delay_wash": "Partenza Ritardata Programmata ⏱️",
     "delayend": "Partenza Ritardata Programmata ⏱️",
+    "delayEnd": "Partenza Ritardata Programmata ⏱️",
     "freeze_protection": "Protezione Antigelo",
+    "freezePrevent": "Protezione Antigelo",
 }
 
 DISHWASHER_STATE_MAP = {
@@ -36,6 +39,7 @@ DISHWASHER_STATE_MAP = {
     "finish": "Ciclo Lavastoviglie Terminato ✅",
     "delay_start": "Partenza Ritardata ⏱️",
     "delaystart": "Partenza Ritardata ⏱️",
+    "delayStart": "Partenza Ritardata ⏱️",
     "paused": "In Pausa ⏸️",
     "pause": "In Pausa ⏸️",
     "running": "Lavaggio in Corso 🍽️",

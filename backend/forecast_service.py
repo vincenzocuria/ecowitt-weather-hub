@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, List
 import requests
 
 from backend.config import settings
+from backend.helpers import ITALIAN_WEEKDAYS as ITALIAN_DAYS, ITALIAN_SHORT_MONTHS as ITALIAN_MONTHS
 
 logger = logging.getLogger("weather_hub.forecast")
 
@@ -42,20 +43,6 @@ WMO_CODE_MAP = {
     99: {"text": "Forte temporale con grandine", "icon": "⛈️", "desc": "Supercella o violento temporale con grandine grossa."}
 }
 
-ITALIAN_DAYS = {
-    0: "Lunedì",
-    1: "Martedì",
-    2: "Mercoledì",
-    3: "Giovedì",
-    4: "Venerdì",
-    5: "Sabato",
-    6: "Domenica"
-}
-
-ITALIAN_MONTHS = {
-    1: "Gen", 2: "Feb", 3: "Mar", 4: "Apr", 5: "Mag", 6: "Giu",
-    7: "Lug", 8: "Ago", 9: "Set", 10: "Ott", 11: "Nov", 12: "Dic"
-}
 
 EAQI_INFO = {
     1: {"label": "Molto Buona", "badge_class": "badge-success", "color": "#10b981", "icon": "🟢", "desc": "Aria pulita e ideale per ventilare ambienti e attività all'aperto."},

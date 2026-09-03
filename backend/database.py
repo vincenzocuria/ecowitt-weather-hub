@@ -19,23 +19,8 @@ def get_connection() -> sqlite3.Connection:
     conn.execute("PRAGMA synchronous = NORMAL;")
     return conn
 
-def to_local_datetime_str(iso_str: Optional[str], fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
-    """Converte una stringa timestamp ISO UTC nel fuso orario locale configurato (default Europe/Rome)."""
-    if not iso_str:
-        return ""
-    try:
-        dt = datetime.fromisoformat(str(iso_str).replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        local_dt = dt.astimezone(settings.get_tz())
-        return local_dt.strftime(fmt)
-    except Exception:
-        return str(iso_str).replace("T", " ")[:19]
+from backend.helpers import to_local_datetime_str, ITALIAN_MONTHS, get_month_name
 
-ITALIAN_MONTHS = {
-    1: "Gennaio", 2: "Febbraio", 3: "Marzo", 4: "Aprile", 5: "Maggio", 6: "Giugno",
-    7: "Luglio", 8: "Agosto", 9: "Settembre", 10: "Ottobre", 11: "Novembre", 12: "Dicembre"
-}
 
 # Definizioni dei record tracciati nell'Albo dei Record
 RECORD_DEFINITIONS = [
@@ -2235,17 +2220,8 @@ def get_tropical_nights_stats(year: Optional[int] = None) -> Dict[str, Any]:
         else:
             break
 
-    # Mappa nomi mesi italiani per UI
-    month_names_it = {
-        "05": "Maggio",
-        "06": "Giugno",
-        "07": "Luglio",
-        "08": "Agosto",
-        "09": "Settembre",
-        "10": "Ottobre"
-    }
     monthly_stats = [
-        {"month_key": k, "name": month_names_it[k], "count": v}
+        {"month_key": k, "name": get_month_name(int(k), f"Mese {k}"), "count": v}
         for k, v in monthly_counts.items()
     ]
 

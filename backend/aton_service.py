@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 import requests
 
 from backend.config import settings
+from backend.helpers import safe_float
 from backend.database import save_energy_reading
 from backend.alert_engine import engine
 
@@ -94,21 +95,15 @@ class AtonService:
 
     def _parse_telemetry(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         """Converte e normalizza i campi di telemetria Aton in formato pulito."""
-        def safe_float(val, default=0.0):
-            try:
-                if val is None or val == "":
-                    return default
-                return float(val)
-            except (ValueError, TypeError):
-                return default
+        sf = lambda val: safe_float(val, 0.0)
 
-        p_solare = safe_float(raw.get("pSolare"))
-        p_utenze = safe_float(raw.get("pUtenze") or raw.get("pUtenzeReal"))
-        p_batteria = safe_float(raw.get("pBatteria"))
-        p_rete = safe_float(raw.get("pRete") or raw.get("pReteReal"))
-        p_rete_in = safe_float(raw.get("pReteIn"))
-        p_rete_out = safe_float(raw.get("pReteOut"))
-        soc = safe_float(raw.get("soc"))
+        p_solare = sf(raw.get("pSolare"))
+        p_utenze = sf(raw.get("pUtenze") or raw.get("pUtenzeReal"))
+        p_batteria = sf(raw.get("pBatteria"))
+        p_rete = sf(raw.get("pRete") or raw.get("pReteReal"))
+        p_rete_in = sf(raw.get("pReteIn"))
+        p_rete_out = sf(raw.get("pReteOut"))
+        soc = sf(raw.get("soc"))
         
         # Correzioni e direzione flussi
         # In Aton: pBatteria > 0 = scarica batteria (eroga potenza verso la casa: P_FV + P_Batt = P_Utenze),
@@ -138,22 +133,22 @@ class AtonService:
             "p_rete_out": p_rete_out,
             "soc": min(100.0, max(0.0, soc)),
             "battery_soc_pct": min(100.0, max(0.0, soc)),
-            "vb": safe_float(raw.get("vb")),
-            "ib": safe_float(raw.get("ib")),
-            "temp_battery": safe_float(raw.get("temperatura")),
-            "string1_v": safe_float(raw.get("string1V")),
-            "string1_i": safe_float(raw.get("string1I")),
-            "string2_v": safe_float(raw.get("string2V")),
-            "string2_i": safe_float(raw.get("string2I")),
-            "grid_v": safe_float(raw.get("gridV")),
-            "grid_hz": safe_float(raw.get("gridHz")),
-            "e_pannelli_wh": safe_float(raw.get("ePannelli")),
-            "e_comprata_wh": safe_float(raw.get("eComprata")),
-            "e_venduta_wh": safe_float(raw.get("eVenduta")),
-            "e_batteria_wh": safe_float(raw.get("eBatteria")),
-            "solar_today_kwh": round(safe_float(raw.get("ePannelli")) / 1000.0, 2),
-            "bought_today_kwh": round(safe_float(raw.get("eComprata")) / 1000.0, 2),
-            "sold_today_kwh": round(safe_float(raw.get("eVenduta")) / 1000.0, 2),
+            "vb": sf(raw.get("vb")),
+            "ib": sf(raw.get("ib")),
+            "temp_battery": sf(raw.get("temperatura")),
+            "string1_v": sf(raw.get("string1V")),
+            "string1_i": sf(raw.get("string1I")),
+            "string2_v": sf(raw.get("string2V")),
+            "string2_i": sf(raw.get("string2I")),
+            "grid_v": sf(raw.get("gridV")),
+            "grid_hz": sf(raw.get("gridHz")),
+            "e_pannelli_wh": sf(raw.get("ePannelli")),
+            "e_comprata_wh": sf(raw.get("eComprata")),
+            "e_venduta_wh": sf(raw.get("eVenduta")),
+            "e_batteria_wh": sf(raw.get("eBatteria")),
+            "solar_today_kwh": round(sf(raw.get("ePannelli")) / 1000.0, 2),
+            "bought_today_kwh": round(sf(raw.get("eComprata")) / 1000.0, 2),
+            "sold_today_kwh": round(sf(raw.get("eVenduta")) / 1000.0, 2),
             "raw_data": raw
         }
         return parsed

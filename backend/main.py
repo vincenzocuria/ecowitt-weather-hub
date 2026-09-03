@@ -22,8 +22,6 @@ from backend.database import (
 from backend.forecast_service import forecast_service
 from backend.aton_service import aton_service
 from backend.thinq_service import thinq_service
-from backend.smartthings_service import smartthings_service
-from backend.tuya_service import tuya_service
 from backend.homeassistant_service import homeassistant_service
 from backend.device_scheduler import device_scheduler
 
@@ -31,7 +29,7 @@ from backend.device_scheduler import device_scheduler
 from backend.routers.weather import router as weather_router, build_analytics_context, process_weather_data
 from backend.routers.alerts import router as alerts_router
 from backend.routers.energy import router as energy_router
-from backend.routers.devices import router as devices_router, build_devices_catalog
+from backend.routers.devices import router as devices_router
 from backend.routers.system import router as system_router
 from backend.routers.views import router as views_router, templates
 

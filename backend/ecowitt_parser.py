@@ -1,41 +1,14 @@
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
-def f_to_c(f: Optional[float]) -> Optional[float]:
-    if f is None:
-        return None
-    return round((f - 32.0) * 5.0 / 9.0, 1)
-
-def inhg_to_hpa(inhg: Optional[float]) -> Optional[float]:
-    if inhg is None:
-        return None
-    return round(inhg * 33.8639, 1)
-
-def mph_to_kmh(mph: Optional[float]) -> Optional[float]:
-    if mph is None:
-        return None
-    return round(mph * 1.60934, 1)
-
-def inch_to_mm(inch: Optional[float]) -> Optional[float]:
-    if inch is None:
-        return None
-    return round(inch * 25.4, 1)
-
-def safe_float(val: Any) -> Optional[float]:
-    if val is None or val == "":
-        return None
-    try:
-        return float(val)
-    except (ValueError, TypeError):
-        return None
-
-def safe_int(val: Any) -> Optional[int]:
-    if val is None or val == "":
-        return None
-    try:
-        return int(float(val))
-    except (ValueError, TypeError):
-        return None
+from backend.helpers import (
+    safe_float,
+    safe_int,
+    f_to_c,
+    inch_to_mm,
+    mph_to_kmh,
+    inhg_to_hpa,
+)
 
 def parse_ecowitt_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
     """
