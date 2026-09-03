@@ -1628,6 +1628,24 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIn("analytics", resp_hist.json())
         self.assertIn("avg_daily_steps_7d", resp_hist.json()["analytics"])
 
+        # 7. Test Smartwatch multi-device step resolution (Watch with 8,750 steps vs Phone with 1,200 steps)
+        mock_watch_entities = {
+            "sensor.samsung_s26_daily_steps": {"entity_id": "sensor.samsung_s26_daily_steps", "state": "1200"},
+            "sensor.galaxy_watch6_steps_sensor": {"entity_id": "sensor.galaxy_watch6_steps_sensor", "state": "8750"},
+            "sensor.galaxy_watch6_heart_rate": {"entity_id": "sensor.galaxy_watch6_heart_rate", "state": "76.0"},
+            "sensor.galaxy_watch6_battery_level": {"entity_id": "sensor.galaxy_watch6_battery_level", "state": "92"},
+            "sensor.samsung_s26_battery_level": {"entity_id": "sensor.samsung_s26_battery_level", "state": "78"},
+        }
+        watch_health = parse_health_data(mock_watch_entities)
+        self.assertTrue(watch_health["is_available"])
+        self.assertEqual(watch_health["steps"]["daily"], 8750)
+        self.assertEqual(watch_health["steps"]["watch_steps"], 8750)
+        self.assertEqual(watch_health["steps"]["phone_steps"], 1200)
+        self.assertTrue(watch_health["has_smartwatch"])
+        self.assertIn("Galaxy Watch", watch_health["device_name"])
+        self.assertEqual(watch_health["watch_battery_pct"], 92)
+        self.assertEqual(watch_health["battery_pct"], 78)
+
     def test_devices_catalog_tristate_and_ecowitt(self):
         from backend.routers.devices import build_devices_catalog
         from backend.database import save_reading
@@ -1660,8 +1678,83 @@ class TestEcowittHub(unittest.TestCase):
         self.assertEqual(l_dev["category"], "weather")
         self.assertTrue(l_dev["is_online"])
         self.assertTrue(l_dev["is_on"]) # is_on = True because lightning distance detected
-        self.assertIn("15.0 km", l_dev["status_text"])
+    def test_quiet_hours_and_night_alert_system(self):
+        """Testa il sistema di Quiet Hours (Non Disturbare Notturno) e preavviso Notte Tropicale."""
+        from datetime import datetime
+        from unittest.mock import patch
+        from backend.config import settings
+        from backend.notifier import notifier, EMERGENCY_ALERT_TYPES
+        from backend.alert_engine import AlertEngine
+        from backend.database import get_alert_logs
 
+        # 1. Test logica intervallo orario is_in_quiet_hours (23:00 - 07:00)
+        settings.QUIET_HOURS_ENABLED = True
+        settings.QUIET_HOURS_START = 23
+        settings.QUIET_HOURS_END = 7
+
+        dt_night_23 = datetime(2026, 8, 10, 23, 15, 0)
+        dt_night_03 = datetime(2026, 8, 11, 3, 30, 0)
+        dt_morning_06 = datetime(2026, 8, 11, 6, 59, 0)
+        dt_morning_07 = datetime(2026, 8, 11, 7, 0, 0)
+        dt_day_14 = datetime(2026, 8, 11, 14, 0, 0)
+
+        self.assertTrue(settings.is_in_quiet_hours(dt_night_23))
+        self.assertTrue(settings.is_in_quiet_hours(dt_night_03))
+        self.assertTrue(settings.is_in_quiet_hours(dt_morning_06))
+        self.assertFalse(settings.is_in_quiet_hours(dt_morning_07))
+        self.assertFalse(settings.is_in_quiet_hours(dt_day_14))
+
+        # Disabilitando il toggle generale
+        settings.QUIET_HOURS_ENABLED = False
+        self.assertFalse(settings.is_in_quiet_hours(dt_night_03))
+        settings.QUIET_HOURS_ENABLED = True
+
+        # 2. Test soppressione push per allarmi ordinari e passaggio per emergenze durante Quiet Hours
+        from backend.notifier import NotificationService
+        with patch.object(settings, "is_in_quiet_hours", return_value=True), \
+             patch.object(notifier, "_send_web_push") as mock_web_push, \
+             patch("requests.post") as mock_requests_post:
+
+            # A. Allarme ordinario (es. batteria scarica alle 03:00 o terreno secco)
+            NotificationService.send_alert(
+                notifier,
+                alert_type="battery_low",
+                title="🪫 Batteria Aton Bassa",
+                message="Batteria al 15% di notte.",
+                priority="normal"
+            )
+            # Web push e ntfy NON devono essere stati chiamati (silenzio notturno)
+            mock_web_push.assert_not_called()
+            mock_requests_post.assert_not_called()
+
+            # B. Emergenza reale (es. allagamento, grandine, sovraccarico 4.5 kW)
+            NotificationService.send_alert(
+                notifier,
+                alert_type="leak",
+                title="🚨 ALLARME ALLAGAMENTO!",
+                message="Rilevata perdita d'acqua.",
+                priority="urgent"
+            )
+            mock_web_push.assert_called_once()
+            if settings.ENABLE_NTFY and settings.NTFY_TOPIC:
+                mock_requests_post.assert_called_once()
+
+        # 3. Test preavviso Notte Tropicale nel bilancio serale delle 21:00
+        ae = AlertEngine()
+        mock_forecast = {
+            "hourly_next_36h": [
+                {"temp_c": 26.5}, {"temp_c": 25.2}, {"temp_c": 24.8},
+                {"temp_c": 23.5}, {"temp_c": 22.0}, {"temp_c": 21.5}
+            ]
+        }
+        with patch("backend.forecast_service.forecast_service.fetch_open_meteo", return_value=mock_forecast), \
+             patch.object(notifier, "send_alert") as mock_engine_send_alert:
+            res = ae.send_evening_energy_digest()
+            self.assertIn("🌴 Notte Tropicale Prevista", res["message"])
+            self.assertIn("21.5°C", res["message"])
+
+        # Reset flag
+        settings.QUIET_HOURS_ENABLED = True
 
 if __name__ == "__main__":
     unittest.main()

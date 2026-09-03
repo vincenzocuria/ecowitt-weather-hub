@@ -18,6 +18,16 @@ except ImportError:
 
 logger = logging.getLogger("ecowitt_notifier")
 
+EMERGENCY_ALERT_TYPES = {
+    "leak",                    # Allagamento sensori perdite d'acqua
+    "grid_overload_critical",  # Prelievo rete >= 4.9 kW rischio distacco contatore 4.5 kW
+    "hail_warning",            # Rischio grandine e temporale violento
+    "storm",                   # Crollo barometrico burrasca
+    "lightning",               # Fulmini vicini <= 30 km
+    "civil_protection",        # Allerte Protezione Civile (Arancione / Rossa)
+    "freeze",                  # Allerta gelata
+}
+
 class NotificationService:
     def __init__(self):
         self.vapid_private_pem_path = os.path.join(settings.DATA_DIR, "vapid_private.pem")
@@ -132,7 +142,14 @@ class NotificationService:
         registrando l'evento nel database storico.
         """
         logger.info(f"[NOTIFICA] [{alert_type}] {title}: {message}")
+        # Registrazione costante nel database storico (consultabile sempre dal registro e badge)
         log_alert_db(alert_type, title, message, extra_data)
+
+        # Controllo Quiet Hours (Modalità Non Disturbare Notturno: ore 23:00 - 07:00)
+        # Se attivo e in orario notturno, sopprime i push/suoni per eventi ordinari, consentendo solo emergenze
+        if settings.is_in_quiet_hours() and alert_type not in EMERGENCY_ALERT_TYPES:
+            logger.info(f"[QUIET-HOURS] Notifica push silenziata per orario notturno ({settings.QUIET_HOURS_START}:00-{settings.QUIET_HOURS_END}:00): [{alert_type}] {title}")
+            return
 
         # 1. Web Push Nativo PWA
         try:
@@ -215,7 +232,11 @@ class NotificationService:
             "uv_extreme": f"{cdn_base}/Sun/3D/sun_3d.png",
             "anomaly": f"{cdn_base}/Warning/3D/warning_3d.png",
             "leak": f"{cdn_base}/Droplet/3D/droplet_3d.png",
-            "civil_protection": f"{cdn_base}/Shield/3D/shield_3d.png"
+            "civil_protection": f"{cdn_base}/Shield/3D/shield_3d.png",
+            "hail_warning": f"{cdn_base}/Cloud%20with%20lightning%20and%20rain/3D/cloud_with_lightning_and_rain_3d.png",
+            "grid_overload_critical": f"{cdn_base}/Zap/3D/zap_3d.png",
+            "grid_overload_warning": f"{cdn_base}/Zap/3D/zap_3d.png",
+            "climate_night_cooling": f"{cdn_base}/Crescent%20moon/3D/crescent_moon_3d.png"
         }
         return icons_map.get(alert_type, f"{cdn_base}/Sun%20behind%20cloud/3D/sun_behind_cloud_3d.png")
 
@@ -243,7 +264,11 @@ class NotificationService:
             "digest": "coffee,sunrise,partly_sunny",
             "monthly_digest": "spiral_calendar,trophy,bar_chart",
             "energy_digest": "zap,bar_chart,sun_with_face",
-            "civil_protection": "warning,shield,rotating_light"
+            "civil_protection": "warning,shield,rotating_light",
+            "hail_warning": "warning,cloud_with_lightning_and_rain,rotating_light",
+            "grid_overload_critical": "warning,zap,rotating_light",
+            "grid_overload_warning": "warning,zap",
+            "climate_night_cooling": "crescent_moon,wind_face"
         }
         return mapping.get(alert_type, "loudspeaker")
 

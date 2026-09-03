@@ -43,24 +43,52 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
 
     device_name = "Samsung Health"
     
-    # 1. Trova nome dispositivo associato
-    for ent_id, ent in entities.items():
-        if "samsung_s26" in ent_id or "galaxy" in ent_id:
-            device_name = "Samsung Galaxy S26"
-            break
-        elif ent_id.startswith("person."):
-            device_name = ent.get("attributes", {}).get("friendly_name") or device_name
+    # 1. Trova dispositivi associati (Smartphone Samsung & Smartwatch Galaxy Watch / Wear OS)
+    has_watch = False
+    watch_name = None
+    has_phone = False
+    phone_name = "Samsung Galaxy S26"
 
-    # 2. Mappa sensori di salute
-    daily_steps = None
-    odometer_steps = None
-    daily_dist_m = None
-    daily_floors = None
+    for ent_id, ent in entities.items():
+        eid_lower = ent_id.lower()
+        if any(w in eid_lower for w in ("watch", "wear", "gear", "sm_r")):
+            has_watch = True
+            friendly = ent.get("attributes", {}).get("friendly_name")
+            if friendly and any(k in friendly.lower() for k in ("watch", "galaxy", "orologio")):
+                watch_name = friendly
+            elif not watch_name:
+                watch_name = "Galaxy Watch"
+        if "samsung_s26" in eid_lower or "s26" in eid_lower or ("galaxy" in eid_lower and not any(w in eid_lower for w in ("watch", "wear", "gear", "sm_r"))):
+            has_phone = True
+            friendly = ent.get("attributes", {}).get("friendly_name")
+            if friendly and any(k in friendly.lower() for k in ("s26", "galaxy", "telefono")):
+                phone_name = friendly
+        elif ent_id.startswith("person.") and not has_phone:
+            phone_name = ent.get("attributes", {}).get("friendly_name") or phone_name
+
+    if has_watch and has_phone:
+        device_name = f"Samsung Galaxy S26 • {watch_name or 'Galaxy Watch'}"
+    elif has_watch:
+        device_name = watch_name or "Galaxy Watch"
+    elif has_phone:
+        device_name = phone_name
+    else:
+        device_name = "Samsung Health"
+
+    # 2. Mappa sensori di salute con supporto multi-dispositivo (Smartwatch + Smartphone + Health Connect)
+    daily_step_candidates = []  # Tuples: (steps_int, source_label, entity_id)
+    watch_steps = None
+    phone_steps = None
+    health_connect_steps = None
+    odometer_candidates = []
+
+    daily_dist_candidates = []
+    daily_floors_candidates = []
     daily_elevation_m = None
 
-    total_calories = None
+    total_cal_candidates = []
     basal_calories = None
-    active_calories = None
+    active_cal_candidates = []
 
     heart_rate = None
     resting_heart_rate = None
@@ -69,7 +97,7 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     vo2_max = None
     hrv = None
 
-    sleep_minutes = None
+    sleep_candidates = []
 
     weight_g = None
     body_fat_pct = None
@@ -78,64 +106,138 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     bone_mass_g = None
     hydration_ml = None
     battery_level = None
+    watch_battery_level = None
     body_source_pkg = None
     body_date = None
 
     for ent_id, ent in entities.items():
         state_val = ent.get("state")
         eid_lower = ent_id.lower()
+        attrs = ent.get("attributes", {})
+        unit = str(attrs.get("unit_of_measurement", "")).lower()
 
-        # Passi
+        # Identificazione origine entità
+        is_watch_entity = any(w in eid_lower for w in ("watch", "wear", "gear", "sm_r"))
+        is_phone_entity = any(p in eid_lower for p in ("s26", "phone", "mobile", "smartphone")) or (
+            "samsung" in eid_lower and not is_watch_entity
+        )
+        is_hc_entity = any(h in eid_lower for h in ("health_connect", "shealth", "samsung_health"))
+
+        # --- PASSI ---
+        # A) Sensori espliciti di passi giornalieri (Health Connect o template HA)
         if "daily_steps" in eid_lower:
-            daily_steps = _safe_int(state_val)
-        elif "steps_sensor" in eid_lower or (("step" in eid_lower or "passi" in eid_lower) and daily_steps is None):
-            odometer_steps = _safe_int(state_val)
+            val = _safe_int(state_val)
+            if val is not None:
+                if is_watch_entity:
+                    watch_steps = max(watch_steps or 0, val)
+                    daily_step_candidates.append((val, "Smartwatch", ent_id))
+                elif is_hc_entity:
+                    health_connect_steps = max(health_connect_steps or 0, val)
+                    daily_step_candidates.append((val, "Samsung Health / Health Connect", ent_id))
+                elif is_phone_entity:
+                    phone_steps = max(phone_steps or 0, val)
+                    daily_step_candidates.append((val, "Telefono S26", ent_id))
+                else:
+                    daily_step_candidates.append((val, "Passi Giornalieri", ent_id))
 
-        # Distanza e dislivello
-        if "daily_distance" in eid_lower or "distance" in eid_lower:
-            daily_dist_m = _safe_float(state_val)
-        elif "daily_floors" in eid_lower or "floors" in eid_lower:
-            daily_floors = _safe_int(state_val)
+        # B) Sensori contapassi da Smartwatch (su Wear OS / Galaxy Watch l'app HA crea sensor.*_steps_sensor o sensor.*_step_counter)
+        elif is_watch_entity and any(k in eid_lower for k in ("step", "passi")):
+            val = _safe_int(state_val)
+            if val is not None:
+                # Se è <= 80.000 passi è tipicamente il contatore giornaliero dello smartwatch
+                if val <= 80000:
+                    watch_steps = max(watch_steps or 0, val)
+                    daily_step_candidates.append((val, "Smartwatch (Galaxy Watch)", ent_id))
+                else:
+                    odometer_candidates.append(val)
+
+        # C) Sensori hardware contapassi generici (es. Steps Sensor app companion telefono)
+        elif "steps_sensor" in eid_lower:
+            val = _safe_int(state_val)
+            if val is not None:
+                if val > 80000:
+                    odometer_candidates.append(val)
+                elif is_watch_entity:
+                    watch_steps = max(watch_steps or 0, val)
+                    daily_step_candidates.append((val, "Smartwatch", ent_id))
+                elif is_phone_entity:
+                    phone_steps = max(phone_steps or 0, val)
+                    daily_step_candidates.append((val, "Sensore Hardware Telefono", ent_id))
+                else:
+                    daily_step_candidates.append((val, "Sensore Passi", ent_id))
+
+        # D) Altri sensori con 'step' o 'passi' nel nome o nell'unità
+        elif any(k in eid_lower for k in ("step", "passi")) or unit in ("steps", "passi", "step"):
+            val = _safe_int(state_val)
+            if val is not None:
+                if val <= 80000:
+                    if is_watch_entity:
+                        watch_steps = max(watch_steps or 0, val)
+                        daily_step_candidates.append((val, "Smartwatch", ent_id))
+                    else:
+                        daily_step_candidates.append((val, "Contapassi", ent_id))
+                else:
+                    odometer_candidates.append(val)
+
+        # --- DISTANZA E DISLIVELLO ---
+        if "daily_distance" in eid_lower or ("distance" in eid_lower and any(k in eid_lower for k in ("samsung", "health", "s26", "watch", "wear"))):
+            val = _safe_float(state_val)
+            if val is not None and val > 0:
+                daily_dist_candidates.append(val)
+        elif "daily_floors" in eid_lower or ("floors" in eid_lower and any(k in eid_lower for k in ("samsung", "health", "s26", "watch", "wear"))):
+            val = _safe_int(state_val)
+            if val is not None:
+                daily_floors_candidates.append(val)
         elif "daily_elevation" in eid_lower or "elevation_gained" in eid_lower:
             daily_elevation_m = _safe_float(state_val)
 
-        # Calorie
+        # --- CALORIE ---
         if "total_calories" in eid_lower:
-            total_calories = _safe_float(state_val)
+            val = _safe_float(state_val)
+            if val is not None and val > 0:
+                total_cal_candidates.append(val)
         elif "basal_metabolic" in eid_lower or "bmr" in eid_lower:
             basal_calories = _safe_float(state_val)
         elif "active_calories" in eid_lower:
-            active_calories = _safe_float(state_val)
+            val = _safe_float(state_val)
+            if val is not None and val > 0:
+                active_cal_candidates.append(val)
 
-        # Parametri cardiaci & ossigeno
+        # --- PARAMETRI CARDIACI & OSSIGENO ---
         if "resting_heart_rate" in eid_lower:
             resting_heart_rate = _safe_float(state_val)
         elif "heart_rate_variability" in eid_lower or "hrv" in eid_lower:
             hrv = _safe_float(state_val)
         elif "heart_rate" in eid_lower or "pulse" in eid_lower or "battito" in eid_lower:
-            heart_rate = _safe_float(state_val)
+            val = _safe_float(state_val)
+            if val is not None and val > 0:
+                # Se è da smartwatch ha priorità perché misura al polso in tempo reale
+                if is_watch_entity or heart_rate is None:
+                    heart_rate = val
         elif "oxygen_saturation" in eid_lower or "spo2" in eid_lower:
-            oxygen_saturation = _safe_float(state_val)
+            val = _safe_float(state_val)
+            if val is not None and val > 0:
+                oxygen_saturation = val
         elif "vo2_max" in eid_lower:
             vo2_max = _safe_float(state_val)
         elif "respiratory_rate" in eid_lower:
             respiratory_rate = _safe_float(state_val)
 
-        # Sonno
-        if "sleep_duration" in eid_lower or "sleep" in eid_lower:
-            sleep_minutes = _safe_float(state_val)
+        # --- SONNO ---
+        if "sleep_duration" in eid_lower or "sleep" in eid_lower or "sonno" in eid_lower:
+            val = _safe_float(state_val)
+            if val is not None and val > 0:
+                sleep_candidates.append(val)
 
-        # Composizione corporea & Bilancia Smart (Tuya / Samsung / Health Connect)
+        # --- COMPOSIZIONE CORPOREA & BILANCIA SMART ---
         if ("sensor." in eid_lower and eid_lower.endswith("_weight")) or "body_weight" in eid_lower or "peso" in eid_lower:
             weight_g = _safe_float(state_val)
-            attrs = ent.get("attributes", {})
             if attrs.get("source"):
                 body_source_pkg = attrs["source"]
             if attrs.get("date"):
                 body_date = attrs["date"]
         elif "body_fat" in eid_lower or "grasso" in eid_lower:
             body_fat_pct = _safe_float(state_val)
-            attrs = ent.get("attributes", {})
             if not body_source_pkg and attrs.get("source"):
                 body_source_pkg = attrs["source"]
             if not body_date and attrs.get("date"):
@@ -149,9 +251,31 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         elif "daily_hydration" in eid_lower or "idratazione" in eid_lower:
             hydration_ml = _safe_float(state_val)
 
-        # Batteria dispositivo
-        if "samsung_s26_battery_level" in eid_lower or ("battery_level" in eid_lower and battery_level is None):
+        # --- BATTERIE DISPOSITIVI ---
+        if is_watch_entity and "battery" in eid_lower:
+            watch_battery_level = _safe_int(state_val)
+        elif "samsung_s26_battery_level" in eid_lower or ("battery_level" in eid_lower and battery_level is None):
             battery_level = _safe_int(state_val)
+
+    # Consolidamento metriche multi-sorgente:
+    # Per i passi, scegliamo il valore massimo tra le letture giornaliere valide.
+    # Questo evita di mostrare il conteggio parziale del solo smartphone se l'utente ha camminato con lo smartwatch,
+    # o viceversa se l'orologio si stava ricaricando.
+    daily_steps = None
+    steps_source = "Samsung Health"
+    steps_source_entity = None
+    if daily_step_candidates:
+        best_candidate = max(daily_step_candidates, key=lambda c: c[0])
+        daily_steps = best_candidate[0]
+        steps_source = best_candidate[1]
+        steps_source_entity = best_candidate[2]
+
+    odometer_steps = max(odometer_candidates) if odometer_candidates else None
+    daily_dist_m = max(daily_dist_candidates) if daily_dist_candidates else None
+    daily_floors = max(daily_floors_candidates) if daily_floors_candidates else None
+    total_calories = max(total_cal_candidates) if total_cal_candidates else None
+    active_calories = max(active_cal_candidates) if active_cal_candidates else None
+    sleep_minutes = max(sleep_candidates) if sleep_candidates else None
 
     # Label sorgente bilancia (es. Tuya Smart Life vs Samsung Health)
     body_source_label = "Tuya Smart Life"
@@ -165,9 +289,9 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         else:
             body_source_label = body_source_pkg
 
-    # Verifica se ci sono entità Samsung/Health presenti nel sistema HA
+    # Verifica se ci sono entità Samsung/Health/Watch presenti nel sistema HA
     has_health_entities = any(
-        any(k in eid_lower for k in ("samsung", "daily_steps", "steps_sensor", "body_fat", "total_calories"))
+        any(k in eid_lower for k in ("samsung", "daily_steps", "steps_sensor", "body_fat", "total_calories", "watch", "wear", "shealth"))
         for eid_lower in [e.lower() for e in entities.keys()]
     )
 
@@ -296,10 +420,12 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
             heart_status = "Attività intensa / Cardio"
             heart_badge_class = "badge-danger"
 
-    return {
+    result = {
         "is_available": True,
         "device_name": device_name,
         "battery_pct": battery_level,
+        "watch_battery_pct": watch_battery_level,
+        "has_smartwatch": has_watch,
         "steps": {
             "daily": steps_val,
             "goal": steps_goal,
@@ -308,7 +434,13 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
             "distance_m": daily_dist_m,
             "distance_km": dist_km,
             "floors": daily_floors or 0,
-            "elevation_m": daily_elevation_m or 0.0
+            "elevation_m": daily_elevation_m or 0.0,
+            "source": steps_source,
+            "source_entity": steps_source_entity,
+            "watch_steps": watch_steps,
+            "phone_steps": phone_steps,
+            "health_connect_steps": health_connect_steps,
+            "has_smartwatch": has_watch
         },
         "calories": {
             "total_kcal": round(total_calories, 1) if total_calories is not None else None,

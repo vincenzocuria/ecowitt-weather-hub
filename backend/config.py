@@ -84,6 +84,31 @@ class Settings:
         """Restituisce il datetime corrente timezone-aware nel fuso orario della stazione."""
         from datetime import datetime
         return datetime.now(self.get_tz())
+
+    # Fascia Oraria Notturna / Quiet Hours (Protezione Anti-Spam Notturna)
+    QUIET_HOURS_ENABLED: bool = os.getenv("QUIET_HOURS_ENABLED", "true").lower() in ("true", "1", "yes")
+    QUIET_HOURS_START: int = int(os.getenv("QUIET_HOURS_START", "23"))  # Ore 23:00
+    QUIET_HOURS_END: int = int(os.getenv("QUIET_HOURS_END", "7"))      # Ore 07:00
+
+    def is_in_quiet_hours(self, dt=None) -> bool:
+        """
+        Verifica se il momento indicato (o l'orario corrente locale) rientra nelle Quiet Hours notturne.
+        Gestisce correttamente l'attraversamento della mezzanotte (es. 23:00 -> 07:00).
+        """
+        if not self.QUIET_HOURS_ENABLED:
+            return False
+        if dt is None:
+            dt = self.now_local()
+        h = dt.hour
+        start = self.QUIET_HOURS_START
+        end = self.QUIET_HOURS_END
+        if start > end:
+            # Es: 23:00 -> 07:00 (attraversa la mezzanotte)
+            return h >= start or h < end
+        elif start < end:
+            # Es: 00:00 -> 06:00
+            return start <= h < end
+        return False
     
     # Notifica Mattutina "Buongiorno Meteo" (Daily Digest)
     DAILY_DIGEST_ENABLED: bool = os.getenv("DAILY_DIGEST_ENABLED", "true").lower() in ("true", "1", "yes")

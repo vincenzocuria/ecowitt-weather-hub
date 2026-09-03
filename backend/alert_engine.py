@@ -1201,6 +1201,23 @@ class AlertEngine:
             f"🏆 Indice Autosufficienza: {autarky_pct}%"
         ]
 
+        # Stima Termica Notte Entrante (Preavviso Notte Tropicale)
+        try:
+            from backend.forecast_service import forecast_service
+            fc = forecast_service.fetch_open_meteo()
+            if fc and "hourly_next_36h" in fc:
+                # Isola le prossime 10 ore notturne (dalle 22:00 alle 08:00 di domani)
+                night_hours = fc["hourly_next_36h"][:11]
+                night_temps = [h.get("temp_c") for h in night_hours if h.get("temp_c") is not None]
+                if night_temps:
+                    min_night = min(night_temps)
+                    if min_night >= settings.SUPER_TROPICAL_NIGHT_TEMP_THRESHOLD_C:
+                        lines.append(f"🔥 Notte Rovente Prevista: minima stimata a ~{min_night:.1f}°C (>25°C). Si consiglia climatizzazione notturna.")
+                    elif min_night >= settings.TROPICAL_NIGHT_TEMP_THRESHOLD_C:
+                        lines.append(f"🌴 Notte Tropicale Prevista: minima notturna non scenderà sotto i ~{min_night:.1f}°C.")
+        except Exception as e_fc:
+            logger.debug(f"Errore stima notte tropicale nel report serale: {e_fc}")
+
         title = "📊 Bilancio Energetico di Oggi"
         msg = "\n".join(lines)
 
