@@ -39,6 +39,28 @@ notifier.send_ntfy = MagicMock(return_value=True)
 
 class TestEcowittHub(unittest.TestCase):
 
+    @classmethod
+    def tearDownClass(cls):
+        import asyncio
+        from backend.homeassistant_service import homeassistant_service
+        from backend.thinq_service import thinq_service
+        try:
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            if loop.is_running():
+                asyncio.create_task(homeassistant_service.close())
+                if hasattr(thinq_service, "close"):
+                    asyncio.create_task(thinq_service.close())
+            else:
+                loop.run_until_complete(homeassistant_service.close())
+                if hasattr(thinq_service, "close"):
+                    loop.run_until_complete(thinq_service.close())
+        except Exception:
+            pass
+
     def test_unit_conversions(self):
         self.assertEqual(f_to_c(32.0), 0.0)
         self.assertEqual(f_to_c(212.0), 100.0)
@@ -1755,6 +1777,85 @@ class TestEcowittHub(unittest.TestCase):
 
         # Reset flag
         settings.QUIET_HOURS_ENABLED = True
+
+    def test_fixes_audit_and_optimizations(self):
+        import time
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        from backend.main import app
+        from backend.alert_engine import AlertEngine
+        from backend.ecowitt_parser import parse_ecowitt_payload
+        from backend.notifier import NotificationService
+
+        # 1. Test root endpoints for Service Worker, Manifest and Redirect
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+        r_sw = client.get("/sw.js")
+        self.assertEqual(r_sw.status_code, 200)
+        self.assertEqual(r_sw.headers.get("Service-Worker-Allowed"), "/")
+
+        r_man = client.get("/manifest.json")
+        self.assertEqual(r_man.status_code, 200)
+
+        r_redir = client.get("/alerts", follow_redirects=False)
+        self.assertEqual(r_redir.status_code, 301)
+        self.assertEqual(r_redir.headers.get("location"), "/alerts-page")
+
+        # 2. Test Rain event logic fix: event_rain > 0 with rain_rate == 0 must not keep is_raining True
+        ae = AlertEngine()
+        now = time.time()
+        # Start of rain
+        ae._check_rain({"rain_rate_mm_hr": 5.0, "event_rain_mm": 5.0}, now)
+        self.assertTrue(ae.is_raining)
+        # Rain stopped 20 minutes ago, but gateway still reports event_rain = 5.0 mm
+        ae._check_rain({"rain_rate_mm_hr": 0.0, "event_rain_mm": 5.0}, now + 1200)
+        self.assertFalse(ae.is_raining)
+
+        # 3. Test Lightning count reset at midnight
+        ae.last_lightning_count = 15
+        ae.last_lightning_epoch = 1700000000
+        # Gateway resets to 0 at midnight
+        ae._check_lightning({"lightning": {"count_total": 0, "distance_km": None, "last_strike_epoch": 1700000000}}, now)
+        self.assertEqual(ae.last_lightning_count, 0)
+        # First strike of the new day
+        with patch.object(notifier, "send_alert") as mock_l_alert:
+            ae._check_lightning({"lightning": {"count_total": 1, "distance_km": 12.0, "last_strike_epoch": 1700000000}}, now + 60)
+            self.assertEqual(ae.last_lightning_count, 1)
+            mock_l_alert.assert_called_once()
+
+        # 4. Test Ecowitt parser supports both "lightning" and "lightning_num"
+        raw_p1 = {"PASSKEY": "MOCK", "lightning": "8", "lightning_distance": "14", "dateutc": "2026-08-25 10:00:00"}
+        p1 = parse_ecowitt_payload(raw_p1)
+        self.assertEqual(p1["lightning"]["count_total"], 8)
+        self.assertEqual(p1["lightning"]["distance_km"], 14.0)
+
+        raw_p2 = {"PASSKEY": "MOCK", "lightning_num": "12", "lightning_distance": "6", "dateutc": "2026-08-25 10:00:00"}
+        p2 = parse_ecowitt_payload(raw_p2)
+        self.assertEqual(p2["lightning"]["count_total"], 12)
+
+        # 5. Test quiet hours bypass for manual test alerts
+        with patch.object(settings, "is_in_quiet_hours", return_value=True), \
+             patch.object(notifier, "_send_web_push") as mock_wp:
+            # Ordinary test alert without force should be silenced
+            NotificationService.send_alert(
+                notifier,
+                alert_type="record",
+                title="Test Silenced",
+                message="Msg",
+                priority="normal",
+                force=False
+            )
+            mock_wp.assert_not_called()
+
+            # Test alert with force=True should bypass quiet hours
+            NotificationService.send_alert(
+                notifier,
+                alert_type="record",
+                title="Test Forced",
+                message="Msg",
+                priority="high",
+                force=True
+            )
+            mock_wp.assert_called_once()
 
 if __name__ == "__main__":
     unittest.main()

@@ -120,7 +120,9 @@ async def api_test_alert(alert_type: str = Query("record")):
         title=title,
         message=message,
         priority=priority,
-        tags=tags
+        tags=tags,
+        extra_data={"is_test": "true"},
+        force=True
     )
     return {
         "status": "sent",

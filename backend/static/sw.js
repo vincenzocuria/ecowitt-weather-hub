@@ -127,6 +127,15 @@ self.addEventListener('notificationclick', (event) => {
                     return client.focus();
                 }
             }
+            if (clientList.length > 0) {
+                const firstClient = clientList[0];
+                if ('navigate' in firstClient) {
+                    firstClient.navigate(targetUrl);
+                }
+                if ('focus' in firstClient) {
+                    return firstClient.focus();
+                }
+            }
             if (clients.openWindow) {
                 return clients.openWindow(targetUrl);
             }

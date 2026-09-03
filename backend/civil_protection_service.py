@@ -321,10 +321,12 @@ class CivilProtectionService:
         logger.info("Scaricamento bollettino criticità Protezione Civile...")
         bulletin_info = self._get_latest_bulletin_info()
         if not bulletin_info:
+            # Imposta un backoff di 10 minuti su errore per non martellare GitHub ad ogni polling di /api/live
+            self._last_fetch_time = now - self.cache_ttl + 600
             if self._cached_data:
-                logger.warning("Impossibile contattare DPC, restituisco dati da cache")
+                logger.warning("Impossibile contattare DPC, restituisco dati da cache (backoff 10m)")
                 return self._cached_data
-            return {
+            error_res = {
                 "enabled": True,
                 "status": "error",
                 "message": "Nessun bollettino reperibile al momento.",
@@ -333,6 +335,8 @@ class CivilProtectionService:
                 "zone_name": "Non identificata",
                 "municipality": settings.LOCATION_NAME
             }
+            self._cached_data = error_res
+            return error_res
 
         ts_str, today_url, tomorrow_url = bulletin_info
         today_feature = None

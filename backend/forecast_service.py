@@ -167,8 +167,10 @@ class ForecastService:
                 return self._cached_data
             else:
                 logger.error(f"Errore HTTP da Open-Meteo API ({resp.status_code}): {resp.text[:200]}")
+                self._last_fetch_time = now - self.cache_ttl + 300
         except Exception as e:
             logger.error(f"Eccezione durante la richiesta a Open-Meteo: {e}")
+            self._last_fetch_time = now - self.cache_ttl + 300
 
         return self._cached_data
 
@@ -328,8 +330,10 @@ class ForecastService:
                 return self._cached_aqi
             else:
                 logger.error(f"Errore HTTP da Air Quality API ({resp.status_code}): {resp.text[:200]}")
+                self._last_aqi_fetch = now - self.cache_aqi_ttl + 300
         except Exception as e:
             logger.error(f"Eccezione durante richiesta qualità dell'aria: {e}")
+            self._last_aqi_fetch = now - self.cache_aqi_ttl + 300
 
         if self._cached_aqi:
             return self._cached_aqi

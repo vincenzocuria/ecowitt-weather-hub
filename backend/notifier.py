@@ -81,12 +81,16 @@ class NotificationService:
             return
 
         unread_count = get_unread_alerts_count()
+        # Genera un tag univoco per non sovrascrivere allerte distinte dello stesso tipo
+        sub_key = (extra_data or {}).get("record_key") or (extra_data or {}).get("leak_channel") or (extra_data or {}).get("channel") or int(time.time())
+        notification_tag = f"meteo-{alert_type}-{sub_key}"
+
         payload = json.dumps({
             "title": title,
             "body": message,
             "icon": "/static/icons/icon-192.png",
             "badge": "/static/icons/badge-96.png",
-            "tag": f"meteo-{alert_type}",
+            "tag": notification_tag,
             "unread_count": unread_count,
             "data": {
                 "url": "/alerts-page",
@@ -95,6 +99,10 @@ class NotificationService:
                 "extra": extra_data or {}
             }
         })
+
+        sub_claim = settings.VAPID_CLAIM_EMAIL or "mailto:admin@weatherhub.local"
+        if not sub_claim.startswith(("mailto:", "https://")):
+            sub_claim = f"mailto:{sub_claim}"
 
         for sub in subs:
             endpoint = sub.get("endpoint")
@@ -115,7 +123,7 @@ class NotificationService:
                     subscription_info=sub_info,
                     data=payload,
                     vapid_private_key=self.vapid_private_pem_path,
-                    vapid_claims={"sub": settings.VAPID_CLAIM_EMAIL},
+                    vapid_claims={"sub": sub_claim},
                     ttl=3600
                 )
                 logger.info(f"[WEBPUSH] Notifica inviata con successo al dispositivo {endpoint[:35]}...")
@@ -135,7 +143,8 @@ class NotificationService:
         message: str,
         priority: str = "high",
         extra_data: Optional[Dict[str, str]] = None,
-        tags: Optional[List[str]] = None
+        tags: Optional[List[str]] = None,
+        force: bool = False
     ):
         """
         Invia notifiche push via Web Push nativo (PWA) e via ntfy.sh (se attivo),
@@ -146,8 +155,11 @@ class NotificationService:
         log_alert_db(alert_type, title, message, extra_data)
 
         # Controllo Quiet Hours (Modalità Non Disturbare Notturno: ore 23:00 - 07:00)
-        # Se attivo e in orario notturno, sopprime i push/suoni per eventi ordinari, consentendo solo emergenze
-        if settings.is_in_quiet_hours() and alert_type not in EMERGENCY_ALERT_TYPES:
+        # Se attivo e in orario notturno, sopprime i push/suoni per eventi ordinari, consentendo solo emergenze, test espliciti e azioni manuali
+        is_test = force or alert_type.startswith("test") or (extra_data and (extra_data.get("is_test") == "true" or extra_data.get("scenario")))
+        is_manual_action = alert_type in ("device_scheduled_action", "irrigation_manual_start", "irrigation_manual_stop")
+
+        if not is_test and not is_manual_action and settings.is_in_quiet_hours() and alert_type not in EMERGENCY_ALERT_TYPES:
             logger.info(f"[QUIET-HOURS] Notifica push silenziata per orario notturno ({settings.QUIET_HOURS_START}:00-{settings.QUIET_HOURS_END}:00): [{alert_type}] {title}")
             return
 

@@ -23,10 +23,9 @@ from backend.database import (
 )
 from backend.thinq_service import thinq_service
 from backend.homeassistant_service import homeassistant_service
-from backend.notifier import NotificationService
+from backend.notifier import notifier
 
 logger = logging.getLogger("weather_hub.device_scheduler")
-notifier = NotificationService()
 
 class DeviceScheduler:
     def __init__(self):
@@ -177,7 +176,8 @@ class DeviceScheduler:
                     title="⏱️ Timer Programmato Eseguito",
                     message=f"Il dispositivo '{device_name}' è stato {action_desc} come programmato.",
                     priority="normal",
-                    extra_data={"task_id": task_id, "device_id": device_id, "ecosystem": ecosystem}
+                    extra_data={"task_id": task_id, "device_id": device_id, "ecosystem": ecosystem},
+                    force=True
                 )
             else:
                 notifier.send_alert(
@@ -185,7 +185,8 @@ class DeviceScheduler:
                     title="⚠️ Errore Timer Programmato",
                     message=f"Impossibile eseguire l'azione programmata su '{device_name}': {error_msg}",
                     priority="high",
-                    extra_data={"task_id": task_id, "device_id": device_id, "error": error_msg}
+                    extra_data={"task_id": task_id, "device_id": device_id, "error": error_msg},
+                    force=True
                 )
 
         return executed_count

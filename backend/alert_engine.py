@@ -525,9 +525,16 @@ class AlertEngine:
         if strike_epoch and strike_epoch != self.last_lightning_epoch:
             is_new_strike = True
             self.last_lightning_epoch = strike_epoch
+            self.last_lightning_count = count
             self._save_state()
         elif count > self.last_lightning_count:
             is_new_strike = True
+            self.last_lightning_count = count
+            self._save_state()
+        elif count < self.last_lightning_count:
+            # Reset giornaliero a mezzanotte del contatore fulmini o riavvio gateway
+            if count > 0:
+                is_new_strike = True
             self.last_lightning_count = count
             self._save_state()
 
@@ -685,7 +692,10 @@ class AlertEngine:
         rain_rate = data.get("rain_rate_mm_hr")
         event_rain = data.get("event_rain_mm")
 
-        is_current_rain = (rain_rate is not None and rain_rate > 0.0) or (event_rain is not None and event_rain > 0.0)
+        # La pioggia attiva è determinata esclusivamente dal rain_rate istantaneo (> 0.0 mm/h).
+        # Nel protocollo Ecowitt, event_rain_mm conserva il cumulato dell'evento per oltre 1h dopo il termine
+        # delle precipitazioni e non deve bloccare lo stato asciutto né sopprimere gli allarmi futuri.
+        is_current_rain = rain_rate is not None and float(rain_rate) > 0.0
 
         # 1. Inizio Pioggia Istantaneo (Rilevamento prime gocce / transizione da asciutto a pioggia)
         if is_current_rain:
@@ -1080,22 +1090,38 @@ class AlertEngine:
                 self._save_state()
                 kw = round(p_rete / 1000.0, 2)
                 
-                # Load Shedding automatico sui climatizzatori LG (se presenti e accesi)
+                # Load Shedding automatico sui climatizzatori (Home Assistant / Fujitsu o LG ThinQ)
                 shed_action_txt = ""
-                if settings.LG_THINQ_ENABLED:
-                    try:
+                try:
+                    active_climates = []
+                    # 1. Climatizzatori da Home Assistant (priorità locale)
+                    if settings.HASS_ENABLED:
+                        from backend.homeassistant_service import homeassistant_service
+                        if homeassistant_service.enabled:
+                            ha_climates = homeassistant_service.parse_climate_data()
+                            for d in ha_climates:
+                                if d.get("device_type") == "DEVICE_AIR_CONDITIONER" and d.get("is_on"):
+                                    active_climates.append((d.get("device_id"), d.get("name") or d.get("alias") or "Climatizzatore", "hass"))
+
+                    # 2. Climatizzatori da LG ThinQ Cloud
+                    if not active_climates and settings.LG_THINQ_ENABLED:
                         from backend.thinq_service import thinq_service
-                        active_acs = [d for d in thinq_service.get_cached_devices() if d.get("device_type") == "DEVICE_AIR_CONDITIONER" and d.get("is_on")]
-                        if active_acs:
-                            first_ac = active_acs[0]
-                            first_id = first_ac.get("device_id") or first_ac.get("deviceId")
-                            first_name = first_ac.get("alias", "Climatizzatore")
-                            # Spegnimento d'emergenza anti-blackout
+                        thinq_acs = [d for d in thinq_service.get_cached_devices() if d.get("device_type") == "DEVICE_AIR_CONDITIONER" and d.get("is_on")]
+                        for d in thinq_acs:
+                            active_climates.append((d.get("device_id") or d.get("deviceId"), d.get("alias") or "Climatizzatore LG", "thinq"))
+
+                    if active_climates:
+                        first_id, first_name, ecosystem = active_climates[0]
+                        if ecosystem == "hass":
+                            from backend.homeassistant_service import homeassistant_service
+                            asyncio.create_task(homeassistant_service.toggle_device(first_id, False))
+                        else:
+                            from backend.thinq_service import thinq_service
                             asyncio.create_task(thinq_service.control_device(first_id, {"power": False}))
-                            shed_action_txt = f" 🤖 Anti-Blackout: {first_name} spento temporaneamente per alleggerire la linea."
-                            logger.warning(f"[LOAD-SHEDDER] Anti-blackout: spento {first_name} per sovraccarico rete a {kw} kW")
-                    except Exception as e_shed:
-                        logger.error(f"[LOAD-SHEDDER] Errore esecuzione shedding: {e_shed}")
+                        shed_action_txt = f" 🤖 Anti-Blackout: {first_name} spento temporaneamente per alleggerire la linea."
+                        logger.warning(f"[LOAD-SHEDDER] Anti-blackout: spento {first_name} ({ecosystem}) per sovraccarico rete a {kw} kW")
+                except Exception as e_shed:
+                    logger.error(f"[LOAD-SHEDDER] Errore esecuzione shedding: {e_shed}")
 
                 notifier.send_alert(
                     alert_type="grid_overload_critical",

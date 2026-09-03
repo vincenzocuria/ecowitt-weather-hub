@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
 import uvicorn
 
 # Assicura che la root del progetto sia sempre nel PYTHONPATH
@@ -44,13 +44,14 @@ async def watchdog_worker():
     logger.info("[WATCHDOG] Station Offline Watchdog, Daily Digest, Energy Report & Smart Automations loop attivato")
     while True:
         try:
-            engine.check_offline_watchdog()
-            engine.check_rain_forecast()
-            engine.check_civil_protection_alerts()
-            engine.check_daily_digest()
-            engine.check_monthly_digest()
-            engine.check_evening_energy_digest()
-            engine.check_nightly_maintenance()
+            # Esegue controlli bloccanti di I/O (DPC, Open-Meteo, DB compattazione) in thread pool per non bloccare l'event loop di FastAPI
+            await asyncio.to_thread(engine.check_offline_watchdog)
+            await asyncio.to_thread(engine.check_rain_forecast)
+            await asyncio.to_thread(engine.check_civil_protection_alerts)
+            await asyncio.to_thread(engine.check_daily_digest)
+            await asyncio.to_thread(engine.check_monthly_digest)
+            await asyncio.to_thread(engine.check_evening_energy_digest)
+            await asyncio.to_thread(engine.check_nightly_maintenance)
 
             # Automazioni intelligenti Presenza Smartphone, Elettrodomestici, Clima & Solare via Home Assistant
             latest_w = get_latest_reading() or {}
@@ -77,7 +78,7 @@ async def watchdog_worker():
             # Automazioni Irrigazione Intelligente (WH51 + Elettrovalvola Home Assistant + Meteo Predittivo)
             fc_rain = 0.0
             try:
-                fc_data = forecast_service.fetch_open_meteo() or {}
+                fc_data = await asyncio.to_thread(forecast_service.fetch_open_meteo) or {}
                 fc_rain = float(fc_data.get("rain_24h_sum", 0.0) or 0.0)
             except Exception:
                 pass
@@ -109,6 +110,8 @@ async def lifespan(app: FastAPI):
     aton_task.cancel()
     thinq_service.stop()
     thinq_task.cancel()
+    if hasattr(thinq_service, "close"):
+        await thinq_service.close()
     hass_task.cancel()
     await homeassistant_service.close()
     device_scheduler.stop()
@@ -207,6 +210,34 @@ async def auth_middleware(request: Request, call_next):
 static_dir = Path(__file__).resolve().parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+@app.get("/sw.js")
+async def serve_service_worker():
+    """Serve il Service Worker direttamente a livello root ('/') con header Service-Worker-Allowed."""
+    sw_file = static_dir / "sw.js"
+    return FileResponse(
+        str(sw_file),
+        media_type="application/javascript",
+        headers={
+            "Service-Worker-Allowed": "/",
+            "Cache-Control": "no-cache, must-revalidate"
+        }
+    )
+
+@app.get("/manifest.json")
+async def serve_manifest():
+    """Serve il manifest della PWA a livello root."""
+    manifest_file = static_dir / "manifest.json"
+    return FileResponse(
+        str(manifest_file),
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "no-cache, must-revalidate"}
+    )
+
+@app.get("/alerts")
+async def redirect_alerts():
+    """Redirect amichevole da /alerts a /alerts-page."""
+    return RedirectResponse(url="/alerts-page", status_code=301)
 
 # Registrazione dei Router Modulari
 app.include_router(weather_router)

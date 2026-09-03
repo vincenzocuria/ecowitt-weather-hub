@@ -19,6 +19,7 @@ function formatDate(isoStr) {
 // Live polling per la Dashboard principale
 function startDashboardPolling() {
     function update() {
+        if (document.hidden) return;
         fetch('/api/live')
             .then(r => r.json())
             .then(d => {
@@ -573,6 +574,7 @@ function startDashboardPolling() {
 
     // Polling energetico Aton Green Storage
     function updateEnergyLive() {
+        if (document.hidden) return;
         fetch('/api/energy/latest')
             .then(r => r.json())
             .then(res => {
@@ -741,6 +743,13 @@ function startDashboardPolling() {
             .catch(() => {});
     }
 
+    // Registra hook globale per risvegliare istantaneamente i controller su visibilitychange
+    window.triggerDashboardLiveRefresh = function() {
+        update();
+        updateEnergyLive();
+        updateClimateLive();
+    };
+
     // Avvia aggiornamenti periodici
     setInterval(update, 5000);
     setInterval(updateEnergyLive, 8000);
@@ -754,6 +763,7 @@ function startDashboardPolling() {
 // ==========================================
 
 function updateClimateLive() {
+    if (document.hidden) return;
     fetch('/api/thinq/devices')
         .then(r => r.json())
         .then(res => {
@@ -943,9 +953,14 @@ function urlBase64ToUint8Array(base64String) {
 async function getServiceWorkerRegistration() {
     if (!('serviceWorker' in navigator)) return null;
     try {
-        let reg = await navigator.serviceWorker.getRegistration('/static/');
+        // Disattiva eventuali vecchie registrazioni limitate a /static/
+        const oldReg = await navigator.serviceWorker.getRegistration('/static/');
+        if (oldReg) {
+            await oldReg.unregister();
+        }
+        let reg = await navigator.serviceWorker.getRegistration('/');
         if (!reg) {
-            reg = await navigator.serviceWorker.register('/static/sw.js');
+            reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
         }
         await navigator.serviceWorker.ready;
         return reg;
@@ -1176,6 +1191,7 @@ if ('serviceWorker' in navigator) {
 
 // Sincronizzazione Badge Allerte (Mobile Tab & Desktop Navbar & PWA Icon Badge)
 async function refreshAlertBadges() {
+    if (document.hidden) return;
     try {
         const res = await fetch('/api/alerts/unread-count');
         if (!res.ok) return;
@@ -1430,10 +1446,13 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(refreshAlertBadges, 20000);
 });
 
-// Sincronizza badge quando l'utente torna sull'app/scheda
+// Sincronizza badge e controller quando l'utente torna sull'app/scheda
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
         refreshAlertBadges();
+        if (typeof window.triggerDashboardLiveRefresh === 'function') {
+            window.triggerDashboardLiveRefresh();
+        }
     }
 });
 

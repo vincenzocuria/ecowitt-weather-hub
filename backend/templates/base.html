@@ -6,7 +6,7 @@
     <title>{{ title or "Ecowitt & Sainlogic Weather Hub" }}</title>
     
     <!-- PWA Settings -->
-    <link rel="manifest" href="/static/manifest.json">
+    <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#0b0f19">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -116,7 +116,7 @@
     <script src="/static/js/app.js?v=4.9"></script>
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/static/sw.js?v=4.9').catch((e) => console.warn('SW error:', e));
+            navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((e) => console.warn('SW error:', e));
         }
     </script>
 

@@ -1,9 +1,24 @@
 import io
 import csv
+import time
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from fastapi import APIRouter, Request, BackgroundTasks, Query
 from fastapi.responses import JSONResponse, Response
+
+# Cache in memoria per statistiche climatologiche pesanti per /api/live (TTL 5 minuti)
+_analytics_cache: Dict[str, Tuple[float, Any]] = {}
+
+def _get_cached_analytics(key: str, ttl_sec: float = 300) -> Optional[Any]:
+    now = time.time()
+    if key in _analytics_cache:
+        ts, val = _analytics_cache[key]
+        if (now - ts) < ttl_sec:
+            return val
+    return None
+
+def _set_cached_analytics(key: str, val: Any):
+    _analytics_cache[key] = (time.time(), val)
 
 from backend.config import settings
 from backend.ecowitt_parser import parse_ecowitt_payload
@@ -84,7 +99,10 @@ def build_analytics_context(latest: dict) -> dict:
     today_ext = get_today_extremes()
     yesterday_cmp = get_yesterday_same_time(temp_c)
     rain_totals = get_recent_rain_totals()
-    climate_comparisons = get_climate_comparisons()
+    climate_comparisons = _get_cached_analytics("climate_comparisons", ttl_sec=300)
+    if climate_comparisons is None:
+        climate_comparisons = get_climate_comparisons()
+        _set_cached_analytics("climate_comparisons", climate_comparisons)
 
     # 3. Evapotraspirazione & Irrigazione Intelligente WH51
     et_mm = calc_evapotranspiration(temp_c, hum, solar, wind_spd, today_ext.get("temp_min"), today_ext.get("temp_max"))
@@ -126,7 +144,10 @@ def build_analytics_context(latest: dict) -> dict:
         zambretti=zambretti
     )
 
-    tropical_nights = get_tropical_nights_stats()
+    tropical_nights = _get_cached_analytics("tropical_nights", ttl_sec=300)
+    if tropical_nights is None:
+        tropical_nights = get_tropical_nights_stats()
+        _set_cached_analytics("tropical_nights", tropical_nights)
     soil_summary = get_soil_moisture_summary()
 
     ctx = {

@@ -125,7 +125,7 @@ def parse_ecowitt_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
         vpd = calc_vpd(temp_c, humidity)
 
     # Lightning Sensor (WH57)
-    lightning_count = safe_int(raw_data.get("lightning_num"))
+    lightning_count = safe_int(raw_data.get("lightning_num") if ("lightning_num" in raw_data and raw_data["lightning_num"] != "") else raw_data.get("lightning"))
     lightning_distance_km = safe_float(raw_data.get("lightning_distance"))
     lightning_time_epoch = safe_int(raw_data.get("lightning_time"))
     

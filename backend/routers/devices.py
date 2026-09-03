@@ -196,35 +196,45 @@ async def api_test_climate_automation(request: Request):
             alert_type="climate_away_reminder",
             title="🧪 TEST: Clima Acceso all'Uscita",
             message="🚗 [TEST] Sei uscito di casa ma il climatizzatore 'Soggiorno' è rimasto ACCESO (24°C). Se non c'è nessuno a casa puoi spegnerlo da qui.",
-            priority="normal"
+            priority="normal",
+            extra_data={"scenario": scenario, "is_test": "true"},
+            force=True
         )
     elif scenario == "night":
         notifier.send_alert(
             alert_type="climate_night_cooling",
             title="🧪 TEST: Free Cooling Notturno",
             message="🌙 [TEST] All'esterno la temperatura è scesa a 21.5°C (più fresco della stanza a 25.0°C). Puoi spegnere il clima e aprire le finestre a costo zero.",
-            priority="normal"
+            priority="normal",
+            extra_data={"scenario": scenario, "is_test": "true"},
+            force=True
         )
     elif scenario == "solar":
         notifier.send_alert(
             alert_type="climate_solar_opportunity",
             title="🧪 TEST: Pre-Raffrescamento Solare",
             message="☀️ [TEST] Surplus solare a 2400 W e batteria al 95%: momento ideale per avviare il climatizzatore gratis!",
-            priority="normal"
+            priority="normal",
+            extra_data={"scenario": scenario, "is_test": "true"},
+            force=True
         )
     elif scenario == "runtime":
         notifier.send_alert(
             alert_type="climate_runtime_warning",
             title="🧪 TEST: Max Runtime Guard",
             message="⏱️ [TEST] Il climatizzatore 'Camera' è acceso da oltre 5 ore (Temp stanza: 24.5°C).",
-            priority="normal"
+            priority="normal",
+            extra_data={"scenario": scenario, "is_test": "true"},
+            force=True
         )
     elif scenario == "comfort":
         notifier.send_alert(
             alert_type="climate_comfort_warning",
             title="🧪 TEST: Comfort Guard & Isteresi",
             message="🌡️ [TEST] La stanza 'Salotto' è risalita a 27.2°C (fuori soglia comfort dopo la pausa). Clima riavviato automaticamente a 24.0°C.",
-            priority="normal"
+            priority="normal",
+            extra_data={"scenario": scenario, "is_test": "true"},
+            force=True
         )
     return {"status": "sent", "scenario": scenario}
 

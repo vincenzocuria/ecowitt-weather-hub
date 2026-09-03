@@ -1,6 +1,7 @@
 import os
 import json
 import math
+import time
 import sqlite3
 from typing import Dict, Any, Optional, List, Tuple, Union
 from datetime import datetime, timezone, timedelta
@@ -10,9 +11,12 @@ DB_DIR = settings.DATA_DIR
 os.makedirs(DB_DIR, exist_ok=True)
 DB_PATH = os.path.join(DB_DIR, "weather_history.db")
 
+
+
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA synchronous = NORMAL;")
     return conn
 
 def to_local_datetime_str(iso_str: Optional[str], fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
@@ -1205,7 +1209,7 @@ def get_alert_logs(limit: int = 50, unread_only: bool = False) -> List[Dict[str,
 def get_unread_alerts_count() -> int:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM alert_logs WHERE COALESCE(is_read, 0) = 0")
+    cursor.execute("SELECT COUNT(*) FROM alert_logs WHERE is_read = 0 OR is_read IS NULL")
     row = cursor.fetchone()
     conn.close()
     return int(row[0]) if row else 0
@@ -2245,7 +2249,7 @@ def get_tropical_nights_stats(year: Optional[int] = None) -> Dict[str, Any]:
         for k, v in monthly_counts.items()
     ]
 
-    return {
+    res = {
         "year": year,
         "threshold_c": settings.TROPICAL_NIGHT_TEMP_THRESHOLD_C,
         "super_threshold_c": settings.SUPER_TROPICAL_NIGHT_TEMP_THRESHOLD_C,
@@ -2261,6 +2265,7 @@ def get_tropical_nights_stats(year: Optional[int] = None) -> Dict[str, Any]:
         "monthly_stats": monthly_stats,
         "recent_tropical_days": recent_tropical_days[-10:]
     }
+    return res
 
 # ----------------- STATO & TREND UMIDITÀ TERRENO -----------------
 
