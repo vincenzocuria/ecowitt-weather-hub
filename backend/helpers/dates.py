@@ -3,7 +3,7 @@ Modulo centralizzato per la formattazione e la localizzazione di date e timestam
 """
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Union
 
 from backend.config import settings
 
@@ -54,6 +54,59 @@ def get_weekday_name(weekday: int, default: str = "") -> str:
     return ITALIAN_WEEKDAYS.get(weekday, default or str(weekday))
 
 
+def format_duration_italian(minutes: Optional[Union[int, float]], show_seconds: bool = False) -> str:
+    """
+    Formatta una durata in minuti in una stringa leggibile in italiano con ore e minuti.
+    Esempi:
+        0 o < 1 -> "meno di un minuto"
+        1 -> "1 minuto"
+        13 -> "13 minuti"
+        60 -> "1 ora"
+        61 -> "1 ora e 1 minuto"
+        120 -> "2 ore"
+        193 -> "3 ore e 13 minuti"
+        999 -> "16 ore e 39 minuti"
+    """
+    if minutes is None:
+        return "—"
+    try:
+        val = float(minutes)
+        if val < 0:
+            return "—"
+        total_m = int(round(val))
+    except (ValueError, TypeError):
+        return str(minutes)
+
+    if total_m < 1:
+        return "meno di un minuto"
+    if total_m < 60:
+        return f"{total_m} {'minuto' if total_m == 1 else 'minuti'}"
+
+    ore = total_m // 60
+    rem_m = total_m % 60
+    h_str = "1 ora" if ore == 1 else f"{ore} ore"
+    if rem_m == 0:
+        return h_str
+    m_str = "1 minuto" if rem_m == 1 else f"{rem_m} minuti"
+    return f"{h_str} e {m_str}"
+
+
+def format_seconds_italian(seconds: Optional[Union[int, float]]) -> str:
+    """
+    Formatta una durata in secondi in formato leggibile italiano con ore, minuti o secondi.
+    """
+    if seconds is None:
+        return "—"
+    try:
+        sec = max(0, int(round(float(seconds))))
+    except (ValueError, TypeError):
+        return str(seconds)
+
+    if sec < 60:
+        return f"{sec} {'secondo' if sec == 1 else 'secondi'}"
+    return format_duration_italian(sec / 60.0)
+
+
 __all__ = [
     "ITALIAN_MONTHS",
     "ITALIAN_SHORT_MONTHS",
@@ -61,4 +114,6 @@ __all__ = [
     "to_local_datetime_str",
     "get_month_name",
     "get_weekday_name",
+    "format_duration_italian",
+    "format_seconds_italian",
 ]

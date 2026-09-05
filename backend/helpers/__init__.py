@@ -23,6 +23,8 @@ from .dates import (
     to_local_datetime_str,
     get_month_name,
     get_weekday_name,
+    format_duration_italian,
+    format_seconds_italian,
 )
 
 __all__ = [
@@ -44,4 +46,6 @@ __all__ = [
     "to_local_datetime_str",
     "get_month_name",
     "get_weekday_name",
+    "format_duration_italian",
+    "format_seconds_italian",
 ]

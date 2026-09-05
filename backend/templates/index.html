@@ -1263,7 +1263,7 @@
                     </div>
                     <div class="appliance-metric-item">
                         <span class="app-metric-label">Tempo Residuo</span>
-                        <strong class="app-metric-val" id="washer_remaining_time">{{ smartthings.washer.remaining_min ~ ' min' if smartthings and smartthings.washer and smartthings.washer.remaining_min else '--' }}</strong>
+                        <strong class="app-metric-val" id="washer_remaining_time">{{ (smartthings.washer.remaining_min | duration_it) if smartthings and smartthings.washer and smartthings.washer.remaining_min else '--' }}</strong>
                     </div>
                 </div>
 
@@ -1308,7 +1308,7 @@
                     </div>
                     <div class="appliance-metric-item">
                         <span class="app-metric-label">Tempo Residuo</span>
-                        <strong class="app-metric-val" id="dishwasher_remaining_time">{{ smartthings.dishwasher.remaining_min ~ ' min' if smartthings and smartthings.dishwasher and smartthings.dishwasher.remaining_min else '--' }}</strong>
+                        <strong class="app-metric-val" id="dishwasher_remaining_time">{{ (smartthings.dishwasher.remaining_min | duration_it) if smartthings and smartthings.dishwasher and smartthings.dishwasher.remaining_min else '--' }}</strong>
                     </div>
                     <div class="appliance-metric-item">
                         <span class="app-metric-label">Stima Fine</span>
@@ -1477,7 +1477,10 @@
             </div>
             <div class="appliances-header-badges">
                 <span class="presence-badge badge-present" id="health_battery_badge" style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.25); color: #34d399; {% if not health or health.battery_pct is none %}display: none;{% endif %}">
-                    🔋 Batteria: <strong id="health_battery_val" style="margin-left: 4px;">{{ health.battery_pct if health and health.battery_pct is not none else '--' }}%</strong>
+                    📱 S26: <strong id="health_battery_val" style="margin-left: 4px;">{{ health.battery_pct if health and health.battery_pct is not none else '--' }}%</strong>
+                </span>
+                <span class="presence-badge badge-present" id="health_watch_battery_badge" style="background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.25); color: #38bdf8; margin-left: 6px; {% if not health or health.watch_battery_pct is none %}display: none;{% endif %}">
+                    ⌚ Watch: <strong id="health_watch_battery_val" style="margin-left: 4px;">{{ health.watch_battery_pct if health and health.watch_battery_pct is not none else '--' }}%</strong>
                 </span>
                 <div class="climate-status-badge" id="health_sync_btn" onclick="syncHealthLiveMetrics()" title="Sincronizza metriche sanitarie con Home Assistant">
                     <span class="pulse-dot"></span> <span id="health_status_text">🟢 Sincronizzato</span>
@@ -1598,6 +1601,7 @@
                         <div>
                             <strong>Composizione Corporea</strong>
                             <span class="health-card-sub" id="health_body_source_sub">Analisi BIA • {{ health.body.source_label if health and health.body and health.body.source_label else 'Tuya Smart Life' }}</span>
+                            <span class="health-card-sub" id="health_body_date_sub" style="color: #cbd5e1; font-size: 0.72rem; display: block; margin-top: 2px;">🕒 Ultima pesata: <strong>{{ health.body.measured_at_formatted if health and health.body and health.body.measured_at_formatted else '--' }}</strong></span>
                         </div>
                     </div>
                     <span class="health-progress-badge" id="health_weight_badge" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;">{{ health.body.weight_kg if health and health.body and health.body.weight_kg is not none else '--' }} kg</span>

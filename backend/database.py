@@ -19,7 +19,7 @@ def get_connection() -> sqlite3.Connection:
     conn.execute("PRAGMA synchronous = NORMAL;")
     return conn
 
-from backend.helpers import to_local_datetime_str, ITALIAN_MONTHS, get_month_name
+from backend.helpers import to_local_datetime_str, ITALIAN_MONTHS, get_month_name, format_duration_italian, format_seconds_italian
 
 
 # Definizioni dei record tracciati nell'Albo dei Record
@@ -402,6 +402,8 @@ def init_db():
     # Pulizia automatica baseline fittizia (rimozione campioni generati randomicamente)
     try:
         cursor.execute("DELETE FROM health_daily_history WHERE created_at LIKE '%2026-08-29T22:49%'")
+        # Correzione automatica record 2026-09-05 affetto dal bug contatore hardware cumulativo Android (11.099 passi -> 2.599 passi reali)
+        cursor.execute("UPDATE health_daily_history SET steps = 2599, distance_m = 1970.97 WHERE date = '2026-09-05' AND steps = 11099")
     except Exception:
         pass
     
@@ -521,22 +523,24 @@ def get_station_status() -> Dict[str, Any]:
                 "last_seen_iso": row["timestamp"]
             }
         elif seconds_ago <= timeout_sec:
-            mins = seconds_ago // 60
+            mins = max(1, seconds_ago // 60)
+            time_str = format_duration_italian(mins)
             return {
                 "status": "delayed",
                 "is_online": True,
                 "seconds_ago": seconds_ago,
-                "text": f"🟡 In ritardo (ultimo dato {mins}m fa)",
+                "text": f"🟡 In ritardo (ultimo dato {time_str} fa)",
                 "badge_class": "badge-warning",
                 "last_seen_iso": row["timestamp"]
             }
         else:
-            mins = seconds_ago // 60
+            mins = max(1, seconds_ago // 60)
+            time_str = format_duration_italian(mins)
             return {
                 "status": "offline",
                 "is_online": False,
                 "seconds_ago": seconds_ago,
-                "text": f"🔴 OFFLINE da {mins} minuti!",
+                "text": f"🔴 OFFLINE da {time_str}!",
                 "badge_class": "badge-offline",
                 "last_seen_iso": row["timestamp"]
             }
@@ -2920,15 +2924,21 @@ def get_active_scheduled_tasks() -> List[Dict[str, Any]]:
         except Exception:
             rem_sec = 0
 
-        # Formatta etichetta leggibile del tempo rimanente (es. "tra 45m", "tra 1h 30m")
+        # Formatta etichetta leggibile del tempo rimanente (es. "tra 45 minuti", "tra 1 ora e 30 minuti")
         if rem_sec < 60:
             rem_label = "tra meno di un minuto"
         elif rem_sec < 3600:
-            rem_label = f"tra {rem_sec // 60}m"
+            m = max(1, rem_sec // 60)
+            rem_label = f"tra {m} {'minuto' if m == 1 else 'minuti'}"
         else:
             hrs = rem_sec // 3600
             mins = (rem_sec % 3600) // 60
-            rem_label = f"tra {hrs}h {mins}m" if mins > 0 else f"tra {hrs}h"
+            h_str = "1 ora" if hrs == 1 else f"{hrs} ore"
+            if mins > 0:
+                m_str = "1 minuto" if mins == 1 else f"{mins} minuti"
+                rem_label = f"tra {h_str} e {m_str}"
+            else:
+                rem_label = f"tra {h_str}"
 
         tasks.append({
             "id": r["id"],
@@ -3603,8 +3613,13 @@ def record_health_snapshot(health_data: Dict[str, Any]) -> bool:
         cursor.execute("SELECT * FROM health_daily_history WHERE date = ?", (today_str,))
         row = cursor.fetchone()
         if row:
-            cur_steps = max(int(row["steps"] or 0), int(steps))
-            cur_dist = max(float(row["distance_m"] or 0.0), float(dist_m))
+            old_steps = int(row["steps"] or 0)
+            if old_steps > 8000 and 0 < int(steps) < 8000:
+                cur_steps = int(steps)
+                cur_dist = float(dist_m)
+            else:
+                cur_steps = max(old_steps, int(steps))
+                cur_dist = max(float(row["distance_m"] or 0.0), float(dist_m))
             cur_tot_cal = max(float(row["total_calories"] or 0.0), float(tot_cal))
             cur_act_cal = max(float(row["active_calories"] or 0.0), float(act_cal))
             cur_floors = max(int(row["floors"] or 0), int(floors))

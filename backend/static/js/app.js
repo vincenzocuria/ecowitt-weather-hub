@@ -754,8 +754,10 @@ function startDashboardPolling() {
     setInterval(update, 5000);
     setInterval(updateEnergyLive, 8000);
     setInterval(updateClimateLive, 10000);
+    setInterval(updateHealthLive, 25000);
     updateEnergyLive();
     updateClimateLive();
+    updateHealthLive();
 }
 
 // ==========================================
@@ -1762,6 +1764,13 @@ function updateHealthUI(health) {
         if (battVal) battVal.innerText = `${health.battery_pct}%`;
     }
 
+    if (health.watch_battery_pct !== undefined && health.watch_battery_pct !== null) {
+        const watchBadge = document.getElementById('health_watch_battery_badge');
+        const watchVal = document.getElementById('health_watch_battery_val');
+        if (watchBadge) watchBadge.style.display = 'inline-flex';
+        if (watchVal) watchVal.innerText = `${health.watch_battery_pct}%`;
+    }
+
     // 1. Passi
     if (health.steps) {
         const s = health.steps;
@@ -1771,6 +1780,7 @@ function updateHealthUI(health) {
         const distEl = document.getElementById('health_distance_val');
         const floorsEl = document.getElementById('health_floors_val');
         const odoEl = document.getElementById('health_odometer_val');
+        const tabBadge = document.getElementById('tab_badge_health');
 
         if (stepsEl && s.daily !== undefined) stepsEl.innerText = Number(s.daily).toLocaleString('it-IT');
         if (stepsPct && s.pct !== undefined) stepsPct.innerText = `${s.pct}%`;
@@ -1778,6 +1788,7 @@ function updateHealthUI(health) {
         if (distEl && s.distance_km !== undefined) distEl.innerText = `${s.distance_km} km`;
         if (floorsEl && s.floors !== undefined) floorsEl.innerText = s.floors;
         if (odoEl && s.total_odometer !== undefined) odoEl.innerText = Number(s.total_odometer).toLocaleString('it-IT');
+        if (tabBadge && s.daily !== undefined) tabBadge.innerText = `${Number(s.daily).toLocaleString('it-IT')} 👟`;
     }
 
     // 2. Calorie
@@ -1828,6 +1839,7 @@ function updateHealthUI(health) {
         const waterEl = document.getElementById('health_water_val');
         const boneEl = document.getElementById('health_bone_val');
         const subSrc = document.getElementById('health_body_source_sub');
+        const dateSub = document.getElementById('health_body_date_sub');
 
         if (wBadge && b.weight_kg !== undefined && b.weight_kg !== null) wBadge.innerText = `${b.weight_kg} kg`;
         if (fatEl && b.fat_pct !== undefined && b.fat_pct !== null) fatEl.innerText = b.fat_pct;
@@ -1835,6 +1847,10 @@ function updateHealthUI(health) {
         if (waterEl && b.water_mass_kg !== undefined && b.water_mass_kg !== null) waterEl.innerText = `${b.water_mass_kg} kg`;
         if (boneEl && b.bone_mass_kg !== undefined && b.bone_mass_kg !== null) boneEl.innerText = `${b.bone_mass_kg} kg`;
         if (subSrc && b.source_label) subSrc.innerText = `Analisi BIA • ${b.source_label}`;
+        if (dateSub && b.measured_at_formatted) {
+            dateSub.innerHTML = `🕒 Ultima pesata: <strong>${b.measured_at_formatted}</strong>`;
+            dateSub.style.display = 'block';
+        }
     }
 
     // 5. Medie Storiche & KPI Analitici
@@ -1863,6 +1879,18 @@ function updateHealthUI(health) {
             renderHealthWeightMiniChart(a.weight_chart_30d);
         }
     }
+}
+
+function updateHealthLive() {
+    if (document.hidden) return;
+    fetch('/api/health/summary')
+        .then(r => r.json())
+        .then(res => {
+            if (res && res.is_available) {
+                updateHealthUI(res);
+            }
+        })
+        .catch(err => console.debug('Health live poll error:', err));
 }
 
 function syncHealthLiveMetrics() {

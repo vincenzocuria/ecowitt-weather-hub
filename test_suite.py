@@ -1668,6 +1668,41 @@ class TestEcowittHub(unittest.TestCase):
         self.assertEqual(watch_health["watch_battery_pct"], 92)
         self.assertEqual(watch_health["battery_pct"], 78)
 
+        # 8. Test regression fix: Android hardware steps_sensor (cumulative since boot) must not overwrite daily_steps
+        # Also test watch battery_level not being overwritten by battery_state ('discharging'), and clean device name
+        mock_real_setup = {
+            "sensor.samsung_s26_daily_steps": {"entity_id": "sensor.samsung_s26_daily_steps", "state": "2599"},
+            "sensor.samsung_s26_steps_sensor": {"entity_id": "sensor.samsung_s26_steps_sensor", "state": "11099"},
+            "sensor.samsung_s26_daily_distance": {"entity_id": "sensor.samsung_s26_daily_distance", "state": "1970.974"},
+            "sensor.samsung_s26_battery_level": {"entity_id": "sensor.samsung_s26_battery_level", "state": "86"},
+            "sensor.galaxy_watch_ultra_70kf_daily_steps": {"entity_id": "sensor.galaxy_watch_ultra_70kf_daily_steps", "state": "778"},
+            "sensor.galaxy_watch_ultra_70kf_steps_sensor": {"entity_id": "sensor.galaxy_watch_ultra_70kf_steps_sensor", "state": "345328"},
+            "sensor.galaxy_watch_ultra_70kf_battery_level": {"entity_id": "sensor.galaxy_watch_ultra_70kf_battery_level", "state": "100"},
+            "sensor.galaxy_watch_ultra_70kf_battery_state": {"entity_id": "sensor.galaxy_watch_ultra_70kf_battery_state", "state": "discharging"},
+            "sensor.galaxy_watch_ultra_70kf_current_time_zone": {
+                "entity_id": "sensor.galaxy_watch_ultra_70kf_current_time_zone",
+                "state": "Central European Summer Time",
+                "attributes": {"friendly_name": "Galaxy Watch Ultra (70KF) Current time zone"}
+            },
+            "sensor.samsung_s26_weight": {
+                "entity_id": "sensor.samsung_s26_weight",
+                "state": "79900.0",
+                "attributes": {"date": "2026-09-05T06:33:57Z", "source": "com.tuya.smartlife"}
+            }
+        }
+        real_health = parse_health_data(mock_real_setup)
+        self.assertTrue(real_health["is_available"])
+        self.assertEqual(real_health["steps"]["daily"], 2599)  # NOT 11099!
+        self.assertEqual(real_health["steps"]["total_odometer"], 345328)
+        self.assertEqual(real_health["steps"]["distance_km"], 1.97)  # NOT 8.32 km!
+        self.assertEqual(real_health["battery_pct"], 86)
+        self.assertEqual(real_health["watch_battery_pct"], 100)  # NOT None!
+        self.assertNotIn("Current time zone", real_health["device_name"])
+        self.assertIn("Galaxy Watch Ultra", real_health["device_name"])
+        self.assertEqual(real_health["body"]["weight_kg"], 79.9)
+        self.assertIsNotNone(real_health["body"]["measured_at_formatted"])
+
+
     def test_devices_catalog_tristate_and_ecowitt(self):
         from backend.routers.devices import build_devices_catalog
         from backend.database import save_reading

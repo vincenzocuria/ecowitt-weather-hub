@@ -34,6 +34,46 @@ def _safe_int(val: Any) -> Optional[int]:
     return int(round(f)) if f is not None else None
 
 
+def _clean_watch_friendly_name(name: str) -> str:
+    """Rimuove suffissi tipici dei sensori HA Wear OS (es. 'Current time zone', 'Battery level', etc.)."""
+    if not name:
+        return "Galaxy Watch"
+    import re
+    cleaned = re.sub(
+        r'\s+(Current\s*time\s*zone|Battery\s*(level|state)?|Daily\s*(steps|floors|calories|distance)?|Steps\s*sensor|Heart\s*rate|Activity\s*state|Next\s*alarm|Pressure\s*sensor|On-body\s*sensor|Volume.*|NFC.*|Bedtime.*|Wet\s*mode).*$',
+        '',
+        name,
+        flags=re.IGNORECASE
+    ).strip()
+    return cleaned or "Galaxy Watch"
+
+
+def _format_health_datetime(iso_str: Optional[str]) -> Optional[str]:
+    """Formatta timestamp ISO in etichetta leggibile italiana (es. 'Oggi 08:33')."""
+    if not iso_str:
+        return None
+    try:
+        from datetime import datetime
+        import zoneinfo
+        s = str(iso_str).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        try:
+            rome_tz = zoneinfo.ZoneInfo("Europe/Rome")
+            local_dt = dt.astimezone(rome_tz)
+            now = datetime.now(rome_tz)
+        except Exception:
+            local_dt = dt
+            now = datetime.now()
+        if local_dt.date() == now.date():
+            return f"Oggi {local_dt.strftime('%H:%M')}"
+        elif (now.date() - local_dt.date()).days == 1:
+            return f"Ieri {local_dt.strftime('%H:%M')}"
+        months = ["", "Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
+        return f"{local_dt.day} {months[local_dt.month]} {local_dt.strftime('%H:%M')}"
+    except Exception:
+        return str(iso_str)[:16].replace("T", " ")
+
+
 def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     """
     Estrae e normalizza tutti i dati sanitari e fitness rilevati da Home Assistant (Samsung Health / Health Connect).
@@ -55,7 +95,7 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
             has_watch = True
             friendly = ent.get("attributes", {}).get("friendly_name")
             if friendly and any(k in friendly.lower() for k in ("watch", "galaxy", "orologio")):
-                watch_name = friendly
+                watch_name = _clean_watch_friendly_name(friendly)
             elif not watch_name:
                 watch_name = "Galaxy Watch"
         if "samsung_s26" in eid_lower or "s26" in eid_lower or ("galaxy" in eid_lower and not any(w in eid_lower for w in ("watch", "wear", "gear", "sm_r"))):
@@ -130,50 +170,40 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
             if val is not None:
                 if is_watch_entity:
                     watch_steps = max(watch_steps or 0, val)
-                    daily_step_candidates.append((val, "Smartwatch", ent_id))
+                    daily_step_candidates.append((val, "Smartwatch (Galaxy Watch)", ent_id))
                 elif is_hc_entity:
                     health_connect_steps = max(health_connect_steps or 0, val)
                     daily_step_candidates.append((val, "Samsung Health / Health Connect", ent_id))
                 elif is_phone_entity:
                     phone_steps = max(phone_steps or 0, val)
-                    daily_step_candidates.append((val, "Telefono S26", ent_id))
+                    daily_step_candidates.append((val, "Telefono S26 (Health Connect)", ent_id))
                 else:
                     daily_step_candidates.append((val, "Passi Giornalieri", ent_id))
 
-        # B) Sensori contapassi da Smartwatch (su Wear OS / Galaxy Watch l'app HA crea sensor.*_steps_sensor o sensor.*_step_counter)
-        elif is_watch_entity and any(k in eid_lower for k in ("step", "passi")):
-            val = _safe_int(state_val)
-            if val is not None:
-                # Se è <= 80.000 passi è tipicamente il contatore giornaliero dello smartwatch
-                if val <= 80000:
-                    watch_steps = max(watch_steps or 0, val)
-                    daily_step_candidates.append((val, "Smartwatch (Galaxy Watch)", ent_id))
-                else:
-                    odometer_candidates.append(val)
-
-        # C) Sensori hardware contapassi generici (es. Steps Sensor app companion telefono)
+        # B) Sensori hardware contapassi (Android Steps Sensor / Odometer)
         elif "steps_sensor" in eid_lower:
             val = _safe_int(state_val)
             if val is not None:
-                if val > 80000:
-                    odometer_candidates.append(val)
-                elif is_watch_entity:
-                    watch_steps = max(watch_steps or 0, val)
-                    daily_step_candidates.append((val, "Smartwatch", ent_id))
-                elif is_phone_entity:
-                    phone_steps = max(phone_steps or 0, val)
-                    daily_step_candidates.append((val, "Sensore Hardware Telefono", ent_id))
-                else:
-                    daily_step_candidates.append((val, "Sensore Passi", ent_id))
+                odometer_candidates.append(val)
+                # NOTA: su Android smartphone, steps_sensor (TYPE_STEP_COUNTER) è un contatore cumulativo
+                # che si azzera solo al riavvio hardware del telefono, NON a mezzanotte.
+                # Lo consideriamo candidato giornaliero SOLO per uno smartwatch se quest'ultimo non espone
+                # un sensore 'daily_steps' separato (es. orologi Wear OS legacy con solo steps_sensor).
+                if is_watch_entity and watch_steps is None and val <= 80000:
+                    watch_steps = val
+                    daily_step_candidates.append((val, "Smartwatch (Galaxy Watch)", ent_id))
 
-        # D) Altri sensori con 'step' o 'passi' nel nome o nell'unità
+        # C) Altri sensori con 'step' o 'passi' nel nome o nell'unità
         elif any(k in eid_lower for k in ("step", "passi")) or unit in ("steps", "passi", "step"):
             val = _safe_int(state_val)
             if val is not None:
-                if val <= 80000:
+                if "daily" in eid_lower:
                     if is_watch_entity:
                         watch_steps = max(watch_steps or 0, val)
-                        daily_step_candidates.append((val, "Smartwatch", ent_id))
+                        daily_step_candidates.append((val, "Smartwatch (Galaxy Watch)", ent_id))
+                    elif is_phone_entity:
+                        phone_steps = max(phone_steps or 0, val)
+                        daily_step_candidates.append((val, "Telefono S26", ent_id))
                     else:
                         daily_step_candidates.append((val, "Contapassi", ent_id))
                 else:
@@ -252,10 +282,15 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
             hydration_ml = _safe_float(state_val)
 
         # --- BATTERIE DISPOSITIVI ---
-        if is_watch_entity and "battery" in eid_lower:
-            watch_battery_level = _safe_int(state_val)
-        elif "samsung_s26_battery_level" in eid_lower or ("battery_level" in eid_lower and battery_level is None):
-            battery_level = _safe_int(state_val)
+        if is_watch_entity and ("battery_level" in eid_lower or (attrs.get("device_class") == "battery" and "state" not in eid_lower)):
+            val = _safe_int(state_val)
+            if val is not None and 0 <= val <= 100:
+                watch_battery_level = val
+        elif not is_watch_entity and ("battery_level" in eid_lower or (attrs.get("device_class") == "battery" and "state" not in eid_lower)):
+            val = _safe_int(state_val)
+            if val is not None and 0 <= val <= 100:
+                if "s26" in eid_lower or battery_level is None:
+                    battery_level = val
 
     # Consolidamento metriche multi-sorgente:
     # Per i passi, scegliamo il valore massimo tra le letture giornaliere valide.
@@ -472,7 +507,8 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
             "bone_mass_kg": bone_mass_kg,
             "source_label": body_source_label,
             "source_pkg": body_source_pkg,
-            "measured_at": body_date
+            "measured_at": body_date,
+            "measured_at_formatted": _format_health_datetime(body_date)
         },
             "hydration": {
             "daily_ml": int(round(hydration_ml)) if hydration_ml is not None else 0,

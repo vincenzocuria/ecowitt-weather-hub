@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional
 from backend.config import settings
 from backend.notifier import notifier
 from backend.database import check_and_update_records, get_pressure_trend, get_temp_1h_change, get_station_status
+from backend.helpers import format_duration_italian
 
 
 logger = logging.getLogger("ecowitt_alert_engine")
@@ -792,26 +793,29 @@ class AlertEngine:
         if status_info["status"] == "offline":
             if not self.is_station_offline:
                 self.is_station_offline = True
-                mins = (status_info.get("seconds_ago") or 0) // 60
-                logger.warning(f"[WATCHDOG] Stazione Meteo Offline da {mins} minuti!")
+                mins = max(1, (status_info.get("seconds_ago") or 0) // 60)
+                time_str = format_duration_italian(mins)
+                logger.warning(f"[WATCHDOG] Stazione Meteo Offline da {time_str}!")
                 self.last_offline_alert_time = now
                 self._save_state()
                 notifier.send_alert(
                     alert_type="offline",
                     title="⚠️ Stazione Meteo OFFLINE!",
-                    message=f"Nessun dato ricevuto dalla stazione da oltre {mins} minuti. Verifica alimentazione, console o connessione Wi-Fi.",
+                    message=f"Nessun dato ricevuto dalla stazione da oltre {time_str}. Verifica alimentazione, console o connessione Wi-Fi.",
                     priority="urgent",
-                    extra_data={"offline_minutes": str(mins)}
+                    extra_data={"offline_minutes": str(mins), "offline_duration": time_str}
                 )
             elif (now - self.last_offline_alert_time) >= (3600 * 3): # ripeti ogni 3 ore se ancora offline
                 self.last_offline_alert_time = now
-                mins = (status_info.get("seconds_ago") or 0) // 60
+                mins = max(1, (status_info.get("seconds_ago") or 0) // 60)
+                time_str = format_duration_italian(mins)
                 self._save_state()
                 notifier.send_alert(
                     alert_type="offline",
                     title="⚠️ Promemoria: Stazione Meteo Ancora Offline",
-                    message=f"La stazione meteo è ancora disconnessa (da {mins} minuti).",
-                    priority="normal"
+                    message=f"La stazione meteo è ancora disconnessa (da {time_str}).",
+                    priority="normal",
+                    extra_data={"offline_minutes": str(mins), "offline_duration": time_str}
                 )
 
     def check_rain_forecast(self):
@@ -1546,12 +1550,13 @@ class AlertEngine:
                     self.last_climate_away_alert = now
                     self._save_state()
                     names_str = ", ".join(turned_off_names)
+                    away_str = format_duration_italian(int(away_elapsed_min))
                     notifier.send_alert(
                         alert_type="climate_auto_off",
                         title="🤖 Clima Spento in Autonomia (Uscita Casa)",
-                        message=f"Sei fuori casa da oltre {int(away_elapsed_min)} min: {names_str} spento automaticamente per evitare sprechi.",
+                        message=f"Sei fuori casa da oltre {away_str}: {names_str} spento automaticamente per evitare sprechi.",
                         priority="high",
-                        extra_data={"action": "auto_off", "devices": names_str}
+                        extra_data={"action": "auto_off", "devices": names_str, "away_duration": away_str}
                     )
                     logger.info(f"[CLIMATE-AUTO] Spegnimento autonomo eseguito per uscita casa: {names_str}")
 
@@ -1769,9 +1774,10 @@ class AlertEngine:
                 # Controlla solo climatizzatori attualmente spenti/in standby con temperatura rilevata
                 if not is_on and curr_in is not None:
                     # Protezione compressore: rispetta il tempo minimo di riposo a split spento
-                    rest_elapsed_min = ((now - p_off_since) / 60.0) if p_off_since else 999.0
+                    rest_elapsed_min = ((now - p_off_since) / 60.0) if p_off_since else None
+                    is_rest_ok = (rest_elapsed_min >= comfort_min_rest_min) if rest_elapsed_min is not None else True
 
-                    if rest_elapsed_min >= comfort_min_rest_min:
+                    if is_rest_ok:
                         # Condizione Estate (Caldo eccessivo in stanza)
                         needs_cool = curr_in >= comfort_max_t
                         # Condizione Inverno (Freddo eccessivo in stanza)
@@ -1792,6 +1798,7 @@ class AlertEngine:
                                 season_desc = "risalita" if needs_cool else "scesa"
                                 action_desc = "Raffrescamento" if needs_cool else "Riscaldamento"
                                 icon = "🔥" if needs_cool else "❄️"
+                                rest_desc = f"a riposo da {format_duration_italian(int(rest_elapsed_min))}" if rest_elapsed_min is not None else "a riposo"
 
                                 if comfort_action == "on":
                                     await _send_ac_command(dev, {
@@ -1811,7 +1818,7 @@ class AlertEngine:
                                     notifier.send_alert(
                                         alert_type="climate_comfort_warning",
                                         title=f"{icon} Temperatura Fuori Soglia: {alias}",
-                                        message=f"La stanza di '{alias}' è a {curr_in}°C ({season_desc} oltre la soglia). Clima a riposo da {int(rest_elapsed_min)} min: puoi riattivarlo a {comfort_target_t}°C.",
+                                        message=f"La stanza di '{alias}' è a {curr_in}°C ({season_desc} oltre la soglia). Clima {rest_desc}: puoi riattivarlo a {comfort_target_t}°C.",
                                         priority="normal",
                                         extra_data={"device_id": dev_id, "current_temp": str(curr_in), "target_temp": str(comfort_target_t)}
                                     )
@@ -1833,10 +1840,11 @@ class AlertEngine:
                 if open_duration_sec >= 120 and (now - self.last_fridge_door_alert) >= 600:  # 2 min aperto, cooldown 10 min
                     self.last_fridge_door_alert = now
                     self._save_state()
+                    open_dur_str = format_duration_italian(int(open_duration_sec // 60))
                     notifier.send_alert(
                         alert_type="fridge_door_open",
                         title=f"🚪 Porta {fr_alias} Rimasta Aperta!",
-                        message=f"⚠️ La porta del {fr_alias} è aperta da oltre 2 minuti ({int(open_duration_sec // 60)} min). Chiudila per non deteriorare gli alimenti.",
+                        message=f"⚠️ La porta del {fr_alias} è aperta da oltre 2 minuti ({open_dur_str}). Chiudila per non deteriorare gli alimenti.",
                         priority="high",
                         extra_data={"device_id": fr_id, "duration_sec": str(int(open_duration_sec))}
                     )
