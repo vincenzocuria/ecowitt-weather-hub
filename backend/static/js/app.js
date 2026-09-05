@@ -16,6 +16,26 @@ function formatDate(isoStr) {
     }
 }
 
+// Utility per formattare durate in italiano (ore e minuti)
+function formatDurationItalian(minutes) {
+    if (minutes === null || minutes === undefined || isNaN(minutes)) return "--";
+    const m = Math.round(Number(minutes));
+    if (m < 0) return "--";
+    if (m === 0) return "meno di un minuto";
+    const hours = Math.floor(m / 60);
+    const mins = m % 60;
+    if (hours === 0) {
+        return mins === 1 ? "1 minuto" : `${mins} minuti`;
+    }
+    const hStr = hours === 1 ? "1 ora" : `${hours} ore`;
+    if (mins === 0) {
+        return hStr;
+    }
+    const mStr = mins === 1 ? "1 minuto" : `${mins} minuti`;
+    return `${hStr} e ${mStr}`;
+}
+window.formatDurationItalian = formatDurationItalian;
+
 // Live polling per la Dashboard principale
 function startDashboardPolling() {
     function update() {
@@ -1504,7 +1524,7 @@ function updateSmartThingsUI(st) {
         if (wJob) wJob.innerText = w.job_state_label || 'Pronto';
         if (wTemp) wTemp.innerText = w.water_temp || 'Auto';
         if (wSpin) wSpin.innerText = w.spin_speed || 'Auto';
-        if (wRem) wRem.innerText = w.remaining_min ? (w.remaining_min + ' min') : '--';
+        if (wRem) wRem.innerText = w.remaining_min ? formatDurationItalian(w.remaining_min) : '--';
     }
 
     // Lavastoviglie
@@ -1526,7 +1546,7 @@ function updateSmartThingsUI(st) {
         }
         if (dwJob) dwJob.innerText = dw.job_state_label || 'Pronto';
         if (dwCycle) dwCycle.innerText = dw.cycle_name || 'Auto / Eco';
-        if (dwRem) dwRem.innerText = dw.remaining_min ? (dw.remaining_min + ' min') : '--';
+        if (dwRem) dwRem.innerText = dw.remaining_min ? formatDurationItalian(dw.remaining_min) : '--';
         if (dwEst) dwEst.innerText = dw.finish_estimate || '--:--';
     }
 }

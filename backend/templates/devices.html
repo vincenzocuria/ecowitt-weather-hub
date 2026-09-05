@@ -695,7 +695,9 @@ function updateLiveCountdowns() {
         } else {
             const h = Math.floor(remSec / 3600);
             const m = Math.floor((remSec % 3600) / 60);
-            countEl.textContent = m > 0 ? `tra ${h}h ${m}m` : `tra ${h}h`;
+            const hStr = h === 1 ? '1 ora' : `${h} ore`;
+            const mStr = m === 1 ? '1 minuto' : `${m} minuti`;
+            countEl.textContent = m > 0 ? `tra ${hStr} e ${mStr}` : `tra ${hStr}`;
         }
     });
     
@@ -2302,7 +2304,8 @@ async function startIrrigation(durationMinutes = 15, rawId = null) {
         });
         const res = await resp.json();
         if (resp.ok) {
-            showToast(`💧 Irrigazione avviata per ${durationMinutes} min`, 'success');
+            const durStr = typeof formatDurationItalian === 'function' ? formatDurationItalian(durationMinutes) : `${durationMinutes} min`;
+            showToast(`💧 Irrigazione avviata per ${durStr}`, 'success');
             setTimeout(fetchDevicesData, 1000);
         } else {
             showToast('Errore avvio irrigazione: ' + (res.error || 'Errore server'), 'danger');
@@ -2480,7 +2483,7 @@ async function createDeviceTimer(ecosystem, rawId, deviceName, action, delayMinu
         const data = await resp.json();
         if (resp.ok && data.status === 'ok') {
             const actionStr = action === 'turn_on' ? 'Accensione' : 'Spegnimento';
-            const timeStr = delayMinutes >= 60 ? `${(delayMinutes/60).toFixed(1).replace('.0','')}h` : `${delayMinutes} min`;
+            const timeStr = typeof formatDurationItalian === 'function' ? formatDurationItalian(delayMinutes) : (delayMinutes >= 60 ? `${(delayMinutes/60).toFixed(1).replace('.0','')}h` : `${delayMinutes} min`);
             showToast(`⏱️ ${actionStr} di '${deviceName}' programmata tra ${timeStr}`, 'success');
             await fetchDevicesData();
         } else {
