@@ -8,7 +8,11 @@ from typing import Dict, Any, Optional, List
 import requests
 
 from backend.config import settings
-from backend.helpers import ITALIAN_WEEKDAYS as ITALIAN_DAYS, ITALIAN_SHORT_MONTHS as ITALIAN_MONTHS
+from backend.helpers import (
+    ITALIAN_WEEKDAYS as ITALIAN_DAYS,
+    ITALIAN_SHORT_MONTHS as ITALIAN_MONTHS,
+    format_duration_italian
+)
 
 logger = logging.getLogger("weather_hub.forecast")
 
@@ -576,15 +580,18 @@ class ForecastService:
             try:
                 first_dt = datetime.strptime(first_rain_hour["iso_time"], "%Y-%m-%dT%H:%M")
                 min_until = max(15, int((first_dt - now_dt).total_seconds() / 60.0))
-                time_range_min = f"{max(15, min_until - 20)}-{min_until + 20}"
+                if min_until >= 60:
+                    time_range_str = format_duration_italian(min_until)
+                else:
+                    time_range_str = f"{max(15, min_until - 15)}-{min_until + 15} minuti"
 
                 if first_rain_hour.get("weather_code") in (95, 96, 99, 82):
-                    headline = f"⛈️ Temporale / Cella in avvicinamento (tra ~{time_range_min} min)"
+                    headline = f"⛈️ Temporale / Cella in avvicinamento (tra ~{time_range_str})"
                     desc = f"Attività convettiva o rovesci previsti intorno alle {first_rain_hour['hour_label']} (probabilità {first_rain_hour['rain_prob_pct']}%)."
                     status_class = "danger"
                     icon = "⛈️"
                 else:
-                    headline = f"🌧️ Pioggia prevista nella tua zona tra circa {time_range_min} minuti"
+                    headline = f"🌧️ Pioggia prevista nella tua zona tra circa {time_range_str}"
                     desc = f"Inizio precipitazioni stimato intorno alle {first_rain_hour['hour_label']} (accumulo stimato: {first_rain_hour['rain_mm']} mm)."
                     status_class = "warning"
                     icon = "🌧️"

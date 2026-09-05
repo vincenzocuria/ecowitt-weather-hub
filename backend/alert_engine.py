@@ -1572,12 +1572,13 @@ class AlertEngine:
                     self.last_climate_away_alert = now
                     self._save_state()
                     names_str = ", ".join(names_list)
+                    away_str = format_duration_italian(int(away_elapsed_min))
                     notifier.send_alert(
                         alert_type="climate_away_reminder",
                         title="🚗 Uscita di Casa: Climatizzatore Acceso",
-                        message=f"Sei uscito ma {names_str} è rimasto in funzione. Se in casa non c'è nessuno, puoi spegnerlo dal pannello.",
+                        message=f"Sei fuori casa da {away_str} ma {names_str} è rimasto in funzione. Se in casa non c'è nessuno, puoi spegnerlo dal pannello.",
                         priority="normal",
-                        extra_data={"action": "notify_away", "devices": names_str}
+                        extra_data={"action": "notify_away", "devices": names_str, "away_duration": away_str}
                     )
                     logger.info(f"[CLIMATE-NOTIFY] Inviata notifica clima acceso per uscita Vincenzo: {names_str}")
 
@@ -1603,7 +1604,8 @@ class AlertEngine:
                         if (now - last_alert) >= (max_runtime_hours * 1800):  # Cooldown
                             self.last_climate_runtime_alert[dev_id] = now
                             self._save_state()
-                            h_rounded = round(hours_on, 1)
+                            mins_on = int((now - p_since) / 60.0)
+                            dur_str = format_duration_italian(mins_on)
                             curr_t = dev.get("current_temp")
                             target_t = dev.get("target_temp")
                             t_info = f" (Stanza: {curr_t}°C, Setpoint: {target_t}°C)" if curr_t else ""
@@ -1613,18 +1615,18 @@ class AlertEngine:
                                 notifier.send_alert(
                                     alert_type="climate_auto_off",
                                     title=f"🤖 Spegnimento Autonomo: {alias}",
-                                    message=f"Il climatizzatore '{alias}' era acceso ininterrottamente da {h_rounded} ore{t_info}. Spento per prevenire dimenticanze.",
+                                    message=f"Il climatizzatore '{alias}' era acceso ininterrottamente da {dur_str}{t_info}. Spento per prevenire dimenticanze.",
                                     priority="high",
-                                    extra_data={"device_id": dev_id, "runtime_hours": str(h_rounded)}
+                                    extra_data={"device_id": dev_id, "runtime_duration": dur_str, "runtime_minutes": str(mins_on)}
                                 )
-                                logger.info(f"[CLIMATE-AUTO] Spegnimento max runtime per {alias} ({h_rounded}h)")
+                                logger.info(f"[CLIMATE-AUTO] Spegnimento max runtime per {alias} ({dur_str})")
                             elif runtime_action == "notify":
                                 notifier.send_alert(
                                     alert_type="climate_runtime_warning",
-                                    title=f"⏱️ Clima Acceso da {h_rounded} Ore: {alias}",
-                                    message=f"Il climatizzatore '{alias}' è in funzione da oltre {h_rounded} ore{t_info}. Ricordati di spegnerlo se la stanza è a temperatura.",
+                                    title=f"⏱️ Clima Acceso da {dur_str}: {alias}",
+                                    message=f"Il climatizzatore '{alias}' è in funzione da {dur_str}{t_info}. Ricordati di spegnerlo se la stanza è a temperatura.",
                                     priority="normal",
-                                    extra_data={"device_id": dev_id, "runtime_hours": str(h_rounded)}
+                                    extra_data={"device_id": dev_id, "runtime_duration": dur_str, "runtime_minutes": str(mins_on)}
                                 )
 
         # =========================================================================
@@ -1953,10 +1955,12 @@ class AlertEngine:
                 self.learning_monitoring_until = 0.0
                 self._save_state()
                 if res and res.get("delta_moisture", 0) > 0:
+                    dur_str = format_duration_italian(res['duration_min'])
+                    lag_str = format_duration_italian(res['lag_minutes'])
                     notifier.send_alert(
                         alert_type="irrigation_learning_insight",
                         title=f"🧠 Apprendimento Vaso: Efficienza Calibrata",
-                        message=f"Ciclo di {res['duration_min']:.1f} min analizzato: umidità salita da {res['start_moisture']:.0f}% a {res['peak_moisture']:.0f}% (+{res['delta_moisture']:.1f}%) con picco dopo {res['lag_minutes']:.0f} min di percolazione. Efficienza: {res['k_efficiency']:.1f}%/min.",
+                        message=f"Ciclo di {dur_str} analizzato: umidità salita da {res['start_moisture']:.0f}% a {res['peak_moisture']:.0f}% (+{res['delta_moisture']:.1f}%) con picco dopo {lag_str} di percolazione. Efficienza: {res['k_efficiency']:.1f}%/min.",
                         priority="low",
                         extra_data={"k_efficiency": str(res["k_efficiency"]), "lag_min": str(res["lag_minutes"])}
                     )
@@ -1999,10 +2003,11 @@ class AlertEngine:
                 self.is_irrigating = False
                 self.last_irrigation_stop_time = now
                 self._save_state()
+                el_str = format_duration_italian(elapsed_min)
                 notifier.send_alert(
                     alert_type="irrigation_soil_saturated",
                     title=f"🌱 Suolo Ottimamente Idratato: {soil_moisture:.0f}%",
-                    message=f"Il sensore terreno ha raggiunto la soglia ottimale ({soil_moisture:.0f}%) per {crop_label}. Valvola '{dev_name}' chiusa dopo {elapsed_min} minuti.",
+                    message=f"Il sensore terreno ha raggiunto la soglia ottimale ({soil_moisture:.0f}%) per {crop_label}. Valvola '{dev_name}' chiusa dopo {el_str}.",
                     priority="normal",
                     extra_data={"device_id": dev_id, "soil_moisture": str(soil_moisture)}
                 )
@@ -2019,10 +2024,11 @@ class AlertEngine:
                 self.is_irrigating = False
                 self.last_irrigation_stop_time = now
                 self._save_state()
+                limit_str = format_duration_italian(limit_min)
                 notifier.send_alert(
                     alert_type="irrigation_auto_stop",
                     title=f"💧 Ciclo Irrigazione Concluso: {dev_name}",
-                    message=f"Micro-dose controllata di {limit_min:.1f} minuti per {crop_label} terminata con successo. Elettrovalvola chiusa in totale sicurezza.",
+                    message=f"Micro-dose controllata di {limit_str} per {crop_label} terminata con successo. Elettrovalvola chiusa in totale sicurezza.",
                     priority="normal",
                     extra_data={"device_id": dev_id, "elapsed_min": str(elapsed_min)}
                 )
@@ -2147,10 +2153,11 @@ class AlertEngine:
                     self.active_learning_cycle_id = cid
                     self.learning_monitoring_until = now + (60 * 60) # 60 minuti di monitoraggio percolazione
                 self._save_state()
+                dur_str = format_duration_italian(duration)
                 notifier.send_alert(
                     alert_type="irrigation_auto_start",
                     title=f"🪴🍅 Irrigazione Vaso Avviata: {crop_label}",
-                    message=f"Umidità suolo al {sm_txt} (sotto la soglia del {dry_thresh:.0f}%). Avviato micro-impulso intelligente di {duration:.1f} min per pomodori e zucchine.",
+                    message=f"Umidità suolo al {sm_txt} (sotto la soglia del {dry_thresh:.0f}%). Avviato micro-impulso intelligente di {dur_str} per pomodori e zucchine.",
                     priority="normal",
                     extra_data={"device_id": dev_id, "duration_min": str(duration), "soil_moisture": sm_txt}
                 )
@@ -2158,10 +2165,11 @@ class AlertEngine:
         elif mode == "notify":
             self.last_irrigation_start_time = now
             self._save_state()
+            dur_str = format_duration_italian(duration)
             notifier.send_alert(
                 alert_type="irrigation_advice",
                 title=f"🪴🍅 Suggerimento Irrigazione {crop_label}",
-                message=f"Umidità vaso al {sm_txt} (sotto la soglia del {dry_thresh:.0f}%). Meteo favorevole: consiglio micro-dose da {duration:.1f} min.",
+                message=f"Umidità vaso al {sm_txt} (sotto la soglia del {dry_thresh:.0f}%). Meteo favorevole: consiglio micro-dose da {dur_str}.",
                 priority="normal",
                 extra_data={"duration_min": str(duration), "soil_moisture": sm_txt}
             )

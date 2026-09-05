@@ -24,6 +24,7 @@ from backend.forecast_service import forecast_service
 from backend.aton_service import aton_service
 from backend.homeassistant_service import homeassistant_service
 from backend.device_scheduler import device_scheduler
+from backend.helpers import format_duration_italian
 
 logger = logging.getLogger("weather_hub")
 
@@ -485,14 +486,15 @@ async def api_irrigation_start(request: Request):
             engine.learning_monitoring_until = now + (60 * 60) # 60 minuti di monitoraggio percolazione
 
         engine._save_state()
+        dur_label = format_duration_italian(duration_min)
         notifier.send_alert(
             alert_type="irrigation_manual_start",
-            title=f"💧 Irrigazione Vaso Avviata ({duration_min:.1f} min)",
-            message=f"Elettrovalvola '{dev_name}' aperta per micro-dose di {duration_min:.1f} minuti. Monitoraggio apprendimento attivo.",
+            title=f"💧 Irrigazione Vaso Avviata ({dur_label})",
+            message=f"Elettrovalvola '{dev_name}' aperta per micro-dose di {dur_label}. Monitoraggio apprendimento attivo.",
             priority="normal",
             extra_data={"device_id": dev_id, "duration_min": str(duration_min)}
         )
-        return {"status": "ok", "message": f"Irrigazione vaso avviata per {duration_min:.1f} minuti. Apprendimento attivo.", "result": res}
+        return {"status": "ok", "message": f"Irrigazione vaso avviata per {dur_label}. Apprendimento attivo.", "result": res}
     else:
         return JSONResponse(status_code=500, content={"error": "Impossibile aprire la valvola su Home Assistant.", "details": res})
 
