@@ -1525,6 +1525,22 @@
                         <strong class="submetric-val" id="health_odometer_val">{{ "{:,}".format(health.steps.total_odometer if health and health.steps and health.steps.total_odometer else 0).replace(',', '.') }}</strong>
                     </div>
                 </div>
+                <div class="health-card-footer">
+                    <div class="health-source-info" title="Sorgente e orario ultima lettura">
+                        <span>📡</span>
+                        <span id="health_steps_source_label">{{ health.steps.source if health and health.steps else 'Health Connect' }}</span>
+                        {% if health and health.steps and health.steps.last_updated_formatted %}
+                        <span>•</span>
+                        <span id="health_steps_updated_time">{{ health.steps.last_updated_formatted }}</span>
+                        {% else %}
+                        <span id="health_steps_updated_time" style="display: none;"></span>
+                        {% endif %}
+                    </div>
+                    <button type="button" class="btn-sync-steps" id="btn_sync_steps" onclick="syncHealthLiveMetrics(event)" title="Forza lettura immediata dei sensori dal Galaxy S26 e Watch">
+                        <span class="sync-icon">🔄</span>
+                        <span id="btn_sync_steps_text">Sincronizza</span>
+                    </button>
+                </div>
             </div>
 
             <!-- 2. CARD CALORIE & METABOLISMO -->

@@ -299,11 +299,18 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     daily_steps = None
     steps_source = "Samsung Health"
     steps_source_entity = None
+    steps_last_updated = None
+    steps_sources_list = []
     if daily_step_candidates:
         best_candidate = max(daily_step_candidates, key=lambda c: c[0])
         daily_steps = best_candidate[0]
         steps_source = best_candidate[1]
         steps_source_entity = best_candidate[2]
+        if steps_source_entity in entities:
+            ent = entities[steps_source_entity]
+            raw_lu = ent.get("last_updated") or ent.get("last_changed")
+            steps_last_updated = _format_health_datetime(raw_lu)
+            steps_sources_list = ent.get("attributes", {}).get("sources", [])
 
     odometer_steps = max(odometer_candidates) if odometer_candidates else None
     daily_dist_m = max(daily_dist_candidates) if daily_dist_candidates else None
@@ -472,6 +479,8 @@ def parse_health_data(entities: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
             "elevation_m": daily_elevation_m or 0.0,
             "source": steps_source,
             "source_entity": steps_source_entity,
+            "last_updated_formatted": steps_last_updated,
+            "sources": steps_sources_list,
             "watch_steps": watch_steps,
             "phone_steps": phone_steps,
             "health_connect_steps": health_connect_steps,

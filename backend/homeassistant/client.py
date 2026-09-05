@@ -98,14 +98,16 @@ class HomeAssistantClient:
         self,
         domain: str,
         service: str,
-        entity_id: str,
+        entity_id: Optional[str] = None,
         data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Chiama un servizio su Home Assistant (es. switch/turn_on, climate/set_temperature)."""
+        """Chiama un servizio su Home Assistant (es. switch/turn_on, climate/set_temperature, notify/mobile_app_xxx)."""
         if not self.enabled:
             return {"success": False, "error": "Home Assistant non configurato o disabilitato"}
 
-        payload = {"entity_id": entity_id}
+        payload = {}
+        if entity_id:
+            payload["entity_id"] = entity_id
         if data:
             payload.update(data)
 
@@ -115,7 +117,8 @@ class HomeAssistantClient:
             async with session.post(url, headers=self._headers(), json=payload) as resp:
                 if resp.status in (200, 201):
                     res_json = await resp.json()
-                    logger.info("✅ [HASS] Servizio %s.%s eseguito su %s", domain, service, entity_id)
+                    target_desc = f" su {entity_id}" if entity_id else ""
+                    logger.info("✅ [HASS] Servizio %s.%s eseguito%s", domain, service, target_desc)
                     await self.fetch_states()
                     return {"success": True, "result": res_json}
                 else:

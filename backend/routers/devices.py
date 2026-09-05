@@ -292,9 +292,17 @@ async def api_health_history(days: int = 30):
 @router.post("/api/health/sync")
 @router.get("/api/health/sync")
 async def api_health_sync():
-    """Forza la risincronizzazione degli stati da Home Assistant e restituisce i dati sanitari."""
+    """Forza la risincronizzazione degli stati da Home Assistant e richiede l'aggiornamento sensori ai dispositivi mobili."""
+    import asyncio
+    notified = await homeassistant_service.request_mobile_sensor_update()
+    if notified:
+        # Breve attesa per permettere all'app Companion di raccogliere i sensori da Health Connect
+        await asyncio.sleep(1.2)
     await homeassistant_service.fetch_states()
-    return homeassistant_service.parse_health_data()
+    data = homeassistant_service.parse_health_data()
+    data["synced_at"] = time.strftime("%H:%M")
+    data["mobile_notified"] = notified
+    return data
 
 # --- Dispositivi Smart / Tuya Endpoints (Powered by Home Assistant) ---
 

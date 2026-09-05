@@ -1944,6 +1944,34 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIsInstance(catalog["devices"], list)
         self.assertGreaterEqual(len(catalog["devices"]), 1)
 
+    def test_health_sync_and_steps_metadata(self):
+        """Testa la presenza dei metadati di aggiornamento passi e del trigger sensori mobile."""
+        import asyncio
+        from backend.homeassistant.parsers.health import parse_health_data
+        from backend.homeassistant_service import homeassistant_service
+
+        mock_entities = {
+            "sensor.samsung_s26_daily_steps": {
+                "entity_id": "sensor.samsung_s26_daily_steps",
+                "state": "8450",
+                "last_updated": "2026-09-05T18:30:00Z",
+                "attributes": {
+                    "sources": ["com.sec.android.app.shealth"],
+                    "unit_of_measurement": "steps",
+                    "friendly_name": "Samsung S26 Daily Steps"
+                }
+            }
+        }
+        res = parse_health_data(mock_entities)
+        self.assertTrue(res["is_available"])
+        self.assertEqual(res["steps"]["daily"], 8450)
+        self.assertEqual(res["steps"]["source_entity"], "sensor.samsung_s26_daily_steps")
+        self.assertIn("com.sec.android.app.shealth", res["steps"]["sources"])
+        self.assertIsNotNone(res["steps"]["last_updated_formatted"])
+
+        # Verifica che il metodo request_mobile_sensor_update esista e sia invocabile
+        self.assertTrue(hasattr(homeassistant_service, "request_mobile_sensor_update"))
+
 if __name__ == "__main__":
     unittest.main()
 

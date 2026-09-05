@@ -126,8 +126,20 @@ class HomeAssistantService:
         return self._catalog_helper.get_catalog_devices(self.client.entities, self.enabled)
 
     # Controllo comandi
-    async def call_service(self, domain: str, service: str, entity_id: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def call_service(self, domain: str, service: str, entity_id: Optional[str] = None, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return await self.client.call_service(domain, service, entity_id, data)
+
+    async def request_mobile_sensor_update(self) -> List[str]:
+        """Invia un comando silenzioso di aggiornamento sensori ai dispositivi mobili noti (S26, Galaxy Watch)."""
+        notified = []
+        for service_name in ["mobile_app_samsung_s26", "mobile_app_galaxy_watch_ultra_70kf"]:
+            try:
+                res = await self.client.call_service("notify", service_name, data={"message": "command_update_sensors"})
+                if res.get("success"):
+                    notified.append(service_name)
+            except Exception as e:
+                logger.debug("Tentativo notify %s fallito: %s", service_name, e)
+        return notified
 
     async def toggle_device(self, entity_id: str, target_state: bool) -> Dict[str, Any]:
         return await self.controller.toggle_device(entity_id, target_state)

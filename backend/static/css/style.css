@@ -7719,6 +7719,71 @@ body {
     animation: heartPulse 1.8s infinite ease-in-out;
 }
 
+.health-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding-top: 0.55rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 0.75rem;
+    color: var(--text-dim, #94a3b8);
+}
+
+.health-source-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 65%;
+}
+
+.btn-sync-steps {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(16, 185, 129, 0.12);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 9999px;
+    padding: 3px 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-sync-steps:hover {
+    background: rgba(16, 185, 129, 0.22);
+    border-color: rgba(16, 185, 129, 0.5);
+    color: #6ee7b7;
+    transform: translateY(-1px);
+}
+
+.btn-sync-steps:active {
+    transform: translateY(0);
+}
+
+.btn-sync-steps.is-syncing,
+#health_sync_btn.is-syncing {
+    opacity: 0.85;
+    pointer-events: none;
+}
+
+.btn-sync-steps.is-syncing .sync-icon,
+#health_sync_btn.is-syncing .pulse-dot {
+    animation: spinClockwise 0.8s linear infinite !important;
+    display: inline-block;
+}
+
+@keyframes spinClockwise {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 
 
 

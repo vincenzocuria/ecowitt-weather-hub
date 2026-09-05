@@ -1809,6 +1809,19 @@ function updateHealthUI(health) {
         if (floorsEl && s.floors !== undefined) floorsEl.innerText = s.floors;
         if (odoEl && s.total_odometer !== undefined) odoEl.innerText = Number(s.total_odometer).toLocaleString('it-IT');
         if (tabBadge && s.daily !== undefined) tabBadge.innerText = `${Number(s.daily).toLocaleString('it-IT')} 👟`;
+
+        const srcLabel = document.getElementById('health_steps_source_label');
+        if (srcLabel && s.source) srcLabel.innerText = s.source;
+
+        const timeLabel = document.getElementById('health_steps_updated_time');
+        if (timeLabel) {
+            if (s.last_updated_formatted) {
+                timeLabel.innerText = s.last_updated_formatted;
+                timeLabel.style.display = 'inline';
+            } else {
+                timeLabel.style.display = 'none';
+            }
+        }
     }
 
     // 2. Calorie
@@ -1913,21 +1926,55 @@ function updateHealthLive() {
         .catch(err => console.debug('Health live poll error:', err));
 }
 
-function syncHealthLiveMetrics() {
-    const btn = document.getElementById('health_sync_btn');
-    if (btn) {
-        btn.innerHTML = `<span class="pulse-dot"></span> <span>⏳ Sincronizzazione...</span>`;
+function syncHealthLiveMetrics(e) {
+    if (e && e.preventDefault) e.preventDefault();
+
+    const headerBtn = document.getElementById('health_sync_btn');
+    const headerText = document.getElementById('health_status_text');
+    const stepsBtn = document.getElementById('btn_sync_steps');
+    const stepsBtnText = document.getElementById('btn_sync_steps_text');
+
+    if (headerBtn) {
+        headerBtn.classList.add('is-syncing');
+        if (headerText) headerText.innerText = '⏳ Sincronizzazione...';
     }
+    if (stepsBtn) {
+        stepsBtn.classList.add('is-syncing');
+        if (stepsBtnText) stepsBtnText.innerText = 'Aggiornamento...';
+    }
+
     fetch('/api/health/sync', { method: 'POST' })
         .then(r => r.json())
         .then(res => {
-            if (res) updateHealthUI(res);
+            if (res) {
+                updateHealthUI(res);
+                const syncTime = res.synced_at || new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                if (headerText) headerText.innerText = `🟢 Sincronizzato alle ${syncTime}`;
+                if (stepsBtnText) stepsBtnText.innerText = `Aggiornato alle ${syncTime}`;
+
+                if (typeof showToast === 'function') {
+                    const stepCount = (res.steps && res.steps.daily !== undefined) ? Number(res.steps.daily).toLocaleString('it-IT') : '0';
+                    showToast(`Passi aggiornati: ${stepCount} passi`);
+                }
+            }
+        })
+        .catch(err => {
+            console.error('Errore sincronizzazione salute:', err);
+            if (headerText) headerText.innerText = '⚠️ Errore sync';
+            if (stepsBtnText) stepsBtnText.innerText = 'Riprova';
         })
         .finally(() => {
-            const btn2 = document.getElementById('health_sync_btn');
-            if (btn2) {
-                btn2.innerHTML = `<span class="pulse-dot"></span> <span id="health_status_text">🟢 Sincronizzato</span>`;
-            }
+            setTimeout(() => {
+                if (headerBtn) {
+                    headerBtn.classList.remove('is-syncing');
+                }
+                if (stepsBtn) {
+                    stepsBtn.classList.remove('is-syncing');
+                    if (stepsBtnText && stepsBtnText.innerText !== 'Riprova') {
+                        stepsBtnText.innerText = 'Sincronizza';
+                    }
+                }
+            }, 2500);
         });
 }
 
