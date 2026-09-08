@@ -485,16 +485,60 @@ class AlertEngine:
         if temp is not None:
             diff, is_plunge, is_spike = get_temp_1h_change(temp)
             if (is_plunge or is_spike) and (now - self.last_temp_plunge_alert) >= (settings.ANOMALY_ALERT_COOLDOWN_MIN * 60):
-                self.last_temp_plunge_alert = now
-                self._save_state()
-                direction_txt = "crollo termico" if is_plunge else "impennata termica"
-                notifier.send_alert(
-                    alert_type="anomaly",
-                    title=f"🌡️ Sbalzo Termico Repentino ({diff:+}°C in 1h)!",
-                    message=f"Rilevato un forte {direction_txt}: la temperatura è ora {temp}°C (variazione di {diff:+}°C nell'ultima ora).",
-                    priority="normal",
-                    extra_data={"temp_diff_1h": str(diff)}
-                )
+                # Filtro Intelligente Alba / Tramonto (Diurnal Solar Transition Filter)
+                suppress_alert = False
+                if getattr(settings, "TEMP_ANOMALY_SOLAR_FILTER_ENABLED", True) and diff is not None:
+                    # Se la variazione è estrema (es. >= 7.0°C in 1h), notifica sempre (violento fronte meteo/downburst)
+                    extreme_thresh = getattr(settings, "TEMP_EXTREME_CHANGE_THRESHOLD", 7.0)
+                    if abs(diff) < extreme_thresh:
+                        try:
+                            from backend.analytics import calc_sun_ephemeris
+                            local_now = settings.now_local()
+                            sun = calc_sun_ephemeris(local_now, lat=settings.LATITUDE, lon=settings.LONGITUDE, tz_name=settings.TIMEZONE)
+                            
+                            sr_h, sr_m = map(int, sun["sunrise"].split(":"))
+                            ss_h, ss_m = map(int, sun["sunset"].split(":"))
+                            sunrise_min = sr_h * 60 + sr_m
+                            sunset_min = ss_h * 60 + ss_m
+                            now_min = local_now.hour * 60 + local_now.minute
+
+                            solar_rad = data.get("solar_radiation") or 0.0
+                            rain_rate = data.get("rain_rate_mm_hr") or 0.0
+                            gust = data.get("wind_gust_kmh") or 0.0
+
+                            # 1. Impennata mattutina all'alba (finestra alba o prima mattinata con radiazione solare crescente)
+                            is_sunrise_window = (sunrise_min - 30) <= now_min <= (sunrise_min + 120)
+                            if is_spike and (is_sunrise_window or (6 <= local_now.hour <= 10 and solar_rad >= 40.0)):
+                                suppress_alert = True
+                                logger.info(
+                                    f"[ANOMALY-FILTER] Impennata termica di {diff:+}°C/1h filtrata: fisiologico riscaldamento solare all'alba "
+                                    f"(ora {local_now.strftime('%H:%M')}, alba={sun['sunrise']}, solar={solar_rad} W/m²)."
+                                )
+
+                            # 2. Crollo serale al tramonto (finestra tramonto)
+                            # Filtrato solo se NON ci sono elementi di temporale (pioggia in corso o raffiche di vento sostenute)
+                            is_sunset_window = (sunset_min - 45) <= now_min <= (sunset_min + 120)
+                            if is_plunge and is_sunset_window:
+                                if rain_rate == 0.0 and gust < 35.0:
+                                    suppress_alert = True
+                                    logger.info(
+                                        f"[ANOMALY-FILTER] Crollo termico di {diff:+}°C/1h filtrato: fisiologico raffreddamento serale al tramonto "
+                                        f"(ora {local_now.strftime('%H:%M')}, tramonto={sun['sunset']})."
+                                    )
+                        except Exception as ef:
+                            logger.warning(f"[ANOMALY-FILTER] Errore durante calcolo filtro solare: {ef}")
+
+                if not suppress_alert:
+                    self.last_temp_plunge_alert = now
+                    self._save_state()
+                    direction_txt = "crollo termico" if is_plunge else "impennata termica"
+                    notifier.send_alert(
+                        alert_type="anomaly",
+                        title=f"🌡️ Sbalzo Termico Repentino ({diff:+}°C in 1h)!",
+                        message=f"Rilevato un forte {direction_txt}: la temperatura è ora {temp}°C (variazione di {diff:+}°C nell'ultima ora).",
+                        priority="normal",
+                        extra_data={"temp_diff_1h": str(diff)}
+                    )
 
         # E. Indice UV Estremo
         uv = data.get("uv_index")

@@ -463,14 +463,16 @@ def get_temp_1h_change(current_temp: Optional[float]) -> Tuple[Optional[float], 
     if current_temp is None:
         return None, False, False
 
+    now_utc = datetime.now(timezone.utc)
+    target_time = (now_utc - timedelta(hours=1)).isoformat()
+    min_time = (now_utc - timedelta(minutes=90)).isoformat()
     conn = get_connection()
     cursor = conn.cursor()
-    target_time = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     cursor.execute("""
         SELECT temp_c FROM weather_records
-        WHERE timestamp <= ? AND temp_c IS NOT NULL
+        WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
         ORDER BY timestamp DESC LIMIT 1
-    """, (target_time,))
+    """, (min_time, target_time))
     row = cursor.fetchone()
     conn.close()
 

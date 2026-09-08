@@ -1972,6 +1972,91 @@ class TestEcowittHub(unittest.TestCase):
         # Verifica che il metodo request_mobile_sensor_update esista e sia invocabile
         self.assertTrue(hasattr(homeassistant_service, "request_mobile_sensor_update"))
 
+    def test_temp_change_and_solar_filter(self):
+        """Testa la soglia di sbalzo termico (5.5°C) e il filtro intelligente ciclo solare (alba/tramonto)."""
+        import time
+        from datetime import datetime, timedelta, timezone
+        from backend.database import get_temp_1h_change, get_connection
+        from backend.alert_engine import AlertEngine
+        from unittest.mock import patch
+
+        now_utc = datetime.now(timezone.utc)
+        t_1h_ago = (now_utc - timedelta(minutes=60)).isoformat()
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM weather_records")
+        cursor.execute("""
+            INSERT INTO weather_records (timestamp, temp_c, humidity, pressure_rel_hpa, wind_speed_kmh, wind_gust_kmh, daily_rain_mm, rain_rate_mm_hr, solar_radiation)
+            VALUES (?, ?, 50, 1013.2, 5.0, 8.0, 0.0, 0.0, 0.0)
+        """, (t_1h_ago, 20.0))
+        conn.commit()
+        conn.close()
+
+        # 1. Variazione di +4.5°C (non deve scattare con soglia a 5.5°C)
+        diff, is_plunge, is_spike = get_temp_1h_change(24.5)
+        self.assertEqual(diff, 4.5)
+        self.assertFalse(is_spike)
+        self.assertFalse(is_plunge)
+
+        # 2. Variazione di +5.8°C (supera la soglia 5.5°C)
+        diff, is_plunge, is_spike = get_temp_1h_change(25.8)
+        self.assertEqual(diff, 5.8)
+        self.assertTrue(is_spike)
+
+        # 3. Test AlertEngine: impennata all'alba con sole viene filtrata (fisiologica)
+        engine = AlertEngine()
+        sent_alerts = []
+        with patch("backend.alert_engine.notifier.send_alert", side_effect=lambda **kw: sent_alerts.append(kw)), \
+             patch("backend.config.settings.now_local", return_value=datetime(2026, 9, 8, 7, 30, tzinfo=timezone.utc)), \
+             patch("backend.analytics.calc_sun_ephemeris", return_value={"sunrise": "07:00", "sunset": "19:30"}):
+            
+            # Dati con sole mattutino e +5.8°C
+            engine._check_anomalies({
+                "temp_c": 25.8,
+                "solar_radiation": 250.0,
+                "rain_rate_mm_hr": 0.0,
+                "wind_gust_kmh": 10.0
+            }, now=time.time())
+            
+            # Deve essere filtrato: nessun allarme inviato
+            self.assertEqual(len(sent_alerts), 0)
+
+        # 4. Test AlertEngine: crollo al tramonto senza pioggia/vento viene filtrato
+        with patch("backend.alert_engine.notifier.send_alert", side_effect=lambda **kw: sent_alerts.append(kw)), \
+             patch("backend.database.get_temp_1h_change", return_value=(-5.8, True, False)), \
+             patch("backend.config.settings.now_local", return_value=datetime(2026, 9, 8, 19, 45, tzinfo=timezone.utc)), \
+             patch("backend.analytics.calc_sun_ephemeris", return_value={"sunrise": "07:00", "sunset": "19:30"}):
+            
+            engine.last_temp_plunge_alert = 0.0
+            engine._check_anomalies({
+                "temp_c": 14.2,
+                "solar_radiation": 5.0,
+                "rain_rate_mm_hr": 0.0,
+                "wind_gust_kmh": 12.0
+            }, now=time.time())
+            
+            # Deve essere filtrato
+            self.assertEqual(len(sent_alerts), 0)
+
+        # 5. Test AlertEngine: crollo violento con pioggia / nubifragio (NON deve essere filtrato)
+        with patch("backend.alert_engine.notifier.send_alert", side_effect=lambda **kw: sent_alerts.append(kw)), \
+             patch("backend.database.get_temp_1h_change", return_value=(-6.0, True, False)), \
+             patch("backend.config.settings.now_local", return_value=datetime(2026, 9, 8, 19, 45, tzinfo=timezone.utc)), \
+             patch("backend.analytics.calc_sun_ephemeris", return_value={"sunrise": "07:00", "sunset": "19:30"}):
+            
+            engine.last_temp_plunge_alert = 0.0
+            engine._check_anomalies({
+                "temp_c": 14.0,
+                "solar_radiation": 0.0,
+                "rain_rate_mm_hr": 15.0, # Pioggia attiva!
+                "wind_gust_kmh": 42.0   # Raffiche!
+            }, now=time.time())
+            
+            # L'allarme per vero fronte meteo deve essere inviato
+            anomaly_alerts = [a for a in sent_alerts if a.get("alert_type") == "anomaly"]
+            self.assertEqual(len(anomaly_alerts), 1)
+
 if __name__ == "__main__":
     unittest.main()
 

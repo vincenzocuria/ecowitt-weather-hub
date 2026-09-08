@@ -35,8 +35,10 @@ class Settings:
     
     # Soglie Eventi Anomali
     PRESSURE_DROP_3H_THRESHOLD: float = float(os.getenv("PRESSURE_DROP_3H_THRESHOLD", "3.0"))     # Calo >= 3 hPa in 3h -> burrasca (standard WMO/nautico)
-    TEMP_DROP_1H_THRESHOLD: float = float(os.getenv("TEMP_DROP_1H_THRESHOLD", "4.0"))           # Crollo >= 4°C in 1h
-    TEMP_RISE_1H_THRESHOLD: float = float(os.getenv("TEMP_RISE_1H_THRESHOLD", "4.0"))           # Impennata >= 4°C in 1h
+    TEMP_DROP_1H_THRESHOLD: float = float(os.getenv("TEMP_DROP_1H_THRESHOLD", "5.5"))           # Crollo >= 5.5°C in 1h
+    TEMP_RISE_1H_THRESHOLD: float = float(os.getenv("TEMP_RISE_1H_THRESHOLD", "5.5"))           # Impennata >= 5.5°C in 1h
+    TEMP_ANOMALY_SOLAR_FILTER_ENABLED: bool = os.getenv("TEMP_ANOMALY_SOLAR_FILTER_ENABLED", "true").lower() in ("true", "1", "yes") # Filtro intelligente ciclo solare alba/tramonto
+    TEMP_EXTREME_CHANGE_THRESHOLD: float = float(os.getenv("TEMP_EXTREME_CHANGE_THRESHOLD", "7.0")) # Variazione estrema >= 7.0°C in 1h (notifica sempre anche a ridosso alba/tramonto)
     GUST_SPIKE_THRESHOLD_KMH: float = float(os.getenv("GUST_SPIKE_THRESHOLD_KMH", "45.0"))       # Raffica anomala >= 45 km/h
     RAIN_BURST_THRESHOLD_MM_HR: float = float(os.getenv("RAIN_BURST_THRESHOLD_MM_HR", "25.0"))  # Nubifragio >= 25 mm/h
     UV_EXTREME_THRESHOLD: int = int(os.getenv("UV_EXTREME_THRESHOLD", "8"))                      # UV Pericoloso >= 8
