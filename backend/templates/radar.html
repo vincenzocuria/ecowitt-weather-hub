@@ -19,18 +19,26 @@
             </div>
         </div>
         <div class="header-actions" style="display: flex; gap: 8px;">
-            <a href="{{ lightning.lightning_maps_url if lightning else 'https://www.lightningmaps.org' }}" target="_blank" rel="noopener" class="btn btn-secondary" style="display: flex; align-items: center; gap: 6px; text-decoration: none;">
-                ⚡ <span>Mappa Fulmini Live</span>
-            </a>
             <button type="button" class="btn btn-secondary" onclick="centerToStation()" style="display: flex; align-items: center; gap: 6px;">
                 📍 <span>Mia Stazione</span>
             </button>
         </div>
-
     </div>
 
-    <!-- CONTENITORE MAPPA & OVERLAY CONTROLLI -->
-    <div class="radar-container">
+    <!-- SELETTORE A 2 TAB: RADAR PIOGGIA vs RADAR FULMINI -->
+    <div class="radar-tabs-nav" style="display: flex; gap: 10px; margin-bottom: 14px;">
+        <button type="button" class="btn btn-tab active" id="tab-btn-rain" onclick="switchRadarTab('rain')" style="flex: 1; padding: 10px 16px; font-weight: 700; font-size: 0.95rem; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s ease; background: var(--accent); color: #fff; border: 1px solid var(--accent); cursor: pointer;">
+            🌧️ <span>Radar Pioggia Live</span>
+        </button>
+        <button type="button" class="btn btn-tab" id="tab-btn-lightning" onclick="switchRadarTab('lightning')" style="flex: 1; padding: 10px 16px; font-weight: 700; font-size: 0.95rem; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s ease; background: rgba(255,255,255,0.06); color: var(--text-dim); border: 1px solid var(--border); opacity: 0.85; cursor: pointer;">
+            ⚡ <span>Radar Fulmini Live</span>
+        </button>
+    </div>
+
+    <!-- TAB 1: RADAR PIOGGIA (100% PULITO COME PRIMA) -->
+    <div id="radar-view-rain" class="radar-view-pane">
+        <!-- CONTENITORE MAPPA & OVERLAY CONTROLLI -->
+        <div class="radar-container">
         <!-- MAPPA LEAFLET -->
         <div id="radar-map" class="radar-map"></div>
 
@@ -95,6 +103,79 @@
             </div>
         </div>
     </div>
+    <!-- FINE TAB 1: RADAR PIOGGIA -->
+
+    <!-- TAB 2: RADAR FULMINI LIVE & WH57 -->
+    <div id="radar-view-lightning" class="radar-view-pane" style="display: none;">
+        <!-- CARD METRICHE & STATO SENSORE WH57 -->
+        <div class="card" style="margin-bottom: 14px; border-radius: 12px; background: var(--card-bg, #1e293b); border: 1px solid var(--border, rgba(255,255,255,0.1)); padding: 14px 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.5rem;">⚡</span>
+                    <div>
+                        <strong style="font-size: 1.05rem;">Sensore Fulmini WH57 • Stazione Locale</strong>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Rilevatore radioelettrico onde temporalesche (fino a 40 km)</div>
+                    </div>
+                </div>
+                <span class="sub-badge {{ lightning.trend_badge if lightning else 'badge-neutral' }}" style="font-size: 0.82rem; padding: 4px 12px; border-radius: 20px;">
+                    {{ lightning.trend_icon if lightning else '🟢' }} {{ lightning.trend_label if lightning else 'WH57 • In ascolto' }}
+                </span>
+            </div>
+
+            <!-- GRIGLIA METRICHE RAPIDE -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px;">
+                <div style="background: rgba(0,0,0,0.25); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                    <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600;">Distanza Ultima Scarica</div>
+                    <div style="font-size: 1.45rem; font-weight: 800; color: #facc15; margin-top: 2px;">
+                        {% if lightning and lightning.current_distance_km is not none %}
+                            {{ lightning.current_distance_km }} <span style="font-size: 0.85rem; font-weight: 600;">km</span>
+                        {% else %}
+                            <span style="font-size: 1rem; color: var(--text-dim);">Nessuna vicina</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div style="background: rgba(0,0,0,0.25); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                    <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600;">Ultima Rilevata</div>
+                    <div style="font-size: 0.95rem; font-weight: 700; margin-top: 6px; color: #fff;">
+                        {{ lightning.last_strike_formatted if (lightning and lightning.last_strike_formatted) else (latest.lightning_last_time | lightning_time_it) }}
+                    </div>
+                </div>
+                <div style="background: rgba(0,0,0,0.25); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                    <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600;">Scariche Oggi</div>
+                    <div style="font-size: 1.45rem; font-weight: 800; color: #38bdf8; margin-top: 2px;">
+                        {{ lightning.count_today if lightning else (latest.lightning_count or 0) }}
+                        {% if lightning and lightning.count_1h > 0 %}
+                            <span style="font-size: 0.8rem; font-weight: 500; color: var(--accent);">({{ lightning.count_1h }}/h)</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div style="background: rgba(0,0,0,0.25); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                    <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600;">Più Vicina Oggi</div>
+                    <div style="font-size: 1.2rem; font-weight: 700; margin-top: 5px; color: #e2e8f0;">
+                        {% if lightning and lightning.closest_km_today is not none %}
+                            {{ lightning.closest_km_today }} km
+                        {% else %}
+                            <span style="font-size: 0.9rem; color: var(--text-muted);">--</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- TENDENZA DESCRITTIVA -->
+            <div style="font-size: 0.86rem; padding: 8px 12px; background: rgba(255,255,255,0.03); border-radius: 8px; color: var(--text-dim); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+                <span>Stato fronte temporalesco: <strong style="color: {{ 'var(--danger)' if lightning and lightning.trend == 'approaching' else ('var(--info)' if lightning and lightning.trend == 'moving_away' else '#fff') }};">{{ lightning.trend_desc if lightning else 'Nessuna attività rilevata' }}</strong></span>
+                <a href="{{ lightning.lightning_maps_url if lightning else 'https://www.lightningmaps.org' }}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none; font-weight: 600; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 4px;">
+                    Apri LightningMaps a schermo intero ↗
+                </a>
+            </div>
+        </div>
+
+        <!-- MAPPA LIVE FULMINI BLITZORTUNG A TUTTO SCHERMO -->
+        <div class="radar-container" style="height: 620px; position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--border, rgba(255,255,255,0.1)); box-shadow: 0 8px 24px rgba(0,0,0,0.3);">
+            <iframe id="lightning-map-iframe" src="" data-src="https://map.blitzortung.org/#8/{{ lat or 41.9028 }}/{{ lon or 12.4964 }}" style="width: 100%; height: 100%; border: 0; display: block; background: #121212;" title="Mappa Fulmini Live Blitzortung" loading="lazy" allowfullscreen></iframe>
+        </div>
+    </div>
+    <!-- FINE TAB 2: RADAR FULMINI -->
 </div>
 
 <!-- LEAFLET JS -->
@@ -170,25 +251,6 @@
                 </div>
             </div>
         `);
-
-        {% if lightning and lightning.current_distance_km %}
-        const lightningDistKm = {{ lightning.current_distance_km }};
-        const lightningCircle = L.circle([STATION_LAT, STATION_LON], {
-            radius: lightningDistKm * 1000,
-            color: '#eab308',
-            weight: 2,
-            dashArray: '6, 8',
-            fillColor: '#facc15',
-            fillOpacity: 0.08
-        }).addTo(map);
-        lightningCircle.bindPopup(`
-            <div style="font-size: 0.85rem; color: #fff;">
-                <strong>⚡ Raggio Rilevamento WH57</strong><br>
-                Scarica stimata a <strong>${lightningDistKm} km</strong> dalla stazione.<br>
-                <em style="color: #facc15;">{{ lightning.trend_desc }}</em>
-            </div>
-        `);
-        {% endif %}
 
         // Carica dati fotogrammi da RainViewer on-demand
         loadRainViewerData();
@@ -383,6 +445,60 @@
         }
     }
 
+    // GESTIONE SWITCH TAB: RADAR PIOGGIA vs RADAR FULMINI
+    function switchRadarTab(tab) {
+        const rainView = document.getElementById('radar-view-rain');
+        const lightningView = document.getElementById('radar-view-lightning');
+        const btnRain = document.getElementById('tab-btn-rain');
+        const btnLightning = document.getElementById('tab-btn-lightning');
+        const iframe = document.getElementById('lightning-map-iframe');
+
+        if (tab === 'rain') {
+            if (rainView) rainView.style.display = 'block';
+            if (lightningView) lightningView.style.display = 'none';
+            if (btnRain) {
+                btnRain.classList.add('active');
+                btnRain.style.background = 'var(--accent)';
+                btnRain.style.color = '#fff';
+                btnRain.style.borderColor = 'var(--accent)';
+                btnRain.style.opacity = '1';
+            }
+            if (btnLightning) {
+                btnLightning.classList.remove('active');
+                btnLightning.style.background = 'rgba(255,255,255,0.06)';
+                btnLightning.style.color = 'var(--text-dim)';
+                btnLightning.style.borderColor = 'var(--border)';
+                btnLightning.style.opacity = '0.85';
+            }
+            if (map) {
+                setTimeout(() => {
+                    map.invalidateSize();
+                }, 50);
+            }
+        } else {
+            if (rainView) rainView.style.display = 'none';
+            if (lightningView) lightningView.style.display = 'block';
+            if (btnLightning) {
+                btnLightning.classList.add('active');
+                btnLightning.style.background = '#eab308';
+                btnLightning.style.color = '#000';
+                btnLightning.style.borderColor = '#eab308';
+                btnLightning.style.opacity = '1';
+            }
+            if (btnRain) {
+                btnRain.classList.remove('active');
+                btnRain.style.background = 'rgba(255,255,255,0.06)';
+                btnRain.style.color = 'var(--text-dim)';
+                btnRain.style.borderColor = 'var(--border)';
+                btnRain.style.opacity = '0.85';
+            }
+            stopPlay();
+            if (iframe && !iframe.src && iframe.dataset.src) {
+                iframe.src = iframe.dataset.src;
+            }
+        }
+    }
+
     // GESTIONE VISIBILITÀ SCHEDA: Ferma tutto quando la pagina è in background o minimizzata
     document.addEventListener("visibilitychange", () => {
         if (document.hidden) {
@@ -397,6 +513,9 @@
     // Avvio al caricamento del DOM
     document.addEventListener("DOMContentLoaded", () => {
         initMap();
+        if (window.location.hash === '#lightning') {
+            switchRadarTab('lightning');
+        }
     });
 </script>
 {% endblock %}

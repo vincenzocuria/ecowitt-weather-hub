@@ -35,7 +35,7 @@ logger = logging.getLogger("weather_hub")
 
 router = APIRouter(tags=["UI Views"])
 
-from backend.helpers import format_duration_italian
+from backend.helpers import format_duration_italian, format_lightning_time_italian
 
 # Inizializzazione Template Jinja2 e Filtri di Formattazione
 templates_dir = Path(__file__).resolve().parent.parent / "templates"
@@ -46,6 +46,7 @@ templates.env.filters["local_dt_short"] = lambda val: to_local_datetime_str(val,
 templates.env.filters["local_date"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y")
 templates.env.filters["local_time"] = lambda val: to_local_datetime_str(val, "%H:%M")
 templates.env.filters["duration_it"] = lambda val: format_duration_italian(val) if val is not None else "--"
+templates.env.filters["lightning_time_it"] = lambda val: format_lightning_time_italian(val)
 
 
 # ----------------- AUTHENTICATION ROUTES -----------------

@@ -36,6 +36,49 @@ function formatDurationItalian(minutes) {
 }
 window.formatDurationItalian = formatDurationItalian;
 
+// Utility per formattare orario scariche fulmini in italiano naturale
+function formatLightningTimeIt(val) {
+    if (!val || val === '--' || val === 'null' || val === 'None' || val === 'Nessuna recente') return "Nessuna recente";
+    try {
+        let d;
+        if (typeof val === 'number') {
+            d = new Date(val * 1000);
+        } else if (typeof val === 'string' && /^\d+$/.test(val.trim())) {
+            d = new Date(parseInt(val.trim()) * 1000);
+        } else {
+            d = new Date(val);
+        }
+        if (isNaN(d.getTime())) return val;
+
+        const now = new Date();
+        const diffMin = Math.max(0, Math.floor((now - d) / 60000));
+        const timeStr = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+
+        const isToday = d.toDateString() === now.toDateString();
+        const yesterday = new Date(now);
+        yesterday.setDate(now.getDate() - 1);
+        const isYesterday = d.toDateString() === yesterday.toDateString();
+
+        if (isToday) {
+            let rel = '';
+            if (diffMin < 1) rel = ' (meno di 1 min fa)';
+            else if (diffMin === 1) rel = ' (1 min fa)';
+            else if (diffMin < 60) rel = ` (${diffMin} min fa)`;
+            else if (diffMin < 120) rel = ' (1 ora fa)';
+            else if (diffMin < 1440) rel = ` (${Math.floor(diffMin / 60)} ore fa)`;
+            return `Oggi alle ${timeStr}${rel}`;
+        } else if (isYesterday) {
+            return `Ieri alle ${timeStr}`;
+        } else {
+            const dateStr = d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+            return `${dateStr} alle ${timeStr}`;
+        }
+    } catch {
+        return val;
+    }
+}
+window.formatLightningTimeIt = formatLightningTimeIt;
+
 // Live polling per la Dashboard principale
 function startDashboardPolling() {
     function update() {
@@ -214,8 +257,12 @@ function startDashboardPolling() {
                             lTrendDesc.style.color = 'inherit';
                         }
                     }
-                    if (lTime && lInfo.last_strike_formatted) {
-                        lTime.innerText = lInfo.last_strike_formatted;
+                    if (lTime) {
+                        if (lInfo.last_strike_formatted) {
+                            lTime.innerText = lInfo.last_strike_formatted;
+                        } else if (lInfo.last_strike_time) {
+                            lTime.innerText = formatLightningTimeIt(lInfo.last_strike_time);
+                        }
                     }
                     if (lClosest) {
                         if (lInfo.closest_km_today !== null && lInfo.closest_km_today !== undefined) {
@@ -234,7 +281,7 @@ function startDashboardPolling() {
                             <div class="lightning-strike-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 4px 8px; border-radius: 6px; font-size: 0.82rem;">
                                 <div style="display: flex; align-items: center; gap: 6px;">
                                     <span>⚡</span>
-                                    <span>${st.time_formatted || ''}</span>
+                                    <span>${st.time_formatted || formatLightningTimeIt(st.strike_time)}</span>
                                 </div>
                                 <div>
                                     <span class="badge-km" style="font-weight: 600; background: rgba(234, 179, 8, 0.15); color: #fde047; padding: 2px 6px; border-radius: 4px;">${st.distance_km} km</span>
@@ -252,10 +299,12 @@ function startDashboardPolling() {
                         }
                     }
                 } else {
-                    if (d.lightning_last_time_fmt && lTime) {
-                        lTime.innerText = d.lightning_last_time_fmt;
-                    } else if (d.lightning_last_time && lTime) {
-                        lTime.innerText = d.lightning_last_time;
+                    if (lTime) {
+                        if (d.lightning_last_time_fmt) {
+                            lTime.innerText = d.lightning_last_time_fmt;
+                        } else if (d.lightning_last_time) {
+                            lTime.innerText = formatLightningTimeIt(d.lightning_last_time);
+                        }
                     }
                     if (d.lightning_count !== undefined && lCountToday) {
                         lCountToday.innerText = d.lightning_count;

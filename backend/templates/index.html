@@ -559,7 +559,7 @@
                 </div>
                 <div class="item">
                     <span>Ultima Scarica:</span>
-                    <strong id="lightning_time" style="font-size: 0.88rem;">{{ l_data.last_strike_formatted if l_data else (latest.lightning_last_time or 'Nessuna recente') }}</strong>
+                    <strong id="lightning_time" style="font-size: 0.88rem;">{{ l_data.last_strike_formatted if (l_data and l_data.last_strike_formatted) else (latest.lightning_last_time | lightning_time_it) }}</strong>
                 </div>
                 <div class="item">
                     <span>Scarica Più Vicina Oggi:</span>
@@ -588,8 +588,8 @@
                     <span style="font-size: 0.78rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">
                         📜 Ultimi Fulmini Rilevati
                     </span>
-                    <a href="/radar" style="font-size: 0.75rem; color: var(--accent); text-decoration: none; font-weight: 500;">
-                        Radar Live →
+                    <a href="/radar#lightning" style="font-size: 0.75rem; color: var(--accent); text-decoration: none; font-weight: 500;">
+                        Radar Fulmini →
                     </a>
                 </div>
                 <div class="lightning-timeline" id="lightning_timeline_list" style="display: flex; flex-direction: column; gap: 4px;">
@@ -612,13 +612,13 @@
                     {% endif %}
                 </div>
                 
-                <!-- LINK MAPPA ESTERNA LIVE (BLITZORTUNG / LIGHTNINGMAPS) -->
+                <!-- LINK RAPIDI AI 2 RADAR (FULMINI E PIOGGIA) -->
                 <div style="display: flex; gap: 8px; margin-top: 8px;">
-                    <a href="{{ l_data.lightning_maps_url if l_data else 'https://www.lightningmaps.org' }}" target="_blank" rel="noopener" class="btn-subtle-link" style="flex: 1; text-align: center; font-size: 0.76rem; padding: 5px 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
-                        🌐 <span>Mappa Fulmini Live</span>
+                    <a href="/radar#lightning" class="btn-subtle-link" style="flex: 1; text-align: center; font-size: 0.76rem; padding: 5px 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
+                        ⚡ <span>Radar Fulmini Live</span>
                     </a>
                     <a href="/radar" class="btn-subtle-link" style="flex: 1; text-align: center; font-size: 0.76rem; padding: 5px 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
-                        🌧️ <span>Radar Stazione</span>
+                        🌧️ <span>Radar Pioggia</span>
                     </a>
                 </div>
             </div>
