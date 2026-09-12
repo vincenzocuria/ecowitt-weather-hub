@@ -129,7 +129,7 @@
     function initMap() {
         map = L.map('radar-map', {
             center: [STATION_LAT, STATION_LON],
-            zoom: 8,
+            zoom: 7,
             minZoom: 4,
             maxZoom: 14,
             zoomControl: true
@@ -376,7 +376,7 @@
     // Ricentra sulla stazione
     function centerToStation() {
         if (map) {
-            map.flyTo([STATION_LAT, STATION_LON], 9, { animate: true, duration: 1 });
+            map.flyTo([STATION_LAT, STATION_LON], 8, { animate: true, duration: 1 });
             if (stationMarker) {
                 stationMarker.openPopup();
             }
