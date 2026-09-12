@@ -177,15 +177,91 @@ function startDashboardPolling() {
                     if (el) el.innerText = d.humidity_in + ' %';
                 }
 
-                // Fulmini
-                if (d.lightning_distance_km !== undefined && d.lightning_distance_km !== null) {
-                    const el = document.getElementById('lightning');
-                    if (el) el.innerText = '⚡ ' + d.lightning_distance_km + ' km' + (d.lightning_count ? ' (' + d.lightning_count + ' totali)' : '');
+                // Fulmini WH57 & Analisi Trend Live
+                const lInfo = (d.analytics && d.analytics.lightning) ? d.analytics.lightning : d.lightning_analytics;
+                const lDistVal = document.getElementById('lightning_dist_val');
+                const lBadge = document.getElementById('lightning_badge');
+                const lTrendDesc = document.getElementById('lightning_trend_desc');
+                const lTime = document.getElementById('lightning_time');
+                const lClosest = document.getElementById('lightning_closest');
+                const lCountToday = document.getElementById('lightning_count_today');
+                const lArrow = document.getElementById('lightning_trend_arrow');
+                const lTimeline = document.getElementById('lightning_timeline_list');
+                const lThreatPill = document.getElementById('lightning_threat_pill');
+
+                if (lInfo) {
+                    if (lDistVal) {
+                        if (lInfo.current_distance_km !== null && lInfo.current_distance_km !== undefined) {
+                            lDistVal.innerHTML = lInfo.current_distance_km + ' <span class="unit">km</span>';
+                        } else {
+                            lDistVal.innerHTML = (lInfo.count_today || 0) + ' <span class="unit">Scariche Oggi</span>';
+                        }
+                    }
+                    if (lArrow) {
+                        lArrow.innerText = lInfo.trend_arrow || '';
+                    }
+                    if (lBadge) {
+                        lBadge.className = 'sub-badge ' + (lInfo.trend_badge || 'badge-neutral');
+                        lBadge.innerText = (lInfo.trend_icon ? lInfo.trend_icon + ' ' : '') + (lInfo.trend_label || 'WH57 • Standby');
+                    }
+                    if (lTrendDesc) {
+                        lTrendDesc.innerText = lInfo.trend_desc || 'Nessun fronte attivo';
+                        if (lInfo.trend === 'approaching') {
+                            lTrendDesc.style.color = 'var(--danger)';
+                        } else if (lInfo.trend === 'moving_away') {
+                            lTrendDesc.style.color = 'var(--info)';
+                        } else {
+                            lTrendDesc.style.color = 'inherit';
+                        }
+                    }
+                    if (lTime && lInfo.last_strike_formatted) {
+                        lTime.innerText = lInfo.last_strike_formatted;
+                    }
+                    if (lClosest) {
+                        if (lInfo.closest_km_today !== null && lInfo.closest_km_today !== undefined) {
+                            const sub = lInfo.closest_time_formatted ? ' <span style="font-weight: normal; color: var(--text-dim); font-size: 0.78rem;">(' + lInfo.closest_time_formatted + ')</span>' : '';
+                            lClosest.innerHTML = lInfo.closest_km_today + ' km' + sub;
+                        } else {
+                            lClosest.innerHTML = '<span style="color: var(--text-muted); font-size: 0.85rem;">--</span>';
+                        }
+                    }
+                    if (lCountToday) {
+                        const c1h = lInfo.count_1h > 0 ? ' <span style="font-weight: normal; color: var(--accent); font-size: 0.78rem;">(' + lInfo.count_1h + ' nell\'ultima ora)</span>' : '';
+                        lCountToday.innerHTML = (lInfo.count_today || 0) + c1h;
+                    }
+                    if (lTimeline && lInfo.recent_strikes && lInfo.recent_strikes.length > 0) {
+                        lTimeline.innerHTML = lInfo.recent_strikes.slice(0, 4).map(st => `
+                            <div class="lightning-strike-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 4px 8px; border-radius: 6px; font-size: 0.82rem;">
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span>⚡</span>
+                                    <span>${st.time_formatted || ''}</span>
+                                </div>
+                                <div>
+                                    <span class="badge-km" style="font-weight: 600; background: rgba(234, 179, 8, 0.15); color: #fde047; padding: 2px 6px; border-radius: 4px;">${st.distance_km} km</span>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+                    if (lThreatPill) {
+                        if (lInfo.is_storm_active) {
+                            lThreatPill.style.display = 'inline-block';
+                            lThreatPill.className = 'threat-pill ' + (lInfo.threat_badge || 'badge-danger');
+                            lThreatPill.innerText = lInfo.threat_label || 'TEMPORALE VICINO';
+                        } else {
+                            lThreatPill.style.display = 'none';
+                        }
+                    }
+                } else {
+                    if (d.lightning_last_time_fmt && lTime) {
+                        lTime.innerText = d.lightning_last_time_fmt;
+                    } else if (d.lightning_last_time && lTime) {
+                        lTime.innerText = d.lightning_last_time;
+                    }
+                    if (d.lightning_count !== undefined && lCountToday) {
+                        lCountToday.innerText = d.lightning_count;
+                    }
                 }
-                if (d.lightning_last_time) {
-                    const lt = document.getElementById('lightning_time');
-                    if (lt) lt.innerText = d.lightning_last_time;
-                }
+
 
                 // ANALYTICS & SMART ADVICE
                 if (d.analytics) {

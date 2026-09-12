@@ -25,6 +25,7 @@ from .dates import (
     get_weekday_name,
     format_duration_italian,
     format_seconds_italian,
+    format_lightning_time_italian,
 )
 
 __all__ = [
@@ -48,4 +49,6 @@ __all__ = [
     "get_weekday_name",
     "format_duration_italian",
     "format_seconds_italian",
+    "format_lightning_time_italian",
 ]
+

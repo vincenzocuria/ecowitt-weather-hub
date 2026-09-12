@@ -784,6 +784,203 @@ def calc_beaufort_scale(wind_speed_kmh: Optional[float]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# 4.5 ANALISI AVANZATA FULMINI WH57 & TREND TEMPORALI
+# ---------------------------------------------------------------------------
+
+def analyze_lightning_activity(
+    latest_reading: Optional[Dict[str, Any]] = None,
+    recent_events: Optional[List[Dict[str, Any]]] = None,
+    stats: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Analisi approfondita dell'attività elettrica del sensore WH57:
+    - Calcolo cinematico del trend: avvicinamento vs allontanamento vs stazionario
+    - Livello di allerta e minaccia temporalesca
+    - Formattazione orario in italiano naturale
+    - Elenco cronologico ultimi fulmini
+    - Link alle mappe live Blitzortung / LightningMaps centrate sulla stazione
+    """
+    from backend.config import settings
+    from backend.helpers import format_lightning_time_italian
+
+    latest = latest_reading or {}
+
+    dist = latest.get("lightning_distance_km")
+    last_time = latest.get("lightning_last_time")
+    count_today = latest.get("lightning_count") or (stats.get("count_today", 0) if stats else 0) or 0
+
+    if recent_events is None:
+        try:
+            from backend.database import get_recent_lightning_events
+            recent_events = get_recent_lightning_events(limit=8)
+        except Exception:
+            recent_events = []
+
+    if stats is None:
+        try:
+            from backend.database import get_lightning_stats
+            stats = get_lightning_stats()
+        except Exception:
+            stats = {
+                "count_15m": 0, "count_1h": 0, "count_3h": 0, "count_today": count_today,
+                "closest_km_today": dist, "closest_time_today": last_time,
+                "closest_time_formatted": format_lightning_time_italian(last_time, include_relative=False)
+            }
+
+    if dist is None and recent_events:
+        dist = recent_events[0].get("distance_km")
+        if not last_time:
+            last_time = recent_events[0].get("strike_time")
+
+    tz = settings.get_tz()
+    now_local = datetime.now(timezone.utc).astimezone(tz)
+    minutes_ago = None
+    last_time_formatted = format_lightning_time_italian(last_time)
+
+    if last_time:
+        try:
+            if str(last_time).isdigit():
+                dt = datetime.fromtimestamp(int(last_time), tz=timezone.utc).astimezone(tz)
+            else:
+                dt = datetime.fromisoformat(str(last_time).replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.astimezone(tz)
+            diff_sec = max(0, int((now_local - dt).total_seconds()))
+            minutes_ago = diff_sec // 60
+        except Exception:
+            minutes_ago = None
+
+    trend = "idle"
+    trend_label = "Nessun fronte attivo"
+    trend_badge = "badge-neutral"
+    trend_icon = "🟢"
+    trend_arrow = ""
+    trend_desc = "Nessuna attività temporalesca rilevata nelle vicinanze."
+    dist_delta_km = None
+
+    valid_events = [e for e in (recent_events or []) if e.get("distance_km") is not None]
+
+    if len(valid_events) >= 2:
+        d_new = float(valid_events[0]["distance_km"])
+        d_old = float(valid_events[1]["distance_km"])
+        delta = d_new - d_old
+        dist_delta_km = round(delta, 1)
+
+        if delta <= -1.5:
+            trend = "approaching"
+            trend_label = "In avvicinamento ⚠️"
+            trend_badge = "badge-danger"
+            trend_icon = "⚡ ↘️"
+            trend_arrow = "↘️"
+            trend_desc = f"I fulmini si stanno avvicinando alla stazione (da {d_old:.0f} km a {d_new:.0f} km)."
+        elif delta >= 1.5:
+            trend = "moving_away"
+            trend_label = "In allontanamento 🍃"
+            trend_badge = "badge-info"
+            trend_icon = "⚡ ↗️"
+            trend_arrow = "↗️"
+            trend_desc = f"Il fronte temporalesco si sta allontanando (da {d_old:.0f} km a {d_new:.0f} km)."
+        else:
+            trend = "stationary"
+            trend_label = "Stazionario ↔️"
+            trend_badge = "badge-warning"
+            trend_icon = "↔️"
+            trend_arrow = "↔️"
+            trend_desc = f"Scariche attive a distanza approssimativamente costante (~{d_new:.0f} km)."
+    elif len(valid_events) == 1 or (dist is not None and minutes_ago is not None and minutes_ago <= 45):
+        d_val = float(valid_events[0]["distance_km"]) if valid_events else float(dist)
+        if minutes_ago is not None and minutes_ago <= 45:
+            trend = "active"
+            trend_label = "Scarica recente ⚡"
+            trend_badge = "badge-warning"
+            trend_icon = "⚡"
+            trend_desc = f"Ultimo fulmine a {d_val:.0f} km ({minutes_ago} min fa)."
+        else:
+            trend = "idle"
+            trend_label = "Nessun fronte attivo"
+            trend_badge = "badge-neutral"
+            trend_icon = "🟢"
+            trend_desc = "Nessun temporale attivo nell'ultima ora."
+
+    if minutes_ago is not None and minutes_ago > 60:
+        trend = "idle"
+        trend_label = "Nessun fronte attivo"
+        trend_badge = "badge-neutral"
+        trend_icon = "🟢"
+        trend_desc = f"Ultima scarica rilevata {last_time_formatted}."
+
+    threat_level = "clear"
+    threat_label = "Nessun Rischio"
+    threat_badge = "badge-neutral"
+    threat_desc = "Cielo privo di attività elettrica locale."
+
+    if dist is not None and minutes_ago is not None and minutes_ago <= 45:
+        if dist < 6.0 and minutes_ago <= 25:
+            threat_level = "critical"
+            threat_label = "PERICOLO IMMINENTE"
+            threat_badge = "badge-danger"
+            threat_desc = "Fulmini a brevissima distanza (<6 km)! Rimanere al chiuso."
+        elif dist <= 15.0 and minutes_ago <= 35:
+            threat_level = "warning"
+            threat_label = "TEMPORALE VICINO"
+            threat_badge = "badge-danger"
+            threat_desc = f"Cella temporalesca a {dist:.0f} km: tuoni chiaramente udibili e possibili raffiche."
+        elif dist <= 30.0 and minutes_ago <= 45:
+            threat_level = "watch"
+            threat_label = "ATTIVITÀ ELETTRICA"
+            threat_badge = "badge-warning"
+            threat_desc = f"Attività temporalesca nel raggio di {dist:.0f} km."
+
+    is_storm_active = threat_level in ("critical", "warning", "watch")
+
+    lat = settings.LATITUDE
+    lon = settings.LONGITUDE
+    lightning_maps_url = f"https://www.lightningmaps.org/?#m=oss;t=3;s=0;o=0;b=;ts=0;y={lat};x={lon};z=10;d=2;dl=2;dc=0;"
+    blitzortung_url = f"https://www.blitzortung.org/en/live_lightning_maps.php?lat={lat}&lon={lon}&zoom=9"
+
+    formatted_history = []
+    for ev in (recent_events or [])[:6]:
+        formatted_history.append({
+            "distance_km": round(float(ev["distance_km"]), 1) if ev.get("distance_km") is not None else None,
+            "strike_time": ev.get("strike_time"),
+            "time_formatted": ev.get("time_formatted") or format_lightning_time_italian(ev.get("strike_time")),
+            "count": ev.get("count")
+        })
+
+    closest_today_val = stats.get("closest_km_today")
+    closest_today_time_fmt = stats.get("closest_time_formatted")
+
+    return {
+        "current_distance_km": round(float(dist), 1) if dist is not None else None,
+        "last_strike_time": last_time,
+        "last_strike_formatted": last_time_formatted,
+        "minutes_ago": minutes_ago,
+        "count_today": count_today,
+        "count_15m": stats.get("count_15m", 0),
+        "count_1h": stats.get("count_1h", 0),
+        "count_3h": stats.get("count_3h", 0),
+        "closest_km_today": round(float(closest_today_val), 1) if closest_today_val is not None else None,
+        "closest_time_formatted": closest_today_time_fmt,
+        "trend": trend,
+        "trend_label": trend_label,
+        "trend_badge": trend_badge,
+        "trend_icon": trend_icon,
+        "trend_arrow": trend_arrow,
+        "trend_desc": trend_desc,
+        "dist_delta_km": dist_delta_km,
+        "threat_level": threat_level,
+        "threat_label": threat_label,
+        "threat_badge": threat_badge,
+        "threat_desc": threat_desc,
+        "is_storm_active": is_storm_active,
+        "lightning_maps_url": lightning_maps_url,
+        "blitzortung_url": blitzortung_url,
+        "recent_strikes": formatted_history
+    }
+
+
+# ---------------------------------------------------------------------------
 # 5. MOTORE STATO ATMOSFERICO & ANIMAZIONE CIELO IN TEMPO REALE
 # ---------------------------------------------------------------------------
 
@@ -816,17 +1013,23 @@ def calc_current_weather_condition(
 
     z_letter = zambretti.get("letter", "M") if zambretti else "M"
 
-    # 1. Temporale con fulmini
-    if (lightning_dist is not None and lightning_dist <= 25.0) and (r_rate > 0.2 or w_gst >= 35.0):
+    # 1. Temporale con fulmini (attivo entro 15km o pioggia/vento con fulmini entro 25km)
+    if (lightning_dist is not None and lightning_dist <= 15.0) or ((lightning_dist is not None and lightning_dist <= 25.0) and (r_rate > 0.2 or w_gst >= 30.0)):
+        sub_desc = f"Scariche a {lightning_dist} km"
+        if r_rate > 0.2 or w_gst >= 30.0:
+            sub_desc += f" • Rovesci e forti raffiche ({w_gst} km/h)"
+        else:
+            sub_desc += " • Attività elettrica nelle vicinanze"
         return {
             "code": "thunderstorm",
             "title": "Temporale con Attività Elettrica",
             "icon": "⛈️",
-            "desc": f"Scariche a {lightning_dist} km • Rovesci e forti raffiche ({w_gst} km/h)",
+            "desc": sub_desc,
             "sky_theme": "theme-thunderstorm",
             "is_daylight": is_daylight,
             "animation": "storm"
         }
+
 
     # 2. Pioggia Forte / Nubifragio
     if r_rate >= 8.0:
@@ -1215,8 +1418,26 @@ def generate_now_highlights(
     """
     highlights = []
 
+    # 0. ALLERTA PRIORITARIA FULMINI & TEMPORALE (WH57)
+    l_info = analytics_ctx.get("lightning") or {}
+    if l_info.get("is_storm_active") or (l_info.get("trend") == "approaching"):
+        l_dist = l_info.get("current_distance_km")
+        l_trend = l_info.get("trend_label", "In avvicinamento")
+        l_c15 = l_info.get("count_15m", 0)
+        l_sub = f"{l_c15} scariche negli ultimi 15 min" if l_c15 > 0 else f"Ultima scarica {l_info.get('last_strike_formatted', '')}"
+        dist_str = f"a {l_dist} km" if l_dist is not None else ""
+        highlights.append({
+            "category": "lightning_alert",
+            "icon": "⚡ ⛈️",
+            "title": f"Temporale {dist_str} ({l_trend})".strip(),
+            "subtitle": f"{l_sub} • {l_info.get('threat_desc', '')}",
+            "badge_class": l_info.get("threat_badge", "badge-danger"),
+            "action_text": "Allerta WH57"
+        })
+
     # 1. PILLOLA FINESTRE & AERAZIONE (con incrocio AQI)
     window_info = analytics_ctx.get("comfort", {}).get("window", {})
+
     w_status = window_info.get("status", "neutral")
     w_icon = "🪟"
     

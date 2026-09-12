@@ -23,6 +23,8 @@ from backend.aton_service import aton_service
 from backend.homeassistant_service import homeassistant_service
 from backend.thinq_service import thinq_service
 from backend.device_scheduler import device_scheduler
+from backend.helpers import format_lightning_time_italian
+
 
 logger = logging.getLogger("weather_hub.devices_catalog")
 
@@ -104,8 +106,10 @@ def build_devices_catalog() -> Dict[str, Any]:
             "lightning_distance_km": l_dist,
             "lightning_count": l_count,
             "lightning_last_time": l_time,
+            "lightning_last_time_fmt": format_lightning_time_italian(l_time),
             "raw": w_latest,
         })
+
 
         # 0.3 Sensori Umidità Suolo WH51
         s_summary = get_soil_moisture_summary()

@@ -7784,6 +7784,51 @@ body {
     to { transform: rotate(360deg); }
 }
 
+/* ==========================================================================
+   ENHANCED LIGHTNING SENSOR (WH57) STYLES
+   ========================================================================== */
+.lightning-card.card-threat-critical {
+    border-color: rgba(239, 68, 68, 0.6) !important;
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.2);
+}
+
+.lightning-card.card-threat-warning {
+    border-color: rgba(245, 158, 11, 0.5) !important;
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.15);
+}
+
+.threat-pill {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.threat-pill.badge-danger {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.threat-pill.badge-warning {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.btn-subtle-link:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-color: var(--accent) !important;
+}
+
+.badge-km {
+    font-variant-numeric: tabular-nums;
+}
+
+
 
 
 

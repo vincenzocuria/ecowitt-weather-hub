@@ -2057,8 +2057,115 @@ class TestEcowittHub(unittest.TestCase):
             anomaly_alerts = [a for a in sent_alerts if a.get("alert_type") == "anomaly"]
             self.assertEqual(len(anomaly_alerts), 1)
 
+    def test_lightning_sensor_and_trend_intelligence(self):
+        """Testa l'elaborazione del sensore WH57: formattazione data/ora italiana, trend avvicinamento/allontanamento e nowcasting."""
+        from datetime import datetime, timezone, timedelta
+        from backend.helpers import format_lightning_time_italian
+        from backend.analytics import analyze_lightning_activity, calc_current_weather_condition, generate_now_highlights
+        from backend.database import save_reading, get_recent_lightning_events, get_lightning_stats
+        from backend.forecast_service import forecast_service
+
+        # 1. Test formattazione orario italiano
+        self.assertEqual(format_lightning_time_italian(None), "Nessuna recente")
+        self.assertEqual(format_lightning_time_italian(""), "Nessuna recente")
+        self.assertEqual(format_lightning_time_italian("null"), "Nessuna recente")
+
+        now_utc = datetime.now(timezone.utc)
+        fmt_now = format_lightning_time_italian(now_utc.isoformat())
+        self.assertIn("Oggi alle", fmt_now)
+        self.assertIn("min fa", fmt_now)
+
+        yesterday_utc = now_utc - timedelta(days=1)
+        fmt_yesterday = format_lightning_time_italian(yesterday_utc.isoformat())
+        self.assertIn("Ieri alle", fmt_yesterday)
+
+        past_date = datetime(2026, 8, 10, 15, 30, tzinfo=timezone.utc)
+        fmt_past = format_lightning_time_italian(past_date.isoformat())
+        self.assertIn("10 Ago alle", fmt_past)
+
+        # 2. Test calcolo trend (Avvicinamento)
+        events_approaching = [
+            {"distance_km": 11.0, "strike_time": now_utc.isoformat()},
+            {"distance_km": 20.0, "strike_time": (now_utc - timedelta(minutes=10)).isoformat()}
+        ]
+        res_appr = analyze_lightning_activity(
+            latest_reading={"lightning_distance_km": 11.0, "lightning_last_time": now_utc.isoformat()},
+            recent_events=events_approaching
+        )
+        self.assertEqual(res_appr["trend"], "approaching")
+        self.assertIn("In avvicinamento", res_appr["trend_label"])
+        self.assertEqual(res_appr["trend_badge"], "badge-danger")
+        self.assertEqual(res_appr["trend_arrow"], "↘️")
+        self.assertTrue(res_appr["is_storm_active"])
+
+        # 3. Test calcolo trend (Allontanamento)
+        events_moving_away = [
+            {"distance_km": 22.0, "strike_time": now_utc.isoformat()},
+            {"distance_km": 10.0, "strike_time": (now_utc - timedelta(minutes=15)).isoformat()}
+        ]
+        res_away = analyze_lightning_activity(
+            latest_reading={"lightning_distance_km": 22.0, "lightning_last_time": now_utc.isoformat()},
+            recent_events=events_moving_away
+        )
+        self.assertEqual(res_away["trend"], "moving_away")
+        self.assertIn("In allontanamento", res_away["trend_label"])
+        self.assertEqual(res_away["trend_badge"], "badge-info")
+        self.assertEqual(res_away["trend_arrow"], "↗️")
+
+        # 4. Test Livello di Rischio Critico (<6 km)
+        res_crit = analyze_lightning_activity(
+            latest_reading={"lightning_distance_km": 4.5, "lightning_last_time": now_utc.isoformat()},
+            recent_events=[{"distance_km": 4.5, "strike_time": now_utc.isoformat()}]
+        )
+        self.assertEqual(res_crit["threat_level"], "critical")
+        self.assertEqual(res_crit["threat_label"], "PERICOLO IMMINENTE")
+
+        # 5. Test Integrazione Nowcasting Pioggia
+        nowcast = forecast_service.build_rain_nowcasting_summary(
+            current_reading={"rain_rate_mm_hr": 0.0},
+            lightning_info=res_appr
+        )
+        self.assertIn("Cella temporalesca", nowcast["headline"])
+        self.assertEqual(nowcast["icon"], "⛈️")
+        self.assertGreaterEqual(nowcast["prob_next_6h"], 80)
+
+        # 6. Test Highlights "Cosa devo sapere ora" con allerta fulmini
+        ctx_test = {"comfort": {}, "lightning": res_appr}
+        highlights = generate_now_highlights(
+            latest={"temp_c": 25.0},
+            analytics_ctx=ctx_test
+        )
+        self.assertEqual(highlights[0]["category"], "lightning_alert")
+        self.assertIn("Temporale", highlights[0]["title"])
+        self.assertIn("In avvicinamento", highlights[0]["title"])
+
+        # 7. Test persistenza su DB: save_reading registra in lightning_events
+        strike_ts = (now_utc - timedelta(minutes=2)).isoformat()
+        save_reading({
+            "temp_c": 22.0,
+            "humidity": 70.0,
+            "lightning_distance_km": 8.5,
+            "lightning_count": 12,
+            "lightning_last_time": strike_ts,
+            "lightning": {
+                "count_total": 12,
+                "distance_km": 8.5,
+                "last_strike_epoch": int(now_utc.timestamp()),
+                "last_strike_time": strike_ts
+            }
+        })
+        rec_events = get_recent_lightning_events(limit=5)
+        self.assertTrue(len(rec_events) > 0)
+        first_ev = rec_events[0]
+        self.assertEqual(first_ev["distance_km"], 8.5)
+
+        stats = get_lightning_stats()
+        self.assertIsNotNone(stats["closest_km_today"])
+        self.assertLessEqual(stats["closest_km_today"], 8.5)
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

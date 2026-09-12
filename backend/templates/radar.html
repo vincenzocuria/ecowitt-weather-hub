@@ -18,11 +18,15 @@
                 </div>
             </div>
         </div>
-        <div class="header-actions">
+        <div class="header-actions" style="display: flex; gap: 8px;">
+            <a href="{{ lightning.lightning_maps_url if lightning else 'https://www.lightningmaps.org' }}" target="_blank" rel="noopener" class="btn btn-secondary" style="display: flex; align-items: center; gap: 6px; text-decoration: none;">
+                ⚡ <span>Mappa Fulmini Live</span>
+            </a>
             <button type="button" class="btn btn-secondary" onclick="centerToStation()" style="display: flex; align-items: center; gap: 6px;">
                 📍 <span>Mia Stazione</span>
             </button>
         </div>
+
     </div>
 
     <!-- CONTENITORE MAPPA & OVERLAY CONTROLLI -->
@@ -167,8 +171,28 @@
             </div>
         `);
 
+        {% if lightning and lightning.current_distance_km %}
+        const lightningDistKm = {{ lightning.current_distance_km }};
+        const lightningCircle = L.circle([STATION_LAT, STATION_LON], {
+            radius: lightningDistKm * 1000,
+            color: '#eab308',
+            weight: 2,
+            dashArray: '6, 8',
+            fillColor: '#facc15',
+            fillOpacity: 0.08
+        }).addTo(map);
+        lightningCircle.bindPopup(`
+            <div style="font-size: 0.85rem; color: #fff;">
+                <strong>⚡ Raggio Rilevamento WH57</strong><br>
+                Scarica stimata a <strong>${lightningDistKm} km</strong> dalla stazione.<br>
+                <em style="color: #facc15;">{{ lightning.trend_desc }}</em>
+            </div>
+        `);
+        {% endif %}
+
         // Carica dati fotogrammi da RainViewer on-demand
         loadRainViewerData();
+
     }
 
     // Caricamento API RainViewer (100% On-Demand)

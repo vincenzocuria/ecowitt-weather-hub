@@ -2,8 +2,8 @@
 Modulo centralizzato per la formattazione e la localizzazione di date e timestamp (fuso orario italiano).
 """
 
-from datetime import datetime, timezone
-from typing import Optional, Union
+from datetime import datetime, timezone, timedelta
+from typing import Optional, Union, Any
 
 from backend.config import settings
 
@@ -107,6 +107,85 @@ def format_seconds_italian(seconds: Optional[Union[int, float]]) -> str:
     return format_duration_italian(sec / 60.0)
 
 
+def format_lightning_time_italian(val: Any, include_relative: bool = True) -> str:
+    """
+    Formatta la data/ora di una scarica di fulmine in modo chiaro, naturale e nel fuso orario italiano.
+    Accetta stringhe ISO (anche UTC), float/int epoch o oggetti datetime.
+    Esempi:
+        - "Oggi alle 13:14 (2 min fa)"
+        - "Oggi alle 08:30"
+        - "Ieri alle 21:15"
+        - "10 Ago alle 15:52"
+        - "Nessuna recente" se nullo o vuoto
+    """
+    if val is None or val == "":
+        return "Nessuna recente"
+
+    tz = settings.get_tz()
+    now_local = datetime.now(timezone.utc).astimezone(tz)
+
+    dt_local = None
+    if isinstance(val, (int, float)):
+        try:
+            if val <= 0:
+                return "Nessuna recente"
+            dt_local = datetime.fromtimestamp(val, tz=timezone.utc).astimezone(tz)
+        except Exception:
+            return "Nessuna recente"
+    elif isinstance(val, datetime):
+        if val.tzinfo is None:
+            dt_local = val.replace(tzinfo=timezone.utc).astimezone(tz)
+        else:
+            dt_local = val.astimezone(tz)
+    elif isinstance(val, str):
+        v = val.strip()
+        if not v or v.lower() in ("none", "null", "nessuna", "nessuna recente", "n/d", "--"):
+            return "Nessuna recente"
+        try:
+            if v.isdigit():
+                return format_lightning_time_italian(int(v), include_relative)
+            parsed_dt = datetime.fromisoformat(v.replace("Z", "+00:00"))
+            if parsed_dt.tzinfo is None:
+                parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
+            dt_local = parsed_dt.astimezone(tz)
+        except Exception:
+            if len(v) == 5 and ":" in v:
+                return f"Oggi alle {v}"
+            return v
+    else:
+        return "Nessuna recente"
+
+    diff_sec = max(0, int((now_local - dt_local).total_seconds()))
+    diff_min = diff_sec // 60
+
+    time_str = dt_local.strftime("%H:%M")
+    today_date = now_local.date()
+    strike_date = dt_local.date()
+
+    if strike_date == today_date:
+        day_prefix = "Oggi alle"
+        if include_relative:
+            if diff_min < 1:
+                rel_str = "meno di 1 min fa"
+            elif diff_min == 1:
+                rel_str = "1 min fa"
+            elif diff_min < 60:
+                rel_str = f"{diff_min} min fa"
+            elif diff_min < 120:
+                rel_str = "1 ora fa"
+            elif diff_min < 1440:
+                rel_str = f"{diff_min // 60} ore fa"
+            else:
+                rel_str = ""
+            return f"{day_prefix} {time_str} ({rel_str})" if rel_str else f"{day_prefix} {time_str}"
+        return f"{day_prefix} {time_str}"
+    elif strike_date == (today_date - timedelta(days=1)):
+        return f"Ieri alle {time_str}"
+    else:
+        month_abbr = ITALIAN_SHORT_MONTHS.get(f"{dt_local.month:02d}", dt_local.strftime("%b"))
+        return f"{dt_local.day} {month_abbr} alle {time_str}"
+
+
 __all__ = [
     "ITALIAN_MONTHS",
     "ITALIAN_SHORT_MONTHS",
@@ -116,4 +195,6 @@ __all__ = [
     "get_weekday_name",
     "format_duration_italian",
     "format_seconds_italian",
+    "format_lightning_time_italian",
 ]
+

@@ -19,7 +19,14 @@ def get_connection() -> sqlite3.Connection:
     conn.execute("PRAGMA synchronous = NORMAL;")
     return conn
 
-from backend.helpers import to_local_datetime_str, ITALIAN_MONTHS, get_month_name, format_duration_italian, format_seconds_italian
+from backend.helpers import (
+    to_local_datetime_str,
+    ITALIAN_MONTHS,
+    get_month_name,
+    format_duration_italian,
+    format_seconds_italian,
+    format_lightning_time_italian,
+)
 
 
 # Definizioni dei record tracciati nell'Albo dei Record
@@ -400,15 +407,58 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_health_date ON health_daily_history (date)")
 
     # Pulizia automatica baseline fittizia (rimozione campioni generati randomicamente)
+    # 19. Eventi e Scariche Fulmini (WH57)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lightning_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            strike_time TEXT NOT NULL,
+            strike_epoch INTEGER,
+            distance_km REAL NOT NULL,
+            count INTEGER
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_lightning_time ON lightning_events (timestamp)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_lightning_epoch ON lightning_events (strike_epoch)")
+
+    # Backfill storico scariche se la tabella è vuota e sono presenti record precedenti
     try:
-        cursor.execute("DELETE FROM health_daily_history WHERE created_at LIKE '%2026-08-29T22:49%'")
-        # Correzione automatica record 2026-09-05 affetto dal bug contatore hardware cumulativo Android (11.099 passi -> 2.599 passi reali)
-        cursor.execute("UPDATE health_daily_history SET steps = 2599, distance_m = 1970.97 WHERE date = '2026-09-05' AND steps = 11099")
+        cursor.execute("SELECT COUNT(*) AS c FROM lightning_events")
+        row_c = cursor.fetchone()
+        if row_c and row_c["c"] == 0:
+            cursor.execute("""
+                SELECT MIN(timestamp) AS ts, lightning_last_time, lightning_distance_km, MAX(lightning_count) AS cnt
+                FROM weather_records
+                WHERE lightning_distance_km IS NOT NULL 
+                  AND lightning_last_time IS NOT NULL 
+                  AND TRIM(lightning_last_time) != ''
+                GROUP BY lightning_last_time
+                ORDER BY ts ASC
+            """)
+            rows = cursor.fetchall()
+            for r in rows:
+                l_last = r["lightning_last_time"]
+                l_dist = r["lightning_distance_km"]
+                l_cnt = r["cnt"]
+                epoch_val = None
+                try:
+                    if str(l_last).isdigit():
+                        epoch_val = int(l_last)
+                    else:
+                        dt = datetime.fromisoformat(str(l_last).replace("Z", "+00:00"))
+                        epoch_val = int(dt.timestamp())
+                except Exception:
+                    epoch_val = None
+                cursor.execute("""
+                    INSERT INTO lightning_events (timestamp, strike_time, strike_epoch, distance_km, count)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (r["ts"], str(l_last), epoch_val, l_dist, l_cnt))
     except Exception:
         pass
-    
+
     conn.commit()
     conn.close()
+
 
 init_db()
 
@@ -599,10 +649,44 @@ def save_reading(data: Dict[str, Any]) -> int:
             json.dumps({k: v for k, v in data.get("raw_payload", {}).items() if k != "PASSKEY"}) if isinstance(data.get("raw_payload"), dict) else json.dumps({})
         ))
         record_id = cursor.lastrowid
+
+        # Registrazione evento scarica fulmine WH57
+        if l_dist is not None and l_last:
+            try:
+                l_epoch = lightning.get("last_strike_epoch")
+                if not l_epoch:
+                    try:
+                        if str(l_last).isdigit():
+                            l_epoch = int(l_last)
+                        else:
+                            dt = datetime.fromisoformat(str(l_last).replace("Z", "+00:00"))
+                            l_epoch = int(dt.timestamp())
+                    except Exception:
+                        l_epoch = None
+
+                already_exists = False
+                if l_epoch:
+                    cursor.execute("SELECT id FROM lightning_events WHERE strike_epoch = ? LIMIT 1", (l_epoch,))
+                    if cursor.fetchone():
+                        already_exists = True
+                if not already_exists and l_last:
+                    cursor.execute("SELECT id FROM lightning_events WHERE strike_time = ? LIMIT 1", (str(l_last),))
+                    if cursor.fetchone():
+                        already_exists = True
+
+                if not already_exists:
+                    cursor.execute("""
+                        INSERT INTO lightning_events (timestamp, strike_time, strike_epoch, distance_km, count)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (ts, str(l_last), l_epoch, float(l_dist), l_count))
+            except Exception:
+                pass
+
         conn.commit()
         return record_id
     finally:
         conn.close()
+
 
 def get_latest_reading() -> Optional[Dict[str, Any]]:
     conn = get_connection()
@@ -625,7 +709,102 @@ def get_latest_reading() -> Optional[Dict[str, Any]]:
     d["pressure_trend"] = get_pressure_trend(d.get("pressure_rel_hpa"))
     return d
 
+
+# ----------------- FULMINI & STATISTICHE WH57 -----------------
+
+def get_recent_lightning_events(limit: int = 10, hours: int = 48) -> List[Dict[str, Any]]:
+    """Restituisce le ultime scariche di fulmine registrate dal sensore WH57."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        since_iso = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        cursor.execute("""
+            SELECT id, timestamp, strike_time, strike_epoch, distance_km, count
+            FROM lightning_events
+            WHERE timestamp >= ? OR strike_time >= ?
+            ORDER BY id DESC
+            LIMIT ?
+        """, (since_iso, since_iso, limit))
+        rows = cursor.fetchall()
+        if not rows:
+            cursor.execute("""
+                SELECT id, timestamp, strike_time, strike_epoch, distance_km, count
+                FROM lightning_events
+                ORDER BY id DESC
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+
+        events = []
+        for r in rows:
+            d = dict(r)
+            d["time_formatted"] = format_lightning_time_italian(d["strike_time"])
+            events.append(d)
+        return events
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
+def get_lightning_stats(hours: int = 24) -> Dict[str, Any]:
+    """Calcola statistiche aggregate sui fulmini: scarica più vicina, conteggi 15m/1h/3h/oggi."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        tz = settings.get_tz()
+        now_dt = datetime.now(timezone.utc)
+        now_local = now_dt.astimezone(tz)
+        today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start_utc = today_start_local.astimezone(timezone.utc).isoformat()
+
+        t15m = (now_dt - timedelta(minutes=15)).isoformat()
+        t1h = (now_dt - timedelta(hours=1)).isoformat()
+        t3h = (now_dt - timedelta(hours=3)).isoformat()
+
+        cursor.execute("""
+            SELECT 
+                COUNT(CASE WHEN timestamp >= ? OR strike_time >= ? THEN 1 END) as count_15m,
+                COUNT(CASE WHEN timestamp >= ? OR strike_time >= ? THEN 1 END) as count_1h,
+                COUNT(CASE WHEN timestamp >= ? OR strike_time >= ? THEN 1 END) as count_3h,
+                COUNT(CASE WHEN timestamp >= ? OR strike_time >= ? THEN 1 END) as count_today,
+                MIN(CASE WHEN timestamp >= ? OR strike_time >= ? THEN distance_km END) as closest_km_today
+            FROM lightning_events
+        """, (t15m, t15m, t1h, t1h, t3h, t3h, today_start_utc, today_start_utc, today_start_utc, today_start_utc))
+        row = cursor.fetchone()
+
+        closest_km = row["closest_km_today"] if row else None
+        closest_time = None
+        if closest_km is not None:
+            cursor.execute("""
+                SELECT strike_time FROM lightning_events 
+                WHERE (timestamp >= ? OR strike_time >= ?) AND distance_km = ?
+                ORDER BY id DESC LIMIT 1
+            """, (today_start_utc, today_start_utc, closest_km))
+            crow = cursor.fetchone()
+            if crow:
+                closest_time = crow["strike_time"]
+
+        return {
+            "count_15m": row["count_15m"] if row else 0,
+            "count_1h": row["count_1h"] if row else 0,
+            "count_3h": row["count_3h"] if row else 0,
+            "count_today": row["count_today"] if row else 0,
+            "closest_km_today": closest_km,
+            "closest_time_today": closest_time,
+            "closest_time_formatted": format_lightning_time_italian(closest_time, include_relative=False) if closest_time else None
+        }
+    except Exception:
+        return {
+            "count_15m": 0, "count_1h": 0, "count_3h": 0, "count_today": 0,
+            "closest_km_today": None, "closest_time_today": None, "closest_time_formatted": None
+        }
+    finally:
+        conn.close()
+
+
 # ----------------- GESTIONE RECORD & EXTREMES -----------------
+
 
 def check_and_update_records(
     data_or_key: Union[Dict[str, Any], str],

@@ -240,7 +240,8 @@ async def radar_page(request: Request):
     latest = get_latest_reading() or {}
     temp_c = latest.get("temp_c")
     rain_rate = latest.get("rain_rate_mm_hr", 0.0) or 0.0
-    current_cond = calc_current_weather_condition(
+    analytics = build_analytics_context(latest)
+    current_cond = analytics.get("current_condition") or calc_current_weather_condition(
         temp_c=temp_c,
         humidity=latest.get("humidity"),
         dew_point_c=latest.get("dew_point_c"),
@@ -264,9 +265,12 @@ async def radar_page(request: Request):
             "location_name": settings.LOCATION_NAME,
             "temp_c": temp_c,
             "rain_rate": rain_rate,
-            "current_cond": current_cond
+            "current_cond": current_cond,
+            "analytics": analytics,
+            "lightning": analytics.get("lightning")
         }
     )
+
 
 @router.get("/kiosk", response_class=HTMLResponse)
 async def kiosk_page(request: Request):

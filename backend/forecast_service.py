@@ -515,14 +515,22 @@ class ForecastService:
 
     # ----------------- 3. NOWCASTING RADAR & PRECIPITAZIONI -----------------
 
-    def build_rain_nowcasting_summary(self, current_reading: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    def build_rain_nowcasting_summary(self, current_reading: Optional[Dict[str, Any]], lightning_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Algoritmo di nowcasting pioggia a 0-6 ore che combina:
         - Telemetria live della stazione (pioggia in corso, rain rate, trend barometrico)
+        - Rilevatore fulmini WH57 (celle temporalesche attive o in avvicinamento)
         - Previsioni orarie ad alta risoluzione Open-Meteo (prossime 6 ore)
         - Calcolo tempi di arrivo stimati pioggia / rovesci.
         """
         current_rain_rate = current_reading.get("rain_rate_mm_hr", 0.0) if current_reading else 0.0
+
+        if lightning_info is None and current_reading:
+            try:
+                from backend.analytics import analyze_lightning_activity
+                lightning_info = analyze_lightning_activity(current_reading)
+            except Exception:
+                lightning_info = None
 
         forecast = self.fetch_open_meteo()
         hourly = forecast.get("hourly_next_36h", []) if forecast else []
@@ -575,6 +583,26 @@ class ForecastService:
                 "rain_sum_next_6h": round(total_rain_6h, 1),
                 "radar_link": "/radar"
             }
+
+        # Controllo cella temporalesca attiva o in avvicinamento dal sensore fulmini WH57
+        if lightning_info and (lightning_info.get("is_storm_active") or lightning_info.get("trend") == "approaching"):
+            l_dist = lightning_info.get("current_distance_km")
+            l_trend_lbl = lightning_info.get("trend_label", "In avvicinamento")
+            l_threat = lightning_info.get("threat_level", "warning")
+            l_desc = lightning_info.get("trend_desc") or f"Scariche attive a {l_dist} km dalla stazione."
+            dist_txt = f"a {l_dist} km" if l_dist is not None else "nelle vicinanze"
+
+            return {
+                "active_rain": False,
+                "headline": f"⛈️ Cella temporalesca {dist_txt} ({l_trend_lbl})!",
+                "desc": f"{l_desc} Possibili rovesci improvvisi e forti raffiche.",
+                "icon": "⛈️",
+                "status_class": "danger" if l_threat in ("critical", "warning") else "warning",
+                "prob_next_6h": max(85, max_prob_6h),
+                "rain_sum_next_6h": max(total_rain_6h, 1.5),
+                "radar_link": "/radar"
+            }
+
 
         if first_rain_hour is not None:
             try:

@@ -1028,7 +1028,7 @@ function renderWeatherDetail(dev) {
     } else if (isLightning) {
         const dist = dev.lightning_distance_km;
         const count = dev.lightning_count || 0;
-        const lastTime = dev.lightning_last_time || 'Nessuna recente';
+        const lastTime = dev.lightning_last_time_fmt || dev.lightning_last_time || 'Nessuna recente';
         specificCards = `
             <div class="telemetry-card">
                 <span class="tel-label">⚡ Distanza Fulmine</span>

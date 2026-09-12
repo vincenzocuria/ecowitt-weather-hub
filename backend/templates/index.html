@@ -514,47 +514,116 @@
         </div>
 
         <!-- 8. RILEVATORE FULMINI (WH57) -->
-        <div class="card">
+        {% set l_data = analytics.lightning if analytics and analytics.lightning else None %}
+        <div class="card lightning-card {{ 'card-threat-' + l_data.threat_level if l_data and l_data.is_storm_active else '' }}" id="lightning_main_card">
             <div class="card-header">
-                <span>⚡ Rilevatore Fulmini</span>
-                <span class="sub-badge" id="lightning_badge">
-                    {% if latest.lightning_distance_km is not none %}
-                        ⚡ Rilevamento Attivo
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span>⚡ Rilevatore Fulmini</span>
+                    <span style="font-size: 0.72rem; color: var(--text-dim);">(WH57)</span>
+                </div>
+                <span class="sub-badge {{ l_data.trend_badge if l_data else 'badge-neutral' }}" id="lightning_badge">
+                    {% if l_data and l_data.trend_label %}
+                        {{ l_data.trend_icon }} {{ l_data.trend_label }}
                     {% else %}
-                        WH57 • Tempesta
+                        WH57 • In ascolto
                     {% endif %}
                 </span>
             </div>
-            <div class="main-stat">
-                <span class="val" id="lightning_dist_val">
-                    {% if latest.lightning_distance_km is not none %}
-                        {{ latest.lightning_distance_km }} <span class="unit">km</span>
-                    {% else %}
-                        0 <span class="unit">Scariche</span>
-                    {% endif %}
-                </span>
-            </div>
-            <div class="item-list">
-                <div class="item">
-                    <span>Stato Rilevamento (WH57):</span>
-                    <strong id="lightning">
-                        {% if latest.lightning_distance_km is not none %}
-                            ⚡ Distanza: {{ latest.lightning_distance_km }} km ({{ latest.lightning_count or 0 }} totali)
+
+            <!-- STATISTICA PRINCIPALE -->
+            <div class="main-stat" style="display: flex; align-items: baseline; justify-content: space-between;">
+                <div>
+                    <span class="val" id="lightning_dist_val">
+                        {% if l_data and l_data.current_distance_km is not none %}
+                            {{ l_data.current_distance_km }} <span class="unit">km</span>
                         {% else %}
-                            <span style="color: var(--text-muted); font-size: 0.85rem;">Nessun fulmine nelle vicinanze</span>
+                            {{ l_data.count_today if l_data else (latest.lightning_count or 0) }} <span class="unit">Scariche Oggi</span>
+                        {% endif %}
+                    </span>
+                    <span id="lightning_trend_arrow" style="font-size: 1.25rem; margin-left: 4px;">{{ l_data.trend_arrow if l_data else '' }}</span>
+                </div>
+                {% if l_data and l_data.is_storm_active %}
+                <span class="threat-pill {{ l_data.threat_badge }}" id="lightning_threat_pill">
+                    {{ l_data.threat_label }}
+                </span>
+                {% endif %}
+            </div>
+
+            <!-- DETTAGLI DI STATO & TREND -->
+            <div class="item-list" style="margin-bottom: 8px;">
+                <div class="item">
+                    <span>Tendenza & Stato:</span>
+                    <strong id="lightning_trend_desc" style="color: {{ 'var(--danger)' if l_data and l_data.trend == 'approaching' else ('var(--info)' if l_data and l_data.trend == 'moving_away' else 'inherit') }}; font-size: 0.86rem;">
+                        {{ l_data.trend_desc if l_data else 'Nessun fronte attivo rilevato' }}
+                    </strong>
+                </div>
+                <div class="item">
+                    <span>Ultima Scarica:</span>
+                    <strong id="lightning_time" style="font-size: 0.88rem;">{{ l_data.last_strike_formatted if l_data else (latest.lightning_last_time or 'Nessuna recente') }}</strong>
+                </div>
+                <div class="item">
+                    <span>Scarica Più Vicina Oggi:</span>
+                    <strong id="lightning_closest">
+                        {% if l_data and l_data.closest_km_today is not none %}
+                            {{ l_data.closest_km_today }} km {% if l_data.closest_time_formatted %}<span style="font-weight: normal; color: var(--text-dim); font-size: 0.78rem;">({{ l_data.closest_time_formatted }})</span>{% endif %}
+                        {% else %}
+                            <span style="color: var(--text-muted); font-size: 0.85rem;">--</span>
                         {% endif %}
                     </strong>
                 </div>
                 <div class="item">
-                    <span>Ultima Scarica Rilevata:</span>
-                    <strong id="lightning_time">{{ latest.lightning_last_time or 'Nessuna recente' }}</strong>
-                </div>
-                <div class="item">
                     <span>Scariche Totali Oggi:</span>
-                    <strong id="lightning_count_today">{{ latest.lightning_count or 0 }}</strong>
+                    <strong id="lightning_count_today">
+                        {{ l_data.count_today if l_data else (latest.lightning_count or 0) }}
+                        {% if l_data and l_data.count_1h > 0 %}
+                            <span style="font-weight: normal; color: var(--accent); font-size: 0.78rem;">({{ l_data.count_1h }} nell'ultima ora)</span>
+                        {% endif %}
+                    </strong>
+                </div>
+            </div>
+
+            <!-- CRONOLOGIA ULTIMI FULMINI (MINI-TIMELINE) -->
+            <div class="lightning-recent-section" id="lightning_recent_box" style="border-top: 1px solid var(--border); padding-top: 8px; margin-top: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 0.78rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">
+                        📜 Ultimi Fulmini Rilevati
+                    </span>
+                    <a href="/radar" style="font-size: 0.75rem; color: var(--accent); text-decoration: none; font-weight: 500;">
+                        Radar Live →
+                    </a>
+                </div>
+                <div class="lightning-timeline" id="lightning_timeline_list" style="display: flex; flex-direction: column; gap: 4px;">
+                    {% if l_data and l_data.recent_strikes and l_data.recent_strikes|length > 0 %}
+                        {% for strike in l_data.recent_strikes[:4] %}
+                        <div class="lightning-strike-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 4px 8px; border-radius: 6px; font-size: 0.82rem;">
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span>⚡</span>
+                                <span>{{ strike.time_formatted }}</span>
+                            </div>
+                            <div>
+                                <span class="badge-km" style="font-weight: 600; background: rgba(234, 179, 8, 0.15); color: #fde047; padding: 2px 6px; border-radius: 4px;">{{ strike.distance_km }} km</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div style="font-size: 0.8rem; color: var(--text-muted); font-style: italic; padding: 4px 0;">
+                            Nessuna scarica registrata nelle ultime ore.
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <!-- LINK MAPPA ESTERNA LIVE (BLITZORTUNG / LIGHTNINGMAPS) -->
+                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                    <a href="{{ l_data.lightning_maps_url if l_data else 'https://www.lightningmaps.org' }}" target="_blank" rel="noopener" class="btn-subtle-link" style="flex: 1; text-align: center; font-size: 0.76rem; padding: 5px 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
+                        🌐 <span>Mappa Fulmini Live</span>
+                    </a>
+                    <a href="/radar" class="btn-subtle-link" style="flex: 1; text-align: center; font-size: 0.76rem; padding: 5px 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
+                        🌧️ <span>Radar Stazione</span>
+                    </a>
                 </div>
             </div>
         </div>
+
 
         <!-- 9. QUALITÀ DELL'ARIA & POLLINI CAMS -->
         <div class="card">

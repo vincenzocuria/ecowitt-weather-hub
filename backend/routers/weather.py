@@ -38,8 +38,10 @@ from backend.analytics import (
     calc_humidex, evaluate_outdoor_activity, calc_sun_ephemeris, calc_moon_phase,
     calc_beaufort_scale, evaluate_indoor_comfort, calc_current_weather_condition,
     calc_evapotranspiration, evaluate_smart_irrigation, generate_now_highlights,
-    calc_dew_point, calc_apparent_temp, deg_to_compass
+    calc_dew_point, calc_apparent_temp, deg_to_compass, analyze_lightning_activity
 )
+from backend.helpers import format_lightning_time_italian
+
 from backend.forecast_service import forecast_service
 from backend.civil_protection_service import civil_protection_service
 from backend.aton_service import aton_service
@@ -123,7 +125,10 @@ def build_analytics_context(latest: dict) -> dict:
     # 4. Solar Forecast & Nowcasting
     aton_curr = aton_service.latest_data or get_latest_energy() or {}
     solar_forecast = forecast_service.fetch_solar_forecast(aton_data=aton_curr)
-    rain_nowcast = forecast_service.build_rain_nowcasting_summary(latest)
+    
+    # 4.5 Analisi Intelligente Fulmini WH57 & Nowcasting Cella
+    lightning_info = analyze_lightning_activity(latest)
+    rain_nowcast = forecast_service.build_rain_nowcasting_summary(latest, lightning_info=lightning_info)
 
     sun_info = calc_sun_ephemeris(settings.LATITUDE, settings.LONGITUDE)
     moon_info = calc_moon_phase()
@@ -153,6 +158,7 @@ def build_analytics_context(latest: dict) -> dict:
     ctx = {
         "current_condition": current_cond,
         "zambretti": zambretti,
+        "lightning": lightning_info,
         "comfort": {
             "window": window_advice,
             "laundry": laundry_advice,
@@ -181,6 +187,7 @@ def build_analytics_context(latest: dict) -> dict:
 
     # 5. Generazione Pillole Dinamiche "Cosa devo sapere ora"
     ctx["now_highlights"] = generate_now_highlights(latest, ctx, air_quality, solar_forecast, rain_nowcast, aton_data=aton_curr)
+
 
     return ctx
 
@@ -256,6 +263,20 @@ async def api_analytics():
     latest = get_latest_reading() or {}
     return build_analytics_context(latest)
 
+@router.get("/api/lightning/history")
+async def api_lightning_history(limit: int = 20, hours: int = 48):
+    """Restituisce lo storico recente delle scariche di fulmine registrate dal sensore WH57."""
+    from backend.database import get_recent_lightning_events, get_lightning_stats
+    events = get_recent_lightning_events(limit=limit, hours=hours)
+    stats = get_lightning_stats(hours=hours)
+    latest = get_latest_reading() or {}
+    analysis = analyze_lightning_activity(latest, recent_events=events, stats=stats)
+    return {
+        "analysis": analysis,
+        "events": events,
+        "stats": stats
+    }
+
 @router.get("/api/live")
 async def api_live():
     latest = get_latest_reading()
@@ -274,10 +295,13 @@ async def api_live():
     clean_latest["status_info"] = status_info
     analytics_ctx = build_analytics_context(latest)
     clean_latest["analytics"] = analytics_ctx
+    clean_latest["lightning_last_time_fmt"] = format_lightning_time_italian(latest.get("lightning_last_time"))
+    clean_latest["lightning_analytics"] = analytics_ctx.get("lightning", {})
     clean_latest["sensor_aliases"] = get_sensor_aliases()
     clean_latest["climate_devices"] = thinq_service.get_cached_devices()
     clean_latest["thinq_enabled"] = settings.LG_THINQ_ENABLED
     clean_latest["thinq_connected"] = thinq_service.is_connected
+
     ha_sum = homeassistant_service.get_summary(
         aton_service.latest_data or get_latest_energy() or {},
         analytics_ctx.get("drying_index") if analytics_ctx else None
