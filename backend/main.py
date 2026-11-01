@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import sys
+import hmac
 import asyncio
 import logging
 from pathlib import Path
@@ -73,6 +74,13 @@ async def watchdog_worker():
                     ha_sum.get("presence") if ha_sum else None
                 )
 
+        except Exception as e:
+            logger.error(f"Errore nel watchdog worker: {e}")
+
+        # Irrigazione in un blocco separato: un errore nelle fasi precedenti non deve mai
+        # impedire al watchdog di sicurezza di chiudere l'elettrovalvola.
+        try:
+            latest_w = get_latest_reading() or {}
             # Automazioni Irrigazione Intelligente (WH51 + Elettrovalvola Home Assistant + Meteo Predittivo)
             fc_rain = 0.0
             try:
@@ -92,7 +100,7 @@ async def watchdog_worker():
                 recent_rain_48h_mm=recent_rain_mm
             )
         except Exception as e:
-            logger.error(f"Errore nel watchdog worker: {e}")
+            logger.error(f"Errore nel watchdog irrigazione: {e}")
         await asyncio.sleep(60)
 
 @asynccontextmanager
@@ -118,14 +126,16 @@ async def lifespan(app: FastAPI):
 # Inizializzazione FastAPI
 app = FastAPI(title="Ecowitt & Sainlogic Weather Station Hub", lifespan=lifespan)
 
-# CORS Middleware (sicuro e compatibile)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"^https?://.*$",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
+# CORS: la dashboard è servita dalla stessa origine, quindi di default nessuna origine esterna è ammessa.
+# Per integrazioni esterne elencare le origini esplicite in CORS_ALLOWED_ORIGINS (separate da virgola).
+if settings.CORS_ALLOWED_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"]
+    )
 
 @app.middleware("http")
 async def add_no_cache_headers(request: Request, call_next):
@@ -171,12 +181,15 @@ async def auth_middleware(request: Request, call_next):
     is_authenticated = False
     set_cookie_needed = False
 
-    if token_param and token_param == settings.AUTH_TOKEN:
+    def _matches(candidate: str | None) -> bool:
+        return bool(candidate) and hmac.compare_digest(candidate, settings.AUTH_TOKEN)
+
+    if _matches(token_param):
         is_authenticated = True
         set_cookie_needed = True
-    elif cookie_token and cookie_token == settings.AUTH_TOKEN:
+    elif _matches(cookie_token):
         is_authenticated = True
-    elif header_token and header_token == settings.AUTH_TOKEN:
+    elif _matches(header_token):
         is_authenticated = True
 
     if not is_authenticated:
@@ -189,7 +202,15 @@ async def auth_middleware(request: Request, call_next):
         login_url = f"/login?{urlencode({'next': str(request.url.path)})}"
         return RedirectResponse(url=login_url, status_code=303)
 
-    response = await call_next(request)
+    # Primo accesso da pagina con ?token=...: salva il cookie e ricarica la pagina senza il token
+    # nell'URL, così non resta in cronologia, nei log del tunnel o nel Referer.
+    if set_cookie_needed and request.method == "GET" and not path.startswith("/api/"):
+        from urllib.parse import urlencode
+        clean_params = [(k, v) for k, v in request.query_params.multi_items() if k not in ("token", "key", "auth")]
+        clean_url = path + (f"?{urlencode(clean_params)}" if clean_params else "")
+        response = RedirectResponse(url=clean_url, status_code=303)
+    else:
+        response = await call_next(request)
 
     # Se l'utente ha usato ?token=... per il primo accesso, salva il cookie per 10 anni
     if set_cookie_needed:

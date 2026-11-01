@@ -1,3 +1,4 @@
+import hmac
 import io
 import csv
 import time
@@ -202,14 +203,18 @@ async def ingest_ecowitt(request: Request, bg: BackgroundTasks):
     except Exception:
         data = dict(request.query_params)
         
-    # Validazione PASSKEY opzionale di sicurezza
+    # Validazione PASSKEY di sicurezza
     if settings.ECOWITT_STATION_PASSKEY:
-        incoming_passkey = data.get("PASSKEY", "")
-        if incoming_passkey != settings.ECOWITT_STATION_PASSKEY:
-            logger.warning(f"Ricevuto payload con PASSKEY non autorizzata: {incoming_passkey}")
+        incoming_passkey = str(data.get("PASSKEY", ""))
+        if not hmac.compare_digest(incoming_passkey, settings.ECOWITT_STATION_PASSKEY):
+            logger.warning("Ricevuto payload Ecowitt con PASSKEY non autorizzata da %s", request.client.host if request.client else "?")
             return JSONResponse({"status": "error", "message": "Invalid PASSKEY"}, status_code=403)
+    elif any(h in request.headers for h in ("cf-connecting-ip", "x-forwarded-for", "x-real-ip")):
+        # Senza PASSKEY configurata si accettano solo invii diretti dalla LAN, mai via tunnel/proxy pubblico
+        logger.warning("Payload Ecowitt rifiutato: arrivato tramite proxy/tunnel senza ECOWITT_STATION_PASSKEY configurata")
+        return JSONResponse({"status": "error", "message": "PASSKEY required"}, status_code=403)
 
-    logger.info(f"Ricevuto payload da Stazione (PASSKEY: {data.get('PASSKEY', 'N/D')})")
+    logger.info("Ricevuto payload da Stazione")
     bg.add_task(process_weather_data, data)
     return {"status": "success"}
 

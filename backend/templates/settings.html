@@ -379,7 +379,7 @@
                 </div>
                 <div class="sensor-alias-input-group">
                     <input type="text" id="alias_{{ s.key }}" class="sensor-alias-input" value="{{ s.alias }}" placeholder="Es: Giardino, Piante Soggiorno...">
-                    <button type="button" class="btn btn-sm sensor-alias-btn" onclick="saveSensorAlias('{{ s.key }}', document.getElementById('alias_{{ s.key }}').value)">Salva</button>
+                    <button type="button" class="btn btn-sm sensor-alias-btn" onclick="saveSensorAlias({{ s.key|js }}, document.getElementById('alias_' + {{ s.key|js }}).value)">Salva</button>
                 </div>
             </div>
             {% endfor %}
@@ -526,10 +526,10 @@
                         </div>
                     </div>
                     <div style="display: flex; align-items: center; gap: 6px;">
-                        <button type="button" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="testToggleTuya('{{ ldev.device_id }}')">
+                        <button type="button" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="testToggleTuya({{ ldev.device_id|js }})">
                             ⚡ Prova Toggle LAN
                         </button>
-                        <button type="button" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.55rem; font-size: 0.78rem;" onclick="editLocalTuya('{{ ldev.device_id }}', '{{ ldev.name }}', '{{ ldev.local_key }}', '{{ ldev.ip_address or '' }}', '{{ ldev.version }}')">
+                        <button type="button" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.55rem; font-size: 0.78rem;" data-id="{{ ldev.device_id }}" data-name="{{ ldev.name }}" data-ip="{{ ldev.ip_address or '' }}" data-ver="{{ ldev.version }}" onclick="editLocalTuya(this.dataset)">
                             ✏️ Modifica
                         </button>
                         <button type="button" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.55rem; font-size: 0.78rem; border-color: #ef4444; color: #ef4444;" onclick="deleteLocalTuya('{{ ldev.device_id }}')">
@@ -1636,6 +1636,7 @@ function openAddLocalTuyaModal() {
     document.getElementById('tuya_local_input_id').value = '';
     document.getElementById('tuya_local_input_id').readOnly = false;
     document.getElementById('tuya_local_input_key').value = '';
+    document.getElementById('tuya_local_input_key').placeholder = 'es. a1b2c3d4e5f67890';
     document.getElementById('tuya_local_input_ip').value = '';
     document.getElementById('tuya_local_input_ver').value = '3.3';
     const modal = document.getElementById('modal_tuya_local');
@@ -1652,12 +1653,14 @@ function closeTuyaLocalModal(e) {
     modal.classList.remove('show');
 }
 
-function editLocalTuya(id, name, key, ip, ver) {
+function editLocalTuya({ id, name, ip, ver }) {
     document.getElementById('modal_tuya_local_title').innerText = `Modifica Dispositivo: ${name}`;
     document.getElementById('tuya_local_input_name').value = name || '';
     document.getElementById('tuya_local_input_id').value = id || '';
     document.getElementById('tuya_local_input_id').readOnly = true;
-    document.getElementById('tuya_local_input_key').value = key || '';
+    // La Local Key non viene mai inviata al browser: lasciala vuota per mantenere quella salvata
+    document.getElementById('tuya_local_input_key').value = '';
+    document.getElementById('tuya_local_input_key').placeholder = 'Lascia vuoto per mantenere la chiave attuale';
     document.getElementById('tuya_local_input_ip').value = ip || '';
     document.getElementById('tuya_local_input_ver').value = ver || '3.3';
     const modal = document.getElementById('modal_tuya_local');
@@ -1672,7 +1675,8 @@ async function submitTuyaLocalDevice() {
     const ip = document.getElementById('tuya_local_input_ip').value.trim();
     const ver = document.getElementById('tuya_local_input_ver').value;
 
-    if (!id || !key) {
+    const isEdit = document.getElementById('tuya_local_input_id').readOnly;
+    if (!id || (!key && !isEdit)) {
         alert('Device ID e Local Key sono obbligatori!');
         return;
     }

@@ -97,7 +97,7 @@
                  data-category="{{ dev.category }}" 
                  data-is-on="{{ 'true' if dev.is_on else 'false' }}"
                  data-is-online="{{ 'true' if dev.is_online else 'false' }}"
-                 onclick="openDeviceDetail('{{ dev.id }}')">
+                 onclick="openDeviceDetail({{ dev.id|js }})">
                 
                 <div class="device-card-header">
                     <div class="device-icon-box {% if dev.is_on and dev.is_online %}icon-glow-on{% endif %}">
@@ -112,7 +112,7 @@
                     </div>
 
                     <div style="display: flex; align-items: center; gap: 6px;">
-                        <button type="button" class="card-rename-trigger" title="Rinomina '{{ dev.name }}'" onclick="event.stopPropagation(); quickPromptRename('{{ dev.id }}', '{{ dev.raw_id }}', '{{ dev.name|replace('\'', '\\\'') }}', '{{ dev.ecosystem }}')">✏️</button>
+                        <button type="button" class="card-rename-trigger" title="Rinomina '{{ dev.name }}'" onclick="event.stopPropagation(); quickPromptRename({{ dev.id|js }}, {{ dev.raw_id|js }}, {{ dev.name|js }}, {{ dev.ecosystem|js }})">✏️</button>
                         {% if dev.can_toggle %}
                         <button type="button" 
                                 class="device-toggle-btn {% if dev.is_on %}active{% endif %}" 
@@ -137,7 +137,7 @@
                         </span>
                         <span class="device-card-timer-countdown">{{ dev.active_schedule.remaining_label }}</span>
                     </div>
-                    <button type="button" class="device-card-timer-cancel" title="Annulla questo timer" onclick="event.stopPropagation(); cancelDeviceTimer('{{ dev.active_schedule.task_id }}')">✕</button>
+                    <button type="button" class="device-card-timer-cancel" title="Annulla questo timer" onclick="event.stopPropagation(); cancelDeviceTimer({{ dev.active_schedule.task_id|js }})">✕</button>
                 </div>
                 {% endif %}
 
@@ -564,8 +564,8 @@ function updateDevicesGridInDOM(devices) {
         const renameTrigger = cardEl.querySelector('.card-rename-trigger');
         if (renameTrigger) {
             renameTrigger.title = `Rinomina '${dev.name}'`;
-            const safeN = (dev.name || '').replace(/'/g, "\\'");
-            renameTrigger.setAttribute('onclick', `event.stopPropagation(); quickPromptRename('${dev.id}', '${dev.raw_id}', '${safeN}', '${dev.ecosystem}')`);
+            renameTrigger.removeAttribute('onclick');
+            renameTrigger.onclick = (ev) => { ev.stopPropagation(); quickPromptRename(dev.id, dev.raw_id, dev.name || '', dev.ecosystem); };
         }
         
         // Aggiorna classe ON/OFF/OFFLINE
@@ -1101,7 +1101,7 @@ function renderScaleDetail(dev) {
         <div class="modal-presence-box" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(16, 185, 129, 0.12) 100%); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 14px; padding: 1.25rem;">
             <div class="presence-status-large" style="text-align: center;">
                 <span class="presence-icon" style="font-size: 2.2rem; display: block; margin-bottom: 0.35rem;">⚖️</span>
-                <div class="presence-title" style="font-size: 1.15rem; font-weight: 700; color: var(--text);">${dev.name}</div>
+                <div class="presence-title" style="font-size: 1.15rem; font-weight: 700; color: var(--text);">${escapeHtml(dev.name)}</div>
                 <p class="presence-sub" style="font-size: 0.82rem; color: var(--text-dim); margin-top: 0.25rem;">
                     Analisi Impedenza Bioelettrica (BIA) • Sincronizzazione ${src}
                 </p>
@@ -1165,9 +1165,9 @@ function renderHealthDetail(dev) {
         <div class="modal-presence-box" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(56, 189, 248, 0.08) 100%); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 14px; padding: 1.25rem;">
             <div class="presence-status-large" style="text-align: center;">
                 <span class="presence-icon" style="font-size: 2.2rem; display: block; margin-bottom: 0.35rem;">🩺</span>
-                <div class="presence-title" style="font-size: 1.15rem; font-weight: 700; color: var(--text);">${dev.name}</div>
+                <div class="presence-title" style="font-size: 1.15rem; font-weight: 700; color: var(--text);">${escapeHtml(dev.name)}</div>
                 <p class="presence-sub" style="font-size: 0.82rem; color: var(--text-dim); margin-top: 0.25rem;">
-                    ${h.device_name || 'Galaxy S26'} • Sincronizzazione Google Health Connect & Samsung Health
+                    ${escapeHtml(h.device_name || 'Galaxy S26')} • Sincronizzazione Google Health Connect & Samsung Health
                 </p>
             </div>
             <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
@@ -1298,7 +1298,7 @@ function renderRefrigeratorDetail(dev) {
             </div>
             <div class="telemetry-card">
                 <span class="tel-label">🧊 Modello Elettrodomestico</span>
-                <span class="tel-val" style="font-size: 0.85rem;">${raw.model_name || raw.name || dev.name || 'LG Smart Fridge'}</span>
+                <span class="tel-val" style="font-size: 0.85rem;">${escapeHtml(raw.model_name || raw.name || dev.name || 'LG Smart Fridge')}</span>
             </div>
         </div>
     `;
@@ -1552,7 +1552,7 @@ function renderShutterDetail(dev) {
         <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
             <div class="telemetry-card">
                 <span class="tel-label">🪟 Dispositivo</span>
-                <span class="tel-val" style="font-size: 0.9rem;">${dev.name}</span>
+                <span class="tel-val" style="font-size: 0.9rem;">${escapeHtml(dev.name)}</span>
             </div>
             <div class="telemetry-card">
                 <span class="tel-label">🟢 Stato Connessione</span>
@@ -2580,7 +2580,7 @@ async function renderSchedulesModal() {
                             <span class="badge-tag" style="background: ${s.action === 'turn_on' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}; color: ${s.action === 'turn_on' ? '#10b981' : '#ef4444'}; font-weight: 700;">
                                 ${s.action === 'turn_on' ? '⚡ ACCENSIONE' : '🛑 SPEGNIMENTO'}
                             </span>
-                            <strong style="color: var(--text); font-size: 0.95rem;">${s.device_name}</strong>
+                            <strong style="color: var(--text); font-size: 0.95rem;">${escapeHtml(s.device_name)}</strong>
                         </div>
                         <div style="font-size: 0.82rem; color: #38bdf8;">
                             Esecuzione <strong>${s.remaining_label}</strong> • Ore ${s.execute_at_local}
@@ -2595,7 +2595,7 @@ async function renderSchedulesModal() {
         html += `</div>`;
         bodyEl.innerHTML = html;
     } catch (e) {
-        bodyEl.innerHTML = `<div style="color: #ef4444; padding: 1rem;">Errore caricamento timer: ${e.message}</div>`;
+        bodyEl.innerHTML = `<div style="color: #ef4444; padding: 1rem;">Errore caricamento timer: ${escapeHtml(e.message)}</div>`;
     }
 }
 

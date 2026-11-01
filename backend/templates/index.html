@@ -1198,7 +1198,7 @@
                                     <span class="climate-model-tag">{{ dev.model_name or 'LG Dual Inverter' }}</span>
                                 </div>
                             </div>
-                            <button type="button" class="climate-power-btn {% if dev.is_on %}btn-on{% else %}btn-off{% endif %}" id="pwr_btn_{{ dev.device_id }}" onclick="toggleThinQPower('{{ dev.device_id }}', {{ 'false' if dev.is_on else 'true' }})">
+                            <button type="button" class="climate-power-btn {% if dev.is_on %}btn-on{% else %}btn-off{% endif %}" id="pwr_btn_{{ dev.device_id }}" onclick="toggleThinQPower({{ dev.device_id|js }}, {{ 'false' if dev.is_on else 'true' }})">
                                 <span class="pwr-icon">⏻</span> <span class="pwr-text">{{ 'ACCESO' if dev.is_on else 'SPENTO' }}</span>
                             </button>
                         </div>

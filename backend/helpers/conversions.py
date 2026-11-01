@@ -109,3 +109,19 @@ __all__ = [
     "wm2_to_lux",
     "lux_to_wm2",
 ]
+
+
+def parse_bool(value, default: bool = False) -> bool:
+    """Interpreta in modo sicuro un valore booleano da JSON/form ("false", "off", "0" -> False)."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return value != 0
+    v = str(value).strip().lower()
+    if v in ("true", "1", "on", "yes", "si", "sì", "open"):
+        return True
+    if v in ("false", "0", "off", "no", "closed", "close", ""):
+        return False
+    return default

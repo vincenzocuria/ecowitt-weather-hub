@@ -7,6 +7,7 @@ import logging
 from typing import Dict, Any, Optional
 
 from .client import HomeAssistantClient
+from backend.helpers.conversions import parse_bool
 
 logger = logging.getLogger("weather_hub.homeassistant.controllers")
 
@@ -53,6 +54,7 @@ class DeviceController:
 
     async def toggle_device(self, entity_id: str, target_state: bool) -> Dict[str, Any]:
         """Accende o spegne un'entità su Home Assistant in base al suo dominio."""
+        target_state = parse_bool(target_state)
         clean_id = self.resolve_entity_id(entity_id)
         domain = clean_id.split(".")[0]
 

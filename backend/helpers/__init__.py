@@ -15,6 +15,7 @@ from .conversions import (
     hpa_to_inhg,
     wm2_to_lux,
     lux_to_wm2,
+    parse_bool,
 )
 from .dates import (
     ITALIAN_MONTHS,

@@ -172,6 +172,7 @@ class Settings:
     # Sicurezza & Accesso Riservato (Persistent Device Token)
     AUTH_TOKEN: str = os.getenv("AUTH_TOKEN", "")
     AUTH_COOKIE_NAME: str = "hub_auth_token"
+    CORS_ALLOWED_ORIGINS: list = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
     # Protezione Civile & Allerte Meteo Ufficiali (Calabria & Nazionale)
     CIVIL_PROTECTION_ENABLED: bool = os.getenv("CIVIL_PROTECTION_ENABLED", "true").lower() in ("true", "1", "yes")

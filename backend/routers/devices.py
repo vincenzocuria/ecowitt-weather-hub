@@ -1,3 +1,5 @@
+import math
+import re
 import time
 import logging
 from typing import Optional, Dict, Any, List
@@ -24,6 +26,8 @@ from backend.forecast_service import forecast_service
 from backend.aton_service import aton_service
 from backend.homeassistant_service import homeassistant_service
 from backend.device_scheduler import device_scheduler
+from backend.tuya_service import tuya_service
+from backend.helpers.conversions import parse_bool
 from backend.helpers import format_duration_italian
 
 logger = logging.getLogger("weather_hub")
@@ -331,7 +335,7 @@ async def api_tuya_toggle(device_id: str, request: Request):
         payload = await request.json()
     except Exception:
         payload = {}
-    target_state = payload.get("state", True)
+    target_state = parse_bool(payload.get("state", True), default=True)
     return await homeassistant_service.toggle_device(device_id, target_state)
 
 @router.post("/api/tuya/device/{device_id}/command")
@@ -346,7 +350,7 @@ async def api_tuya_command(device_id: str, request: Request):
     action = payload.get("action") or payload.get("control")
     if action:
         return await homeassistant_service.control_cover(device_id, action)
-    target_state = payload.get("state", True)
+    target_state = parse_bool(payload.get("state", True), default=True)
     return await homeassistant_service.toggle_device(device_id, target_state)
 
 @router.post("/api/tuya/device/{device_id}/curtain")
@@ -467,7 +471,12 @@ async def api_irrigation_start(request: Request):
         payload = {}
     
     cfg = get_irrigation_automations_config()
-    duration_min = float(payload.get("duration_minutes") or cfg.get("duration_minutes", 2.0))
+    try:
+        duration_min = float(payload.get("duration_minutes") or cfg.get("duration_minutes", 2.0))
+    except (TypeError, ValueError):
+        return JSONResponse(status_code=400, content={"error": "Durata non valida."})
+    if not math.isfinite(duration_min) or not (0.5 <= duration_min <= 120):
+        return JSONResponse(status_code=400, content={"error": "La durata deve essere compresa tra 0.5 e 120 minuti."})
     target_id = payload.get("device_id") or cfg.get("target_device_id", "valve.aiuola_valve")
     if target_id == "auto" or not target_id:
         target_id = "valve.aiuola_valve"
@@ -521,11 +530,8 @@ async def api_irrigation_stop(request: Request):
 
     dev_id = target_id
     dev_name = "Elettrovalvola Aiuola"
-    res = await homeassistant_service.close_irrigation(dev_id)
-    now = time.time()
-    engine.is_irrigating = False
-    engine.last_irrigation_stop_time = now
-    engine._save_state()
+    if not await engine._close_irrigation_safely(dev_id, dev_name):
+        return JSONResponse(status_code=502, content={"error": "Impossibile chiudere la valvola su Home Assistant. Il watchdog riproverà ogni minuto."})
     notifier.send_alert(
         alert_type="irrigation_manual_stop",
         title=f"🛑 Irrigazione Arrestata",
@@ -533,7 +539,7 @@ async def api_irrigation_stop(request: Request):
         priority="normal",
         extra_data={"device_id": dev_id}
     )
-    return {"status": "ok", "message": "Valvola chiusa.", "result": res}
+    return {"status": "ok", "message": "Valvola chiusa."}
 
 # --- Unified Devices Hub Endpoints ---
 
@@ -635,6 +641,13 @@ async def api_cancel_schedule(task_id: str):
         return {"status": "cancelled", "task_id": task_id}
     return JSONResponse({"error": "Task non trovato o già eseguito/annullato"}, status_code=404)
 
+# Dispositivi da non spegnere mai con "Spegni tutto" (cisterna, frigo/freezer, rete, allarme).
+PROTECTED_DEVICE_KEYWORDS = ("cisterna", "frigo", "freezer", "congelatore", "router", "modem", "allarme", "alarm")
+
+def _is_protected_device(dev: Dict[str, Any]) -> bool:
+    text = f"{dev.get('raw_id', '')} {dev.get('id', '')} {dev.get('name', '')}".lower()
+    return any(k in text for k in PROTECTED_DEVICE_KEYWORDS)
+
 @router.post("/api/devices/turn-all")
 async def api_devices_turn_all(request: Request):
     """Accende o spegne in blocco tutti i dispositivi commutabili (Prese, Luci, Clima)."""
@@ -643,21 +656,32 @@ async def api_devices_turn_all(request: Request):
     except Exception:
         payload = {}
     
-    target_state = payload.get("state", False)
-    category = payload.get("category", "all")
+    target_state = parse_bool(payload.get("state", False))
+    category = str(payload.get("category", "all") or "all").lower()
     results = []
+
+    # "all" = prese, luci e climatizzatori. Le elettrovalvole non vengono MAI aperte in massa:
+    # possono solo essere chiuse quando si spegne tutto.
+    if category == "all":
+        allowed_cats = {"plugs", "lighting", "climate"}
+        if not target_state:
+            allowed_cats.add("irrigation")
+    elif category in ("plugs", "lighting", "climate") or (category == "irrigation" and not target_state):
+        allowed_cats = {category}
+    else:
+        return JSONResponse({"error": f"Categoria '{category}' non supportata"}, status_code=400)
 
     # 1. Home Assistant (Prese, Luci, Elettrovalvole, Climatizzatori)
     if settings.HASS_ENABLED and homeassistant_service.enabled:
         for hd in homeassistant_service.get_catalog_devices():
             cat = hd.get("category")
-            if cat in ("plugs", "lighting", "irrigation", "climate") and (category in ("all", "plugs", "climate")):
+            if cat in allowed_cats and not _is_protected_device(hd):
                 if hd.get("is_on") != target_state and hd.get("can_toggle"):
                     res = await homeassistant_service.toggle_device(hd.get("raw_id"), target_state)
                     results.append({"name": hd.get("name"), "res": res})
 
     # 2. LG ThinQ (Solo come Fallback se Home Assistant non è abilitato)
-    elif settings.LG_THINQ_ENABLED and (category in ("all", "climate")):
+    elif settings.LG_THINQ_ENABLED and ("climate" in allowed_cats):
         for d in thinq_service.get_cached_devices():
             if d.get("is_on") != target_state:
                 dev_id = d.get("device_id") or d.get("deviceId")
@@ -671,7 +695,13 @@ async def api_devices_turn_all(request: Request):
 @router.get("/api/tuya/local/devices")
 async def api_get_tuya_local_devices():
     """Restituisce la lista dei dispositivi Tuya configurati per il controllo locale LAN."""
-    return {"devices": get_tuya_local_devices()}
+    devices = []
+    for d in get_tuya_local_devices():
+        d = dict(d)
+        key = d.get("local_key") or ""
+        d["local_key"] = f"{key[:4]}••••••••{key[-4:]}" if len(key) >= 8 else "••••"
+        devices.append(d)
+    return {"devices": devices}
 
 @router.post("/api/tuya/local/device")
 async def api_save_tuya_local_device(request: Request):
@@ -688,6 +718,11 @@ async def api_save_tuya_local_device(request: Request):
     version = body.get("version") or "3.3"
     category = body.get("category") or "cz"
 
+    if device_id and not local_key:
+        # Modifica di un dispositivo esistente senza reinserire la chiave: si mantiene quella salvata
+        existing = next((d for d in get_tuya_local_devices() if d.get("device_id") == device_id), None)
+        if existing:
+            local_key = existing.get("local_key")
     if not device_id or not local_key:
         return JSONResponse({"error": "ID dispositivo e Local Key sono obbligatori"}, status_code=400)
 
@@ -739,9 +774,24 @@ async def api_homeassistant_toggle_device(entity_id: str, request: Request):
         payload = await request.json()
     except Exception:
         payload = {}
-    target_state = payload.get("state", True)
+    target_state = parse_bool(payload.get("state", True), default=True)
     res = await homeassistant_service.toggle_device(entity_id, target_state)
     return res
+
+# Solo i servizi usati dalla UI: niente lock, alarm_control_panel, homeassistant.*, shell_command, hassio...
+HASS_SERVICE_ALLOWLIST = {
+    "climate": ("set_temperature", "set_hvac_mode", "set_fan_mode", "set_swing_mode", "turn_on", "turn_off"),
+    "light": ("turn_on", "turn_off", "toggle"),
+    "switch": ("turn_on", "turn_off", "toggle"),
+    "fan": ("turn_on", "turn_off", "set_percentage"),
+    "cover": ("open_cover", "close_cover", "stop_cover", "set_cover_position"),
+    "valve": ("open_valve", "close_valve"),
+}
+HASS_SERVICE_DATA_KEYS = {
+    "temperature", "hvac_mode", "fan_mode", "swing_mode",
+    "brightness", "brightness_pct", "position", "percentage",
+}
+_HASS_ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 
 @router.post("/api/homeassistant/service")
 async def api_homeassistant_call_service(request: Request):
@@ -756,6 +806,13 @@ async def api_homeassistant_call_service(request: Request):
     data = body.get("data") or {}
     if not domain or not service or not entity_id:
         return JSONResponse({"error": "domain, service e entity_id sono obbligatori"}, status_code=400)
+    domain, service, entity_id = str(domain), str(service), str(entity_id)
+    if service not in HASS_SERVICE_ALLOWLIST.get(domain, ()):
+        return JSONResponse({"error": f"Servizio {domain}.{service} non consentito"}, status_code=403)
+    if not _HASS_ENTITY_RE.match(entity_id) or not entity_id.startswith(f"{domain}."):
+        return JSONResponse({"error": "entity_id non valido per il dominio richiesto"}, status_code=400)
+    if not isinstance(data, dict) or any(k not in HASS_SERVICE_DATA_KEYS for k in data):
+        return JSONResponse({"error": "Parametri del servizio non consentiti"}, status_code=400)
     res = await homeassistant_service.call_service(domain, service, entity_id, data)
     return res
 

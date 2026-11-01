@@ -87,6 +87,7 @@ class AlertEngine:
         self.irrigation_started_at: float = 0.0
         self.irrigation_planned_duration_min: float = 2.0
         self.irrigation_active_device_id: Optional[str] = None
+        self.last_irrigation_close_fail_alert: float = 0.0
         self.active_learning_cycle_id: Optional[int] = None
         self.learning_monitoring_until: float = 0.0
 
@@ -1922,6 +1923,43 @@ class AlertEngine:
                     extra_data={"p_solare": str(int(p_solare)), "soc": str(int(soc))}
                 )
 
+    async def _close_irrigation_safely(self, dev_id: str, dev_name: str, attempts: int = 3) -> bool:
+        """
+        Chiude l'elettrovalvola con retry e verifica dell'esito.
+        Se la chiusura fallisce lo stato resta 'in irrigazione' (il watchdog riproverà al ciclo successivo)
+        e viene inviato un avviso critico, al massimo una volta ogni 15 minuti.
+        """
+        from backend.homeassistant_service import homeassistant_service
+
+        res: Dict[str, Any] = {}
+        for attempt in range(attempts):
+            try:
+                res = await homeassistant_service.close_irrigation(dev_id) or {}
+            except Exception as e:
+                res = {"success": False, "error": str(e)}
+            if res.get("success"):
+                self.is_irrigating = False
+                self.irrigation_active_device_id = None
+                self.last_irrigation_stop_time = time.time()
+                self._save_state()
+                return True
+            if attempt < attempts - 1:
+                await asyncio.sleep(2)
+
+        logger.error(f"[IRRIGATION-SAFETY] Chiusura fallita per {dev_id} dopo {attempts} tentativi: {res.get('error')}")
+        now = time.time()
+        if now - self.last_irrigation_close_fail_alert >= 900:
+            self.last_irrigation_close_fail_alert = now
+            notifier.send_alert(
+                alert_type="irrigation_close_failed",
+                title="🚨 Impossibile Chiudere l'Elettrovalvola!",
+                message=f"La chiusura di '{dev_name}' non è riuscita ({res.get('error') or 'errore sconosciuto'}). Riprovo ogni minuto: verifica subito la valvola.",
+                priority="urgent",
+                extra_data={"device_id": dev_id},
+                force=True
+            )
+        return False
+
     # =========================================================================
     # 7. AUTOMAZIONI IRRIGAZIONE INTELLIGENTE (WH51 + TUYA + METEO PREDITTIVO)
     # =========================================================================
@@ -1945,8 +1983,9 @@ class AlertEngine:
         from backend.analytics import calc_evapotranspiration
 
         cfg = get_irrigation_automations_config()
-        if not cfg.get("master_enabled", True) or cfg.get("mode") == "disabled":
-            return
+        # Il watchdog di sicurezza (Scenario A) gira SEMPRE: anche con automazione disattivata
+        # una valvola aperta manualmente o da timer deve essere chiusa a fine ciclo.
+        automation_enabled = cfg.get("master_enabled", True) and cfg.get("mode") != "disabled"
 
         now = time.time()
         current_hour = datetime.now(settings.get_tz()).hour
@@ -1960,7 +1999,17 @@ class AlertEngine:
         if target_id == "auto" or not target_id:
             target_id = "valve.aiuola_valve"
 
-        valve_dev = next((v for v in valves if v.get("id") == target_id), None)
+        # Priorità: valvola effettivamente aperta dall'hub > valvola target aperta > qualsiasi valvola aperta > target
+        valve_dev = None
+        if self.irrigation_active_device_id:
+            valve_dev = next((v for v in valves if v.get("id") == self.irrigation_active_device_id), None)
+        if not valve_dev:
+            target_dev = next((v for v in valves if v.get("id") == target_id), None)
+            open_dev = next((v for v in valves if v.get("state") == "open"), None)
+            if target_dev and target_dev.get("state") == "open":
+                valve_dev = target_dev
+            else:
+                valve_dev = open_dev or target_dev
         if not valve_dev and valves:
             valve_dev = valves[0]
 
@@ -1969,6 +2018,8 @@ class AlertEngine:
             valve_dev = {"id": "valve.aiuola_valve", "name": "Elettrovalvola Aiuola", "state": "closed"}
 
         dev_id = valve_dev.get("id")
+        if self.is_irrigating and self.irrigation_active_device_id:
+            dev_id = self.irrigation_active_device_id
         dev_name = valve_dev.get("name", "Elettrovalvola Irrigazione")
         is_valve_open = valve_dev.get("state") == "open"
 
@@ -2025,10 +2076,8 @@ class AlertEngine:
 
             # Sub-caso A1: Pioggia intensa durante l'irrigazione -> Chiusura Immediata
             if rain_rate >= 0.5 or self.is_raining:
-                await homeassistant_service.close_irrigation(dev_id)
-                self.is_irrigating = False
-                self.last_irrigation_stop_time = now
-                self._save_state()
+                if not await self._close_irrigation_safely(dev_id, dev_name):
+                    return
                 notifier.send_alert(
                     alert_type="irrigation_rain_shutoff",
                     title="🌧️ Irrigazione Interrotta: Pioggia in Corso!",
@@ -2043,10 +2092,8 @@ class AlertEngine:
             target_sat = float(cfg.get("soil_target_threshold", 70.0))
             crop_label = cfg.get("crop_label", "Grande Vaso (Pomodori & Zucchine) 🪴🍅🥒")
             if soil_moisture is not None and soil_moisture >= target_sat and elapsed_min >= 1.0:
-                await homeassistant_service.close_irrigation(dev_id)
-                self.is_irrigating = False
-                self.last_irrigation_stop_time = now
-                self._save_state()
+                if not await self._close_irrigation_safely(dev_id, dev_name):
+                    return
                 el_str = format_duration_italian(elapsed_min)
                 notifier.send_alert(
                     alert_type="irrigation_soil_saturated",
@@ -2064,10 +2111,8 @@ class AlertEngine:
             limit_min = min(planned_min, max_safety_min)
 
             if elapsed_min >= limit_min:
-                await homeassistant_service.close_irrigation(dev_id)
-                self.is_irrigating = False
-                self.last_irrigation_stop_time = now
-                self._save_state()
+                if not await self._close_irrigation_safely(dev_id, dev_name):
+                    return
                 limit_str = format_duration_italian(limit_min)
                 notifier.send_alert(
                     alert_type="irrigation_auto_stop",
@@ -2080,6 +2125,9 @@ class AlertEngine:
                 return
 
             # Valvola in corso regolare
+            return
+
+        if not automation_enabled:
             return
 
         # =========================================================================

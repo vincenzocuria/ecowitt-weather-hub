@@ -638,7 +638,7 @@ function startDashboardPolling() {
                             let soilHtml = '';
                             for (const [ch, info] of Object.entries(a.soil_summary.channels)) {
                                 soilHtml += `<div class="item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                    <span>🌱 ${info.name}:</span>
+                                    <span>🌱 ${escapeHtml(info.name)}:</span>
                                     <div style="display: flex; align-items: center; gap: 8px;">
                                         <strong>${info.value}%</strong>
                                         <span class="badge ${info.badge_class}" style="font-size: 0.72rem; padding: 2px 6px;">${info.status_label}</span>
@@ -2595,11 +2595,11 @@ function renderHouseBreakdown(d) {
                         </div>
                         <div class="consumer-info">
                             <div class="consumer-title-row">
-                                <span class="consumer-name">${c.name}</span>
+                                <span class="consumer-name">${escapeHtml(c.name)}</span>
                                 ${powerBadge}
                             </div>
                             <div class="consumer-sub-row">
-                                <span class="consumer-category">${c.category_label || 'Dispositivo Smart'}</span>
+                                <span class="consumer-category">${escapeHtml(c.category_label || 'Dispositivo Smart')}</span>
                                 <span class="consumer-status-desc">${c.status_text || ''}</span>
                             </div>
                             ${telemetryLine ? `<div class="consumer-telemetry-row">${telemetryLine}</div>` : ''}
@@ -2628,8 +2628,8 @@ function renderHouseBreakdown(d) {
             <div class="standby-mini-item">
                 <span class="standby-icon">${s.icon || '🔌'}</span>
                 <div class="standby-details">
-                    <span class="standby-name">${s.name}</span>
-                    <span class="standby-meta">${s.category_label || 'Smart'} • 0 W (Standby/Spento)</span>
+                    <span class="standby-name">${escapeHtml(s.name)}</span>
+                    <span class="standby-meta">${escapeHtml(s.category_label || 'Smart')} • 0 W (Standby/Spento)</span>
                 </div>
                 ${s.can_toggle ? `
                     <button type="button" class="btn-mini-on" onclick="toggleDeviceFromHouseModal('${s.ecosystem}', '${s.raw_id}', false)" title="Accendi">
@@ -2871,11 +2871,11 @@ function renderDashboardBreakdown(d) {
                         </div>
                         <div class="consumer-info">
                             <div class="consumer-title-row">
-                                <span class="consumer-name">${c.name}</span>
+                                <span class="consumer-name">${escapeHtml(c.name)}</span>
                                 ${powerBadge}
                             </div>
                             <div class="consumer-sub-row">
-                                <span class="consumer-category">${c.category_label || 'Dispositivo Smart'}</span>
+                                <span class="consumer-category">${escapeHtml(c.category_label || 'Dispositivo Smart')}</span>
                                 <span class="consumer-status-desc">${c.status_text || ''}</span>
                             </div>
                             ${telemetryLine ? `<div class="consumer-telemetry-row">${telemetryLine}</div>` : ''}

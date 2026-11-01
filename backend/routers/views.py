@@ -1,4 +1,6 @@
 import os
+import hmac
+import time
 import json
 import logging
 from typing import Optional, Dict, Any, List
@@ -6,6 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 
 from backend.config import settings
 from backend.forecast_service import forecast_service
@@ -41,6 +44,13 @@ from backend.helpers import format_duration_italian, format_lightning_time_itali
 templates_dir = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
 
+
+def _js_literal(value) -> Markup:
+    """Filtro Jinja `js`: serializza un valore come letterale JS sicuro dentro un attributo HTML (onclick=...)."""
+    return escape(json.dumps(value, ensure_ascii=False))
+
+templates.env.filters["js"] = _js_literal
+
 templates.env.filters["local_dt"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M:%S")
 templates.env.filters["local_dt_short"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M")
 templates.env.filters["local_date"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y")
@@ -51,23 +61,51 @@ templates.env.filters["lightning_time_it"] = lambda val: format_lightning_time_i
 
 # ----------------- AUTHENTICATION ROUTES -----------------
 
+def _safe_next_url(next_url: Optional[str]) -> str:
+    """Accetta solo percorsi relativi interni (es. /devices), mai URL esterni o //host."""
+    if not next_url or not next_url.startswith("/") or next_url.startswith("//") or "\\" in next_url:
+        return "/"
+    return next_url
+
+# Rate limit semplice per IP sui tentativi di login falliti
+_LOGIN_FAILURES: Dict[str, List[float]] = {}
+LOGIN_MAX_FAILURES = 10
+LOGIN_WINDOW_SEC = 900
+
+def _client_ip(request: Request) -> str:
+    return request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, next: Optional[str] = "/"):
-    cookie_token = request.cookies.get(settings.AUTH_COOKIE_NAME)
-    if not settings.AUTH_TOKEN or cookie_token == settings.AUTH_TOKEN:
-        return RedirectResponse(url=next or "/", status_code=303)
+    next_url = _safe_next_url(next)
+    cookie_token = request.cookies.get(settings.AUTH_COOKIE_NAME) or ""
+    if not settings.AUTH_TOKEN or hmac.compare_digest(cookie_token, settings.AUTH_TOKEN):
+        return RedirectResponse(url=next_url, status_code=303)
     return templates.TemplateResponse(
         request=request,
         name="login.html",
-        context={"next_url": next or "/", "error": None}
+        context={"next_url": next_url, "error": None}
     )
 
 @router.post("/login", response_class=HTMLResponse)
 async def login_submit(request: Request):
     form = await request.form()
-    token = (form.get("token") or "").strip()
-    next_url = form.get("next", "/") or "/"
-    if token == settings.AUTH_TOKEN:
+    token = str(form.get("token") or "").strip()
+    next_url = _safe_next_url(str(form.get("next", "/") or "/"))
+
+    ip = _client_ip(request)
+    now = time.time()
+    recent = [t for t in _LOGIN_FAILURES.get(ip, []) if now - t < LOGIN_WINDOW_SEC]
+    if len(recent) >= LOGIN_MAX_FAILURES:
+        return templates.TemplateResponse(
+            request=request,
+            name="login.html",
+            context={"next_url": next_url, "error": "Troppi tentativi falliti. Riprova tra qualche minuto."},
+            status_code=429
+        )
+
+    if settings.AUTH_TOKEN and hmac.compare_digest(token, settings.AUTH_TOKEN):
+        _LOGIN_FAILURES.pop(ip, None)
         response = RedirectResponse(url=next_url, status_code=303)
         response.set_cookie(
             key=settings.AUTH_COOKIE_NAME,
@@ -78,6 +116,8 @@ async def login_submit(request: Request):
             samesite="lax"
         )
         return response
+    recent.append(now)
+    _LOGIN_FAILURES[ip] = recent
     return templates.TemplateResponse(
         request=request,
         name="login.html",

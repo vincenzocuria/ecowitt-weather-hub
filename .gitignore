@@ -33,3 +33,6 @@ test_system_integration.py
 Thumbs.db
 .vscode/
 .idea/
+
+# Diagnostic scripts with credentials
+backend/test_ha_token.py

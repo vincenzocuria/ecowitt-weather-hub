@@ -17,6 +17,12 @@
     <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
     <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script>
+        // Escape HTML per testi provenienti da API/dispositivi inseriti con innerHTML (anti-XSS)
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch]));
+        }
+    </script>
 </head>
 <body class="app-body">
     <!-- TOP BAR PER MOBILE APP -->
