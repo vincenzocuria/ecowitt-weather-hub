@@ -1336,6 +1336,32 @@ class TestEcowittHub(unittest.TestCase):
         self.assertEqual(resp_test.status_code, 200)
         self.assertEqual(resp_test.json()["status"], "sent")
 
+    def test_civil_protection_days_follow_real_date(self):
+        """Il "domani" di un bollettino emesso ieri è l'oggi reale; un giorno non coperto è "in attesa"."""
+        from unittest.mock import patch
+        from backend.civil_protection_service import civil_protection_service as cps
+        green = cps._extract_day_summary(None, "", "today")
+        yellow = dict(green, level="GIALLA", severity=1)
+        raw = {"status": "success", "bulletin_id": "20261031_1420", "bulletin_today": green, "bulletin_tomorrow": yellow}
+        tz = settings.get_tz()
+
+        with patch.object(type(settings), "now_local", lambda self: datetime(2026, 10, 31, 16, 0, tzinfo=tz)):
+            v = cps._relative_view(raw)
+        self.assertEqual(v["today"]["level"], "VERDE")
+        self.assertEqual(v["tomorrow"]["level"], "GIALLA")
+
+        with patch.object(type(settings), "now_local", lambda self: datetime(2026, 11, 1, 9, 0, tzinfo=tz)):
+            v = cps._relative_view(raw)
+        self.assertEqual(v["today"]["level"], "GIALLA")
+        self.assertEqual(v["tomorrow"]["level"], "ATTESA")
+        self.assertTrue(v["is_alert_active"])
+        self.assertEqual(v["today_date_str"], "dom 1 nov")
+
+        with patch.object(type(settings), "now_local", lambda self: datetime(2026, 11, 2, 9, 0, tzinfo=tz)):
+            v = cps._relative_view(raw)
+        self.assertEqual(v["today"]["level"], "ATTESA")
+        self.assertFalse(v["is_alert_active"])
+
     def test_civil_protection_service(self):
         from backend.civil_protection_service import (
             civil_protection_service, _parse_alert_level, _point_in_polygon, ALERT_SEVERITY

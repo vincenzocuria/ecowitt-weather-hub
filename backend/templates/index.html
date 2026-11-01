@@ -180,10 +180,8 @@
 
 
     <!-- 🛡️ ALLERTE METEO UFFICIALI PROTEZIONE CIVILE CALABRIA & DPC -->
-    {% set cp_today = (civil_protection.today.level if civil_protection and civil_protection.today else '') | lower %}
-    {% set cp_tomorrow = (civil_protection.tomorrow.level if civil_protection and civil_protection.tomorrow else '') | lower %}
-    {# Mostrata solo se c'è un'allerta (non verde) oggi o domani: niente riquadro grande quando va tutto bene #}
-    {% if civil_protection_enabled and civil_protection and civil_protection.status == 'success' and ('verde' not in cp_today or 'verde' not in cp_tomorrow) %}
+    {# Mostrata solo se c'è un'allerta (gialla o superiore) oggi o domani, con i giorni riferiti alla data reale #}
+    {% if civil_protection_enabled and civil_protection and civil_protection.status == 'success' and civil_protection.is_alert_active %}
     <div class="cp-alert-card cp-border-{{ civil_protection.today.level | lower }}" id="cp_alert_card">
         <div class="cp-card-header">
             <div class="cp-title-wrap">
@@ -207,7 +205,7 @@
             <!-- OGGI -->
             <div class="cp-day-pill" id="cp_today_box">
                 <div class="cp-day-top">
-                    <span class="cp-day-label">📅 Oggi</span>
+                    <span class="cp-day-label">📅 Oggi <small class="cp-day-date">{{ civil_protection.today_date_str or '' }}</small></span>
                     <span class="status-pill {{ civil_protection.today.badge_class }}" id="cp_today_badge">
                         {{ civil_protection.today.icon }} {{ civil_protection.today.label }}
                     </span>
@@ -227,7 +225,7 @@
             <!-- DOMANI -->
             <div class="cp-day-pill" id="cp_tomorrow_box">
                 <div class="cp-day-top">
-                    <span class="cp-day-label">📅 Domani</span>
+                    <span class="cp-day-label">📅 Domani <small class="cp-day-date">{{ civil_protection.tomorrow_date_str or '' }}</small></span>
                     <span class="status-pill {{ civil_protection.tomorrow.badge_class }}" id="cp_tomorrow_badge">
                         {{ civil_protection.tomorrow.icon }} {{ civil_protection.tomorrow.label }}
                     </span>

@@ -8178,3 +8178,10 @@ html[data-theme="light"] .leaflet-control-attribution a {
 }
 
 .install-dialog .btn { align-self: stretch; }
+
+.cp-day-date {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    margin-left: 4px;
+}

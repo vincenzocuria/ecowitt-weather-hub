@@ -977,12 +977,12 @@ class AlertEngine:
             if today.get("severity", 0) >= min_sev:
                 send_alert = True
                 haz = ", ".join(today.get("active_hazards", [])) or today.get("label", "")
-                alert_msgs.append(f"📅 OGGI: {today.get('icon')} {today.get('label')} [{haz}]")
+                alert_msgs.append(f"📅 OGGI ({data.get('today_date_str', '')}): {today.get('icon')} {today.get('label')} [{haz}]")
 
             if tomorrow.get("severity", 0) >= min_sev:
                 send_alert = True
                 haz_tom = ", ".join(tomorrow.get("active_hazards", [])) or tomorrow.get("label", "")
-                alert_msgs.append(f"📅 DOMANI: {tomorrow.get('icon')} {tomorrow.get('label')} [{haz_tom}]")
+                alert_msgs.append(f"📅 DOMANI ({data.get('tomorrow_date_str', '')}): {tomorrow.get('icon')} {tomorrow.get('label')} [{haz_tom}]")
 
             if send_alert:
                 title = f"⚠️ Allerta Protezione Civile - {zone_name}"

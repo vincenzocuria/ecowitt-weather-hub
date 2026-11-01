@@ -96,7 +96,7 @@
         <!-- OGGI -->
         <div class="cp-day-pill">
             <div class="cp-day-top">
-                <span class="cp-day-label">📅 Oggi</span>
+                <span class="cp-day-label">📅 Oggi <small class="cp-day-date">{{ civil_protection.today_date_str or '' }}</small></span>
                 <span class="status-pill {{ civil_protection.today.badge_class }}">
                     {{ civil_protection.today.icon }} {{ civil_protection.today.label }}
                 </span>
@@ -116,7 +116,7 @@
         <!-- DOMANI -->
         <div class="cp-day-pill">
             <div class="cp-day-top">
-                <span class="cp-day-label">📅 Domani</span>
+                <span class="cp-day-label">📅 Domani <small class="cp-day-date">{{ civil_protection.tomorrow_date_str or '' }}</small></span>
                 <span class="status-pill {{ civil_protection.tomorrow.badge_class }}">
                     {{ civil_protection.tomorrow.icon }} {{ civil_protection.tomorrow.label }}
                 </span>

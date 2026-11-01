@@ -52,8 +52,26 @@ ALERT_META = {
         "label": "Rossa - Elevata Criticità",
         "icon": "🔴",
         "short": "Allerta Rossa"
+    },
+    # Giorno non ancora coperto da un bollettino (il nuovo esce ogni giorno nel primo pomeriggio)
+    "ATTESA": {
+        "color": "#94a3b8",
+        "bg_class": "",
+        "badge_class": "badge-waiting",
+        "label": "In attesa del bollettino",
+        "icon": "⏳",
+        "short": "In attesa"
     }
 }
+
+
+_IT_WEEKDAYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]
+_IT_MONTHS = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"]
+
+
+def _italian_day(d) -> str:
+    """Es. 'dom 1 nov'."""
+    return f"{_IT_WEEKDAYS[d.weekday()]} {d.day} {_IT_MONTHS[d.month - 1]}"
 
 
 def _point_in_polygon(x: float, y: float, poly: List[List[float]]) -> bool:
@@ -309,8 +327,69 @@ class CivilProtectionService:
             "preview_url": preview_url
         }
 
+    @staticmethod
+    def _pending_summary(day_label: str) -> Dict[str, Any]:
+        meta = ALERT_META["ATTESA"]
+        return {
+            "level": "ATTESA",
+            "severity": 0,
+            "pending": True,
+            "label": meta["label"],
+            "short_label": meta["short"],
+            "color": meta["color"],
+            "badge_class": meta["badge_class"],
+            "bg_class": meta["bg_class"],
+            "icon": meta["icon"],
+            "overall_text": f"Il bollettino per {day_label} non è ancora stato pubblicato (di solito esce nel primo pomeriggio).",
+            "risks": {},
+            "active_hazards": [],
+            "preview_url": ""
+        }
+
+    @staticmethod
+    def _bulletin_day(ts_str: str):
+        """Data di emissione del bollettino ("oggi" del bollettino), da un id tipo 20261031_1420."""
+        try:
+            return datetime.strptime(ts_str.split("_")[0], "%Y%m%d").date()
+        except (ValueError, AttributeError, IndexError):
+            return None
+
+    def _relative_view(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Il bollettino DPC contiene "oggi" e "domani" rispetto al giorno in cui è stato EMESSO.
+        Prima dell'uscita del nuovo bollettino (primo pomeriggio) il suo "domani" è il nostro oggi:
+        qui i due giorni vengono riassegnati in base alla data reale, e un giorno non ancora coperto
+        risulta "In attesa del bollettino" invece di un falso "Nessuna allerta".
+        """
+        if not data or data.get("status") != "success":
+            return data
+        issued = self._bulletin_day(data.get("bulletin_id", ""))
+        raw_today = data.get("bulletin_today") or data.get("today")
+        raw_tomorrow = data.get("bulletin_tomorrow") or data.get("tomorrow")
+        if issued is None:
+            return data
+
+        by_date = {issued: raw_today, issued + timedelta(days=1): raw_tomorrow}
+        today_local = settings.now_local().date()
+        tomorrow_local = today_local + timedelta(days=1)
+
+        view = dict(data)
+        view["bulletin_today"] = raw_today
+        view["bulletin_tomorrow"] = raw_tomorrow
+        view["today"] = by_date.get(today_local) or self._pending_summary("oggi")
+        view["tomorrow"] = by_date.get(tomorrow_local) or self._pending_summary("domani")
+        view["today_date_str"] = _italian_day(today_local)
+        view["tomorrow_date_str"] = _italian_day(tomorrow_local)
+        view["is_alert_active"] = view["today"]["severity"] > 0 or view["tomorrow"]["severity"] > 0
+        view["max_severity"] = max(view["today"]["severity"], view["tomorrow"]["severity"])
+        return view
+
     def fetch_alerts(self, force_refresh: bool = False) -> Dict[str, Any]:
-        """Recupera le allerte meteo per la posizione attuale."""
+        """Recupera le allerte meteo per la posizione attuale (oggi/domani riferiti alla data reale)."""
+        return self._relative_view(self._fetch_bulletin(force_refresh))
+
+    def _fetch_bulletin(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """Scarica (o legge dalla cache) l'ultimo bollettino, con oggi/domani relativi al giorno di emissione."""
         if not settings.CIVIL_PROTECTION_ENABLED:
             return {"enabled": False, "status": "disabled"}
 
@@ -397,8 +476,8 @@ class CivilProtectionService:
             "zone_name": zone_name,
             "municipality": municipality,
             "coordinates": {"lat": settings.LATITUDE, "lon": settings.LONGITUDE},
-            "today": summary_today,
-            "tomorrow": summary_tomorrow,
+            "bulletin_today": summary_today,
+            "bulletin_tomorrow": summary_tomorrow,
             "is_alert_active": is_alert_active,
             "max_severity": max(summary_today["severity"], summary_tomorrow["severity"]),
             "fetched_at": now,
@@ -408,7 +487,7 @@ class CivilProtectionService:
         self._cached_data = result
         self._last_fetch_time = now
         self._save_disk_cache(result)
-        logger.info(f"Allerte Protezione Civile aggiornate per {zone_name}: Oggi={summary_today['level']}, Domani={summary_tomorrow['level']}")
+        logger.info(f"Allerte Protezione Civile aggiornate per {zone_name} (bollettino {ts_str}): {summary_today['level']} / {summary_tomorrow['level']}")
         return result
 
 
