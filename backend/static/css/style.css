@@ -8068,3 +8068,113 @@ html[data-theme="light"] .leaflet-control-attribution {
 html[data-theme="light"] .leaflet-control-attribution a {
     color: #075985 !important;
 }
+
+/* ========================================================
+   INSTALLAZIONE APP (PWA)
+   ======================================================== */
+.more-item-install {
+    width: 100%;
+    background: transparent;
+    border: 0;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.install-mini-icon,
+.install-banner-icon,
+.install-dialog-icon {
+    border-radius: 22%;
+    display: block;
+}
+
+.install-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0.85rem;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+}
+
+.install-banner[hidden] { display: none; }
+
+.install-banner-text {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+}
+
+.install-banner-text strong {
+    font-size: 0.95rem;
+    color: var(--text);
+}
+
+.install-banner-btn {
+    padding: 0.55rem 1rem;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+.install-banner-close {
+    background: transparent;
+    border: 0;
+    color: var(--text-dim);
+    font-size: 1rem;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.install-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    background: rgba(2, 6, 23, 0.6);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.install-dialog {
+    width: 100%;
+    max-width: 420px;
+    background: var(--card-bg);
+    color: var(--text);
+    border: 1px solid var(--card-border);
+    border-radius: 20px;
+    padding: 1.5rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.9rem;
+    text-align: center;
+}
+
+.install-dialog h2 { font-size: 1.2rem; }
+
+.install-steps {
+    text-align: left;
+    padding-left: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    line-height: 1.45;
+    align-self: stretch;
+}
+
+.install-note {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    text-align: left;
+    align-self: stretch;
+}
+
+.install-dialog .btn { align-self: stretch; }

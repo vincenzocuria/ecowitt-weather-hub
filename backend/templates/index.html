@@ -1,6 +1,17 @@
 {% extends "base.html" %}
 
 {% block content %}
+<!-- INVITO A INSTALLARE L'APP (nascosto se già installata o se chiuso) -->
+<div class="install-banner" id="install-banner" hidden>
+    <img src="/static/icons/icon-192.png?v=2" alt="" width="40" height="40" class="install-banner-icon">
+    <div class="install-banner-text">
+        <strong>Installa l'app</strong>
+        <span>Aprila dalla schermata Home, a tutto schermo</span>
+    </div>
+    <button type="button" class="btn btn-primary install-banner-btn" data-install-trigger>Installa</button>
+    <button type="button" class="install-banner-close" data-install-dismiss aria-label="Chiudi">✕</button>
+</div>
+
 <!-- STATO STAZIONE COMPATTO -->
 <div class="home-status">
     <div id="status-badge" class="status-pill {{ status_info.badge_class }}">{{ status_info.text }}</div>
