@@ -3,9 +3,13 @@ import json
 import math
 import time
 import sqlite3
+from functools import lru_cache
 from typing import Dict, Any, Optional, List, Tuple, Union
 from datetime import datetime, timezone, timedelta
 from backend.config import settings
+import logging
+
+logger = logging.getLogger("weather_hub.database")
 
 DB_DIR = settings.DATA_DIR
 os.makedirs(DB_DIR, exist_ok=True)
@@ -13,10 +17,30 @@ DB_PATH = os.path.join(DB_DIR, "weather_history.db")
 
 
 
+@lru_cache(maxsize=65536)
+def _local_date_for_hour(utc_hour_prefix: str) -> Optional[str]:
+    try:
+        dt = datetime.strptime(utc_hour_prefix.replace(" ", "T"), "%Y-%m-%dT%H").replace(tzinfo=timezone.utc)
+        return dt.astimezone(settings.get_tz()).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+def _sql_local_date(ts: Optional[str]) -> Optional[str]:
+    """Funzione SQL local_date(timestamp): data nel fuso della stazione (DST incluso) di un timestamp UTC."""
+    if not ts:
+        return None
+    ts = str(ts)
+    if len(ts) < 13:
+        return ts[:10]
+    return _local_date_for_hour(ts[:13])
+
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA synchronous = NORMAL;")
+    # I contatori giornalieri della stazione (es. daily_rain_mm) si azzerano a mezzanotte LOCALE:
+    # i raggruppamenti per giorno devono usare local_date(timestamp), non local_date(timestamp) (UTC).
+    conn.create_function("local_date", 1, _sql_local_date, deterministic=True)
     return conn
 
 from backend.helpers import (
@@ -966,16 +990,27 @@ def check_and_update_records(
                 elif key == "uv_max":
                     min_step = 1.0
 
-                is_significant = abs(val - old_val) >= min_step
+                # Il confronto avviene con il record "di riferimento" (ultimo record notificato), non con
+                # l'ultimo micro-aggiornamento: altrimenti una salita a piccoli passi (+0.1°C ogni lettura)
+                # non supererebbe mai la soglia minima e il record non verrebbe mai registrato/notificato.
+                try:
+                    prev_details = json.loads(curr.get("details_json") or "{}") or {}
+                except (TypeError, ValueError):
+                    prev_details = {}
+                ref_val = prev_details.get("ref_value")
+                ref_val = float(ref_val) if ref_val is not None else old_val
+                is_significant = abs(val - ref_val) >= min_step
+                stored_details = dict(details) if is_significant else {**details, "ref_value": ref_val}
 
                 # Aggiorna sempre il record estremo assoluto attuale
                 cursor.execute("""
                     INSERT OR REPLACE INTO weather_extremes (record_key, category, title, value, unit, timestamp, details_json)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (key, defn["category"], defn["title"], val, defn["unit"], ts, json.dumps(details)))
+                """, (key, defn["category"], defn["title"], val, defn["unit"], ts, json.dumps(stored_details)))
 
                 # Inserisci nella cronologia storica e invia alert solo se l'incremento è significativo
                 if is_significant:
+                    old_val = ref_val
                     cursor.execute("""
                         INSERT INTO records_history (record_key, category, title, old_value, new_value, unit, timestamp, details_json)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -1284,9 +1319,9 @@ def get_history_kpis(start_date: Optional[str] = None, end_date: Optional[str] =
     
     cursor.execute(f"""
         SELECT COALESCE(SUM(day_rain), 0.0) FROM (
-            SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
+            SELECT local_date(timestamp) as day, MAX(daily_rain_mm) as day_rain
             FROM weather_records {where_sql}
-            GROUP BY date(timestamp)
+            GROUP BY local_date(timestamp)
         )
     """, params)
     rain_row = cursor.fetchone()
@@ -1299,9 +1334,9 @@ def get_history_kpis(start_date: Optional[str] = None, end_date: Optional[str] =
             COUNT(CASE WHEN day_min >= 20.0 THEN 1 END) as tropical_nights_count,
             COUNT(CASE WHEN day_min >= 25.0 THEN 1 END) as very_hot_nights_count
         FROM (
-            SELECT date(timestamp) as day, MIN(temp_c) as day_min
+            SELECT local_date(timestamp) as day, MIN(temp_c) as day_min
             FROM weather_records {where_temp_sql}
-            GROUP BY date(timestamp)
+            GROUP BY local_date(timestamp)
         )
     """, params)
     trop_row = cursor.fetchone()
@@ -1652,38 +1687,42 @@ def get_recent_rain_totals() -> Dict[str, float]:
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Ultimi 7 giorni: somma dei massimi giornalieri
+    # Unica scansione dal punto più vecchio richiesto: massimo giornaliero per giorno LOCALE
+    # (daily_rain_mm si azzera alla mezzanotte locale della stazione).
+    scan_start_utc = min(week_start_utc, month_start_utc, year_start_utc)
     cursor.execute("""
-        SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
+        SELECT local_date(timestamp) as day, MAX(daily_rain_mm) as day_rain
         FROM weather_records
         WHERE timestamp >= ? AND daily_rain_mm IS NOT NULL
-        GROUP BY date(timestamp)
-    """, (week_start_utc,))
-    week_rows = cursor.fetchall()
-    week_rain = round(sum([float(r["day_rain"] or 0) for r in week_rows]), 1)
+        GROUP BY local_date(timestamp)
+    """, (scan_start_utc,))
+    day_max = {r["day"]: float(r["day_rain"] or 0) for r in cursor.fetchall()}
 
-    # Mese corrente: somma dei massimi giornalieri
-    cursor.execute("""
-        SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
-        FROM weather_records
-        WHERE timestamp >= ? AND daily_rain_mm IS NOT NULL
-        GROUP BY date(timestamp)
-    """, (month_start_utc,))
-    month_rows = cursor.fetchall()
-    month_rain = round(sum([float(r["day_rain"] or 0) for r in month_rows]), 1)
+    week_start_day = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+    month_start_day = month_start_local.strftime("%Y-%m-%d")
+    year_start_day = year_start_local.strftime("%Y-%m-%d")
+    week_rain = round(sum(v for d, v in day_max.items() if d >= week_start_day), 1)
+    month_rain = round(sum(v for d, v in day_max.items() if d >= month_start_day), 1)
+    year_rain = round(sum(v for d, v in day_max.items() if d >= year_start_day), 1)
 
-    # Anno corrente dal 1° Gennaio (calcolato da DB)
+    # Ultime 48h esatte: per il primo giorno (parziale) conta solo l'incremento dentro la finestra
+    rain_48h_start_utc = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
     cursor.execute("""
-        SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
+        SELECT local_date(timestamp) as day, MAX(daily_rain_mm) as max_r, MIN(daily_rain_mm) as min_r
         FROM weather_records
         WHERE timestamp >= ? AND daily_rain_mm IS NOT NULL
-        GROUP BY date(timestamp)
-    """, (year_start_utc,))
-    year_rows = cursor.fetchall()
-    year_rain = round(sum([float(r["day_rain"] or 0) for r in year_rows]), 1)
+        GROUP BY local_date(timestamp)
+        ORDER BY day
+    """, (rain_48h_start_utc,))
+    rows_48h = cursor.fetchall()
+    rain_48h = 0.0
+    for i, r in enumerate(rows_48h):
+        mx = float(r["max_r"] or 0)
+        rain_48h += (mx - float(r["min_r"] or 0)) if i == 0 else mx
 
     conn.close()
     return {
+        "rain_48h": round(rain_48h, 1),
         "week_rain_mm": week_rain,
         "month_rain_mm": month_rain,
         "year_rain_mm": year_rain
@@ -1742,10 +1781,10 @@ def get_climate_comparisons() -> Dict[str, Any]:
 
     # 3. Statistiche termiche del mese corrente (giorni > 30°C, > 35°C, giorni di pioggia)
     cursor.execute("""
-        SELECT date(timestamp) as day, MAX(temp_c) as max_t, MIN(temp_c) as min_t, MAX(daily_rain_mm) as max_r
+        SELECT local_date(timestamp) as day, MAX(temp_c) as max_t, MIN(temp_c) as min_t, MAX(daily_rain_mm) as max_r
         FROM weather_records
         WHERE timestamp >= ? AND temp_c IS NOT NULL
-        GROUP BY date(timestamp)
+        GROUP BY local_date(timestamp)
     """, (month_start_utc,))
     month_days = cursor.fetchall()
     
@@ -2144,6 +2183,100 @@ def get_database_stats() -> Dict[str, Any]:
         "wal_mode_enabled": True
     }
 
+_WEATHER_DOWNSAMPLE_COLUMNS = [
+    ("temp_c", "ROUND(AVG(temp_c), 1)"),
+    ("humidity", "ROUND(AVG(humidity), 1)"),
+    ("dew_point_c", "ROUND(AVG(dew_point_c), 1)"),
+    ("temp_in_c", "ROUND(AVG(temp_in_c), 1)"),
+    ("humidity_in", "ROUND(AVG(humidity_in), 1)"),
+    ("pressure_rel_hpa", "ROUND(AVG(pressure_rel_hpa), 1)"),
+    ("pressure_abs_hpa", "ROUND(AVG(pressure_abs_hpa), 1)"),
+    ("wind_speed_kmh", "ROUND(AVG(wind_speed_kmh), 1)"),
+    ("wind_gust_kmh", "ROUND(MAX(wind_gust_kmh), 1)"),
+    ("wind_dir_deg", "ROUND(AVG(wind_dir_deg), 0)"),
+    ("max_daily_gust_kmh", "ROUND(MAX(max_daily_gust_kmh), 1)"),
+    ("rain_rate_mm_hr", "ROUND(MAX(rain_rate_mm_hr), 1)"),
+    ("daily_rain_mm", "ROUND(MAX(daily_rain_mm), 1)"),
+    ("event_rain_mm", "ROUND(MAX(event_rain_mm), 1)"),
+    ("yearly_rain_mm", "ROUND(MAX(yearly_rain_mm), 1)"),
+    ("solar_radiation", "ROUND(AVG(solar_radiation), 1)"),
+    ("uv_index", "MAX(uv_index)"),
+    ("vpd", "ROUND(AVG(vpd), 2)"),
+    ("lightning_count", "MAX(lightning_count)"),
+    ("lightning_distance_km", "MIN(lightning_distance_km)"),
+]
+
+_ENERGY_DOWNSAMPLE_COLUMNS = [
+    ("p_solare", "ROUND(AVG(p_solare), 1)"),
+    ("p_utenze", "ROUND(AVG(p_utenze), 1)"),
+    ("p_batteria", "ROUND(AVG(p_batteria), 1)"),
+    ("p_rete", "ROUND(AVG(p_rete), 1)"),
+    ("soc", "ROUND(AVG(soc), 1)"),
+    ("temp_battery", "ROUND(AVG(temp_battery), 1)"),
+    ("e_pannelli_wh", "MAX(e_pannelli_wh)"),
+    ("e_comprata_wh", "MAX(e_comprata_wh)"),
+    ("e_venduta_wh", "MAX(e_venduta_wh)"),
+    ("e_batteria_wh", "MAX(e_batteria_wh)"),
+]
+
+
+def _downsample_table_hourly(conn: sqlite3.Connection, table: str, columns: List[Tuple[str, str]], cutoff_day: str) -> Tuple[int, int]:
+    """
+    Condensa a 1 riga/ora tutte le letture della tabella nei giorni (UTC) precedenti a cutoff_day.
+    Lavora un giorno alla volta con commit separati, così l'ingestione live non resta bloccata a lungo.
+    Il filtro per giorno usa il prefisso 'YYYY-MM-DD', valido sia per timestamp ISO ('T') sia con spazio.
+    Restituisce (ore_compattate, righe_eliminate).
+    """
+    hour_key = "strftime('%Y-%m-%dT%H:00:00+00:00', timestamp)"
+    col_names = ", ".join(c for c, _ in columns)
+    col_aggs = ", ".join(f"{agg} AS {c}" for c, agg in columns)
+
+    cursor = conn.cursor()
+    cursor.execute(f"""
+        SELECT DISTINCT substr(timestamp, 1, 10) AS day
+        FROM {table}
+        WHERE timestamp < ?
+        ORDER BY day
+    """, (cutoff_day,))
+    days = [r["day"] for r in cursor.fetchall()]
+
+    compressed_hours = 0
+    purged = 0
+    for day in days:
+        next_day = (datetime.strptime(day, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        try:
+            cursor.execute("DROP TABLE IF EXISTS temp._downsample")
+            cursor.execute(f"""
+                CREATE TEMP TABLE _downsample AS
+                SELECT {hour_key} AS hb, {col_aggs}, COUNT(*) AS cnt
+                FROM {table}
+                WHERE timestamp >= ? AND timestamp < ?
+                GROUP BY hb
+                HAVING cnt > 1
+            """, (day, next_day))
+            cursor.execute("SELECT COUNT(*) AS n, COALESCE(SUM(cnt), 0) AS rows FROM temp._downsample")
+            stats = cursor.fetchone()
+            if not stats["n"]:
+                continue
+            cursor.execute(f"""
+                DELETE FROM {table}
+                WHERE timestamp >= ? AND timestamp < ?
+                  AND {hour_key} IN (SELECT hb FROM temp._downsample)
+            """, (day, next_day))
+            cursor.execute(f"""
+                INSERT INTO {table} (timestamp, {col_names})
+                SELECT hb, {col_names} FROM temp._downsample
+            """)
+            conn.commit()
+            compressed_hours += stats["n"]
+            purged += stats["rows"] - stats["n"]
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"[DB-MAINTENANCE] Downsampling {table} fallito per il giorno {day}: {e}")
+    cursor.execute("DROP TABLE IF EXISTS temp._downsample")
+    return compressed_hours, purged
+
+
 def perform_database_maintenance(retention_days: int = 60) -> Dict[str, Any]:
     """
     Esegue la compattazione e il downsampling intelligente dello storico:
@@ -2153,133 +2286,15 @@ def perform_database_maintenance(retention_days: int = 60) -> Dict[str, Any]:
     - I record estremi (Albo dei Record e storico record infranti) NON vengono mai cancellati né alterati.
     - Esegue il checkpoint del file WAL e PRAGMA optimize.
     """
-    cutoff_utc = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
-    
+    cutoff_day = (datetime.now(timezone.utc) - timedelta(days=retention_days)).strftime("%Y-%m-%d")
+
     conn = get_connection()
     cursor = conn.cursor()
-    
-    # 1. Recupera i bucket orari da condensare
-    cursor.execute("""
-        SELECT strftime('%Y-%m-%d %H:00:00', timestamp) AS hour_bucket, COUNT(*) AS cnt
-        FROM weather_records
-        WHERE timestamp < ?
-        GROUP BY hour_bucket
-        HAVING cnt > 1
-    """, (cutoff_utc,))
-    buckets_to_downsample = cursor.fetchall()
-    
-    compressed_buckets = 0
-    purged_records = 0
-    
-    for row in buckets_to_downsample:
-        h_bucket = row["hour_bucket"]
-        # Calcola le aggregazioni scientifiche per l'ora
-        cursor.execute("""
-            SELECT 
-                ROUND(AVG(temp_c), 1) as avg_temp,
-                ROUND(MIN(temp_c), 1) as min_temp,
-                ROUND(MAX(temp_c), 1) as max_temp,
-                ROUND(AVG(humidity), 1) as avg_hum,
-                ROUND(AVG(dew_point_c), 1) as avg_dew,
-                ROUND(AVG(temp_in_c), 1) as avg_temp_in,
-                ROUND(AVG(humidity_in), 1) as avg_hum_in,
-                ROUND(AVG(pressure_rel_hpa), 1) as avg_press,
-                ROUND(AVG(pressure_abs_hpa), 1) as avg_press_abs,
-                ROUND(AVG(wind_speed_kmh), 1) as avg_wind_spd,
-                ROUND(MAX(wind_gust_kmh), 1) as max_wind_gust,
-                ROUND(AVG(wind_dir_deg), 0) as avg_wind_dir,
-                ROUND(MAX(max_daily_gust_kmh), 1) as max_day_gust,
-                ROUND(MAX(rain_rate_mm_hr), 1) as max_rain_rate,
-                ROUND(MAX(daily_rain_mm), 1) as max_daily_rain,
-                ROUND(MAX(event_rain_mm), 1) as max_event_rain,
-                ROUND(MAX(yearly_rain_mm), 1) as max_yearly_rain,
-                ROUND(AVG(solar_radiation), 1) as avg_solar,
-                MAX(uv_index) as max_uv,
-                ROUND(AVG(vpd), 2) as avg_vpd,
-                MAX(lightning_count) as max_l_count,
-                MIN(lightning_distance_km) as min_l_dist,
-                COUNT(*) as bucket_count
-            FROM weather_records
-            WHERE timestamp >= ? AND timestamp < datetime(?, '+1 hour')
-        """, (h_bucket, h_bucket))
-        agg = cursor.fetchone()
-        
-        if agg and agg["bucket_count"] > 1:
-            # Elimina i record singoli ad alta frequenza del bucket
-            cursor.execute("""
-                DELETE FROM weather_records
-                WHERE timestamp >= ? AND timestamp < datetime(?, '+1 hour')
-            """, (h_bucket, h_bucket))
-            purged_records += (agg["bucket_count"] - 1)
-            
-            # Inserisce la singola lettura oraria consolidata
-            cursor.execute("""
-                INSERT INTO weather_records (
-                    timestamp, temp_c, humidity, dew_point_c, temp_in_c, humidity_in,
-                    pressure_rel_hpa, pressure_abs_hpa, wind_speed_kmh, wind_gust_kmh,
-                    wind_dir_deg, max_daily_gust_kmh, rain_rate_mm_hr, daily_rain_mm,
-                    event_rain_mm, yearly_rain_mm, solar_radiation, uv_index, vpd,
-                    lightning_count, lightning_distance_km
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                h_bucket, agg["avg_temp"], agg["avg_hum"], agg["avg_dew"], agg["avg_temp_in"], agg["avg_hum_in"],
-                agg["avg_press"], agg["avg_press_abs"], agg["avg_wind_spd"], agg["max_wind_gust"],
-                agg["avg_wind_dir"], agg["max_day_gust"], agg["max_rain_rate"], agg["max_daily_rain"],
-                agg["max_event_rain"], agg["max_yearly_rain"], agg["avg_solar"], agg["max_uv"], agg["avg_vpd"],
-                agg["max_l_count"], agg["min_l_dist"]
-            ))
-            compressed_buckets += 1
 
-    # 2. Downsampling analogo per telemetria energetica Aton > retention_days
-    cursor.execute("""
-        SELECT strftime('%Y-%m-%d %H:00:00', timestamp) AS hour_bucket, COUNT(*) AS cnt
-        FROM energy_records
-        WHERE timestamp < ?
-        GROUP BY hour_bucket
-        HAVING cnt > 1
-    """, (cutoff_utc,))
-    energy_buckets = cursor.fetchall()
-    
-    purged_energy = 0
-    for erow in energy_buckets:
-        eh_bucket = erow["hour_bucket"]
-        cursor.execute("""
-            SELECT 
-                ROUND(AVG(p_solare), 1) as avg_p_solare,
-                ROUND(AVG(p_utenze), 1) as avg_p_utenze,
-                ROUND(AVG(p_batteria), 1) as avg_p_batteria,
-                ROUND(AVG(p_rete), 1) as avg_p_rete,
-                ROUND(AVG(soc), 1) as avg_soc,
-                ROUND(AVG(temp_battery), 1) as avg_temp_batt,
-                MAX(e_pannelli_wh) as max_e_pan,
-                MAX(e_comprata_wh) as max_e_comp,
-                MAX(e_venduta_wh) as max_e_vend,
-                MAX(e_batteria_wh) as max_e_batt,
-                COUNT(*) as b_cnt
-            FROM energy_records
-            WHERE timestamp >= ? AND timestamp < datetime(?, '+1 hour')
-        """, (eh_bucket, eh_bucket))
-        eagg = cursor.fetchone()
-        if eagg and eagg["b_cnt"] > 1:
-            cursor.execute("""
-                DELETE FROM energy_records
-                WHERE timestamp >= ? AND timestamp < datetime(?, '+1 hour')
-            """, (eh_bucket, eh_bucket))
-            purged_energy += (eagg["b_cnt"] - 1)
-            
-            cursor.execute("""
-                INSERT INTO energy_records (
-                    timestamp, p_solare, p_utenze, p_batteria, p_rete, soc,
-                    temp_battery, e_pannelli_wh, e_comprata_wh, e_venduta_wh, e_batteria_wh
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                eh_bucket, eagg["avg_p_solare"], eagg["avg_p_utenze"], eagg["avg_p_batteria"],
-                eagg["avg_p_rete"], eagg["avg_soc"], eagg["avg_temp_batt"],
-                eagg["max_e_pan"], eagg["max_e_comp"], eagg["max_e_vend"], eagg["max_e_batt"]
-            ))
+    # 1-2. Downsampling orario di meteo ed energia (giorno per giorno)
+    compressed_buckets, purged_records = _downsample_table_hourly(conn, "weather_records", _WEATHER_DOWNSAMPLE_COLUMNS, cutoff_day)
+    _, purged_energy = _downsample_table_hourly(conn, "energy_records", _ENERGY_DOWNSAMPLE_COLUMNS, cutoff_day)
 
-    conn.commit()
-    
     # 3. Checkpoint WAL & Ottimizzazione indici SQLite
     try:
         cursor.execute("PRAGMA wal_checkpoint(TRUNCATE);")
@@ -2319,14 +2334,14 @@ def get_tropical_nights_stats(year: Optional[int] = None) -> Dict[str, Any]:
 
     cursor.execute("""
         SELECT 
-            date(timestamp) as day_str,
+            local_date(timestamp) as day_str,
             ROUND(MIN(temp_c), 1) as min_temp,
             ROUND(MAX(temp_c), 1) as max_temp,
             ROUND(AVG(temp_c), 1) as avg_temp,
             COUNT(*) as readings_count
         FROM weather_records
         WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
-        GROUP BY date(timestamp)
+        GROUP BY local_date(timestamp)
         HAVING readings_count >= 1
         ORDER BY day_str ASC
     """, (year_start, year_end))
@@ -3406,10 +3421,10 @@ def calculate_monthly_summary(year: int, month: int) -> Dict[str, Any]:
     # Precipitazioni Giornaliere (Accumulo totale, giorno record e giorni piovosi)
     cursor.execute("""
         SELECT day, MAX(day_rain) as day_rain FROM (
-            SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
+            SELECT local_date(timestamp) as day, MAX(daily_rain_mm) as day_rain
             FROM weather_records
             WHERE timestamp >= ? AND timestamp <= ?
-            GROUP BY date(timestamp)
+            GROUP BY local_date(timestamp)
         ) GROUP BY day
     """, (start_iso, end_iso))
     rain_days = cursor.fetchall()
@@ -3427,7 +3442,7 @@ def calculate_monthly_summary(year: int, month: int) -> Dict[str, Any]:
     # Notti Tropicali (Tmin >= 20°C) e Notti Roventi (Tmin >= 25°C)
     cursor.execute("""
         SELECT day, MIN(temp_c) as day_min FROM (
-            SELECT date(timestamp) as day, temp_c
+            SELECT local_date(timestamp) as day, temp_c
             FROM weather_records
             WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
         ) GROUP BY day
@@ -3449,14 +3464,14 @@ def calculate_monthly_summary(year: int, month: int) -> Dict[str, Any]:
     # 2. Metriche Energetiche Aton
     cursor.execute("""
         SELECT 
-            date(timestamp) as day,
+            local_date(timestamp) as day,
             MAX(e_pannelli_wh) as day_solar_wh,
             MAX(e_comprata_wh) as day_bought_wh,
             MAX(e_venduta_wh) as day_sold_wh,
             MAX(p_solare) as max_solar_w
         FROM energy_records
         WHERE timestamp >= ? AND timestamp <= ?
-        GROUP BY date(timestamp)
+        GROUP BY local_date(timestamp)
     """, (start_iso, end_iso))
     energy_days = cursor.fetchall()
 

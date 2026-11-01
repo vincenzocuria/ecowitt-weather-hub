@@ -116,7 +116,7 @@ def build_analytics_context(latest: dict) -> dict:
         temp_c=temp_c,
         solar_rad=solar,
         rain_forecast_24h_mm=0.0,
-        recent_rain_48h_mm=rain_totals.get("week_rain_mm", 0.0),
+        recent_rain_48h_mm=rain_totals.get("rain_48h", 0.0),
         et_mm=et_mm,
         dry_threshold=float(irr_cfg.get("soil_dry_threshold", 48.0)),
         target_threshold=float(irr_cfg.get("soil_target_threshold", 75.0)),
@@ -219,7 +219,7 @@ async def ingest_ecowitt(request: Request, bg: BackgroundTasks):
     return {"status": "success"}
 
 @router.get("/api/forecast")
-async def api_forecast():
+def api_forecast():
     latest = get_latest_reading() or {}
     forecast_data = forecast_service.fetch_open_meteo()
     cross_check = forecast_service.build_cross_check_summary(latest)
@@ -230,46 +230,46 @@ async def api_forecast():
 
 @router.get("/api/civil-protection")
 @router.get("/api/civil_protection")
-async def api_civil_protection(refresh: bool = False):
+def api_civil_protection(refresh: bool = False):
     """Restituisce lo stato delle allerte meteo ufficiali della Protezione Civile per oggi e domani."""
     return civil_protection_service.fetch_alerts(force_refresh=refresh)
 
 @router.post("/api/civil-protection/refresh")
 @router.post("/api/civil_protection/refresh")
-async def api_civil_protection_refresh():
+def api_civil_protection_refresh():
     """Forza il download e l'aggiornamento del bollettino della Protezione Civile."""
     return civil_protection_service.fetch_alerts(force_refresh=True)
 
 @router.get("/api/air-quality")
-async def api_air_quality():
+def api_air_quality():
     return forecast_service.fetch_air_quality()
 
 @router.get("/api/solar-forecast")
-async def api_solar_forecast():
+def api_solar_forecast():
     aton_curr = aton_service.latest_data or get_latest_energy() or {}
     return forecast_service.fetch_solar_forecast(aton_data=aton_curr)
 
 @router.get("/api/climate-summary")
-async def api_climate_summary():
+def api_climate_summary():
     return get_climate_comparisons()
 
 @router.get("/api/now-highlights")
-async def api_now_highlights():
+def api_now_highlights():
     latest = get_latest_reading() or {}
     analytics_ctx = build_analytics_context(latest)
     return {"highlights": analytics_ctx.get("now_highlights", [])}
 
 @router.get("/api/status")
-async def api_status():
+def api_status():
     return get_station_status()
 
 @router.get("/api/analytics")
-async def api_analytics():
+def api_analytics():
     latest = get_latest_reading() or {}
     return build_analytics_context(latest)
 
 @router.get("/api/lightning/history")
-async def api_lightning_history(limit: int = 20, hours: int = 48):
+def api_lightning_history(limit: int = 20, hours: int = 48):
     """Restituisce lo storico recente delle scariche di fulmine registrate dal sensore WH57."""
     from backend.database import get_recent_lightning_events, get_lightning_stats
     events = get_recent_lightning_events(limit=limit, hours=hours)
@@ -283,7 +283,7 @@ async def api_lightning_history(limit: int = 20, hours: int = 48):
     }
 
 @router.get("/api/live")
-async def api_live():
+def api_live():
     latest = get_latest_reading()
     if not latest:
         return {"message": "In attesa dei primi dati dalla stazione meteo", "status_info": get_station_status()}
@@ -323,39 +323,39 @@ async def api_live():
     return clean_latest
 
 @router.get("/api/records")
-async def api_records():
+def api_records():
     return {"records": get_all_records()}
 
 @router.get("/api/records/history")
-async def api_records_history(record_key: Optional[str] = None, limit: int = 50):
+def api_records_history(record_key: Optional[str] = None, limit: int = 50):
     return {"history": get_records_history(record_key=record_key, limit=limit)}
 
 @router.get("/api/history")
-async def api_history(period: str = "24h"):
+def api_history(period: str = "24h"):
     return get_timeseries(period=period)
 
 @router.get("/api/search")
-async def api_search(start_date: Optional[str] = None, end_date: Optional[str] = None, limit: int = 100, page: int = 1):
+def api_search(start_date: Optional[str] = None, end_date: Optional[str] = None, limit: int = 100, page: int = 1):
     offset = (page - 1) * limit
     records, total = search_history(start_date=start_date, end_date=end_date, limit=limit, offset=offset)
     return {"records": records, "total": total, "page": page, "limit": limit}
 
 @router.get("/api/search/kpis")
-async def api_search_kpis(start_date: Optional[str] = None, end_date: Optional[str] = None):
+def api_search_kpis(start_date: Optional[str] = None, end_date: Optional[str] = None):
     return get_history_kpis(start_date=start_date, end_date=end_date)
 
 @router.get("/api/climate/tropical-nights")
-async def api_climate_tropical_nights(year: Optional[int] = None):
+def api_climate_tropical_nights(year: Optional[int] = None):
     """Restituisce le statistiche climatologiche delle notti tropicali e roventi."""
     return get_tropical_nights_stats(year=year)
 
 @router.get("/api/soil/summary")
-async def api_soil_summary():
+def api_soil_summary():
     """Restituisce lo stato, trend e salute dei sensori di umidità del suolo WH51."""
     return get_soil_moisture_summary()
 
 @router.get("/api/export/csv")
-async def api_export_csv(start_date: Optional[str] = None, end_date: Optional[str] = None):
+def api_export_csv(start_date: Optional[str] = None, end_date: Optional[str] = None):
     """Esporta le letture storiche meteo in CSV (apribile direttamente in Excel)."""
     records, _ = search_history(start_date=start_date, end_date=end_date, limit=50000, offset=0)
     output = io.StringIO()
@@ -386,7 +386,7 @@ async def api_export_csv(start_date: Optional[str] = None, end_date: Optional[st
     )
 
 @router.get("/api/export/alerts-csv")
-async def api_export_alerts_csv():
+def api_export_alerts_csv():
     """Esporta il registro eventi e notifiche in CSV per Excel."""
     alerts = get_alert_logs(limit=1000)
     output = io.StringIO()
@@ -403,7 +403,7 @@ async def api_export_alerts_csv():
     )
 
 @router.get("/api/export/records-csv")
-async def api_export_records_csv():
+def api_export_records_csv():
     """Esporta l'Albo dei Record, i Record Mensili e la cronologia in CSV per Excel."""
     records = get_all_records()
     monthly_recs = get_monthly_records()
@@ -450,7 +450,7 @@ async def api_export_records_csv():
 # ----------------- RECORD & RESOCONTI MENSILI -----------------
 
 @router.get("/api/records/monthly")
-async def api_get_monthly_records():
+def api_get_monthly_records():
     """Restituisce l'Albo dei Record Mensili Storici e l'elenco dei riepiloghi mensili."""
     return {
         "monthly_records": get_monthly_records(),
@@ -458,7 +458,7 @@ async def api_get_monthly_records():
     }
 
 @router.get("/api/reports/monthly/{year}/{month}")
-async def api_get_monthly_report(year: int, month: int):
+def api_get_monthly_report(year: int, month: int):
     """Calcola o restituisce il riepilogo mensile per un determinato anno e mese."""
     ym = f"{year:04d}-{month:02d}"
     stored = get_monthly_summary_by_key(ym)
@@ -470,12 +470,12 @@ async def api_get_monthly_report(year: int, month: int):
     return summary
 
 @router.post("/api/reports/monthly/rebuild")
-async def api_rebuild_monthly_reports():
+def api_rebuild_monthly_reports():
     """Ricalcola tutti i riepiloghi mensili storici e aggiorna i record mensili assoluti."""
     return rebuild_all_historical_monthly_summaries()
 
 @router.post("/api/reports/monthly/send-digest")
-async def api_send_monthly_digest(year: Optional[int] = Query(None), month: Optional[int] = Query(None)):
+def api_send_monthly_digest(year: Optional[int] = Query(None), month: Optional[int] = Query(None)):
     """Invia manualmente o su richiesta il Resoconto Mensile per il mese specificato (o per il mese precedente)."""
     return engine.send_monthly_digest(year=year, month=month)
 

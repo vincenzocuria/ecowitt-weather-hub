@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.config import settings
 from backend.alert_engine import engine
+from backend.notifier import notifier
 from backend.database import (
     get_latest_reading, get_latest_energy, get_recent_rain_totals
 )
@@ -51,13 +52,15 @@ async def watchdog_worker():
             await asyncio.to_thread(engine.check_monthly_digest)
             await asyncio.to_thread(engine.check_evening_energy_digest)
             await asyncio.to_thread(engine.check_nightly_maintenance)
+            await asyncio.to_thread(notifier.flush_deferred_summary)
 
             # Automazioni intelligenti Presenza Smartphone, Elettrodomestici, Clima & Solare via Home Assistant
-            latest_w = get_latest_reading() or {}
-            latest_e = aton_service.latest_data or get_latest_energy() or {}
-            an_ctx = build_analytics_context(latest_w)
+            latest_w = await asyncio.to_thread(get_latest_reading) or {}
+            latest_e = aton_service.latest_data or await asyncio.to_thread(get_latest_energy) or {}
+            # build_analytics_context può interrogare Open-Meteo (qualità aria): fuori dall'event loop
+            an_ctx = await asyncio.to_thread(build_analytics_context, latest_w)
             ha_sum = homeassistant_service.get_summary(latest_e, an_ctx.get("drying_index") if an_ctx else None)
-            engine.evaluate_smartthings_automations(ha_sum, latest_w, latest_e)
+            await asyncio.to_thread(engine.evaluate_smartthings_automations, ha_sum, latest_w, latest_e)
 
             # Automazioni Climatizzatori (Fujitsu FGLair, LG ThinQ - Spegnimento/Accensione Autonoma & Notifiche)
             all_climates = []
@@ -80,7 +83,7 @@ async def watchdog_worker():
         # Irrigazione in un blocco separato: un errore nelle fasi precedenti non deve mai
         # impedire al watchdog di sicurezza di chiudere l'elettrovalvola.
         try:
-            latest_w = get_latest_reading() or {}
+            latest_w = await asyncio.to_thread(get_latest_reading) or {}
             # Automazioni Irrigazione Intelligente (WH51 + Elettrovalvola Home Assistant + Meteo Predittivo)
             fc_rain = 0.0
             try:
@@ -90,7 +93,7 @@ async def watchdog_worker():
                 pass
             recent_rain_mm = 0.0
             try:
-                recent_r = get_recent_rain_totals() or {}
+                recent_r = await asyncio.to_thread(get_recent_rain_totals) or {}
                 recent_rain_mm = float(recent_r.get("rain_48h", 0.0) or 0.0)
             except Exception:
                 pass
@@ -231,7 +234,7 @@ if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 @app.get("/sw.js")
-async def serve_service_worker():
+def serve_service_worker():
     """Serve il Service Worker direttamente a livello root ('/') con header Service-Worker-Allowed."""
     sw_file = static_dir / "sw.js"
     return FileResponse(
@@ -244,7 +247,7 @@ async def serve_service_worker():
     )
 
 @app.get("/manifest.json")
-async def serve_manifest():
+def serve_manifest():
     """Serve il manifest della PWA a livello root."""
     manifest_file = static_dir / "manifest.json"
     return FileResponse(
@@ -254,7 +257,7 @@ async def serve_manifest():
     )
 
 @app.get("/alerts")
-async def redirect_alerts():
+def redirect_alerts():
     """Redirect amichevole da /alerts a /alerts-page."""
     return RedirectResponse(url="/alerts-page", status_code=301)
 

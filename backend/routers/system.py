@@ -16,12 +16,12 @@ router = APIRouter(tags=["System & Database"])
 # --- STATISTICHE, BACKUP & MANUTENZIONE DATABASE ---
 
 @router.get("/api/system/db-stats")
-async def api_system_db_stats():
+def api_system_db_stats():
     """Restituisce le statistiche su dimensioni del database, totale campioni e stato WAL."""
     return get_database_stats()
 
 @router.get("/api/system/backup")
-async def api_system_backup():
+def api_system_backup():
     """Scarica il file completo del database SQLite come backup sicuro."""
     if not os.path.exists(DB_PATH):
         return JSONResponse({"error": "Database non trovato"}, status_code=404)
@@ -39,7 +39,7 @@ async def api_system_backup():
     )
 
 @router.post("/api/system/maintenance")
-async def api_system_maintenance(retention_days: int = Query(60, ge=7, le=365)):
+def api_system_maintenance(retention_days: int = Query(60, ge=7, le=365)):
     """Esegue manualmente la compattazione e il downsampling dello storico > retention_days."""
     res = perform_database_maintenance(retention_days=retention_days)
     return res
@@ -47,12 +47,12 @@ async def api_system_maintenance(retention_days: int = Query(60, ge=7, le=365)):
 # --- BACKFILL STORICO DA WEATHER UNDERGROUND (ICORIG10) & RICALCOLO RECORD ---
 
 @router.get("/api/system/history-backfill/status")
-async def api_history_backfill_status():
+def api_history_backfill_status():
     """Restituisce lo stato in tempo reale del processo di backfill storico."""
     return history_importer.get_status()
 
 @router.post("/api/system/history-backfill/start")
-async def api_history_backfill_start(
+def api_history_backfill_start(
     background_tasks: BackgroundTasks,
     station_id: str = Query("ICORIG10"),
     concurrency: int = Query(4, ge=1, le=8)
@@ -66,7 +66,7 @@ async def api_history_backfill_start(
     return {"status": "started", "message": f"Backfill storico avviato per stazione {station_id}.", "initial_status": history_importer.get_status()}
 
 @router.post("/api/system/history-backfill/recalculate-records")
-async def api_history_backfill_recalculate():
+def api_history_backfill_recalculate():
     """Ricalcola istantaneamente l'Albo dei Record e gli estremi assoluti dal database attuale."""
     updated_count = history_importer.rebuild_records_and_extremes()
     return {

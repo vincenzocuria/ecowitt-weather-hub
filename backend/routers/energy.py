@@ -16,7 +16,7 @@ logger = logging.getLogger("weather_hub")
 router = APIRouter(tags=["Energy & Photovoltaic"])
 
 @router.get("/api/energy/latest")
-async def api_energy_latest():
+def api_energy_latest():
     """Restituisce l'ultima lettura energetica live da Aton Storage."""
     data = aton_service.latest_data or get_latest_energy()
     return {
@@ -27,17 +27,17 @@ async def api_energy_latest():
     }
 
 @router.get("/api/energy/summary")
-async def api_energy_summary():
+def api_energy_summary():
     """Restituisce il riassunto energetico odierno (produzione, autoconsumo, autosufficienza)."""
     return get_today_energy_summary()
 
 @router.get("/api/energy/history")
-async def api_energy_history(hours: int = 24):
+def api_energy_history(hours: int = 24):
     """Restituisce la serie storica energetica per i grafici."""
     return {"history": get_energy_timeseries(hours=hours)}
 
 @router.get("/api/energy/house-breakdown")
-async def api_energy_house_breakdown():
+def api_energy_house_breakdown():
     """
     Restituisce la ripartizione dettagliata in tempo reale dei consumi domestici:
     potenza totale della casa, dispositivi/prese smart attive con relativo assorbimento (W, V, A),

@@ -1,5 +1,7 @@
 import os
+import copy
 import json
+import threading
 import time
 import asyncio
 import logging
@@ -11,11 +13,17 @@ from backend.database import check_and_update_records, get_pressure_trend, get_t
 from backend.helpers import format_duration_italian
 
 
+# Margine (punti %) oltre la soglia prima di considerare il terreno "ripristinato"
+SOIL_HYSTERESIS_PCT = 5.0
+
 logger = logging.getLogger("ecowitt_alert_engine")
 
 class AlertEngine:
     def __init__(self):
         self._state_file = os.path.join(settings.DATA_DIR, "alert_state.json")
+        self._state_lock = threading.RLock()
+        self.soil_dry_active: Dict[str, bool] = {}
+        self.soil_wet_active: Dict[str, bool] = {}
         self.last_lightning_epoch = None
         self.last_lightning_count = 0
         self.last_lightning_alert = 0.0
@@ -99,7 +107,13 @@ class AlertEngine:
         self._load_state()
 
     def _save_state(self):
-        """Salva lo stato corrente e i cooldown degli allarmi su file JSON persistente."""
+        """Salva lo stato corrente e i cooldown degli allarmi su file JSON persistente (thread-safe)."""
+        # _save_state viene chiamato dal thread di ingestione, dai to_thread del watchdog e dal loop asyncio:
+        # il lock serializza snapshot e scrittura, il file .tmp per-thread evita collisioni su os.replace.
+        with self._state_lock:
+            self._save_state_locked()
+
+    def _save_state_locked(self):
         try:
             os.makedirs(settings.DATA_DIR, exist_ok=True)
             state_data = {
@@ -164,10 +178,13 @@ class AlertEngine:
                 "active_learning_cycle_id": self.active_learning_cycle_id,
                 "learning_monitoring_until": self.learning_monitoring_until,
                 "last_notified_cp_key": self.last_notified_cp_key,
+                "soil_dry_active": self.soil_dry_active,
+                "soil_wet_active": self.soil_wet_active,
             }
-            tmp_path = self._state_file + ".tmp"
+            state_json = json.dumps(copy.deepcopy(state_data), ensure_ascii=False, indent=2)
+            tmp_path = f"{self._state_file}.{threading.get_ident()}.tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(state_data, f, ensure_ascii=False, indent=2)
+                f.write(state_json)
             os.replace(tmp_path, self._state_file)
         except Exception as e:
             logger.warning(f"[ALERT-STATE] Impossibile salvare cache stato allarmi: {e}")
@@ -184,6 +201,8 @@ class AlertEngine:
                 self.last_lightning_alert = data.get("last_lightning_alert", self.last_lightning_alert)
                 self.last_soil_alert = data.get("last_soil_alert", self.last_soil_alert)
                 self.last_soil_wet_alert = data.get("last_soil_wet_alert", self.last_soil_wet_alert)
+                self.soil_dry_active = data.get("soil_dry_active", self.soil_dry_active)
+                self.soil_wet_active = data.get("soil_wet_active", self.soil_wet_active)
                 self.last_freeze_alert = data.get("last_freeze_alert", self.last_freeze_alert)
                 self.last_heat_alert = data.get("last_heat_alert", self.last_heat_alert)
                 self.last_rain_alert = data.get("last_rain_alert", self.last_rain_alert)
@@ -495,7 +514,7 @@ class AlertEngine:
                         try:
                             from backend.analytics import calc_sun_ephemeris
                             local_now = settings.now_local()
-                            sun = calc_sun_ephemeris(local_now, lat=settings.LATITUDE, lon=settings.LONGITUDE, tz_name=settings.TIMEZONE)
+                            sun = calc_sun_ephemeris(settings.LATITUDE, settings.LONGITUDE, current_dt=local_now, tz_name=settings.TIMEZONE)
                             
                             sr_h, sr_m = map(int, sun["sunrise"].split(":"))
                             ss_h, ss_m = map(int, sun["sunset"].split(":"))
@@ -660,6 +679,7 @@ class AlertEngine:
                 last_time = self.last_soil_alert.get(channel, 0.0)
                 if (now - last_time) >= (settings.SOIL_MOISTURE_COOLDOWN_MIN * 60):
                     self.last_soil_alert[channel] = now
+                    self.soil_dry_active[channel] = True
                     self._save_state()
                     
                     msg = f"L'umidità di '{sensor_name}' è scesa al {value}% (soglia minima: {settings.SOIL_MOISTURE_LOW_THRESHOLD}%). Nessuna pioggia prevista a breve.{advice_timing}"
@@ -676,6 +696,7 @@ class AlertEngine:
                 last_wet_time = self.last_soil_wet_alert.get(channel, 0.0)
                 if (now - last_wet_time) >= (settings.SOIL_MOISTURE_COOLDOWN_MIN * 60):
                     self.last_soil_wet_alert[channel] = now
+                    self.soil_wet_active[channel] = True
                     self._save_state()
 
                     msg = f"L'umidità di '{sensor_name}' è salita al {value}% (soglia di saturazione: {settings.SOIL_MOISTURE_HIGH_THRESHOLD}%). Rischio ristagno idrico ed asfissia radicale; sospendi l'irrigazione."
@@ -687,12 +708,11 @@ class AlertEngine:
                         priority="normal",
                         extra_data={"channel": channel, "moisture": str(value), "sensor_name": sensor_name}
                     )
-            # Caso C: Ripristino Condizione Ottimale
-            elif settings.SOIL_MOISTURE_LOW_THRESHOLD < value < settings.SOIL_MOISTURE_HIGH_THRESHOLD:
-                # Ripristino da secca
-                last_time = self.last_soil_alert.get(channel, 0.0)
-                if last_time > 0 and (now - last_time) < (24 * 3600):
-                    self.last_soil_alert[channel] = 0.0
+            # Caso C: Ripristino Condizione Ottimale, con isteresi per evitare raffiche di notifiche
+            # quando il sensore oscilla attorno alla soglia. Il cooldown NON viene azzerato.
+            else:
+                if self.soil_dry_active.get(channel) and value >= settings.SOIL_MOISTURE_LOW_THRESHOLD + SOIL_HYSTERESIS_PCT:
+                    self.soil_dry_active[channel] = False
                     self._save_state()
                     notifier.send_alert(
                         alert_type="soil_recovered",
@@ -701,9 +721,8 @@ class AlertEngine:
                         priority="low",
                         extra_data={"channel": channel, "moisture": str(value), "sensor_name": sensor_name}
                     )
-                # Reset allarme terreno saturo
-                if self.last_soil_wet_alert.get(channel, 0.0) > 0:
-                    self.last_soil_wet_alert[channel] = 0.0
+                if self.soil_wet_active.get(channel) and value <= settings.SOIL_MOISTURE_HIGH_THRESHOLD - SOIL_HYSTERESIS_PCT:
+                    self.soil_wet_active[channel] = False
                     self._save_state()
 
     def _check_temperatures(self, data: Dict[str, Any], now: float):

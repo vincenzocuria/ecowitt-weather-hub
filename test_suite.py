@@ -530,7 +530,9 @@ class TestEcowittHub(unittest.TestCase):
         old_ts_1 = "2025-01-01 10:05:00"
         old_ts_2 = "2025-01-01 10:20:00"
         old_ts_3 = "2025-01-01 10:40:00"
-        for ts, t_c in [(old_ts_1, 10.0), (old_ts_2, 12.0), (old_ts_3, 14.0)]:
+        # Formato reale prodotto dal parser Ecowitt (ISO con 'T' e offset): in passato non veniva mai compattato
+        iso_rows = [("2025-01-02T08:01:00.123456+00:00", 20.0), ("2025-01-02T08:30:00+00:00", 22.0)]
+        for ts, t_c in [(old_ts_1, 10.0), (old_ts_2, 12.0), (old_ts_3, 14.0)] + iso_rows:
             cursor.execute("""
                 INSERT INTO weather_records (timestamp, temp_c, humidity, pressure_rel_hpa, rain_rate_mm_hr)
                 VALUES (?, ?, ?, ?, ?)
@@ -544,10 +546,14 @@ class TestEcowittHub(unittest.TestCase):
         # Check that the hour 2025-01-01 10:00:00 now has 1 consolidated record with average temp 12.0
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM weather_records WHERE timestamp = '2025-01-01 10:00:00'")
+        cursor.execute("SELECT * FROM weather_records WHERE timestamp = '2025-01-01T10:00:00+00:00'")
         row = cursor.fetchone()
         self.assertIsNotNone(row)
         self.assertEqual(row["temp_c"], 12.0)
+        cursor.execute("SELECT COUNT(*) AS n, MAX(temp_c) AS t FROM weather_records WHERE timestamp LIKE '2025-01-02%'")
+        iso_row = cursor.fetchone()
+        self.assertEqual(iso_row["n"], 1)
+        self.assertEqual(iso_row["t"], 21.0)
         conn.close()
 
     def test_system_api_endpoints(self):
@@ -1107,6 +1113,10 @@ class TestEcowittHub(unittest.TestCase):
         original_send = alert_engine.notifier.send_alert
         mock_soil_alerts = []
         alert_engine.notifier.send_alert = lambda *args, **kwargs: mock_soil_alerts.append((args, kwargs))
+        # Previsione deterministica senza pioggia: il test non deve dipendere dal meteo reale
+        from backend.forecast_service import forecast_service as _fs
+        original_fetch = _fs.fetch_open_meteo
+        _fs.fetch_open_meteo = lambda *a, **k: {"hourly_next_36h": []}
 
         try:
             # Terreno troppo umido / saturo
@@ -1125,6 +1135,7 @@ class TestEcowittHub(unittest.TestCase):
             }, now=100000.0)
             self.assertIn("ch2", test_engine.last_soil_alert)
         finally:
+            _fs.fetch_open_meteo = original_fetch
             alert_engine.notifier.send_alert = original_send
 
     def test_api_live_security_and_sanitization(self):

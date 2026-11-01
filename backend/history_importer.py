@@ -275,8 +275,12 @@ class WeatherHistoryImporter:
         try:
             conn.execute("BEGIN TRANSACTION;")
             for r in records:
+                # weather_records non ha un vincolo UNIQUE sul timestamp: si evita a mano il reimport duplicato
+                cursor.execute("SELECT 1 FROM weather_records WHERE timestamp = ? LIMIT 1", (r["timestamp"],))
+                if cursor.fetchone():
+                    continue
                 cursor.execute("""
-                    INSERT OR IGNORE INTO weather_records (
+                    INSERT INTO weather_records (
                         timestamp, temp_c, humidity, dew_point_c, temp_in_c, humidity_in,
                         pressure_rel_hpa, pressure_abs_hpa, wind_speed_kmh, wind_gust_kmh,
                         wind_dir_deg, max_daily_gust_kmh, rain_rate_mm_hr, daily_rain_mm,
@@ -333,10 +337,10 @@ class WeatherHistoryImporter:
 
             # 3. Notte Tropicale Record (Minima Più Alta mai registrata in un giorno)
             cursor.execute("""
-                SELECT date(timestamp) as day_str, MIN(temp_c) as day_min, MIN(timestamp) as ts
+                SELECT local_date(timestamp) as day_str, MIN(temp_c) as day_min, MIN(timestamp) as ts
                 FROM weather_records
                 WHERE temp_c IS NOT NULL
-                GROUP BY date(timestamp)
+                GROUP BY local_date(timestamp)
                 HAVING COUNT(*) >= 4
                 ORDER BY day_min DESC LIMIT 1
             """)
@@ -396,10 +400,10 @@ class WeatherHistoryImporter:
 
             # 8. Accumulo Pioggia Giornaliero Massimo
             cursor.execute("""
-                SELECT date(timestamp) as day_str, MAX(daily_rain_mm) as max_day_rain, MAX(timestamp) as ts
+                SELECT local_date(timestamp) as day_str, MAX(daily_rain_mm) as max_day_rain, MAX(timestamp) as ts
                 FROM weather_records
                 WHERE daily_rain_mm IS NOT NULL AND daily_rain_mm > 0.0 AND daily_rain_mm < 500.0
-                GROUP BY date(timestamp)
+                GROUP BY local_date(timestamp)
                 ORDER BY max_day_rain DESC LIMIT 1
             """)
             row = cursor.fetchone()

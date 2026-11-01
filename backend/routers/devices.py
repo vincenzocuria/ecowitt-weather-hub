@@ -37,7 +37,7 @@ router = APIRouter(tags=["Devices & Smart Home"])
 # --- GESTIONE ALIAS SENSORI PERSONALIZZATI ---
 
 @router.get("/api/sensors/aliases")
-async def api_get_sensor_aliases():
+def api_get_sensor_aliases():
     """Restituisce i nomi personalizzati assegnati ai canali dei sensori."""
     return {"aliases": get_sensor_aliases()}
 
@@ -166,7 +166,7 @@ async def api_thinq_sync():
 # --- LG ThinQ Climate Automations Endpoints ---
 
 @router.get("/api/climate/automations/config")
-async def api_get_climate_automations_config():
+def api_get_climate_automations_config():
     """Restituisce la configurazione attuale delle automazioni intelligenti climatizzatori."""
     cfg = get_climate_automations_config()
     devices = thinq_service.get_cached_devices() if settings.LG_THINQ_ENABLED else []
@@ -246,7 +246,7 @@ async def api_test_climate_automation(request: Request):
 # --- Samsung & Smart Home Summary Endpoints (Powered by Home Assistant) ---
 
 @router.get("/api/smartthings/summary")
-async def api_smartthings_summary():
+def api_smartthings_summary():
     """Restituisce il riepilogo in tempo reale di lavatrice, lavastoviglie, presenza e sinergia solare da Home Assistant."""
     from backend.routers.weather import build_analytics_context
     latest = get_latest_reading() or {}
@@ -280,12 +280,12 @@ async def api_smartthings_command(device_id: str, request: Request):
 # --- Health & Fitness Endpoints (Samsung Health & Health Connect) ---
 
 @router.get("/api/health/summary")
-async def api_health_summary():
+def api_health_summary():
     """Restituisce il riepilogo in tempo reale di parametri biometrici, passi, calorie e sonno da Samsung Health."""
     return homeassistant_service.parse_health_data()
 
 @router.get("/api/health/history")
-async def api_health_history(days: int = 30):
+def api_health_history(days: int = 30):
     """Restituisce lo storico giornaliero e le aggregazioni statistiche (medie 7gg/30gg, mese corrente, record)."""
     from backend.database import get_health_daily_history, get_health_stats_summary
     return {
@@ -311,7 +311,7 @@ async def api_health_sync():
 # --- Dispositivi Smart / Tuya Endpoints (Powered by Home Assistant) ---
 
 @router.get("/api/tuya/summary")
-async def api_tuya_summary():
+def api_tuya_summary():
     """Restituisce il riepilogo dei dispositivi tramite Home Assistant."""
     return homeassistant_service.get_summary()
 
@@ -323,7 +323,7 @@ async def api_tuya_sync():
     return homeassistant_service.get_summary()
 
 @router.get("/api/tuya/devices")
-async def api_tuya_devices():
+def api_tuya_devices():
     """Restituisce tutti i dispositivi rilevati su Home Assistant."""
     devs = homeassistant_service.get_catalog_devices()
     return {"devices": devs, "enabled_count": len(devs)}
@@ -377,7 +377,7 @@ async def api_tuya_config(device_id: str, request: Request):
 # --- SMART IRRIGATION ENDPOINTS (POWERED BY HOME ASSISTANT) ---
 
 @router.get("/api/irrigation/config")
-async def api_get_irrigation_config():
+def api_get_irrigation_config():
     """Restituisce la configurazione attuale dell'irrigazione intelligente."""
     cfg = get_irrigation_automations_config()
     return {"config": cfg}
@@ -393,7 +393,7 @@ async def api_save_irrigation_config(request: Request):
     return {"status": "ok", "config": updated}
 
 @router.get("/api/irrigation/status")
-async def api_get_irrigation_status():
+def api_get_irrigation_status():
     """Restituisce lo stato decisionale e operativo in tempo reale dell'irrigazione da Home Assistant."""
     cfg = get_irrigation_automations_config()
     latest_w = get_latest_reading() or {}
@@ -546,14 +546,14 @@ async def api_irrigation_stop(request: Request):
 from backend.devices_catalog import build_devices_catalog
 
 @router.get("/api/devices/all")
-async def api_devices_all():
+def api_devices_all():
     """Restituisce la lista aggregata e normalizzata di tutti i dispositivi smart."""
     return build_devices_catalog()
 
 # --- Nomi Personalizzati / Alias Dispositivi Endpoints ---
 
 @router.get("/api/devices/aliases")
-async def api_get_device_aliases():
+def api_get_device_aliases():
     """Restituisce la mappa di tutti gli alias personalizzati assegnati ai dispositivi."""
     return {"aliases": get_device_aliases()}
 
@@ -594,7 +594,7 @@ async def api_rename_device(request: Request, device_id: Optional[str] = None):
 # --- Programmazione & Timer Dispositivi Endpoints ---
 
 @router.get("/api/devices/schedules")
-async def api_get_schedules(device_id: Optional[str] = None):
+def api_get_schedules(device_id: Optional[str] = None):
     """Restituisce l'elenco delle programmazioni e timer attivi (o filtrati per dispositivo)."""
     schedules = device_scheduler.get_schedules(device_id)
     return {"schedules": schedules, "count": len(schedules)}
@@ -634,7 +634,7 @@ async def api_create_schedule(request: Request):
         return JSONResponse({"error": str(e)}, status_code=400)
 
 @router.delete("/api/devices/schedule/{task_id}")
-async def api_cancel_schedule(task_id: str):
+def api_cancel_schedule(task_id: str):
     """Annulla una programmazione / timer pendente."""
     success = device_scheduler.cancel_schedule(task_id)
     if success:
@@ -693,7 +693,7 @@ async def api_devices_turn_all(request: Request):
 # --- TUYA LOCAL API (Zero Cloud LAN Management) ---
 
 @router.get("/api/tuya/local/devices")
-async def api_get_tuya_local_devices():
+def api_get_tuya_local_devices():
     """Restituisce la lista dei dispositivi Tuya configurati per il controllo locale LAN."""
     devices = []
     for d in get_tuya_local_devices():
@@ -730,7 +730,7 @@ async def api_save_tuya_local_device(request: Request):
     return {"status": "ok", "device_id": device_id}
 
 @router.delete("/api/tuya/local/device/{device_id}")
-async def api_delete_tuya_local_device(device_id: str):
+def api_delete_tuya_local_device(device_id: str):
     """Elimina un dispositivo dalla configurazione locale."""
     success = delete_tuya_local_device(device_id)
     return {"status": "ok" if success else "not_found"}

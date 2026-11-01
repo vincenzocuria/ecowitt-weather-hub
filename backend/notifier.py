@@ -2,6 +2,9 @@ from __future__ import annotations
 import os
 import json
 import time
+import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import base64
 import logging
 import requests
@@ -29,11 +32,17 @@ EMERGENCY_ALERT_TYPES = {
     "freeze",                  # Allerta gelata
 }
 
+_DELIVERY_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="notify")
+
+
 class NotificationService:
     def __init__(self):
         self.vapid_private_pem_path = os.path.join(settings.DATA_DIR, "vapid_private.pem")
         self.vapid_public_txt_path = os.path.join(settings.DATA_DIR, "vapid_public_b64.txt")
         self.vapid_public_key_b64: Optional[str] = None
+        # Notifiche silenziate durante le Quiet Hours: consegnate in un unico riepilogo al risveglio
+        self._deferred: List[Dict[str, str]] = []
+        self._deferred_lock = threading.Lock()
         self._init_vapid()
 
     def _init_vapid(self):
@@ -125,7 +134,8 @@ class NotificationService:
                     data=payload,
                     vapid_private_key=self.vapid_private_pem_path,
                     vapid_claims={"sub": sub_claim},
-                    ttl=3600
+                    ttl=3600,
+                    timeout=10
                 )
                 logger.info(f"[WEBPUSH] Notifica inviata con successo al dispositivo {endpoint[:35]}...")
             except WebPushException as ex:
@@ -162,8 +172,56 @@ class NotificationService:
 
         if not is_test and not is_manual_action and settings.is_in_quiet_hours() and alert_type not in EMERGENCY_ALERT_TYPES:
             logger.info(f"[QUIET-HOURS] Notifica push silenziata per orario notturno ({settings.QUIET_HOURS_START}:00-{settings.QUIET_HOURS_END}:00): [{alert_type}] {title}")
+            with self._deferred_lock:
+                self._deferred.append({"alert_type": alert_type, "title": title})
             return
 
+        # Se chiamata dal thread dell'event loop asyncio (route async, scheduler, automazioni),
+        # la consegna di rete (Web Push senza risposta, ntfy fino a 8s) avviene in un thread dedicato
+        # per non congelare l'intero server. Da thread di lavoro resta sincrona.
+        try:
+            asyncio.get_running_loop()
+            on_event_loop = True
+        except RuntimeError:
+            on_event_loop = False
+        if on_event_loop:
+            _DELIVERY_POOL.submit(self._deliver_safe, alert_type, title, message, priority, extra_data, tags)
+        else:
+            self._deliver(alert_type, title, message, priority, extra_data, tags)
+
+    def _deliver_safe(self, *args):
+        try:
+            self._deliver(*args)
+        except Exception as e:
+            logger.error(f"[NOTIFICA] Errore consegna in background: {e}")
+
+    def flush_deferred_summary(self) -> bool:
+        """
+        Fuori dalle Quiet Hours invia un solo riepilogo degli avvisi silenziati durante la notte,
+        così nessun avviso (es. batteria scarica alle 23:30) va perso per sempre.
+        """
+        if settings.is_in_quiet_hours():
+            return False
+        with self._deferred_lock:
+            pending, self._deferred = self._deferred, []
+        if not pending:
+            return False
+        # Un titolo per tipo (l'ultimo), nell'ordine in cui sono arrivati
+        by_type: Dict[str, str] = {}
+        for item in pending:
+            by_type.pop(item["alert_type"], None)
+            by_type[item["alert_type"]] = item["title"]
+        lines = [f"• {t}" for t in list(by_type.values())[-8:]]
+        extra = len(by_type) - len(lines)
+        if extra > 0:
+            lines.append(f"…e altri {extra} avvisi")
+        title = f"🌙 Durante la notte: {len(pending)} avvisi"
+        message = "\n".join(lines) + "\nDettagli nella sezione Allarmi."
+        self._deliver("night_summary", title, message, "normal", {"count": str(len(pending))}, None)
+        return True
+
+    def _deliver(self, alert_type, title, message, priority, extra_data, tags):
+        """Consegna effettiva su Web Push e ntfy (senza filtri Quiet Hours)."""
         # 1. Web Push Nativo PWA
         try:
             self._send_web_push(alert_type, title, message, extra_data)

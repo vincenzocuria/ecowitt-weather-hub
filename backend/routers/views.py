@@ -1,4 +1,5 @@
 import os
+import asyncio
 import hmac
 import time
 import json
@@ -76,7 +77,7 @@ def _client_ip(request: Request) -> str:
     return request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, next: Optional[str] = "/"):
+def login_page(request: Request, next: Optional[str] = "/"):
     next_url = _safe_next_url(next)
     cookie_token = request.cookies.get(settings.AUTH_COOKIE_NAME) or ""
     if not settings.AUTH_TOKEN or hmac.compare_digest(cookie_token, settings.AUTH_TOKEN):
@@ -125,7 +126,7 @@ async def login_submit(request: Request):
     )
 
 @router.get("/logout")
-async def logout():
+def logout():
     response = RedirectResponse(url="/login", status_code=303)
     response.delete_cookie(key=settings.AUTH_COOKIE_NAME, path="/")
     return response
@@ -157,7 +158,7 @@ async def dashboard_page(request: Request):
 
     # Analisi avanzate & Nowcasting
     analytics = build_analytics_context(latest)
-    forecast_data = forecast_service.fetch_open_meteo()
+    forecast_data = await asyncio.to_thread(forecast_service.fetch_open_meteo)
     cross_check = forecast_service.build_cross_check_summary(latest)
 
     # Dati Energetici Aton Storage
@@ -222,14 +223,14 @@ async def dashboard_page(request: Request):
             "hass_enabled": settings.HASS_ENABLED,
             "sensor_aliases": get_sensor_aliases(),
             "db_stats": get_database_stats(),
-            "civil_protection": civil_protection_service.fetch_alerts() if settings.CIVIL_PROTECTION_ENABLED else None,
+            "civil_protection": (await asyncio.to_thread(civil_protection_service.fetch_alerts)) if settings.CIVIL_PROTECTION_ENABLED else None,
             "civil_protection_enabled": settings.CIVIL_PROTECTION_ENABLED,
             "ntfy_topic": settings.NTFY_TOPIC
         }
     )
 
 @router.get("/devices", response_class=HTMLResponse)
-async def devices_page(request: Request):
+def devices_page(request: Request):
     catalog = build_devices_catalog()
     return templates.TemplateResponse(
         request=request,
@@ -248,7 +249,7 @@ async def devices_page(request: Request):
     )
 
 @router.get("/records", response_class=HTMLResponse)
-async def records_page(request: Request):
+def records_page(request: Request):
     records = get_all_records()
     history = get_records_history(limit=100)
     tropical_stats = get_tropical_nights_stats()
@@ -277,7 +278,7 @@ async def records_page(request: Request):
     )
 
 @router.get("/radar", response_class=HTMLResponse)
-async def radar_page(request: Request):
+def radar_page(request: Request):
     latest = get_latest_reading() or {}
     temp_c = latest.get("temp_c")
     rain_rate = latest.get("rain_rate_mm_hr", 0.0) or 0.0
@@ -314,7 +315,7 @@ async def radar_page(request: Request):
 
 
 @router.get("/kiosk", response_class=HTMLResponse)
-async def kiosk_page(request: Request):
+def kiosk_page(request: Request):
     latest = get_latest_reading() or {}
     analytics = build_analytics_context(latest)
     forecast_data = forecast_service.fetch_open_meteo()
@@ -346,7 +347,7 @@ async def kiosk_page(request: Request):
     )
 
 @router.get("/charts", response_class=HTMLResponse)
-async def charts_page(request: Request):
+def charts_page(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="charts.html",
@@ -357,7 +358,7 @@ async def charts_page(request: Request):
     )
 
 @router.get("/history", response_class=HTMLResponse)
-async def history_page(request: Request, start_date: Optional[str] = None, end_date: Optional[str] = None, page: int = 1):
+def history_page(request: Request, start_date: Optional[str] = None, end_date: Optional[str] = None, page: int = 1):
     limit = 25
     offset = (page - 1) * limit
     records, total_count = search_history(start_date=start_date, end_date=end_date, limit=limit, offset=offset)
@@ -381,7 +382,7 @@ async def history_page(request: Request, start_date: Optional[str] = None, end_d
     )
 
 @router.get("/alerts-page", response_class=HTMLResponse)
-async def alerts_page(request: Request):
+def alerts_page(request: Request):
     alerts = get_alert_logs(limit=250)
     unread_count = get_unread_alerts_count()
     stats = get_alerts_stats()
@@ -515,7 +516,7 @@ def get_detected_sensors(raw: Dict[str, Any], soil_moisture: Dict[str, Any], sav
     return sensors
 
 @router.get("/settings", response_class=HTMLResponse)
-async def settings_page(request: Request):
+def settings_page(request: Request):
     latest = get_latest_reading() or {}
     raw = {}
     if latest.get("raw_data_json"):

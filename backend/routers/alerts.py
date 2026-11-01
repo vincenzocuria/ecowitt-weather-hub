@@ -17,7 +17,7 @@ logger = logging.getLogger("weather_hub")
 router = APIRouter(tags=["Alerts & Notifications"])
 
 @router.get("/api/alerts")
-async def api_alerts(limit: int = 50, unread_only: bool = False):
+def api_alerts(limit: int = 50, unread_only: bool = False):
     alerts = get_alert_logs(limit=limit, unread_only=unread_only)
     unread_count = get_unread_alerts_count()
     return {
@@ -27,34 +27,34 @@ async def api_alerts(limit: int = 50, unread_only: bool = False):
     }
 
 @router.get("/api/alerts/unread-count")
-async def api_alerts_unread_count():
+def api_alerts_unread_count():
     return {"unread_count": get_unread_alerts_count()}
 
 @router.post("/api/alerts/{alert_id}/read")
-async def api_mark_alert_read(alert_id: int):
+def api_mark_alert_read(alert_id: int):
     success = mark_alert_as_read(alert_id)
     return {"status": "ok" if success else "not_found", "unread_count": get_unread_alerts_count()}
 
 @router.post("/api/alerts/mark-all-read")
 @router.post("/api/alerts/mark-read-all")
-async def api_mark_all_alerts_read():
+def api_mark_all_alerts_read():
     marked = mark_all_alerts_as_read()
     return {"status": "ok", "marked": marked, "unread_count": 0}
 
 @router.delete("/api/alerts/{alert_id}")
-async def api_delete_alert(alert_id: int):
+def api_delete_alert(alert_id: int):
     success = delete_alert_log(alert_id)
     return {"status": "ok" if success else "not_found", "unread_count": get_unread_alerts_count()}
 
 @router.post("/api/alerts/clear-all")
-async def api_clear_all_alerts():
+def api_clear_all_alerts():
     cleared = clear_all_alert_logs()
     return {"status": "ok", "cleared": cleared, "unread_count": 0}
 
 # --- Web Push (PWA iOS / Android / Desktop) Endpoints ---
 
 @router.get("/api/push/vapid-public-key")
-async def api_push_vapid_key():
+def api_push_vapid_key():
     key = notifier.get_vapid_public_key()
     if not key:
         return JSONResponse({"error": "VAPID non pronto"}, status_code=503)
@@ -94,7 +94,7 @@ async def api_push_unsubscribe(request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @router.get("/api/push/status")
-async def api_push_status():
+def api_push_status():
     subs = get_all_push_subscriptions()
     return {
         "enabled": bool(notifier.get_vapid_public_key()),
@@ -103,7 +103,7 @@ async def api_push_status():
     }
 
 @router.post("/api/test-alert")
-async def api_test_alert(alert_type: str = Query("record")):
+def api_test_alert(alert_type: str = Query("record")):
     if alert_type == "civil_protection":
         title = f"⚠️ Test Allerta Protezione Civile - {settings.LOCATION_NAME}"
         message = f"🛡️ [TEST] Allerta Arancione per Rischio Temporali e Idrogeologico per la giornata di domani."
@@ -131,7 +131,7 @@ async def api_test_alert(alert_type: str = Query("record")):
     }
 
 @router.post("/api/daily-digest/send")
-async def api_send_daily_digest():
+def api_send_daily_digest():
     """Invia manualmente o via test la notifica 'Buongiorno Meteo' del mattino."""
     res = engine.send_daily_digest()
     return res
