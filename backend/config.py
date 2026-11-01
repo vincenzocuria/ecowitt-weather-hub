@@ -163,7 +163,7 @@ class Settings:
     TUYA_POLL_INTERVAL_SEC: int = int(os.getenv("TUYA_POLL_INTERVAL_SEC", "30"))
 
     # Notifiche push (ntfy.sh) & Web Push
-    ENABLE_NTFY: bool = True
+    ENABLE_NTFY: bool = os.getenv("ENABLE_NTFY", "true").lower() in ("true", "1", "yes")
     NTFY_TOPIC: str = os.getenv("NTFY_TOPIC", "")
     NTFY_ICON_URL: str = os.getenv("NTFY_ICON_URL", "")
     NTFY_CLICK_URL: str = os.getenv("NTFY_CLICK_URL", "")

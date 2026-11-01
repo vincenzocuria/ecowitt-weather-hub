@@ -51,6 +51,7 @@ def _js_literal(value) -> Markup:
     return escape(json.dumps(value, ensure_ascii=False))
 
 templates.env.filters["js"] = _js_literal
+templates.env.filters["localdt"] = lambda v, fmt="%d/%m/%Y %H:%M:%S": to_local_datetime_str(v, fmt) if v else ""
 
 templates.env.filters["local_dt"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M:%S")
 templates.env.filters["local_dt_short"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M")

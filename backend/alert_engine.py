@@ -1368,25 +1368,26 @@ class AlertEngine:
         t_min = summary.get("min_temp")
         t_max_time = to_local_datetime_str(summary.get("max_temp_time"), "%d/%m ore %H:%M") if summary.get("max_temp_time") else ""
         t_min_time = to_local_datetime_str(summary.get("min_temp_time"), "%d/%m ore %H:%M") if summary.get("min_temp_time") else ""
-        trop_nights = summary.get("tropical_nights_count", 0)
-        super_trop = summary.get("super_tropical_nights_count", 0)
+        # I valori possono essere None (mese senza dati per quel sensore): default numerici espliciti
+        trop_nights = (summary.get("tropical_nights_count") or 0)
+        super_trop = (summary.get("super_tropical_nights_count") or 0)
 
-        rain_mm = summary.get("total_rain_mm", 0.0)
-        rain_days = summary.get("rainy_days_count", 0)
-        rain_rate_max = summary.get("max_rain_rate_mm_hr", 0.0)
+        rain_mm = (summary.get("total_rain_mm") or 0.0)
+        rain_days = (summary.get("rainy_days_count") or 0)
+        rain_rate_max = (summary.get("max_rain_rate_mm_hr") or 0.0)
 
         gust_max = summary.get("max_wind_gust_kmh")
         gust_dir = summary.get("max_wind_gust_dir") or ""
-        lightnings = summary.get("lightning_count_total", 0)
+        lightnings = (summary.get("lightning_count_total") or 0)
 
-        sol_kwh = summary.get("solar_total_kwh", 0.0)
-        sol_max_w = summary.get("solar_max_w", 0.0)
+        sol_kwh = (summary.get("solar_total_kwh") or 0.0)
+        sol_max_w = (summary.get("solar_max_w") or 0.0)
         sol_peak_kw = round(sol_max_w / 1000.0, 2) if sol_max_w else 0.0
-        house_kwh = summary.get("house_consumption_kwh", 0.0)
-        autarky = summary.get("autarky_pct", 0.0)
-        self_cons = summary.get("self_consumption_pct", 0.0)
-        bought = summary.get("bought_kwh", 0.0)
-        sold = summary.get("sold_kwh", 0.0)
+        house_kwh = (summary.get("house_consumption_kwh") or 0.0)
+        autarky = (summary.get("autarky_pct") or 0.0)
+        self_cons = (summary.get("self_consumption_pct") or 0.0)
+        bought = (summary.get("bought_kwh") or 0.0)
+        sold = (summary.get("sold_kwh") or 0.0)
 
         lines = [
             f"📅 Bilancio Mensile Ufficiale Stazione Ecowitt & Aton",

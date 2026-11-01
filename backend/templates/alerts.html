@@ -897,7 +897,6 @@ function filterCategory(typesCsv, btnElement) {
 }
 
 function filterByToday() {
-    const todayIso = new Date().toISOString().slice(0, 10);
     currentFilterMode = 'today';
     currentCategoryFilter = null;
     document.querySelectorAll('#category-filter-chips .filter-chip').forEach(btn => btn.classList.remove('active'));
@@ -911,7 +910,7 @@ function resetAllAlertFilters() {
 
 function applyCombinedFilters() {
     const items = document.querySelectorAll('.notification-item');
-    const todayIso = new Date().toISOString().slice(0, 10);
+    const now = new Date();
     let visibleCount = 0;
 
     items.forEach(item => {
@@ -930,7 +929,9 @@ function applyCombinedFilters() {
                 matchesFilter = false;
             }
         } else if (currentFilterMode === 'today') {
-            if (!timestamp.startsWith(todayIso)) {
+            // Confronto sul giorno LOCALE (i timestamp sono in UTC: tra 00:00 e 02:00 il giorno UTC è diverso)
+            const ts = new Date(timestamp);
+            if (isNaN(ts) || ts.toDateString() !== now.toDateString()) {
                 matchesFilter = false;
             }
         }

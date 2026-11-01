@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{{ title or "Ecowitt & Sainlogic Weather Hub" }}</title>
     
     <!-- PWA Settings -->
@@ -13,7 +13,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Meteo Hub">
     
-    <link rel="stylesheet" href="/static/css/style.css?v=4.9">
+    <link rel="stylesheet" href="/static/css/style.css?v=5.0">
     <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
     <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -21,6 +21,21 @@
         // Escape HTML per testi provenienti da API/dispositivi inseriti con innerHTML (anti-XSS)
         function escapeHtml(value) {
             return String(value ?? '').replace(/[&<>"']/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch]));
+        }
+
+        // Toast di conferma disponibile su tutte le pagine
+        function showToast(msg, type = 'info') {
+            document.querySelector('.devices-toast')?.remove();
+            const toast = document.createElement('div');
+            toast.className = `devices-toast toast-${type}`;
+            toast.setAttribute('role', 'status');
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3200);
         }
     </script>
 </head>
@@ -35,8 +50,10 @@
             <a href="/radar" class="mobile-radar-quickbtn {% if active_page == 'radar' %}active{% endif %}" title="Radar Pioggia Live">
                 🌧️ <span style="font-size: 0.75rem; font-weight: 600;">Radar</span>
             </a>
-            <span class="mobile-live-dot" title="Live Data Stream"></span>
-            <span class="mobile-live-text" id="mobile-live-indicator">LIVE</span>
+            <span class="mobile-live-status" id="mobile-live-status" role="status" aria-live="polite">
+                <span class="mobile-live-dot" aria-hidden="true"></span>
+                <span class="mobile-live-text" id="mobile-live-indicator">LIVE</span>
+            </span>
         </div>
     </header>
 
@@ -119,8 +136,43 @@
         </a>
     </nav>
 
-    <script src="/static/js/app.js?v=4.9"></script>
+    <script src="/static/js/app.js?v=5.0"></script>
     <script>
+        // Indicatore LIVE/OFFLINE reale su tutte le pagine (non solo sulla dashboard)
+        function setLiveIndicator(isOnline) {
+            const wrap = document.getElementById('mobile-live-status');
+            const txt = document.getElementById('mobile-live-indicator');
+            if (!wrap || !txt) return;
+            wrap.classList.toggle('is-offline', !isOnline);
+            txt.innerText = isOnline ? 'LIVE' : 'OFFLINE';
+            wrap.title = isOnline ? 'Stazione online' : 'Stazione offline: nessun dato recente';
+        }
+        function refreshLiveIndicator() {
+            if (document.hidden) return;
+            fetch('/api/status').then(r => r.ok ? r.json() : null).then(s => {
+                if (s) setLiveIndicator(!!s.is_online);
+            }).catch(() => setLiveIndicator(false));
+        }
+        refreshLiveIndicator();
+        setInterval(refreshLiveIndicator, 60000);
+
+        // Accessibilità: le card/elementi <div onclick> diventano attivabili da tastiera e lettori di schermo
+        function enhanceClickableElements(root = document) {
+            root.querySelectorAll('[onclick]:not(button):not(a):not(input):not(select):not(textarea):not([role])').forEach(el => {
+                el.setAttribute('role', 'button');
+                if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+            });
+        }
+        document.addEventListener('keydown', (e) => {
+            const el = e.target;
+            if ((e.key === 'Enter' || e.key === ' ') && el && el.getAttribute && el.getAttribute('role') === 'button' && el.hasAttribute('onclick')) {
+                e.preventDefault();
+                el.click();
+            }
+        });
+        document.addEventListener('DOMContentLoaded', () => enhanceClickableElements());
+        document.addEventListener('visibilitychange', refreshLiveIndicator);
+
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((e) => console.warn('SW error:', e));
         }

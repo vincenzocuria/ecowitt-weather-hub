@@ -42,7 +42,7 @@
             </div>
             <div class="stat-pill stat-pill-online">
                 <span class="stat-pill-label">Online</span>
-                <span class="stat-pill-val" id="stat-online">{{ stats.online or devices|length }}</span>
+                <span class="stat-pill-val" id="stat-online">{{ stats.online if stats.online is not none else devices|length }}</span>
             </div>
             <div class="stat-pill stat-pill-timer" onclick="openSchedulesModal()" style="cursor: pointer;" title="Clicca per visualizzare i timer programmati">
                 <span class="stat-pill-label">⏱️ Timer Attivi</span>
@@ -520,7 +520,7 @@ async function fetchDevicesData() {
             const statPowerEl = document.getElementById('stat-power');
             if (statPowerEl) statPowerEl.textContent = `${data.stats.total_power_w || 0} W`;
             const statOnlineEl = document.getElementById('stat-online');
-            if (statOnlineEl) statOnlineEl.textContent = data.stats.online || devicesCatalog.length;
+            if (statOnlineEl) statOnlineEl.textContent = data.stats.online ?? devicesCatalog.length;
             const badgeCountEl = document.getElementById('badge-count-all');
             if (badgeCountEl) badgeCountEl.textContent = devicesCatalog.length;
             
@@ -2607,19 +2607,6 @@ setInterval(() => {
 }, 8000);
 
 // Toast helper
-function showToast(msg, type='info') {
-    const existing = document.querySelector('.devices-toast');
-    if (existing) existing.remove();
-    
-    const toast = document.createElement('div');
-    toast.className = `devices-toast toast-${type}`;
-    toast.textContent = msg;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.classList.add('show'), 10);
-    setTimeout(() => {
-        toast.classList.remove('show');
-        setTimeout(() => toast.remove(), 300);
-    }, 3200);
-}
+// showToast è definita globalmente in base.html
 </script>
 {% endblock %}

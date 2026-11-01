@@ -95,9 +95,8 @@ function startDashboardPolling() {
                     badgeEl.innerText = d.status_info.text;
                 }
 
-                const mobLiveInd = document.getElementById('mobile-live-indicator');
-                if (mobLiveInd && d.status_info) {
-                    mobLiveInd.innerText = d.status_info.text.toUpperCase();
+                if (d.status_info && typeof setLiveIndicator === 'function') {
+                    setLiveIndicator(!!d.status_info.is_online);
                 }
 
                 if (d.message) return;
@@ -881,7 +880,8 @@ function startDashboardPolling() {
 
                 // Aggiorna anche la scheda consumi integrata nella dashboard
                 const dashBreakdownSection = document.getElementById('dash_consumption_breakdown_section');
-                if (dashBreakdownSection && typeof fetchAndRenderDashboardBreakdown === 'function') {
+                // solo se la sezione è effettivamente visibile (tab Energia attivo)
+                if (dashBreakdownSection && dashBreakdownSection.offsetParent !== null && typeof fetchAndRenderDashboardBreakdown === 'function') {
                     fetchAndRenderDashboardBreakdown(false);
                 }
             })
@@ -1134,11 +1134,29 @@ async function checkPushSubscriptionStatus() {
 
     try {
         const reg = await getServiceWorkerRegistration();
-        if (!reg) return;
+        if (!reg) {
+            // Service Worker non registrabile (browser integrato, modalità privata, HTTP non sicuro):
+            // non lasciare la UI bloccata su "Verifica in corso…"
+            if (statusText) statusText.innerText = "Impossibile attivare il Service Worker in questo browser. Apri l'app installata (PWA) o un browser standard via HTTPS per ricevere le notifiche push.";
+            if (btn) btn.style.display = 'none';
+            if (badge) {
+                badge.className = 'status-pill badge-offline';
+                badge.innerText = 'Non disponibile';
+            }
+            return;
+        }
 
         const sub = await reg.pushManager.getSubscription();
 
         if (sub && Notification.permission === 'granted') {
+            // Ri-sincronizza la sottoscrizione col server (es. dopo reset DB o rotazione endpoint):
+            // la UI non deve dire "attive" se il server non sa dove inviare.
+            const subJson = sub.toJSON();
+            fetch('/api/push/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ endpoint: sub.endpoint, keys: subJson.keys })
+            }).catch(() => {});
             if (statusText) statusText.innerText = '✅ Notifiche PWA attive e sincronizzate! Questo dispositivo riceverà tutti gli avvisi meteo in tempo reale anche ad applicazione chiusa.';
             if (badge) {
                 badge.className = 'status-pill badge-live';
@@ -1224,6 +1242,8 @@ async function subscribeToPush() {
             }
             alert('🎉 Notifiche Push PWA collegate con successo a questo dispositivo!');
         } else {
+            // Evita lo stato incoerente "attive" lato browser ma sconosciute al server
+            await sub.unsubscribe().catch(() => {});
             alert('Errore durante la registrazione sul server.');
         }
     } catch (err) {
@@ -2481,10 +2501,23 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+let houseBreakdownInFlight = false;
+
 async function fetchAndRenderHouseBreakdown(forceSpinner = false) {
     const bodyEl = document.getElementById('house-modal-body');
     const refreshBtn = document.getElementById('house-modal-refresh-btn');
     if (!bodyEl) return;
+    // Niente richieste accavallate se il backend è lento, niente polling a schermo spento
+    if (houseBreakdownInFlight || (!forceSpinner && document.hidden)) return;
+    houseBreakdownInFlight = true;
+    try {
+        await _fetchAndRenderHouseBreakdown(bodyEl, refreshBtn, forceSpinner);
+    } finally {
+        houseBreakdownInFlight = false;
+    }
+}
+
+async function _fetchAndRenderHouseBreakdown(bodyEl, refreshBtn, forceSpinner) {
 
     if (forceSpinner && !bodyEl.querySelector('.consumption-overview-card')) {
         bodyEl.innerHTML = `
@@ -2651,6 +2684,15 @@ function renderHouseBreakdown(d) {
             </details>
         `;
     }
+
+    // Il re-render periodico non deve richiudere l'accordion né far saltare lo scroll
+    const standbyWasOpen = !!bodyEl.querySelector('.standby-accordion[open]');
+    const scrollEl = bodyEl.closest('.modal-content, .modal-dialog') || bodyEl;
+    const prevScroll = scrollEl.scrollTop;
+    requestAnimationFrame(() => {
+        if (standbyWasOpen) bodyEl.querySelector('.standby-accordion')?.setAttribute('open', '');
+        scrollEl.scrollTop = prevScroll;
+    });
 
     bodyEl.innerHTML = `
         <!-- PANORAMICA RIPARTIZIONE -->

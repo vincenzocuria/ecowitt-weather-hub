@@ -1091,13 +1091,14 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
     now = datetime.now(timezone.utc)
     if period == "7d":
         since = (now - timedelta(days=7)).isoformat()
-        group_sql = "strftime('%Y-%m-%d %H:00:00', timestamp)"
+        # Etichette orarie esplicitamente in UTC ('Z'): il browser le converte nell'ora locale corretta
+        group_sql = "strftime('%Y-%m-%dT%H:00:00Z', timestamp)"
     elif period == "30d":
         since = (now - timedelta(days=30)).isoformat()
-        group_sql = "strftime('%Y-%m-%d %H:00:00', timestamp)"
+        group_sql = "strftime('%Y-%m-%dT%H:00:00Z', timestamp)"
     elif period == "1y":
         since = (now - timedelta(days=365)).isoformat()
-        group_sql = "strftime('%Y-%m-%d', timestamp)"
+        group_sql = "local_date(timestamp)"
     else:
         since = (now - timedelta(hours=24)).isoformat()
         group_sql = None

@@ -12,7 +12,7 @@
     --gold-glow: rgba(245, 158, 11, 0.15);
     --text: #f1f5f9;
     --text-dim: #94a3b8;
-    --text-muted: #64748b;
+    --text-muted: #8a99ad; /* contrasto ≥ 4.5:1 su --card-bg (WCAG AA) */
     --success: #10b981;
     --warning: #f59e0b;
     --danger: #ef4444;
@@ -4025,7 +4025,8 @@ body {
 
 @media (max-width: 768px) {
     .dashboard-tabs-wrapper {
-        top: 48px;
+        /* sotto la top bar mobile, che include l'area del notch nella PWA installata */
+        top: calc(48px + env(safe-area-inset-top, 0px));
         padding: 0.35rem 0;
     }
     .dash-tab-btn {
@@ -4071,6 +4072,10 @@ body {
 .mobile-app-name {
     font-size: 1.05rem;
     font-weight: 800;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
     letter-spacing: -0.3px;
     background: linear-gradient(135deg, #ffffff 0%, #38bdf8 100%);
     -webkit-background-clip: text;
@@ -4101,6 +4106,22 @@ body {
     font-weight: 800;
     color: #34d399;
     letter-spacing: 0.5px;
+}
+
+.mobile-live-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mobile-live-status.is-offline .mobile-live-dot {
+    background: #f87171;
+    box-shadow: 0 0 8px #f87171;
+    animation: none;
+}
+
+.mobile-live-status.is-offline .mobile-live-text {
+    color: #fca5a5;
 }
 
 .mobile-bottom-nav {
@@ -7833,3 +7854,19 @@ body {
 
 
 
+
+
+/* Accessibilità: focus visibile da tastiera su elementi cliccabili */
+[role="button"]:focus-visible,
+button:focus-visible,
+a:focus-visible {
+    outline: 2px solid var(--accent, #38bdf8);
+    outline-offset: 2px;
+}
+
+/* Radar: fallback OpenStreetMap reso scuro per coerenza col tema */
+.osm-dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9); }
+
+/* Top bar mobile: il nome si accorcia con ellissi, le azioni restano sempre intere */
+.mobile-top-brand { min-width: 0; flex: 1 1 auto; }
+.mobile-top-actions { flex-shrink: 0; }

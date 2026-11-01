@@ -5,7 +5,7 @@
 <div class="header-card">
     <div class="header-title">
         <h1>🌤️ Stazione Meteo & Smart Hub</h1>
-        <p>Dispositivo: <strong>{{ station_model }}</strong> • Ultimo pacchetto: <span id="ts">{{ latest.timestamp or 'In attesa...' }}</span></p>
+        <p>Dispositivo: <strong>{{ station_model }}</strong> • Ultimo pacchetto: <span id="ts">{{ (latest.timestamp|localdt) if latest.timestamp else 'In attesa...' }}</span></p>
     </div>
     <div id="status-badge" class="status-pill {{ status_info.badge_class }}">
         {{ status_info.text }}

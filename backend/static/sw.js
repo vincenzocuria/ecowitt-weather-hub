@@ -1,8 +1,21 @@
 // Service Worker con supporto PWA e Web Push Nativo (iOS 16.4+, Android, Desktop)
-const CACHE_NAME = 'meteo-hub-v15';
+const CACHE_NAME = 'meteo-hub-v16';
+const OFFLINE_URL = '/static/offline.html';
+const PRECACHE_URLS = [
+    OFFLINE_URL,
+    '/static/css/style.css',
+    '/static/js/app.js',
+    '/static/icons/icon-192.png',
+    '/static/icons/icon.svg'
+];
 
 self.addEventListener('install', (event) => {
-    self.skipWaiting();
+    event.waitUntil(
+        caches.open(CACHE_NAME)
+            .then((cache) => cache.addAll(PRECACHE_URLS))
+            .catch(() => {})
+            .then(() => self.skipWaiting())
+    );
 });
 
 self.addEventListener('activate', (event) => {
@@ -15,10 +28,58 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// Network-first per garantire sempre i dati meteo in tempo reale
+// Strategia:
+// - Pagine HTML: network-first, offline -> pagina offline dedicata (mai pagine autenticate in cache)
+// - Asset statici /static/: network-first con copia in cache, offline -> copia in cache
+// - API, richieste non-GET e cross-origin (tile radar, CDN): non intercettate
 self.addEventListener('fetch', (event) => {
-    event.respondWith(
-        fetch(event.request).catch(() => caches.match(event.request))
+    const req = event.request;
+    if (req.method !== 'GET') return;
+    const url = new URL(req.url);
+    if (url.origin !== self.location.origin) return;
+
+    if (req.mode === 'navigate') {
+        event.respondWith(
+            fetch(req).catch(() => caches.match(OFFLINE_URL).then((r) => r || Response.error()))
+        );
+        return;
+    }
+
+    if (url.pathname.startsWith('/static/')) {
+        event.respondWith(
+            fetch(req).then((resp) => {
+                if (resp.ok) {
+                    const copy = resp.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});
+                }
+                return resp;
+            }).catch(() => caches.match(req, { ignoreSearch: true }).then((r) => r || Response.error()))
+        );
+    }
+});
+
+// Rotazione della sottoscrizione push da parte del browser: ri-sottoscrive e aggiorna il server,
+// altrimenti le notifiche smetterebbero di arrivare senza alcun avviso.
+self.addEventListener('pushsubscriptionchange', (event) => {
+    const oldOptions = event.oldSubscription && event.oldSubscription.options;
+    event.waitUntil(
+        (async () => {
+            let options = oldOptions;
+            if (!options || !options.applicationServerKey) {
+                const res = await fetch('/api/push/vapid-public-key', { credentials: 'include' });
+                const data = await res.json();
+                const raw = atob(data.public_key.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - data.public_key.length % 4) % 4));
+                options = { userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, (c) => c.charCodeAt(0)) };
+            }
+            const sub = event.newSubscription || await self.registration.pushManager.subscribe(options);
+            const subJson = sub.toJSON();
+            await fetch('/api/push/subscribe', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ endpoint: sub.endpoint, keys: subJson.keys })
+            });
+        })().catch(() => {})
     );
 });
 
@@ -78,8 +139,11 @@ self.addEventListener('push', (event) => {
 
     // App Badging API se supportata (imposta il conteggio esatto)
     if ('setAppBadge' in navigator) {
-        const badgeCount = (payload.unread_count && payload.unread_count > 0) ? payload.unread_count : 1;
-        navigator.setAppBadge(badgeCount).catch(() => {});
+        if (payload.unread_count > 0) {
+            navigator.setAppBadge(payload.unread_count).catch(() => {});
+        } else if (payload.unread_count === 0 && 'clearAppBadge' in navigator) {
+            navigator.clearAppBadge().catch(() => {});
+        }
     }
 
     // Su browser che supportano la vibrazione (es. Android Chrome)
@@ -113,12 +177,8 @@ self.addEventListener('notificationclick', (event) => {
     event.notification.close();
     const targetUrl = (event.notification.data && event.notification.data.url) ? event.notification.data.url : '/alerts-page';
 
-    // Azzeramento o pulizia badge al click
-    if ('clearAppBadge' in navigator) {
-        navigator.clearAppBadge().catch(() => {});
-    } else if ('setAppBadge' in navigator) {
-        navigator.setAppBadge(0).catch(() => {});
-    }
+    // Il badge NON viene azzerato qui: lo aggiorna l'app con il conteggio reale dei non letti
+    // quando l'utente apre la pagina allarmi (gli altri avvisi restano da leggere).
 
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
