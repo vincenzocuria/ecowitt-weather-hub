@@ -9,25 +9,25 @@
   "orientation": "any",
   "icons": [
     {
-      "src": "/static/icons/icon-192.png",
+      "src": "/static/icons/icon-192.png?v=2",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/static/icons/icon-512.png",
+      "src": "/static/icons/icon-512.png?v=2",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/static/icons/icon.svg",
+      "src": "/static/icons/icon.svg?v=2",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/static/icons/icon-512.png",
+      "src": "/static/icons/icon-512.png?v=2",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -42,7 +42,7 @@
       "url": "/radar",
       "icons": [
         {
-          "src": "/static/icons/icon-192.png",
+          "src": "/static/icons/icon-192.png?v=2",
           "sizes": "192x192"
         }
       ]
@@ -53,7 +53,7 @@
       "url": "/devices",
       "icons": [
         {
-          "src": "/static/icons/icon-192.png",
+          "src": "/static/icons/icon-192.png?v=2",
           "sizes": "192x192"
         }
       ]
@@ -64,7 +64,7 @@
       "url": "/alerts-page",
       "icons": [
         {
-          "src": "/static/icons/icon-192.png",
+          "src": "/static/icons/icon-192.png?v=2",
           "sizes": "192x192"
         }
       ]
