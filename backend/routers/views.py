@@ -516,6 +516,19 @@ def get_detected_sensors(raw: Dict[str, Any], soil_moisture: Dict[str, Any], sav
 
     return sensors
 
+@router.get("/more", response_class=HTMLResponse)
+def more_page(request: Request):
+    """Menu "Altro": raccoglie le sezioni secondarie per mantenere semplice la navigazione principale."""
+    return templates.TemplateResponse(
+        request=request,
+        name="more.html",
+        context={
+            "active_page": "more",
+            "title": "Altro • Weather Hub",
+            "station_name": settings.STATION_NAME,
+        }
+    )
+
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
     latest = get_latest_reading() or {}

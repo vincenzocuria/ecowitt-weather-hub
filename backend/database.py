@@ -616,7 +616,7 @@ def get_station_status() -> Dict[str, Any]:
                 "status": "offline",
                 "is_online": False,
                 "seconds_ago": seconds_ago,
-                "text": f"🔴 OFFLINE da {time_str}!",
+                "text": f"🔴 Offline da {time_str}",
                 "badge_class": "badge-offline",
                 "last_seen_iso": row["timestamp"]
             }

@@ -66,6 +66,10 @@ def format_duration_italian(minutes: Optional[Union[int, float]], show_seconds: 
         120 -> "2 ore"
         193 -> "3 ore e 13 minuti"
         999 -> "16 ore e 39 minuti"
+        1440 -> "1 giorno"
+        1500 -> "1 giorno e 1 ora"
+        113000 -> "78 giorni e 11 ore"
+    Oltre le 24 ore si mostrano giorni e ore (i minuti non servono più).
     """
     if minutes is None:
         return "—"
@@ -81,6 +85,14 @@ def format_duration_italian(minutes: Optional[Union[int, float]], show_seconds: 
         return "meno di un minuto"
     if total_m < 60:
         return f"{total_m} {'minuto' if total_m == 1 else 'minuti'}"
+
+    if total_m >= 1440:
+        giorni = total_m // 1440
+        ore_rest = (total_m % 1440) // 60
+        d_str = "1 giorno" if giorni == 1 else f"{giorni} giorni"
+        if ore_rest == 0:
+            return d_str
+        return f"{d_str} e {'1 ora' if ore_rest == 1 else f'{ore_rest} ore'}"
 
     ore = total_m // 60
     rem_m = total_m % 60

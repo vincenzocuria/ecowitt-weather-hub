@@ -16,12 +16,19 @@ function formatDate(isoStr) {
     }
 }
 
-// Utility per formattare durate in italiano (ore e minuti)
+// Utility per formattare durate in italiano: minuti, poi ore, oltre le 24 ore giorni e ore
 function formatDurationItalian(minutes) {
     if (minutes === null || minutes === undefined || isNaN(minutes)) return "--";
     const m = Math.round(Number(minutes));
     if (m < 0) return "--";
     if (m === 0) return "meno di un minuto";
+    if (m >= 1440) {
+        const days = Math.floor(m / 1440);
+        const restH = Math.floor((m % 1440) / 60);
+        const dStr = days === 1 ? "1 giorno" : `${days} giorni`;
+        if (restH === 0) return dStr;
+        return `${dStr} e ${restH === 1 ? "1 ora" : `${restH} ore`}`;
+    }
     const hours = Math.floor(m / 60);
     const mins = m % 60;
     if (hours === 0) {
@@ -103,7 +110,9 @@ function startDashboardPolling() {
                 
                 // Aggiorna timestamp
                 const tsEl = document.getElementById('ts');
-                if (tsEl) tsEl.innerText = formatDate(d.timestamp);
+                if (tsEl && d.timestamp) {
+                    tsEl.innerText = new Date(d.timestamp).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+                }
 
                 // Esterno
                 if (d.temp_c !== undefined) {
@@ -2362,16 +2371,29 @@ function initDashboardTabs() {
     // 1. Controlla se c'è un hash nell'URL
     const hash = window.location.hash ? window.location.hash.replace(/^#/, '') : null;
 
-    // 2. Controlla se c'è un tab salvato in localStorage
-    let savedTab = null;
-    try {
-        savedTab = localStorage.getItem('ecowitt_dashboard_active_tab');
-    } catch (e) {}
-
-    const validTabs = ['weather', 'energy-home', 'health', 'astro-comfort'];
-    const initialTab = (hash && validTabs.includes(hash)) ? hash : ((savedTab && validTabs.includes(savedTab)) ? savedTab : 'weather');
+    // La Home apre sempre il meteo; la vista Energia si raggiunge con /#energy-home (menu "Altro")
+    const validTabs = ['weather', 'energy-home'];
+    const initialTab = (hash && validTabs.includes(hash)) ? hash : 'weather';
 
     switchDashboardTab(initialTab);
+
+    window.addEventListener('hashchange', () => {
+        const h = window.location.hash.replace(/^#/, '');
+        if (validTabs.includes(h)) {
+            switchDashboardTab(h);
+            window.scrollTo({ top: 0 });
+        }
+    });
+
+    // Il mini grafico 24h sta nei dettagli (chiusi): va ridimensionato quando vengono aperti
+    const details = document.getElementById('home_details');
+    if (details) {
+        details.addEventListener('toggle', () => {
+            if (details.open && window.quickChartInstance) {
+                try { window.quickChartInstance.resize(); } catch (e) {}
+            }
+        });
+    }
 
     // Ascolta cambi hash manuali (es. back button del browser)
     window.addEventListener('hashchange', () => {

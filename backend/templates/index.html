@@ -1,15 +1,10 @@
 {% extends "base.html" %}
 
 {% block content %}
-<!-- HEADER CARD CON STATO STAZIONE DINAMICO -->
-<div class="header-card">
-    <div class="header-title">
-        <h1>🌤️ Stazione Meteo & Smart Hub</h1>
-        <p>Dispositivo: <strong>{{ station_model }}</strong> • Ultimo pacchetto: <span id="ts">{{ (latest.timestamp|localdt) if latest.timestamp else 'In attesa...' }}</span></p>
-    </div>
-    <div id="status-badge" class="status-pill {{ status_info.badge_class }}">
-        {{ status_info.text }}
-    </div>
+<!-- STATO STAZIONE COMPATTO -->
+<div class="home-status">
+    <div id="status-badge" class="status-pill {{ status_info.badge_class }}">{{ status_info.text }}</div>
+    <span class="home-updated">Aggiornato: <span id="ts">{{ (latest.timestamp|localdt("%d/%m %H:%M")) if latest.timestamp else 'in attesa…' }}</span></span>
 </div>
 
 <!-- BANNER BURRASCA / ANOMALIA SE ATTIVO -->
@@ -23,38 +18,11 @@
 </div>
 {% endif %}
 
-<!-- DASHBOARD TABS NAVIGATION -->
-<div class="dashboard-tabs-wrapper">
+<!-- Viste della dashboard: Meteo (Home) ed Energia (da "Altro"). Navigazione via hash, barra nascosta. -->
+<div class="dashboard-tabs-wrapper" hidden>
     <div class="dashboard-tabs-nav" id="dashboard_tabs">
-        <button type="button" class="dash-tab-btn active" id="tab_btn_weather" onclick="switchDashboardTab('weather')">
-            <span class="tab-icon">🌤️</span>
-            <span>Meteo & Previsioni</span>
-        </button>
-        <button type="button" class="dash-tab-btn" id="tab_btn_energy_home" onclick="switchDashboardTab('energy-home')">
-            <span class="tab-icon">⚡</span>
-            <span>Energia & Smart Home</span>
-            <span class="dash-tab-badge" id="tab_badge_energy">
-                {% if energy_latest and energy_latest.p_solare is defined and energy_latest.p_solare > 50 %}
-                    {{ energy_latest.p_solare | int }} W
-                {% elif energy_latest and energy_latest.soc is defined %}
-                    🔋 {{ energy_latest.soc | int }}%
-                {% else %}
-                    Live
-                {% endif %}
-            </span>
-        </button>
-        <button type="button" class="dash-tab-btn" id="tab_btn_health" onclick="switchDashboardTab('health')">
-            <span class="tab-icon">🩺</span>
-            <span>Salute & Cardio</span>
-            <span class="dash-tab-badge" id="tab_badge_health" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">
-                {{ "{:,}".format(health.steps.daily if health and health.steps else 0).replace(',', '.') }} 👟
-            </span>
-        </button>
-        <button type="button" class="dash-tab-btn" id="tab_btn_astro_comfort" onclick="switchDashboardTab('astro-comfort')">
-            <span class="tab-icon">🌅</span>
-            <span>Sole & Benessere</span>
-            <span class="dash-tab-badge" id="tab_badge_sun">{{ analytics.sun_ephemeris.status_text if analytics and analytics.sun_ephemeris else 'NOAA' }}</span>
-        </button>
+        <button type="button" class="dash-tab-btn active" id="tab_btn_weather" onclick="switchDashboardTab('weather')">Meteo</button>
+        <button type="button" class="dash-tab-btn" id="tab_btn_energy_home" onclick="switchDashboardTab('energy-home')">Energia</button>
     </div>
 </div>
 
@@ -198,496 +166,13 @@
         </div>
     </div>
 
-    <!-- GRID METEO TELEMETRIA -->
-    <div class="grid">
-        <!-- 1. TEMPERATURA & UMIDITA ESTERNA -->
-        <div class="card">
-            <div class="card-header">
-                <span>🌡️ Esterno (7 in 1)</span>
-                <span class="sub-badge" id="apparent_temp_badge">Percepita: {{ apparent_temp if apparent_temp is not none else '--' }}°C</span>
-            </div>
-            <div class="main-stat">
-                <span class="val" id="temp_c">{{ latest.temp_c if latest.temp_c is not none else '--' }}</span>
-                <span class="unit">°C</span>
-            </div>
-
-            <!-- DIFFERENZIALE IERI & MIN/MAX OGGI -->
-            <div class="today-extremes-box">
-                <div class="extreme-item">
-                    <span class="extreme-label">Min Oggi</span>
-                    <span class="extreme-val min-t" id="today_min">{{ analytics.today_extremes.temp_min if analytics and analytics.today_extremes.temp_min is not none else '--' }}°C</span>
-                    <span class="extreme-time" id="today_min_time">{{ analytics.today_extremes.temp_min_time or '--:--' }}</span>
-                </div>
-                <div class="extreme-item">
-                    <span class="extreme-label">Max Oggi</span>
-                    <span class="extreme-val max-t" id="today_max">{{ analytics.today_extremes.temp_max if analytics and analytics.today_extremes.temp_max is not none else '--' }}°C</span>
-                    <span class="extreme-time" id="today_max_time">{{ analytics.today_extremes.temp_max_time or '--:--' }}</span>
-                </div>
-                <div class="extreme-item">
-                    <span class="extreme-label">vs Ieri</span>
-                    <span class="delta-badge {% if analytics and analytics.yesterday_comparison.diff_c and analytics.yesterday_comparison.diff_c > 0 %}warmer{% elif analytics and analytics.yesterday_comparison.diff_c and analytics.yesterday_comparison.diff_c < 0 %}cooler{% else %}neutral{% endif %}" id="yesterday_badge">
-                        {{ analytics.yesterday_comparison.text if analytics else '--' }}
-                    </span>
-                </div>
-            </div>
-
-            <div class="item-list">
-                <div class="item"><span>Umidità:</span> <strong id="humidity">{{ latest.humidity if latest.humidity is not none else '--' }} %</strong></div>
-                <div class="item"><span>Punto di Rugiada:</span> <strong id="dew_point">{{ latest.dew_point_c if latest.dew_point_c is not none else '--' }} °C</strong></div>
-                <div class="item"><span>Pressione Relativa:</span> <strong id="press_rel">{{ latest.pressure_rel_hpa if latest.pressure_rel_hpa is not none else '--' }} hPa</strong></div>
-                <div class="item"><span>Tendenza Pressione:</span> <strong id="press_trend">{{ pressure_trend.text if pressure_trend else '--' }}</strong></div>
-            </div>
-        </div>
-
-        <!-- 2. VENTO CON ROSA DEI VENTI GRAFICA -->
-        <div class="card">
-            <div class="card-header">
-                <span>💨 Vento & Direzione</span>
-                <span class="sub-badge" id="beaufort_badge">{{ analytics.beaufort.label if analytics and analytics.beaufort else 'Calma' }} (F{{ analytics.beaufort.grade if analytics and analytics.beaufort and analytics.beaufort.grade is not none else '0' }})</span>
-            </div>
-            <div class="main-stat">
-                <span class="val" id="wind_spd">{{ latest.wind_speed_kmh if latest.wind_speed_kmh is not none else '--' }}</span>
-                <span class="unit">km/h</span>
-            </div>
-
-            <!-- BUSSOLA / ROSA DEI VENTI -->
-            <div class="compass-wrapper">
-                <div class="compass-dial">
-                    <span class="compass-cardinal n">N</span>
-                    <span class="compass-cardinal e">E</span>
-                    <span class="compass-cardinal s">S</span>
-                    <span class="compass-cardinal w">W</span>
-                    <div class="compass-needle" id="compass_needle" style="transform: rotate({{ latest.wind_dir_deg or 0 }}deg);"></div>
-                    <div class="compass-center"></div>
-                </div>
-            </div>
-
-            <div class="item-list">
-                <div class="item"><span>Raffica attuale:</span> <strong id="wind_gst">{{ latest.wind_gust_kmh if latest.wind_gust_kmh is not none else '--' }} km/h</strong></div>
-                <div class="item"><span>Raffica max oggi:</span> <strong id="max_gust">{{ latest.max_daily_gust_kmh or analytics.today_extremes.max_gust or '--' }} km/h</strong></div>
-                <div class="item"><span>Direzione:</span> <strong id="wind_dir">{{ wind_dir_text }}</strong></div>
-            </div>
-        </div>
-
-        <!-- 3. PIOGGIA & ACCUMULI -->
-        <div class="card">
-            <div class="card-header">
-                <span>🌧️ Pioggia & Accumuli</span>
-            </div>
-            <div class="main-stat">
-                <span class="val" id="rain_rate">{{ latest.rain_rate_mm_hr if latest.rain_rate_mm_hr is not none else '0.0' }}</span>
-                <span class="unit">mm/h</span>
-            </div>
-            <div class="item-list">
-                <div class="item"><span>Pioggia di oggi:</span> <strong id="rain_day">{{ latest.daily_rain_mm if latest.daily_rain_mm is not none else '0.0' }} mm</strong></div>
-                <div class="item"><span>Totale ultimi 7 giorni:</span> <strong id="rain_week">{{ analytics.rain_totals.week_rain_mm if analytics else '0.0' }} mm</strong></div>
-                <div class="item"><span>Totale mese corrente:</span> <strong id="rain_month">{{ analytics.rain_totals.month_rain_mm if analytics else '0.0' }} mm</strong></div>
-                <div class="item"><span>Accumulo anno (da DB):</span> <strong id="rain_year">{{ analytics.rain_totals.year_rain_mm if analytics else '0.0' }} mm</strong></div>
-                <div class="item"><span>Contatore stazione:</span> <strong id="rain_station_counter">{{ latest.yearly_rain_mm if latest.yearly_rain_mm is not none else '--' }} mm</strong></div>
-            </div>
-        </div>
-
-        <!-- 4. SOLE, UV & EFFEMERIDI -->
-        <div class="card">
-            <div class="card-header">
-                <span>☀️ Sole & Radiazione UV</span>
-            </div>
-            
-            <!-- SCALA GRAFICA UV -->
-            <div class="uv-scale-box">
-                <div style="display: flex; justify-content: space-between; font-size: 0.82rem; font-weight: 700; margin-bottom: 4px;">
-                    <span>Indice UV</span>
-                    <span id="uv_val">{{ latest.uv_index if latest.uv_index is not none else '0' }}</span>
-                </div>
-                <div class="uv-gradient-bar">
-                    <div class="uv-pointer" id="uv_pointer" style="left: {{ ((latest.uv_index or 0) / 12 * 100)|round }}%;"></div>
-                </div>
-                <div class="uv-labels">
-                    <span>0 Basso</span>
-                    <span>3 Mod</span>
-                    <span>6 Alto</span>
-                    <span>8 Molto Alto</span>
-                    <span>11+ Estr</span>
-                </div>
-            </div>
-
-            <div class="item-list">
-                <div class="item"><span>Radiazione Solare:</span> <strong id="solar">{{ latest.solar_radiation if latest.solar_radiation is not none else '0.0' }} W/m²</strong></div>
-                <div class="item"><span>VPD (Deficit Pressione):</span> <strong id="vpd">{{ latest.vpd if latest.vpd is not none else '--' }} kPa</strong></div>
-            </div>
-
-            <!-- EFFEMERIDI SOLE E LUNA RAPIDE -->
-            <div class="ephem-box">
-                <div class="ephem-row">
-                    <span>🌅 Alba: <strong>{{ analytics.sun_ephemeris.sunrise if analytics else '--:--' }}</strong></span>
-                    <span>🌇 Tramonto: <strong>{{ analytics.sun_ephemeris.sunset if analytics else '--:--' }}</strong></span>
-                </div>
-                <div class="ephem-sun-bar">
-                    <div class="ephem-sun-fill" style="width: {{ analytics.sun_ephemeris.sun_progress_pct if analytics else 50 }}%;"></div>
-                </div>
-                <div class="ephem-row" style="margin-bottom: 0;">
-                    <span style="font-size: 0.8rem; color: var(--text-muted);">{{ analytics.sun_ephemeris.status_text if analytics else '--' }} ({{ analytics.sun_ephemeris.daylight_duration if analytics else '--' }} luce)</span>
-                    <span><span>{{ analytics.moon_phase.icon if analytics else '🌓' }}</span> <strong>{{ analytics.moon_phase.phase_name if analytics else 'Fase Lunare' }}</strong> (<span>{{ analytics.moon_phase.illumination_pct if analytics else '50' }}%</span>)</span>
-                </div>
-            </div>
-        </div>
-
-
-        <!-- 5. TEMPERATURE INTERNE: SOGGIORNO (ECOWITT) • STANZETTA (LG) • CAMERA (LG) -->
-        <div class="card">
-            <div class="card-header">
-                <span>🏠 Temperature Interne (3 Ambienti)</span>
-                <span class="sub-badge {{ analytics.comfort.indoor.badge_class if analytics and analytics.comfort.indoor else 'badge-neutral' }}" id="indoor_comfort_badge">
-                    {{ analytics.comfort.indoor.icon if analytics and analytics.comfort.indoor else '🏠' }} {{ analytics.comfort.indoor.title if analytics and analytics.comfort.indoor else 'Ambiente Casa' }}
-                </span>
-            </div>
-
-            <!-- GRIGLIA 3 AMBIENTI: SOGGIORNO, CAMERA DA LETTO, STANZETTA -->
-            <div class="indoor-rooms-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
-                <!-- 1. SOGGIORNO (ECOWITT CONSOLE) -->
-                <div class="indoor-room-box" style="background: rgba(0,0,0,0.25); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between;">
-                    <div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                            <strong style="font-size: 0.82rem; color: #38bdf8;">🛋️ Soggiorno</strong>
-                            <span class="badge" style="font-size: 0.60rem; padding: 1px 5px; background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3);">Ecowitt</span>
-                        </div>
-                        <div style="font-size: 1.55rem; font-weight: 800; color: #fff; line-height: 1.1; margin: 4px 0;" id="temp_in_c">
-                            {{ latest.temp_in_c if latest.temp_in_c is not none else '--' }}<span style="font-size: 0.85rem; font-weight: 600; color: var(--text-dim);">°C</span>
-                        </div>
-                    </div>
-                    <div style="font-size: 0.72rem; color: var(--text-dim); line-height: 1.35; margin-top: 4px;">
-                        <span>Umidità: <strong id="humidity_in" style="color: #e2e8f0;">{{ latest.humidity_in if latest.humidity_in is not none else '--' }}%</strong></span><br>
-                        <span>Min/Max: <span class="min-t" id="today_in_min">{{ analytics.today_extremes.temp_in_min or '--' }}°</span> / <span class="max-t" id="today_in_max">{{ analytics.today_extremes.temp_in_max or '--' }}°</span></span>
-                    </div>
-                </div>
-
-                <!-- 2 & 3. CLIMATIZZATORI LG THINQ: CAMERA DA LETTO & STANZETTA/CAMERETTA -->
-                {% if climate_devices %}
-                    {% for dev in climate_devices %}
-                        {% if dev.device_type == 'DEVICE_AIR_CONDITIONER' %}
-                        <div class="indoor-room-box" style="background: rgba(0,0,0,0.25); border: 1px solid {% if dev.is_on %}rgba(16, 185, 129, 0.35){% else %}rgba(255, 255, 255, 0.08){% endif %}; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between;">
-                            <div>
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                    <strong style="font-size: 0.82rem; color: #fff;">
-                                        {% if 'camer' in dev.alias.lower() or 'stanz' in dev.alias.lower() %}🧸 Stanzetta
-                                        {% elif 'letto' in dev.alias.lower() or 'camera' in dev.alias.lower() %}🛏️ Camera da letto
-                                        {% else %}❄️ {{ dev.alias }}{% endif %}
-                                    </strong>
-                                    <span class="badge" style="font-size: 0.60rem; padding: 1px 5px; {% if dev.is_on %}background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.4);{% else %}background: rgba(255,255,255,0.05); color: var(--text-dim); border: 1px solid rgba(255,255,255,0.1);{% endif %}">
-                                        {{ 'ACCESO' if dev.is_on else 'SPENTO' }}
-                                    </span>
-                                </div>
-                                <div style="font-size: 1.55rem; font-weight: 800; color: {% if dev.is_on %}#38bdf8{% else %}#e2e8f0{% endif %}; line-height: 1.1; margin: 4px 0;" id="curr_temp_mini_{{ dev.device_id }}">
-                                    {{ dev.current_temp or '--' }}<span style="font-size: 0.85rem; font-weight: 600; color: var(--text-dim);">°C</span>
-                                </div>
-                            </div>
-                            <div style="font-size: 0.72rem; color: var(--text-dim); line-height: 1.35; margin-top: 4px;">
-                                <span>Target: <strong style="color: #e2e8f0;">{{ dev.target_temp or 26 }}°C</strong></span><br>
-                                <span>Modo: <strong style="color: #94a3b8;">{{ dev.mode }}</strong> (LG ThinQ)</span>
-                            </div>
-                        </div>
-                        {% endif %}
-                    {% endfor %}
-                {% endif %}
-            </div>
-
-            <div class="item-list" style="margin-top: 4px;">
-                <div class="item"><span>Isolamento / Delta vs Fuori:</span> <strong id="indoor_delta_badge" style="color: {% if analytics and analytics.comfort.indoor and analytics.comfort.indoor.get('diff_c') and analytics.comfort.indoor.get('diff_c') < 0 %}#38bdf8{% else %}#f59e0b{% endif %};">{{ "%+0.1f"|format(analytics.comfort.indoor.get('diff_c')) if analytics and analytics.comfort.indoor and analytics.comfort.indoor.get('diff_c') is not none else '--' }}°C</strong></div>
-                <div class="item"><span>Punto di Rugiada Soggiorno:</span> <strong id="dew_point_in">{{ analytics.dew_point_in_c if analytics and analytics.dew_point_in_c is not none else '--' }} °C</strong></div>
-                <div class="item"><span>Stato Microclima:</span> <strong id="indoor_status_desc">{{ analytics.comfort.indoor.desc if analytics and analytics.comfort.indoor else 'Regolare' }}</strong></div>
-            </div>
-        </div>
-
-        <!-- 6. CONSUMO ATTUALE & FLUSSO ENERGETICO (ATON GREEN STORAGE) -->
-        <div class="card interactive-node" onclick="openHouseConsumptionModal()" style="cursor: pointer;" title="Tocca per visualizzare chi sta consumando in tempo reale">
-            <div class="card-header">
-                <span>⚡ Consumo Attuale & Energia</span>
-                <span class="sub-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: rgba(56, 189, 248, 0.35);">
-                    ⚡ Aton Storage • Live
-                </span>
-            </div>
-            <div class="main-stat">
-                <span class="val" id="p_utenze_main_val" style="color: #f59e0b;">{{ energy_latest.p_utenze | int if energy_latest and energy_latest.p_utenze is defined else '--' }}</span>
-                <span class="unit">W (Casa)</span>
-            </div>
-
-            <!-- MINI GRID PARAMETRI ENERGETICI LIVE -->
-            <div class="today-extremes-box" style="margin-bottom: 8px;">
-                <div class="extreme-item">
-                    <span class="extreme-label">☀️ Solare FV</span>
-                    <span class="extreme-val" style="color: #eab308;" id="p_solare_quick_val">{{ energy_latest.p_solare | int if energy_latest and energy_latest.p_solare is defined else '0' }} W</span>
-                    <span class="extreme-time">{{ energy_summary.solar_today_kwh or '0.0' }} kWh oggi</span>
-                </div>
-                <div class="extreme-item">
-                    <span class="extreme-label">🔋 Batteria</span>
-                    <span class="extreme-val" style="color: #34d399;" id="battery_pct_quick_val">{{ energy_latest.soc | int if energy_latest and energy_latest.soc is defined else '--' }}%</span>
-                    <span class="extreme-time">
-                        {% if energy_latest and energy_latest.p_batteria is defined %}
-                            {% if energy_latest.p_batteria > 0 %}+{{ energy_latest.p_batteria | int }}W scarica{% elif energy_latest.p_batteria < 0 %}-{{ (energy_latest.p_batteria | abs) | int }}W carica{% else %}Standby{% endif %}
-                        {% else %}
-                            Aton
-                        {% endif %}
-                    </span>
-                </div>
-                <div class="extreme-item">
-                    <span class="extreme-label">🔌 Rete Enel</span>
-                    <span class="extreme-val" style="color: #94a3b8;" id="p_rete_quick_val">
-                        {% if energy_latest and energy_latest.p_rete is defined %}
-                            {% if (energy_latest.p_rete_in is defined and energy_latest.p_rete_in > 0) or energy_latest.p_rete > 0 %}
-                                {{ ((energy_latest.p_rete_in if energy_latest.p_rete_in is defined else None) or energy_latest.p_rete) | int }} W
-                            {% else %}
-                                0 W
-                            {% endif %}
-                        {% else %}
-                            --
-                        {% endif %}
-                    </span>
-                    <span class="extreme-time">{{ energy_summary.autarky_pct or '0' }}% autarchia</span>
-                </div>
-            </div>
-
-            <div class="item-list">
-                <div class="item"><span>Consumo Casa Oggi:</span> <strong>{{ energy_summary.total_house_kwh or '0.0' }} kWh</strong></div>
-                <div class="item"><span>Autosufficienza Energetica:</span> <strong style="color: #34d399;" id="autarky_quick_val">{{ energy_summary.autarky_pct or '0.0' }}%</strong></div>
-                <div class="item" style="color: var(--accent); font-size: 0.80rem; margin-top: 2px;">
-                    <span>⚡ Dettaglio Ripartizione Carichi:</span>
-                    <strong>Tocca per aprire →</strong>
-                </div>
-            </div>
-        </div>
-
-        <!-- 7. SENSORI SUOLO & UMIDITÀ AIUOLA (WH51) -->
-        <div class="card">
-            <div class="card-header">
-                <span>🌱 Umidità Aiuola & Terreno</span>
-                <span class="sub-badge" id="soil_badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.35);">
-                    🌱 WH51 • Live
-                </span>
-            </div>
-
-            <div id="soil_moisture_container">
-            {% if analytics and analytics.soil_summary and analytics.soil_summary.has_sensors %}
-                {% for ch, info in analytics.soil_summary.channels.items() %}
-                <div class="main-stat" style="margin-bottom: 6px;">
-                    <span class="val" style="color: #34d399;">{{ info.value }}</span>
-                    <span class="unit">% ({{ info.name }})</span>
-                </div>
-                <div class="today-extremes-box" style="margin-bottom: 8px;">
-                    <div class="extreme-item">
-                        <span class="extreme-label">Stato Suolo</span>
-                        <span class="badge {{ info.badge_class }}" style="font-size: 0.76rem; padding: 2px 8px; margin-top: 2px;">{{ info.status_label }}</span>
-                    </div>
-                    <div class="extreme-item">
-                        <span class="extreme-label">Variazione 24h</span>
-                        <span class="extreme-val" style="font-size: 0.95rem; color: var(--text);">{{ info.trend_icon }} {{ '+' if info.diff_24h > 0 else '' }}{{ info.diff_24h }}%</span>
-                    </div>
-                    <div class="extreme-item">
-                        <span class="extreme-label">Evapotraspirazione</span>
-                        <span class="extreme-val" style="font-size: 0.95rem; color: #38bdf8;">{{ analytics.evapotranspiration_mm or '2.3' }} mm/d</span>
-                    </div>
-                </div>
-                {% endfor %}
-            {% elif soil_moisture %}
-                {% for ch, val in soil_moisture.items() %}
-                <div class="main-stat">
-                    <span class="val" style="color: #34d399;">{{ val }}</span>
-                    <span class="unit">% (Suolo {{ ch }})</span>
-                </div>
-                {% endfor %}
-            {% else %}
-                <div class="item" style="padding: 1rem 0; color: var(--text-dim);">
-                    <span>🌱 Sensori Umidità Terreno: In attesa di WH51</span>
-                </div>
-            {% endif %}
-            </div>
-
-            <!-- CONSIGLIO IRRIGAZIONE INTELLIGENTE -->
-            {% if analytics and analytics.irrigation_advice %}
-            <div class="smart-irrigation-card" style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 8px 10px; margin-top: 6px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 0.82rem; font-weight: 700; color: #34d399;">{{ analytics.irrigation_advice.icon }} {{ analytics.irrigation_advice.title }}</span>
-                    <span style="font-size: 0.72rem; color: var(--text-dim);">ET: <strong>{{ analytics.evapotranspiration_mm }} mm/d</strong></span>
-                </div>
-                <p style="font-size: 0.78rem; color: var(--text); margin: 4px 0 0 0; line-height: 1.35;">{{ analytics.irrigation_advice.desc }}</p>
-            </div>
-            {% endif %}
-        </div>
-
-        <!-- 8. RILEVATORE FULMINI (WH57) -->
-        {% set l_data = analytics.lightning if analytics and analytics.lightning else None %}
-        <div class="card lightning-card {{ 'card-threat-' + l_data.threat_level if l_data and l_data.is_storm_active else '' }}" id="lightning_main_card">
-            <div class="card-header">
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <span>⚡ Rilevatore Fulmini</span>
-                    <span style="font-size: 0.72rem; color: var(--text-dim);">(WH57)</span>
-                </div>
-                <span class="sub-badge {{ l_data.trend_badge if l_data else 'badge-neutral' }}" id="lightning_badge">
-                    {% if l_data and l_data.trend_label %}
-                        {{ l_data.trend_icon }} {{ l_data.trend_label }}
-                    {% else %}
-                        WH57 • In ascolto
-                    {% endif %}
-                </span>
-            </div>
-
-            <!-- STATISTICA PRINCIPALE -->
-            <div class="main-stat" style="display: flex; align-items: baseline; justify-content: space-between;">
-                <div>
-                    <span class="val" id="lightning_dist_val">
-                        {% if l_data and l_data.current_distance_km is not none %}
-                            {{ l_data.current_distance_km }} <span class="unit">km</span>
-                        {% else %}
-                            {{ l_data.count_today if l_data else (latest.lightning_count or 0) }} <span class="unit">Scariche Oggi</span>
-                        {% endif %}
-                    </span>
-                    <span id="lightning_trend_arrow" style="font-size: 1.25rem; margin-left: 4px;">{{ l_data.trend_arrow if l_data else '' }}</span>
-                </div>
-                {% if l_data and l_data.is_storm_active %}
-                <span class="threat-pill {{ l_data.threat_badge }}" id="lightning_threat_pill">
-                    {{ l_data.threat_label }}
-                </span>
-                {% endif %}
-            </div>
-
-            <!-- DETTAGLI DI STATO & TREND -->
-            <div class="item-list" style="margin-bottom: 8px;">
-                <div class="item">
-                    <span>Tendenza & Stato:</span>
-                    <strong id="lightning_trend_desc" style="color: {{ 'var(--danger)' if l_data and l_data.trend == 'approaching' else ('var(--info)' if l_data and l_data.trend == 'moving_away' else 'inherit') }}; font-size: 0.86rem;">
-                        {{ l_data.trend_desc if l_data else 'Nessun fronte attivo rilevato' }}
-                    </strong>
-                </div>
-                <div class="item">
-                    <span>Ultima Scarica:</span>
-                    <strong id="lightning_time" style="font-size: 0.88rem;">{{ l_data.last_strike_formatted if (l_data and l_data.last_strike_formatted) else (latest.lightning_last_time | lightning_time_it) }}</strong>
-                </div>
-                <div class="item">
-                    <span>Scarica Più Vicina Oggi:</span>
-                    <strong id="lightning_closest">
-                        {% if l_data and l_data.closest_km_today is not none %}
-                            {{ l_data.closest_km_today }} km {% if l_data.closest_time_formatted %}<span style="font-weight: normal; color: var(--text-dim); font-size: 0.78rem;">({{ l_data.closest_time_formatted }})</span>{% endif %}
-                        {% else %}
-                            <span style="color: var(--text-muted); font-size: 0.85rem;">--</span>
-                        {% endif %}
-                    </strong>
-                </div>
-                <div class="item">
-                    <span>Scariche Totali Oggi:</span>
-                    <strong id="lightning_count_today">
-                        {{ l_data.count_today if l_data else (latest.lightning_count or 0) }}
-                        {% if l_data and l_data.count_1h > 0 %}
-                            <span style="font-weight: normal; color: var(--accent); font-size: 0.78rem;">({{ l_data.count_1h }} nell'ultima ora)</span>
-                        {% endif %}
-                    </strong>
-                </div>
-            </div>
-
-            <!-- CRONOLOGIA ULTIMI FULMINI (MINI-TIMELINE) -->
-            <div class="lightning-recent-section" id="lightning_recent_box" style="border-top: 1px solid var(--border); padding-top: 8px; margin-top: 6px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <span style="font-size: 0.78rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">
-                        📜 Ultimi Fulmini Rilevati
-                    </span>
-                    <a href="/radar#lightning" style="font-size: 0.75rem; color: var(--accent); text-decoration: none; font-weight: 500;">
-                        Radar Fulmini →
-                    </a>
-                </div>
-                <div class="lightning-timeline" id="lightning_timeline_list" style="display: flex; flex-direction: column; gap: 4px;">
-                    {% if l_data and l_data.recent_strikes and l_data.recent_strikes|length > 0 %}
-                        {% for strike in l_data.recent_strikes[:4] %}
-                        <div class="lightning-strike-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 4px 8px; border-radius: 6px; font-size: 0.82rem;">
-                            <div style="display: flex; align-items: center; gap: 6px;">
-                                <span>⚡</span>
-                                <span>{{ strike.time_formatted }}</span>
-                            </div>
-                            <div>
-                                <span class="badge-km" style="font-weight: 600; background: rgba(234, 179, 8, 0.15); color: #fde047; padding: 2px 6px; border-radius: 4px;">{{ strike.distance_km }} km</span>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    {% else %}
-                        <div style="font-size: 0.8rem; color: var(--text-muted); font-style: italic; padding: 4px 0;">
-                            Nessuna scarica registrata nelle ultime ore.
-                        </div>
-                    {% endif %}
-                </div>
-                
-                <!-- LINK RAPIDI AI 2 RADAR (FULMINI E PIOGGIA) -->
-                <div style="display: flex; gap: 8px; margin-top: 8px;">
-                    <a href="/radar#lightning" class="btn-subtle-link" style="flex: 1; text-align: center; font-size: 0.76rem; padding: 5px 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
-                        ⚡ <span>Radar Fulmini Live</span>
-                    </a>
-                    <a href="/radar" class="btn-subtle-link" style="flex: 1; text-align: center; font-size: 0.76rem; padding: 5px 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
-                        🌧️ <span>Radar Pioggia</span>
-                    </a>
-                </div>
-            </div>
-        </div>
-
-
-        <!-- 9. QUALITÀ DELL'ARIA & POLLINI CAMS -->
-        <div class="card">
-            <div class="card-header">
-                <span>🌬️ Qualità dell'Aria & Pollini</span>
-                <span class="aqi-summary-badge {{ analytics.air_quality.eaqi.badge_class if analytics and analytics.air_quality else 'badge-success' }}" id="aqi_badge">
-                    {{ analytics.air_quality.eaqi.icon if analytics and analytics.air_quality else '🟢' }} {{ analytics.air_quality.eaqi.label if analytics and analytics.air_quality else 'Buona' }}
-                </span>
-        
-    </div>
-
-            <!-- PARTICOLATO & INQUINANTI (CAMS) -->
-            <div class="pollutants-mini-grid">
-                <div class="pollutant-tile">
-                    <div class="label">PM2.5</div>
-                    <div class="val" id="pm25_val">{{ analytics.air_quality.pollutants.pm2_5.val if analytics and analytics.air_quality and analytics.air_quality.pollutants.pm2_5.val is not none else '--' }} <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span></div>
-                </div>
-                <div class="pollutant-tile">
-                    <div class="label">PM10</div>
-                    <div class="val" id="pm10_val">{{ analytics.air_quality.pollutants.pm10.val if analytics and analytics.air_quality and analytics.air_quality.pollutants.pm10.val is not none else '--' }} <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span></div>
-                </div>
-                <div class="pollutant-tile">
-                    <div class="label">NO₂</div>
-                    <div class="val" id="no2_val">{{ analytics.air_quality.pollutants.no2.val if analytics and analytics.air_quality and analytics.air_quality.pollutants.no2.val is not none else '--' }} <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span></div>
-                </div>
-                <div class="pollutant-tile">
-                    <div class="label">O₃</div>
-                    <div class="val" id="o3_val">{{ analytics.air_quality.pollutants.o3.val if analytics and analytics.air_quality and analytics.air_quality.pollutants.o3.val is not none else '--' }} <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span></div>
-                </div>
-            </div>
-
-            <!-- ALLERGENI POLLINI -->
-            <div class="pollens-bar-grid">
-                {% if analytics and analytics.air_quality and analytics.air_quality.pollens %}
-                    {% for p_key, p_info in analytics.air_quality.pollens.items() %}
-                    <div class="pollen-card-item">
-                        <span class="p-name">{{ p_info.name }}</span>
-                        <span class="p-badge {{ p_info.badge }}">{{ p_info.level }}</span>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="pollen-card-item">
-                        <span class="p-name">Graminacee</span>
-                        <span class="p-badge badge-success">Basso</span>
-                    </div>
-                    <div class="pollen-card-item">
-                        <span class="p-name">Olivo</span>
-                        <span class="p-badge badge-success">Basso</span>
-                    </div>
-                {% endif %}
-            </div>
-
-            <div class="item-list" style="margin-top: 10px;">
-                <div class="item">
-                    <span>💡 Suggerimento Aerazione:</span>
-                    <strong id="aqi_advice_text" style="color: #38bdf8;">{{ analytics.air_quality.window_advice if analytics and analytics.air_quality else 'Aria salubre.' }}</strong>
-                </div>
-            </div>
-        </div>
-    </div>
 
 
     <!-- 🛡️ ALLERTE METEO UFFICIALI PROTEZIONE CIVILE CALABRIA & DPC -->
-    {% if civil_protection_enabled and civil_protection and civil_protection.status == 'success' %}
+    {% set cp_today = (civil_protection.today.level if civil_protection and civil_protection.today else '') | lower %}
+    {% set cp_tomorrow = (civil_protection.tomorrow.level if civil_protection and civil_protection.tomorrow else '') | lower %}
+    {# Mostrata solo se c'è un'allerta (non verde) oggi o domani: niente riquadro grande quando va tutto bene #}
+    {% if civil_protection_enabled and civil_protection and civil_protection.status == 'success' and ('verde' not in cp_today or 'verde' not in cp_tomorrow) %}
     <div class="cp-alert-card cp-border-{{ civil_protection.today.level | lower }}" id="cp_alert_card">
         <div class="cp-card-header">
             <div class="cp-title-wrap">
@@ -756,30 +241,9 @@
         <div class="forecast-header">
             <div class="forecast-title-group">
                 <span style="font-size: 1.4rem;">🌐</span>
-                <h2>Previsioni 7 Giorni & Modelli Numerici</h2>
-            </div>
-            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                <a href="/radar" class="btn btn-secondary" style="font-size: 0.82rem; padding: 4px 10px; display: inline-flex; align-items: center; gap: 5px; text-decoration: none; border-color: rgba(59, 130, 246, 0.4); color: #93c5fd;">
-                    🌧️ <span>Radar Pioggia Live</span>
-                </a>
-                <div class="forecast-source-badge">
-                    ⚡ Open-Meteo • ECMWF IFS 9km / ICON-EU
-                </div>
+                <h2>Previsioni</h2>
             </div>
         </div>
-
-        <!-- CROSS CHECK CONFRONTO MODELLO VS STAZIONE FISICA -->
-        {% if cross_check and cross_check.available %}
-        <div class="cross-check-bar" id="cross_check_bar">
-            <div>
-                <strong>🛰️ Cross-Check Modello vs Stazione Reale:</strong>
-                <span id="cross_check_text" style="color: var(--text-dim); margin-left: 5px;">{{ cross_check.text }}</span>
-            </div>
-            <span class="cross-check-badge {{ cross_check.badge_class }}" id="cross_check_badge">
-                {{ cross_check.status }} (Δ {{ cross_check.delta_str }})
-            </span>
-        </div>
-        {% endif %}
 
         <!-- 🌧️ NOWCASTING RADAR DINAMICO & CELLE PRECIPITATIVE -->
         <div class="nowcasting-radar-banner" id="nowcasting_radar_banner">
@@ -848,6 +312,7 @@
 
 
 <!-- 🧠 SEZIONE INTELLIGENZA DOMESTICA: COSA DEVO SAPERE ORA -->
+{% if show_advanced_panes %}
 <div class="now-intelligence-hero" id="now_intelligence_section">
     <div class="now-intelligence-header">
         <div class="now-intelligence-title">
@@ -880,19 +345,460 @@
         {% endif %}
     </div>
 </div>
+{% endif %}
 
 
 
-    <!-- MINI GRAFICO ANDAMENTO RAPIDO 24H -->
-    <div class="card" style="margin-top: 0.25rem;">
-        <div class="card-header">
-            <span>📈 Andamento Ultime 24 Ore</span>
-            <a href="/charts" style="color: var(--accent); text-decoration: none; font-size: 0.85rem;">Apri Grafici Dettagliati →</a>
+
+    <!-- DETTAGLI STAZIONE: tutti i dati di dettaglio, chiusi di default per una Home pulita -->
+    <details class="home-details" id="home_details">
+        <summary class="home-details-summary">
+            <span>📊 Tutti i dati della stazione</span>
+            <span class="home-details-hint">vento, pioggia, sole, interni, suolo, fulmini, aria</span>
+        </summary>
+        <div class="home-details-body">
+        <!-- GRID METEO TELEMETRIA -->
+        <div class="grid">
+            <!-- 1. TEMPERATURA & UMIDITA ESTERNA -->
+            <div class="card">
+                <div class="card-header">
+                    <span>🌡️ Esterno (7 in 1)</span>
+                    <span class="sub-badge" id="apparent_temp_badge">Percepita: {{ apparent_temp if apparent_temp is not none else '--' }}°C</span>
+                </div>
+                <div class="main-stat">
+                    <span class="val" id="temp_c">{{ latest.temp_c if latest.temp_c is not none else '--' }}</span>
+                    <span class="unit">°C</span>
+                </div>
+
+                <!-- DIFFERENZIALE IERI & MIN/MAX OGGI -->
+                <div class="today-extremes-box">
+                    <div class="extreme-item">
+                        <span class="extreme-label">Min Oggi</span>
+                        <span class="extreme-val min-t" id="today_min">{{ analytics.today_extremes.temp_min if analytics and analytics.today_extremes.temp_min is not none else '--' }}°C</span>
+                        <span class="extreme-time" id="today_min_time">{{ analytics.today_extremes.temp_min_time or '--:--' }}</span>
+                    </div>
+                    <div class="extreme-item">
+                        <span class="extreme-label">Max Oggi</span>
+                        <span class="extreme-val max-t" id="today_max">{{ analytics.today_extremes.temp_max if analytics and analytics.today_extremes.temp_max is not none else '--' }}°C</span>
+                        <span class="extreme-time" id="today_max_time">{{ analytics.today_extremes.temp_max_time or '--:--' }}</span>
+                    </div>
+                    <div class="extreme-item">
+                        <span class="extreme-label">vs Ieri</span>
+                        <span class="delta-badge {% if analytics and analytics.yesterday_comparison.diff_c and analytics.yesterday_comparison.diff_c > 0 %}warmer{% elif analytics and analytics.yesterday_comparison.diff_c and analytics.yesterday_comparison.diff_c < 0 %}cooler{% else %}neutral{% endif %}" id="yesterday_badge">
+                            {{ analytics.yesterday_comparison.text if analytics else '--' }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="item-list">
+                    <div class="item"><span>Umidità:</span> <strong id="humidity">{{ latest.humidity if latest.humidity is not none else '--' }} %</strong></div>
+                    <div class="item"><span>Punto di Rugiada:</span> <strong id="dew_point">{{ latest.dew_point_c if latest.dew_point_c is not none else '--' }} °C</strong></div>
+                    <div class="item"><span>Pressione Relativa:</span> <strong id="press_rel">{{ latest.pressure_rel_hpa if latest.pressure_rel_hpa is not none else '--' }} hPa</strong></div>
+                    <div class="item"><span>Tendenza Pressione:</span> <strong id="press_trend">{{ pressure_trend.text if pressure_trend else '--' }}</strong></div>
+                </div>
+            </div>
+
+            <!-- 2. VENTO CON ROSA DEI VENTI GRAFICA -->
+            <div class="card">
+                <div class="card-header">
+                    <span>💨 Vento & Direzione</span>
+                    <span class="sub-badge" id="beaufort_badge">{{ analytics.beaufort.label if analytics and analytics.beaufort else 'Calma' }} (F{{ analytics.beaufort.grade if analytics and analytics.beaufort and analytics.beaufort.grade is not none else '0' }})</span>
+                </div>
+                <div class="main-stat">
+                    <span class="val" id="wind_spd">{{ latest.wind_speed_kmh if latest.wind_speed_kmh is not none else '--' }}</span>
+                    <span class="unit">km/h</span>
+                </div>
+
+                <!-- BUSSOLA / ROSA DEI VENTI -->
+                <div class="compass-wrapper">
+                    <div class="compass-dial">
+                        <span class="compass-cardinal n">N</span>
+                        <span class="compass-cardinal e">E</span>
+                        <span class="compass-cardinal s">S</span>
+                        <span class="compass-cardinal w">W</span>
+                        <div class="compass-needle" id="compass_needle" style="transform: rotate({{ latest.wind_dir_deg or 0 }}deg);"></div>
+                        <div class="compass-center"></div>
+                    </div>
+                </div>
+
+                <div class="item-list">
+                    <div class="item"><span>Raffica attuale:</span> <strong id="wind_gst">{{ latest.wind_gust_kmh if latest.wind_gust_kmh is not none else '--' }} km/h</strong></div>
+                    <div class="item"><span>Raffica max oggi:</span> <strong id="max_gust">{{ latest.max_daily_gust_kmh or analytics.today_extremes.max_gust or '--' }} km/h</strong></div>
+                    <div class="item"><span>Direzione:</span> <strong id="wind_dir">{{ wind_dir_text }}</strong></div>
+                </div>
+            </div>
+
+            <!-- 3. PIOGGIA & ACCUMULI -->
+            <div class="card">
+                <div class="card-header">
+                    <span>🌧️ Pioggia & Accumuli</span>
+                </div>
+                <div class="main-stat">
+                    <span class="val" id="rain_rate">{{ latest.rain_rate_mm_hr if latest.rain_rate_mm_hr is not none else '0.0' }}</span>
+                    <span class="unit">mm/h</span>
+                </div>
+                <div class="item-list">
+                    <div class="item"><span>Pioggia di oggi:</span> <strong id="rain_day">{{ latest.daily_rain_mm if latest.daily_rain_mm is not none else '0.0' }} mm</strong></div>
+                    <div class="item"><span>Totale ultimi 7 giorni:</span> <strong id="rain_week">{{ analytics.rain_totals.week_rain_mm if analytics else '0.0' }} mm</strong></div>
+                    <div class="item"><span>Totale mese corrente:</span> <strong id="rain_month">{{ analytics.rain_totals.month_rain_mm if analytics else '0.0' }} mm</strong></div>
+                    <div class="item"><span>Accumulo anno (da DB):</span> <strong id="rain_year">{{ analytics.rain_totals.year_rain_mm if analytics else '0.0' }} mm</strong></div>
+                    <div class="item"><span>Contatore stazione:</span> <strong id="rain_station_counter">{{ latest.yearly_rain_mm if latest.yearly_rain_mm is not none else '--' }} mm</strong></div>
+                </div>
+            </div>
+
+            <!-- 4. SOLE, UV & EFFEMERIDI -->
+            <div class="card">
+                <div class="card-header">
+                    <span>☀️ Sole & Radiazione UV</span>
+                </div>
+            
+                <!-- SCALA GRAFICA UV -->
+                <div class="uv-scale-box">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.82rem; font-weight: 700; margin-bottom: 4px;">
+                        <span>Indice UV</span>
+                        <span id="uv_val">{{ latest.uv_index if latest.uv_index is not none else '0' }}</span>
+                    </div>
+                    <div class="uv-gradient-bar">
+                        <div class="uv-pointer" id="uv_pointer" style="left: {{ ((latest.uv_index or 0) / 12 * 100)|round }}%;"></div>
+                    </div>
+                    <div class="uv-labels">
+                        <span>0 Basso</span>
+                        <span>3 Mod</span>
+                        <span>6 Alto</span>
+                        <span>8 Molto Alto</span>
+                        <span>11+ Estr</span>
+                    </div>
+                </div>
+
+                <div class="item-list">
+                    <div class="item"><span>Radiazione Solare:</span> <strong id="solar">{{ latest.solar_radiation if latest.solar_radiation is not none else '0.0' }} W/m²</strong></div>
+                    <div class="item"><span>VPD (Deficit Pressione):</span> <strong id="vpd">{{ latest.vpd if latest.vpd is not none else '--' }} kPa</strong></div>
+                </div>
+
+                <!-- EFFEMERIDI SOLE E LUNA RAPIDE -->
+                <div class="ephem-box">
+                    <div class="ephem-row">
+                        <span>🌅 Alba: <strong>{{ analytics.sun_ephemeris.sunrise if analytics else '--:--' }}</strong></span>
+                        <span>🌇 Tramonto: <strong>{{ analytics.sun_ephemeris.sunset if analytics else '--:--' }}</strong></span>
+                    </div>
+                    <div class="ephem-sun-bar">
+                        <div class="ephem-sun-fill" style="width: {{ analytics.sun_ephemeris.sun_progress_pct if analytics else 50 }}%;"></div>
+                    </div>
+                    <div class="ephem-row" style="margin-bottom: 0;">
+                        <span style="font-size: 0.8rem; color: var(--text-muted);">{{ analytics.sun_ephemeris.status_text if analytics else '--' }} ({{ analytics.sun_ephemeris.daylight_duration if analytics else '--' }} luce)</span>
+                        <span><span>{{ analytics.moon_phase.icon if analytics else '🌓' }}</span> <strong>{{ analytics.moon_phase.phase_name if analytics else 'Fase Lunare' }}</strong> (<span>{{ analytics.moon_phase.illumination_pct if analytics else '50' }}%</span>)</span>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- 5. TEMPERATURE INTERNE: SOGGIORNO (ECOWITT) • STANZETTA (LG) • CAMERA (LG) -->
+            <div class="card">
+                <div class="card-header">
+                    <span>🏠 Temperature Interne (3 Ambienti)</span>
+                    <span class="sub-badge {{ analytics.comfort.indoor.badge_class if analytics and analytics.comfort.indoor else 'badge-neutral' }}" id="indoor_comfort_badge">
+                        {{ analytics.comfort.indoor.icon if analytics and analytics.comfort.indoor else '🏠' }} {{ analytics.comfort.indoor.title if analytics and analytics.comfort.indoor else 'Ambiente Casa' }}
+                    </span>
+                </div>
+
+                <!-- GRIGLIA 3 AMBIENTI: SOGGIORNO, CAMERA DA LETTO, STANZETTA -->
+                <div class="indoor-rooms-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px;">
+                    <!-- 1. SOGGIORNO (ECOWITT CONSOLE) -->
+                    <div class="indoor-room-box" style="background: rgba(0,0,0,0.25); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between;">
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                <strong style="font-size: 0.82rem; color: #38bdf8;">🛋️ Soggiorno</strong>
+                                <span class="badge" style="font-size: 0.60rem; padding: 1px 5px; background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3);">Ecowitt</span>
+                            </div>
+                            <div style="font-size: 1.55rem; font-weight: 800; color: #fff; line-height: 1.1; margin: 4px 0;" id="temp_in_c">
+                                {{ latest.temp_in_c if latest.temp_in_c is not none else '--' }}<span style="font-size: 0.85rem; font-weight: 600; color: var(--text-dim);">°C</span>
+                            </div>
+                        </div>
+                        <div style="font-size: 0.72rem; color: var(--text-dim); line-height: 1.35; margin-top: 4px;">
+                            <span>Umidità: <strong id="humidity_in" style="color: #e2e8f0;">{{ latest.humidity_in if latest.humidity_in is not none else '--' }}%</strong></span><br>
+                            <span>Min/Max: <span class="min-t" id="today_in_min">{{ analytics.today_extremes.temp_in_min or '--' }}°</span> / <span class="max-t" id="today_in_max">{{ analytics.today_extremes.temp_in_max or '--' }}°</span></span>
+                        </div>
+                    </div>
+
+                    <!-- 2 & 3. CLIMATIZZATORI LG THINQ: CAMERA DA LETTO & STANZETTA/CAMERETTA -->
+                    {% if climate_devices %}
+                        {% for dev in climate_devices %}
+                            {% if dev.device_type == 'DEVICE_AIR_CONDITIONER' %}
+                            <div class="indoor-room-box" style="background: rgba(0,0,0,0.25); border: 1px solid {% if dev.is_on %}rgba(16, 185, 129, 0.35){% else %}rgba(255, 255, 255, 0.08){% endif %}; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between;">
+                                <div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                        <strong style="font-size: 0.82rem; color: #fff;">
+                                            {% if 'camer' in dev.alias.lower() or 'stanz' in dev.alias.lower() %}🧸 Stanzetta
+                                            {% elif 'letto' in dev.alias.lower() or 'camera' in dev.alias.lower() %}🛏️ Camera da letto
+                                            {% else %}❄️ {{ dev.alias }}{% endif %}
+                                        </strong>
+                                        <span class="badge" style="font-size: 0.60rem; padding: 1px 5px; {% if dev.is_on %}background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.4);{% else %}background: rgba(255,255,255,0.05); color: var(--text-dim); border: 1px solid rgba(255,255,255,0.1);{% endif %}">
+                                            {{ 'ACCESO' if dev.is_on else 'SPENTO' }}
+                                        </span>
+                                    </div>
+                                    <div style="font-size: 1.55rem; font-weight: 800; color: {% if dev.is_on %}#38bdf8{% else %}#e2e8f0{% endif %}; line-height: 1.1; margin: 4px 0;" id="curr_temp_mini_{{ dev.device_id }}">
+                                        {{ dev.current_temp or '--' }}<span style="font-size: 0.85rem; font-weight: 600; color: var(--text-dim);">°C</span>
+                                    </div>
+                                </div>
+                                <div style="font-size: 0.72rem; color: var(--text-dim); line-height: 1.35; margin-top: 4px;">
+                                    <span>Target: <strong style="color: #e2e8f0;">{{ dev.target_temp or 26 }}°C</strong></span><br>
+                                    <span>Modo: <strong style="color: #94a3b8;">{{ dev.mode }}</strong> (LG ThinQ)</span>
+                                </div>
+                            </div>
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+                <div class="item-list" style="margin-top: 4px;">
+                    <div class="item"><span>Isolamento / Delta vs Fuori:</span> <strong id="indoor_delta_badge" style="color: {% if analytics and analytics.comfort.indoor and analytics.comfort.indoor.get('diff_c') and analytics.comfort.indoor.get('diff_c') < 0 %}#38bdf8{% else %}#f59e0b{% endif %};">{{ "%+0.1f"|format(analytics.comfort.indoor.get('diff_c')) if analytics and analytics.comfort.indoor and analytics.comfort.indoor.get('diff_c') is not none else '--' }}°C</strong></div>
+                    <div class="item"><span>Punto di Rugiada Soggiorno:</span> <strong id="dew_point_in">{{ analytics.dew_point_in_c if analytics and analytics.dew_point_in_c is not none else '--' }} °C</strong></div>
+                    <div class="item"><span>Stato Microclima:</span> <strong id="indoor_status_desc">{{ analytics.comfort.indoor.desc if analytics and analytics.comfort.indoor else 'Regolare' }}</strong></div>
+                </div>
+            </div>
+
+
+            <!-- 7. SENSORI SUOLO & UMIDITÀ AIUOLA (WH51) -->
+            <div class="card">
+                <div class="card-header">
+                    <span>🌱 Umidità Aiuola & Terreno</span>
+                    <span class="sub-badge" id="soil_badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.35);">
+                        🌱 WH51 • Live
+                    </span>
+                </div>
+
+                <div id="soil_moisture_container">
+                {% if analytics and analytics.soil_summary and analytics.soil_summary.has_sensors %}
+                    {% for ch, info in analytics.soil_summary.channels.items() %}
+                    <div class="main-stat" style="margin-bottom: 6px;">
+                        <span class="val" style="color: #34d399;">{{ info.value }}</span>
+                        <span class="unit">% ({{ info.name }})</span>
+                    </div>
+                    <div class="today-extremes-box" style="margin-bottom: 8px;">
+                        <div class="extreme-item">
+                            <span class="extreme-label">Stato Suolo</span>
+                            <span class="badge {{ info.badge_class }}" style="font-size: 0.76rem; padding: 2px 8px; margin-top: 2px;">{{ info.status_label }}</span>
+                        </div>
+                        <div class="extreme-item">
+                            <span class="extreme-label">Variazione 24h</span>
+                            <span class="extreme-val" style="font-size: 0.95rem; color: var(--text);">{{ info.trend_icon }} {{ '+' if info.diff_24h > 0 else '' }}{{ info.diff_24h }}%</span>
+                        </div>
+                        <div class="extreme-item">
+                            <span class="extreme-label">Evapotraspirazione</span>
+                            <span class="extreme-val" style="font-size: 0.95rem; color: #38bdf8;">{{ analytics.evapotranspiration_mm or '2.3' }} mm/d</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% elif soil_moisture %}
+                    {% for ch, val in soil_moisture.items() %}
+                    <div class="main-stat">
+                        <span class="val" style="color: #34d399;">{{ val }}</span>
+                        <span class="unit">% (Suolo {{ ch }})</span>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="item" style="padding: 1rem 0; color: var(--text-dim);">
+                        <span>🌱 Sensori Umidità Terreno: In attesa di WH51</span>
+                    </div>
+                {% endif %}
+                </div>
+
+                <!-- CONSIGLIO IRRIGAZIONE INTELLIGENTE -->
+                {% if analytics and analytics.irrigation_advice %}
+                <div class="smart-irrigation-card" style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 8px 10px; margin-top: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 0.82rem; font-weight: 700; color: #34d399;">{{ analytics.irrigation_advice.icon }} {{ analytics.irrigation_advice.title }}</span>
+                        <span style="font-size: 0.72rem; color: var(--text-dim);">ET: <strong>{{ analytics.evapotranspiration_mm }} mm/d</strong></span>
+                    </div>
+                    <p style="font-size: 0.78rem; color: var(--text); margin: 4px 0 0 0; line-height: 1.35;">{{ analytics.irrigation_advice.desc }}</p>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- 8. RILEVATORE FULMINI (WH57) -->
+            {% set l_data = analytics.lightning if analytics and analytics.lightning else None %}
+            <div class="card lightning-card {{ 'card-threat-' + l_data.threat_level if l_data and l_data.is_storm_active else '' }}" id="lightning_main_card">
+                <div class="card-header">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span>⚡ Rilevatore Fulmini</span>
+                        <span style="font-size: 0.72rem; color: var(--text-dim);">(WH57)</span>
+                    </div>
+                    <span class="sub-badge {{ l_data.trend_badge if l_data else 'badge-neutral' }}" id="lightning_badge">
+                        {% if l_data and l_data.trend_label %}
+                            {{ l_data.trend_icon }} {{ l_data.trend_label }}
+                        {% else %}
+                            WH57 • In ascolto
+                        {% endif %}
+                    </span>
+                </div>
+
+                <!-- STATISTICA PRINCIPALE -->
+                <div class="main-stat" style="display: flex; align-items: baseline; justify-content: space-between;">
+                    <div>
+                        <span class="val" id="lightning_dist_val">
+                            {% if l_data and l_data.current_distance_km is not none %}
+                                {{ l_data.current_distance_km }} <span class="unit">km</span>
+                            {% else %}
+                                {{ l_data.count_today if l_data else (latest.lightning_count or 0) }} <span class="unit">Scariche Oggi</span>
+                            {% endif %}
+                        </span>
+                        <span id="lightning_trend_arrow" style="font-size: 1.25rem; margin-left: 4px;">{{ l_data.trend_arrow if l_data else '' }}</span>
+                    </div>
+                    {% if l_data and l_data.is_storm_active %}
+                    <span class="threat-pill {{ l_data.threat_badge }}" id="lightning_threat_pill">
+                        {{ l_data.threat_label }}
+                    </span>
+                    {% endif %}
+                </div>
+
+                <!-- DETTAGLI DI STATO & TREND -->
+                <div class="item-list" style="margin-bottom: 8px;">
+                    <div class="item">
+                        <span>Tendenza & Stato:</span>
+                        <strong id="lightning_trend_desc" style="color: {{ 'var(--danger)' if l_data and l_data.trend == 'approaching' else ('var(--info)' if l_data and l_data.trend == 'moving_away' else 'inherit') }}; font-size: 0.86rem;">
+                            {{ l_data.trend_desc if l_data else 'Nessun fronte attivo rilevato' }}
+                        </strong>
+                    </div>
+                    <div class="item">
+                        <span>Ultima Scarica:</span>
+                        <strong id="lightning_time" style="font-size: 0.88rem;">{{ l_data.last_strike_formatted if (l_data and l_data.last_strike_formatted) else (latest.lightning_last_time | lightning_time_it) }}</strong>
+                    </div>
+                    <div class="item">
+                        <span>Scarica Più Vicina Oggi:</span>
+                        <strong id="lightning_closest">
+                            {% if l_data and l_data.closest_km_today is not none %}
+                                {{ l_data.closest_km_today }} km {% if l_data.closest_time_formatted %}<span style="font-weight: normal; color: var(--text-dim); font-size: 0.78rem;">({{ l_data.closest_time_formatted }})</span>{% endif %}
+                            {% else %}
+                                <span style="color: var(--text-muted); font-size: 0.85rem;">--</span>
+                            {% endif %}
+                        </strong>
+                    </div>
+                    <div class="item">
+                        <span>Scariche Totali Oggi:</span>
+                        <strong id="lightning_count_today">
+                            {{ l_data.count_today if l_data else (latest.lightning_count or 0) }}
+                            {% if l_data and l_data.count_1h > 0 %}
+                                <span style="font-weight: normal; color: var(--accent); font-size: 0.78rem;">({{ l_data.count_1h }} nell'ultima ora)</span>
+                            {% endif %}
+                        </strong>
+                    </div>
+                </div>
+
+                <!-- CRONOLOGIA ULTIMI FULMINI (MINI-TIMELINE) -->
+                <div class="lightning-recent-section" id="lightning_recent_box" style="border-top: 1px solid var(--border); padding-top: 8px; margin-top: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 0.78rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">
+                            📜 Ultimi Fulmini Rilevati
+                        </span>
+                        <a href="/radar#lightning" style="font-size: 0.75rem; color: var(--accent); text-decoration: none; font-weight: 500;">
+                            Radar Fulmini →
+                        </a>
+                    </div>
+                    <div class="lightning-timeline" id="lightning_timeline_list" style="display: flex; flex-direction: column; gap: 4px;">
+                        {% if l_data and l_data.recent_strikes and l_data.recent_strikes|length > 0 %}
+                            {% for strike in l_data.recent_strikes[:4] %}
+                            <div class="lightning-strike-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 4px 8px; border-radius: 6px; font-size: 0.82rem;">
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span>⚡</span>
+                                    <span>{{ strike.time_formatted }}</span>
+                                </div>
+                                <div>
+                                    <span class="badge-km" style="font-weight: 600; background: rgba(234, 179, 8, 0.15); color: #fde047; padding: 2px 6px; border-radius: 4px;">{{ strike.distance_km }} km</span>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <div style="font-size: 0.8rem; color: var(--text-muted); font-style: italic; padding: 4px 0;">
+                                Nessuna scarica registrata nelle ultime ore.
+                            </div>
+                        {% endif %}
+                    </div>
+                
+                    <!-- LINK RAPIDI AI 2 RADAR (FULMINI E PIOGGIA) -->
+                    <div style="display: flex; gap: 8px; margin-top: 8px;">
+                        <a href="/radar#lightning" class="btn-subtle-link" style="flex: 1; text-align: center; font-size: 0.76rem; padding: 5px 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
+                            ⚡ <span>Radar Fulmini Live</span>
+                        </a>
+                        <a href="/radar" class="btn-subtle-link" style="flex: 1; text-align: center; font-size: 0.76rem; padding: 5px 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
+                            🌧️ <span>Radar Pioggia</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- 9. QUALITÀ DELL'ARIA & POLLINI CAMS -->
+            <div class="card">
+                <div class="card-header">
+                    <span>🌬️ Qualità dell'Aria & Pollini</span>
+                    <span class="aqi-summary-badge {{ analytics.air_quality.eaqi.badge_class if analytics and analytics.air_quality else 'badge-success' }}" id="aqi_badge">
+                        {{ analytics.air_quality.eaqi.icon if analytics and analytics.air_quality else '🟢' }} {{ analytics.air_quality.eaqi.label if analytics and analytics.air_quality else 'Buona' }}
+                    </span>
+        
         </div>
-        <div style="height: 220px; position: relative;">
-            <canvas id="quickChart"></canvas>
+
+                <!-- PARTICOLATO & INQUINANTI (CAMS) -->
+                <div class="pollutants-mini-grid">
+                    <div class="pollutant-tile">
+                        <div class="label">PM2.5</div>
+                        <div class="val" id="pm25_val">{{ analytics.air_quality.pollutants.pm2_5.val if analytics and analytics.air_quality and analytics.air_quality.pollutants.pm2_5.val is not none else '--' }} <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span></div>
+                    </div>
+                    <div class="pollutant-tile">
+                        <div class="label">PM10</div>
+                        <div class="val" id="pm10_val">{{ analytics.air_quality.pollutants.pm10.val if analytics and analytics.air_quality and analytics.air_quality.pollutants.pm10.val is not none else '--' }} <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span></div>
+                    </div>
+                    <div class="pollutant-tile">
+                        <div class="label">NO₂</div>
+                        <div class="val" id="no2_val">{{ analytics.air_quality.pollutants.no2.val if analytics and analytics.air_quality and analytics.air_quality.pollutants.no2.val is not none else '--' }} <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span></div>
+                    </div>
+                    <div class="pollutant-tile">
+                        <div class="label">O₃</div>
+                        <div class="val" id="o3_val">{{ analytics.air_quality.pollutants.o3.val if analytics and analytics.air_quality and analytics.air_quality.pollutants.o3.val is not none else '--' }} <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span></div>
+                    </div>
+                </div>
+
+                <!-- ALLERGENI POLLINI -->
+                <div class="pollens-bar-grid">
+                    {% if analytics and analytics.air_quality and analytics.air_quality.pollens %}
+                        {% for p_key, p_info in analytics.air_quality.pollens.items() %}
+                        <div class="pollen-card-item">
+                            <span class="p-name">{{ p_info.name }}</span>
+                            <span class="p-badge {{ p_info.badge }}">{{ p_info.level }}</span>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="pollen-card-item">
+                            <span class="p-name">Graminacee</span>
+                            <span class="p-badge badge-success">Basso</span>
+                        </div>
+                        <div class="pollen-card-item">
+                            <span class="p-name">Olivo</span>
+                            <span class="p-badge badge-success">Basso</span>
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="item-list" style="margin-top: 10px;">
+                    <div class="item">
+                        <span>💡 Suggerimento Aerazione:</span>
+                        <strong id="aqi_advice_text" style="color: #38bdf8;">{{ analytics.air_quality.window_advice if analytics and analytics.air_quality else 'Aria salubre.' }}</strong>
+                    </div>
+                </div>
+            </div>
         </div>
-    </div>
+
+        <!-- MINI GRAFICO ANDAMENTO RAPIDO 24H -->
+        <div class="card" style="margin-top: 0.25rem;">
+            <div class="card-header">
+                <span>📈 Andamento Ultime 24 Ore</span>
+                <a href="/charts" style="color: var(--accent); text-decoration: none; font-size: 0.85rem;">Apri Grafici Dettagliati →</a>
+            </div>
+            <div style="height: 220px; position: relative;">
+                <canvas id="quickChart"></canvas>
+            </div>
+        </div>
+        </div>
+    </details>
 </div>
 
 <!-- ==========================================================================
@@ -1530,6 +1436,7 @@
 <!-- ==========================================================================
      TAB 3: SALUTE & BIOMETRIA (SAMSUNG HEALTH & GOOGLE HEALTH CONNECT)
      ========================================================================== -->
+{% if show_advanced_panes %}{# Salute e Analisi avanzate nascoste su richiesta: riattivabili passando show_advanced_panes #}
 <div class="dashboard-tab-pane" id="pane_health">
 
     <!-- SEZIONE SALUTE & ATTIVITÀ FISICA SAMSUNG HEALTH & HEALTH CONNECT -->
@@ -1793,10 +1700,12 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- ==========================================================================
      TAB 4: SOLE & BENESSERE
      ========================================================================== -->
+{% if show_advanced_panes %}{# Salute e Analisi avanzate nascoste su richiesta: riattivabili passando show_advanced_panes #}
 <div class="dashboard-tab-pane" id="pane_astro_comfort">
 
     <!-- OROLOGIO SOLARE & EFFEMERIDI ASTRONOMICHE ODRIERNE -->
@@ -2103,6 +2012,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- MODALE DI DETTAGLIO CONSUMI CASA (CHI STA CONSUMANDO) -->
 <div id="house-consumption-modal-backdrop" class="device-modal-backdrop" onclick="closeHouseConsumptionModal(event)">

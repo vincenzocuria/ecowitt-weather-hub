@@ -693,11 +693,7 @@ function updateLiveCountdowns() {
             const s = remSec % 60;
             countEl.textContent = `tra ${m}m ${s}s`;
         } else {
-            const h = Math.floor(remSec / 3600);
-            const m = Math.floor((remSec % 3600) / 60);
-            const hStr = h === 1 ? '1 ora' : `${h} ore`;
-            const mStr = m === 1 ? '1 minuto' : `${m} minuti`;
-            countEl.textContent = m > 0 ? `tra ${hStr} e ${mStr}` : `tra ${hStr}`;
+            countEl.textContent = `tra ${formatDurationItalian(Math.floor(remSec / 60))}`;
         }
     });
     

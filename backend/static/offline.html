@@ -25,6 +25,14 @@
             padding: 12px 22px; font-size: 1rem; font-weight: 600; cursor: pointer;
         }
         button:focus-visible { outline: 3px solid #e2e8f0; outline-offset: 2px; }
+        @media (prefers-color-scheme: light) {
+            :root { color-scheme: light; }
+            body { background: #eef2f7; color: #0f172a; }
+            .card { background: #ffffff; border-color: #dbe3ec; }
+            p { color: #475569; }
+            button { background: #075985; color: #ffffff; }
+            button:focus-visible { outline-color: #0f172a; }
+        }
     </style>
 </head>
 <body>

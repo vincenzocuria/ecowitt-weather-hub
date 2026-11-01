@@ -455,7 +455,14 @@ class TestEcowittHub(unittest.TestCase):
         self.assertIn("dashboard-tabs-nav", res_idx.text)
         self.assertIn("pane_weather", res_idx.text)
         self.assertIn("pane_energy_home", res_idx.text)
-        self.assertIn("pane_astro_comfort", res_idx.text)
+        # Home semplificata: Salute e Analisi avanzate nascoste, dettagli stazione in sezione richiudibile
+        self.assertNotIn("pane_astro_comfort", res_idx.text)
+        self.assertNotIn("pane_health", res_idx.text)
+        self.assertIn("home_details", res_idx.text)
+
+        res_more = client.get("/more")
+        self.assertEqual(res_more.status_code, 200)
+        self.assertIn("data-theme-choice", res_more.text)
 
         res_set = client.get("/settings")
         self.assertEqual(res_set.status_code, 200)

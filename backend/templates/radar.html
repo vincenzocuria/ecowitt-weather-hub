@@ -27,7 +27,7 @@
 
     <!-- SELETTORE A 2 TAB: RADAR PIOGGIA vs RADAR FULMINI -->
     <div class="radar-tabs-nav" style="display: flex; gap: 10px; margin-bottom: 14px;">
-        <button type="button" class="btn btn-tab active" id="tab-btn-rain" onclick="switchRadarTab('rain')" style="flex: 1; padding: 10px 16px; font-weight: 700; font-size: 0.95rem; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s ease; background: var(--accent); color: #fff; border: 1px solid var(--accent); cursor: pointer;">
+        <button type="button" class="btn btn-tab active" id="tab-btn-rain" onclick="switchRadarTab('rain')" style="flex: 1; padding: 10px 16px; font-weight: 700; font-size: 0.95rem; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s ease; background: var(--primary-hover); color: #fff; border: 1px solid var(--primary-hover); cursor: pointer;">
             🌧️ <span>Radar Pioggia Live</span>
         </button>
         <button type="button" class="btn btn-tab" id="tab-btn-lightning" onclick="switchRadarTab('lightning')" style="flex: 1; padding: 10px 16px; font-weight: 700; font-size: 0.95rem; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s ease; background: rgba(255,255,255,0.06); color: var(--text-dim); border: 1px solid var(--border); opacity: 0.85; cursor: pointer;">
@@ -94,11 +94,11 @@
             <div class="radar-legend-bar">
                 <span class="legend-label">Intensità:</span>
                 <div class="legend-scale">
-                    <div class="legend-step" style="background: rgba(0, 150, 255, 0.7);" title="Pioviggine / Debole">Debole</div>
+                    <div class="legend-step" style="background: rgba(0, 90, 185, 0.95); color: #fff;" title="Pioviggine / Debole">Debole</div>
                     <div class="legend-step" style="background: rgba(0, 230, 100, 0.8);" title="Moderata (2-5 mm/h)">Moderata</div>
                     <div class="legend-step" style="background: rgba(255, 200, 0, 0.85);" title="Forte (5-15 mm/h)">Forte</div>
-                    <div class="legend-step" style="background: rgba(255, 60, 0, 0.9);" title="Intensa (15-30 mm/h)">Intensa</div>
-                    <div class="legend-step" style="background: rgba(200, 0, 255, 0.95); color: #fff;" title="Nubifragio / Grandine (>30 mm/h)">Nubifragio</div>
+                    <div class="legend-step" style="background: rgba(200, 40, 0, 0.95); color: #fff;" title="Intensa (15-30 mm/h)">Intensa</div>
+                    <div class="legend-step" style="background: rgba(150, 0, 200, 0.95); color: #fff;" title="Nubifragio / Grandine (>30 mm/h)">Nubifragio</div>
                 </div>
             </div>
         </div>
@@ -218,11 +218,13 @@
 
         // Base map scura Esri (gratuita, senza API key) con etichette; fallback automatico su OpenStreetMap
         const radarAttribution = 'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | Radar by <a href="https://www.rainviewer.com">RainViewer</a>';
-        const baseLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        // Mappa chiara o scura in base al tema dell'app
+        const mapTone = document.documentElement.dataset.theme === 'light' ? 'Light' : 'Dark';
+        const baseLayer = L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_${mapTone}_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
             attribution: radarAttribution,
             maxZoom: 16
         }).addTo(map);
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+        L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_${mapTone}_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, {
             maxZoom: 16,
             pane: 'overlayPane',
             zIndex: 650
@@ -234,7 +236,7 @@
                 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
                     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | Radar by <a href="https://www.rainviewer.com">RainViewer</a>',
                     maxZoom: 19,
-                    className: 'osm-dark-tiles'
+                    className: mapTone === 'Dark' ? 'osm-dark-tiles' : ''
                 }).addTo(map).bringToBack();
             }
         });
@@ -474,9 +476,9 @@
             if (lightningView) lightningView.style.display = 'none';
             if (btnRain) {
                 btnRain.classList.add('active');
-                btnRain.style.background = 'var(--accent)';
+                btnRain.style.background = 'var(--primary-hover)';
                 btnRain.style.color = '#fff';
-                btnRain.style.borderColor = 'var(--accent)';
+                btnRain.style.borderColor = 'var(--primary-hover)';
                 btnRain.style.opacity = '1';
             }
             if (btnLightning) {
