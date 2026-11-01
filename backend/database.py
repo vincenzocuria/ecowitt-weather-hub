@@ -1,39 +1,63 @@
 import os
 import json
 import math
+import time
 import sqlite3
-from typing import Dict, Any, Optional, List, Tuple
+from functools import lru_cache
+from typing import Dict, Any, Optional, List, Tuple, Union
 from datetime import datetime, timezone, timedelta
 from backend.config import settings
+import logging
+
+logger = logging.getLogger("weather_hub.database")
 
 DB_DIR = settings.DATA_DIR
 os.makedirs(DB_DIR, exist_ok=True)
 DB_PATH = os.path.join(DB_DIR, "weather_history.db")
 
+
+
+@lru_cache(maxsize=65536)
+def _local_date_for_hour(utc_hour_prefix: str) -> Optional[str]:
+    try:
+        dt = datetime.strptime(utc_hour_prefix.replace(" ", "T"), "%Y-%m-%dT%H").replace(tzinfo=timezone.utc)
+        return dt.astimezone(settings.get_tz()).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+def _sql_local_date(ts: Optional[str]) -> Optional[str]:
+    """Funzione SQL local_date(timestamp): data nel fuso della stazione (DST incluso) di un timestamp UTC."""
+    if not ts:
+        return None
+    ts = str(ts)
+    if len(ts) < 13:
+        return ts[:10]
+    return _local_date_for_hour(ts[:13])
+
 def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=20.0)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn = sqlite3.connect(DB_PATH, timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA synchronous = NORMAL;")
+    # I contatori giornalieri della stazione (es. daily_rain_mm) si azzerano a mezzanotte LOCALE:
+    # i raggruppamenti per giorno devono usare local_date(timestamp), non local_date(timestamp) (UTC).
+    conn.create_function("local_date", 1, _sql_local_date, deterministic=True)
     return conn
 
-def to_local_datetime_str(iso_str: Optional[str], fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
-    """Converte una stringa timestamp ISO UTC nel fuso orario locale configurato (default Europe/Rome)."""
-    if not iso_str:
-        return ""
-    try:
-        dt = datetime.fromisoformat(str(iso_str).replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        local_dt = dt.astimezone(settings.get_tz())
-        return local_dt.strftime(fmt)
-    except Exception:
-        return str(iso_str).replace("T", " ")[:19]
+from backend.helpers import (
+    to_local_datetime_str,
+    ITALIAN_MONTHS,
+    get_month_name,
+    format_duration_italian,
+    format_seconds_italian,
+    format_lightning_time_italian,
+)
+
 
 # Definizioni dei record tracciati nell'Albo dei Record
 RECORD_DEFINITIONS = [
     {"key": "temp_max", "category": "temperature", "title": "Temperatura Massima", "unit": "°C", "type": "max"},
     {"key": "temp_min", "category": "temperature", "title": "Temperatura Minima", "unit": "°C", "type": "min"},
+    {"key": "temp_min_highest", "category": "temperature", "title": "Minima Più Alta (Notte Tropicale)", "unit": "°C", "type": "max"},
     {"key": "dew_point_max", "category": "temperature", "title": "Punto di Rugiada Max", "unit": "°C", "type": "max"},
     {"key": "wind_gust_max", "category": "wind", "title": "Raffica di Vento Max", "unit": "km/h", "type": "max"},
     {"key": "wind_speed_max", "category": "wind", "title": "Velocità Media Vento Max", "unit": "km/h", "type": "max"},
@@ -46,8 +70,28 @@ RECORD_DEFINITIONS = [
     {"key": "lightning_closest", "category": "lightning", "title": "Fulmine Più Vicino", "unit": "km", "type": "min"}
 ]
 
+# Definizioni dei Record Mensili Storici (Mese più caldo, freddo, piovoso, record solare Aton, ecc.)
+MONTHLY_RECORD_DEFINITIONS = [
+    {"key": "hottest_month", "category": "temperature", "title": "Mese Più Caldo (Media T)", "field": "avg_temp", "unit": "°C", "type": "max"},
+    {"key": "coldest_month", "category": "temperature", "title": "Mese Più Freddo (Media T)", "field": "avg_temp", "unit": "°C", "type": "min"},
+    {"key": "highest_temp_month", "category": "temperature", "title": "Mese con Picco T Max Più Alto", "field": "max_temp", "unit": "°C", "type": "max"},
+    {"key": "lowest_temp_month", "category": "temperature", "title": "Mese con Picco T Min Più Basso", "field": "min_temp", "unit": "°C", "type": "min"},
+    {"key": "rainiest_month", "category": "rain", "title": "Mese Più Piovoso (Accumulo Max)", "field": "total_rain_mm", "unit": "mm", "type": "max"},
+    {"key": "driest_month", "category": "rain", "title": "Mese Meno Piovoso / Più Secco", "field": "total_rain_mm", "unit": "mm", "type": "min"},
+    {"key": "highest_solar_production_month", "category": "solar_energy", "title": "Record Mensile Produzione Solare Aton", "field": "solar_total_kwh", "unit": "kWh", "type": "max"},
+    {"key": "highest_autarky_month", "category": "solar_energy", "title": "Record Mensile Autosufficienza Energetica", "field": "autarky_pct", "unit": "%", "type": "max"},
+    {"key": "most_tropical_nights_month", "category": "climate", "title": "Mese con Più Notti Tropicali", "field": "tropical_nights_count", "unit": "notti", "type": "max"},
+    {"key": "highest_wind_gust_month", "category": "wind", "title": "Mese con Raffica di Vento Max", "field": "max_wind_gust_kmh", "unit": "km/h", "type": "max"},
+    {"key": "highest_rain_rate_month", "category": "rain", "title": "Mese con Intensità Pioggia Max", "field": "max_rain_rate_mm_hr", "unit": "mm/h", "type": "max"}
+]
+
 def init_db():
     conn = get_connection()
+    conn.isolation_level = None
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA busy_timeout = 30000;")
+    conn.isolation_level = ""
     cursor = conn.cursor()
     
     # 1. Letture Meteorologiche Principali
@@ -123,9 +167,15 @@ def init_db():
             alert_type TEXT NOT NULL,
             title TEXT NOT NULL,
             message TEXT NOT NULL,
-            data_json TEXT
+            data_json TEXT,
+            is_read INTEGER DEFAULT 0
         )
     """)
+    try:
+        cursor.execute("ALTER TABLE alert_logs ADD COLUMN is_read INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_alert_is_read ON alert_logs (is_read)")
 
     # 5. Sottoscrizioni Web Push PWA (iOS / Android / Desktop)
     cursor.execute("""
@@ -179,64 +229,266 @@ def init_db():
             updated_at TEXT NOT NULL
         )
     """)
+
+    # 8. Configurazione e Attivazione Dispositivi Tuya / Smart Life
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tuya_devices_config (
+            device_id TEXT PRIMARY KEY,
+            enabled INTEGER DEFAULT 1,
+            custom_name TEXT,
+            category TEXT,
+            icon TEXT,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
+    # 9. Configurazione Automazioni Intelligenti Climatizzatori (LG ThinQ)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS climate_automations_config (
+            key TEXT PRIMARY KEY,
+            value_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
+    # 10. Configurazione Automazioni Intelligenti Irrigazione (WH51 + Tuya)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS irrigation_automations_config (
+            key TEXT PRIMARY KEY,
+            value_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
+    # 11. Storico e Auto-Apprendimento Efficienza / Percolazione Vaso Irrigazione
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS irrigation_learning_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cycle_start_time TEXT NOT NULL,
+            cycle_end_time TEXT,
+            duration_sec REAL NOT NULL,
+            duration_min REAL NOT NULL,
+            start_moisture REAL NOT NULL,
+            peak_moisture REAL,
+            peak_time TEXT,
+            lag_minutes REAL,
+            delta_moisture REAL,
+            k_efficiency REAL,
+            temp_c REAL,
+            et_mm REAL,
+            status TEXT DEFAULT 'monitoring',
+            created_at TEXT NOT NULL
+        )
+    """)
     
+    # 12. Programmazione e Timer Dispositivi Smart (Accensione / Spegnimento Temporizzato)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS scheduled_device_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id TEXT UNIQUE NOT NULL,
+            created_at TEXT NOT NULL,
+            execute_at TEXT NOT NULL,
+            ecosystem TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            device_name TEXT NOT NULL,
+            action TEXT NOT NULL,
+            action_payload_json TEXT,
+            status TEXT DEFAULT 'pending',
+            executed_at TEXT,
+            result_json TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sched_status ON scheduled_device_tasks (status, execute_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sched_device ON scheduled_device_tasks (device_id, status)")
+
+    # 13. Dispositivi Tuya con Controllo Locale LAN (Zero Cloud, no API Key trial)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tuya_local_devices (
+            device_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            local_key TEXT NOT NULL,
+            ip_address TEXT,
+            version TEXT DEFAULT '3.3',
+            category TEXT DEFAULT 'cz',
+            is_on INTEGER,
+            power_w REAL DEFAULT 0.0,
+            voltage_v REAL DEFAULT 0.0,
+            current_a REAL DEFAULT 0.0,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
+    # 14. Alias e Nomi Personalizzati per qualsiasi Dispositivo Smart (Tuya, HA, LG ThinQ, SmartThings, Aton)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS device_aliases (
+            device_id TEXT PRIMARY KEY,
+            alias TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
+    # 15. Riepiloghi Mensili Consolidati
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS monthly_summaries (
+            year_month TEXT PRIMARY KEY,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            month_name TEXT NOT NULL,
+            total_records INTEGER DEFAULT 0,
+            avg_temp REAL,
+            max_temp REAL,
+            max_temp_time TEXT,
+            min_temp REAL,
+            min_temp_time TEXT,
+            temp_range REAL,
+            tropical_nights_count INTEGER DEFAULT 0,
+            super_tropical_nights_count INTEGER DEFAULT 0,
+            total_rain_mm REAL DEFAULT 0.0,
+            max_daily_rain_mm REAL DEFAULT 0.0,
+            max_daily_rain_date TEXT,
+            max_rain_rate_mm_hr REAL DEFAULT 0.0,
+            rainy_days_count INTEGER DEFAULT 0,
+            max_wind_gust_kmh REAL,
+            max_wind_gust_time TEXT,
+            max_wind_gust_dir TEXT,
+            avg_wind_speed_kmh REAL,
+            solar_total_kwh REAL DEFAULT 0.0,
+            solar_max_w REAL DEFAULT 0.0,
+            house_consumption_kwh REAL DEFAULT 0.0,
+            autarky_pct REAL DEFAULT 0.0,
+            self_consumption_pct REAL DEFAULT 0.0,
+            bought_kwh REAL DEFAULT 0.0,
+            sold_kwh REAL DEFAULT 0.0,
+            max_solar_rad REAL,
+            max_uv_index INTEGER,
+            lightning_count_total INTEGER DEFAULT 0,
+            details_json TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_monthly_sum_year ON monthly_summaries (year, month)")
+
+    # 16. Albo dei Record Mensili Storici (Mese più caldo, freddo, piovoso, record produzione solare Aton, ecc.)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS monthly_extremes (
+            record_key TEXT PRIMARY KEY,
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            value REAL NOT NULL,
+            unit TEXT NOT NULL,
+            year_month TEXT NOT NULL,
+            month_name TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            details_json TEXT
+        )
+    """)
+
+    # 17. Cronologia Record Mensili Infranti nel Tempo
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS monthly_records_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            record_key TEXT NOT NULL,
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            old_value REAL,
+            new_value REAL NOT NULL,
+            unit TEXT NOT NULL,
+            old_year_month TEXT,
+            new_year_month TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            details_json TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_mrec_key ON monthly_records_history (record_key)")
+
+    # 18. Storico Giornaliero Salute, Passi & Parametri Biometrici (Samsung Health / Health Connect)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS health_daily_history (
+            date TEXT PRIMARY KEY,
+            steps INTEGER DEFAULT 0,
+            distance_m REAL DEFAULT 0.0,
+            total_calories REAL DEFAULT 0.0,
+            active_calories REAL DEFAULT 0.0,
+            basal_calories REAL DEFAULT 0.0,
+            floors INTEGER DEFAULT 0,
+            heart_rate_avg REAL,
+            heart_rate_max REAL,
+            heart_rate_min REAL,
+            spo2_avg REAL,
+            vo2_max REAL,
+            sleep_minutes REAL DEFAULT 0.0,
+            weight_kg REAL,
+            body_fat_pct REAL,
+            water_mass_kg REAL,
+            lean_mass_kg REAL,
+            bone_mass_kg REAL,
+            hydration_ml REAL DEFAULT 0.0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_health_date ON health_daily_history (date)")
+
+    # Pulizia automatica baseline fittizia (rimozione campioni generati randomicamente)
+    # 19. Eventi e Scariche Fulmini (WH57)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lightning_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            strike_time TEXT NOT NULL,
+            strike_epoch INTEGER,
+            distance_km REAL NOT NULL,
+            count INTEGER
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_lightning_time ON lightning_events (timestamp)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_lightning_epoch ON lightning_events (strike_epoch)")
+
+    # Backfill storico scariche se la tabella è vuota e sono presenti record precedenti
+    try:
+        cursor.execute("SELECT COUNT(*) AS c FROM lightning_events")
+        row_c = cursor.fetchone()
+        if row_c and row_c["c"] == 0:
+            cursor.execute("""
+                SELECT MIN(timestamp) AS ts, lightning_last_time, lightning_distance_km, MAX(lightning_count) AS cnt
+                FROM weather_records
+                WHERE lightning_distance_km IS NOT NULL 
+                  AND lightning_last_time IS NOT NULL 
+                  AND TRIM(lightning_last_time) != ''
+                GROUP BY lightning_last_time
+                ORDER BY ts ASC
+            """)
+            rows = cursor.fetchall()
+            for r in rows:
+                l_last = r["lightning_last_time"]
+                l_dist = r["lightning_distance_km"]
+                l_cnt = r["cnt"]
+                epoch_val = None
+                try:
+                    if str(l_last).isdigit():
+                        epoch_val = int(l_last)
+                    else:
+                        dt = datetime.fromisoformat(str(l_last).replace("Z", "+00:00"))
+                        epoch_val = int(dt.timestamp())
+                except Exception:
+                    epoch_val = None
+                cursor.execute("""
+                    INSERT INTO lightning_events (timestamp, strike_time, strike_epoch, distance_km, count)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (r["ts"], str(l_last), epoch_val, l_dist, l_cnt))
+    except Exception:
+        pass
+
     conn.commit()
     conn.close()
 
+
 init_db()
 
-# ----------------- CALCOLI METEO SCIENTIFICI -----------------
+# ----------------- CALCOLI METEO SCIENTIFICI (Centralizzati in analytics.py) -----------------
+from backend.analytics import calc_dew_point, calc_apparent_temp, deg_to_compass
 
-def calc_dew_point(temp_c: Optional[float], humidity: Optional[float]) -> Optional[float]:
-    """Punto di rugiada (Formula di Magnus-Tetens)."""
-    if temp_c is None or humidity is None or humidity <= 0:
-        return None
-    try:
-        a = 17.27
-        b = 237.7
-        alpha = ((a * float(temp_c)) / (b + float(temp_c))) + math.log(float(humidity) / 100.0)
-        dp = (b * alpha) / (a - alpha)
-        return round(dp, 1)
-    except Exception:
-        return None
-
-def calc_apparent_temp(temp_c: Optional[float], humidity: Optional[float], wind_kmh: Optional[float]) -> Optional[float]:
-    """
-    Temperatura Percepita (Sensazione Termica):
-    - Wind Chill (se T <= 10°C e Vento >= 5 km/h)
-    - Heat Index / Umidità (se T >= 26°C)
-    - Altrimenti temperatura reale
-    """
-    if temp_c is None:
-        return None
-    t = float(temp_c)
-    w = float(wind_kmh) if wind_kmh is not None else 0.0
-    h = float(humidity) if humidity is not None else 50.0
-
-    # Wind Chill
-    if t <= 10.0 and w >= 4.8:
-        wc = 13.12 + (0.6215 * t) - (11.37 * (w ** 0.16)) + (0.3965 * t * (w ** 0.16))
-        return round(wc, 1)
-    
-    # Heat Index (Steadman / Rothfusz)
-    if t >= 26.0 and h >= 40.0:
-        tf = (t * 9.0 / 5.0) + 32.0
-        hi = -42.379 + 2.04901523*tf + 10.14333127*h - 0.22475541*tf*h - 0.00683783*tf*tf - 0.05481717*h*h + 0.00122874*tf*tf*h + 0.00085282*tf*h*h - 0.00000199*tf*tf*h*h
-        hi_c = (hi - 32.0) * 5.0 / 9.0
-        return round(hi_c, 1)
-
-    return round(t, 1)
-
-def deg_to_compass(deg: Optional[float]) -> str:
-    if deg is None:
-        return "--"
-    try:
-        d = float(deg)
-        val = int((d / 22.5) + 0.5)
-        dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
-        return f"{int(d)}° ({dirs[val % 16]})"
-    except Exception:
-        return f"{deg}°"
 
 # ----------------- ANALISI TREND & ANOMALIE -----------------
 
@@ -285,14 +537,16 @@ def get_temp_1h_change(current_temp: Optional[float]) -> Tuple[Optional[float], 
     if current_temp is None:
         return None, False, False
 
+    now_utc = datetime.now(timezone.utc)
+    target_time = (now_utc - timedelta(hours=1)).isoformat()
+    min_time = (now_utc - timedelta(minutes=90)).isoformat()
     conn = get_connection()
     cursor = conn.cursor()
-    target_time = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     cursor.execute("""
         SELECT temp_c FROM weather_records
-        WHERE timestamp <= ? AND temp_c IS NOT NULL
+        WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
         ORDER BY timestamp DESC LIMIT 1
-    """, (target_time,))
+    """, (min_time, target_time))
     row = cursor.fetchone()
     conn.close()
 
@@ -313,7 +567,7 @@ def get_station_status() -> Dict[str, Any]:
     """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT timestamp FROM weather_records ORDER BY id DESC LIMIT 1")
+    cursor.execute("SELECT timestamp FROM weather_records ORDER BY timestamp DESC, id DESC LIMIT 1")
     row = cursor.fetchone()
     conn.close()
 
@@ -345,22 +599,24 @@ def get_station_status() -> Dict[str, Any]:
                 "last_seen_iso": row["timestamp"]
             }
         elif seconds_ago <= timeout_sec:
-            mins = seconds_ago // 60
+            mins = max(1, seconds_ago // 60)
+            time_str = format_duration_italian(mins)
             return {
                 "status": "delayed",
                 "is_online": True,
                 "seconds_ago": seconds_ago,
-                "text": f"🟡 In ritardo (ultimo dato {mins}m fa)",
+                "text": f"🟡 In ritardo (ultimo dato {time_str} fa)",
                 "badge_class": "badge-warning",
                 "last_seen_iso": row["timestamp"]
             }
         else:
-            mins = seconds_ago // 60
+            mins = max(1, seconds_ago // 60)
+            time_str = format_duration_italian(mins)
             return {
                 "status": "offline",
                 "is_online": False,
                 "seconds_ago": seconds_ago,
-                "text": f"🔴 OFFLINE da {mins} minuti!",
+                "text": f"🔴 Offline da {time_str}",
                 "badge_class": "badge-offline",
                 "last_seen_iso": row["timestamp"]
             }
@@ -369,57 +625,97 @@ def get_station_status() -> Dict[str, Any]:
 
 def save_reading(data: Dict[str, Any]) -> int:
     conn = get_connection()
-    cursor = conn.cursor()
-    lightning = data.get("lightning", {})
-    
-    temp_c = data.get("temp_c")
-    hum = data.get("humidity")
-    dew_c = data.get("dew_point_c") or calc_dew_point(temp_c, hum)
-    
-    cursor.execute("""
-        INSERT INTO weather_records (
-            timestamp, temp_c, humidity, dew_point_c, temp_in_c, humidity_in,
-            pressure_rel_hpa, pressure_abs_hpa, wind_speed_kmh, wind_gust_kmh,
-            wind_dir_deg, max_daily_gust_kmh, rain_rate_mm_hr, daily_rain_mm,
-            event_rain_mm, yearly_rain_mm, solar_radiation, uv_index, vpd,
-            lightning_count, lightning_distance_km, lightning_last_time,
-            soil_moisture_json, raw_data_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        data.get("timestamp"),
-        temp_c,
-        hum,
-        dew_c,
-        data.get("temp_in_c"),
-        data.get("humidity_in"),
-        data.get("pressure_rel_hpa"),
-        data.get("pressure_abs_hpa"),
-        data.get("wind_speed_kmh"),
-        data.get("wind_gust_kmh"),
-        data.get("wind_dir_deg"),
-        data.get("max_daily_gust_kmh"),
-        data.get("rain_rate_mm_hr"),
-        data.get("daily_rain_mm"),
-        data.get("event_rain_mm"),
-        data.get("yearly_rain_mm"),
-        data.get("solar_radiation"),
-        data.get("uv_index"),
-        data.get("vpd"),
-        lightning.get("count_total"),
-        lightning.get("distance_km"),
-        lightning.get("last_strike_time"),
-        json.dumps(data.get("soil_moisture", {})),
-        json.dumps({k: v for k, v in data.get("raw_payload", {}).items() if k != "PASSKEY"})
-    ))
-    record_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return record_id
+    try:
+        cursor = conn.cursor()
+        lightning = data.get("lightning", {}) if isinstance(data.get("lightning"), dict) else {}
+        l_count = lightning.get("count_total") if "count_total" in lightning else data.get("lightning_count")
+        l_dist = lightning.get("distance_km") if "distance_km" in lightning else data.get("lightning_distance_km")
+        l_last = lightning.get("last_strike_time") if "last_strike_time" in lightning else data.get("lightning_last_time")
+        
+        ts = data.get("timestamp") or datetime.now(timezone.utc).isoformat()
+        temp_c = data.get("temp_c")
+        hum = data.get("humidity")
+        dew_c = data.get("dew_point_c") or calc_dew_point(temp_c, hum)
+        
+        cursor.execute("""
+            INSERT INTO weather_records (
+                timestamp, temp_c, humidity, dew_point_c, temp_in_c, humidity_in,
+                pressure_rel_hpa, pressure_abs_hpa, wind_speed_kmh, wind_gust_kmh,
+                wind_dir_deg, max_daily_gust_kmh, rain_rate_mm_hr, daily_rain_mm,
+                event_rain_mm, yearly_rain_mm, solar_radiation, uv_index, vpd,
+                lightning_count, lightning_distance_km, lightning_last_time,
+                soil_moisture_json, raw_data_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            ts,
+            temp_c,
+            hum,
+            dew_c,
+            data.get("temp_in_c"),
+            data.get("humidity_in"),
+            data.get("pressure_rel_hpa"),
+            data.get("pressure_abs_hpa"),
+            data.get("wind_speed_kmh"),
+            data.get("wind_gust_kmh"),
+            data.get("wind_dir_deg"),
+            data.get("max_daily_gust_kmh"),
+            data.get("rain_rate_mm_hr"),
+            data.get("daily_rain_mm"),
+            data.get("event_rain_mm"),
+            data.get("yearly_rain_mm"),
+            data.get("solar_radiation"),
+            data.get("uv_index"),
+            data.get("vpd"),
+            l_count,
+            l_dist,
+            l_last,
+            json.dumps(data.get("soil_moisture", {})),
+            json.dumps({k: v for k, v in data.get("raw_payload", {}).items() if k != "PASSKEY"}) if isinstance(data.get("raw_payload"), dict) else json.dumps({})
+        ))
+        record_id = cursor.lastrowid
+
+        # Registrazione evento scarica fulmine WH57
+        if l_dist is not None and l_last:
+            try:
+                l_epoch = lightning.get("last_strike_epoch")
+                if not l_epoch:
+                    try:
+                        if str(l_last).isdigit():
+                            l_epoch = int(l_last)
+                        else:
+                            dt = datetime.fromisoformat(str(l_last).replace("Z", "+00:00"))
+                            l_epoch = int(dt.timestamp())
+                    except Exception:
+                        l_epoch = None
+
+                already_exists = False
+                if l_epoch:
+                    cursor.execute("SELECT id FROM lightning_events WHERE strike_epoch = ? LIMIT 1", (l_epoch,))
+                    if cursor.fetchone():
+                        already_exists = True
+                if not already_exists and l_last:
+                    cursor.execute("SELECT id FROM lightning_events WHERE strike_time = ? LIMIT 1", (str(l_last),))
+                    if cursor.fetchone():
+                        already_exists = True
+
+                if not already_exists:
+                    cursor.execute("""
+                        INSERT INTO lightning_events (timestamp, strike_time, strike_epoch, distance_km, count)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (ts, str(l_last), l_epoch, float(l_dist), l_count))
+            except Exception:
+                pass
+
+        conn.commit()
+        return record_id
+    finally:
+        conn.close()
+
 
 def get_latest_reading() -> Optional[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM weather_records ORDER BY id DESC LIMIT 1")
+    cursor.execute("SELECT * FROM weather_records ORDER BY timestamp DESC, id DESC LIMIT 1")
     row = cursor.fetchone()
     conn.close()
     if not row:
@@ -437,15 +733,197 @@ def get_latest_reading() -> Optional[Dict[str, Any]]:
     d["pressure_trend"] = get_pressure_trend(d.get("pressure_rel_hpa"))
     return d
 
+
+# ----------------- FULMINI & STATISTICHE WH57 -----------------
+
+def get_recent_lightning_events(limit: int = 10, hours: int = 48) -> List[Dict[str, Any]]:
+    """Restituisce le ultime scariche di fulmine registrate dal sensore WH57."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        since_iso = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        cursor.execute("""
+            SELECT id, timestamp, strike_time, strike_epoch, distance_km, count
+            FROM lightning_events
+            WHERE timestamp >= ? OR strike_time >= ?
+            ORDER BY id DESC
+            LIMIT ?
+        """, (since_iso, since_iso, limit))
+        rows = cursor.fetchall()
+        if not rows:
+            cursor.execute("""
+                SELECT id, timestamp, strike_time, strike_epoch, distance_km, count
+                FROM lightning_events
+                ORDER BY id DESC
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+
+        events = []
+        for r in rows:
+            d = dict(r)
+            d["time_formatted"] = format_lightning_time_italian(d["strike_time"])
+            events.append(d)
+        return events
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
+def get_lightning_stats(hours: int = 24) -> Dict[str, Any]:
+    """Calcola statistiche aggregate sui fulmini: scarica più vicina, conteggi 15m/1h/3h/oggi."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        tz = settings.get_tz()
+        now_dt = datetime.now(timezone.utc)
+        now_local = now_dt.astimezone(tz)
+        today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start_utc = today_start_local.astimezone(timezone.utc).isoformat()
+
+        t15m = (now_dt - timedelta(minutes=15)).isoformat()
+        t1h = (now_dt - timedelta(hours=1)).isoformat()
+        t3h = (now_dt - timedelta(hours=3)).isoformat()
+
+        cursor.execute("""
+            SELECT 
+                COUNT(CASE WHEN timestamp >= ? OR strike_time >= ? THEN 1 END) as count_15m,
+                COUNT(CASE WHEN timestamp >= ? OR strike_time >= ? THEN 1 END) as count_1h,
+                COUNT(CASE WHEN timestamp >= ? OR strike_time >= ? THEN 1 END) as count_3h,
+                COUNT(CASE WHEN timestamp >= ? OR strike_time >= ? THEN 1 END) as count_today,
+                MIN(CASE WHEN timestamp >= ? OR strike_time >= ? THEN distance_km END) as closest_km_today
+            FROM lightning_events
+        """, (t15m, t15m, t1h, t1h, t3h, t3h, today_start_utc, today_start_utc, today_start_utc, today_start_utc))
+        row = cursor.fetchone()
+
+        closest_km = row["closest_km_today"] if row else None
+        closest_time = None
+        if closest_km is not None:
+            cursor.execute("""
+                SELECT strike_time FROM lightning_events 
+                WHERE (timestamp >= ? OR strike_time >= ?) AND distance_km = ?
+                ORDER BY id DESC LIMIT 1
+            """, (today_start_utc, today_start_utc, closest_km))
+            crow = cursor.fetchone()
+            if crow:
+                closest_time = crow["strike_time"]
+
+        return {
+            "count_15m": row["count_15m"] if row else 0,
+            "count_1h": row["count_1h"] if row else 0,
+            "count_3h": row["count_3h"] if row else 0,
+            "count_today": row["count_today"] if row else 0,
+            "closest_km_today": closest_km,
+            "closest_time_today": closest_time,
+            "closest_time_formatted": format_lightning_time_italian(closest_time, include_relative=False) if closest_time else None
+        }
+    except Exception:
+        return {
+            "count_15m": 0, "count_1h": 0, "count_3h": 0, "count_today": 0,
+            "closest_km_today": None, "closest_time_today": None, "closest_time_formatted": None
+        }
+    finally:
+        conn.close()
+
+
 # ----------------- GESTIONE RECORD & EXTREMES -----------------
 
-def check_and_update_records(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+
+def check_and_update_records(
+    data_or_key: Union[Dict[str, Any], str],
+    val_arg: Optional[float] = None,
+    ts_arg: Optional[str] = None,
+    details_arg: Optional[Dict[str, Any]] = None
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Controlla e aggiorna l'Albo dei Record e la cronologia storica.
+    Supporta sia payload completo da stazione (dict) che singola chiave (str).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    if isinstance(data_or_key, str):
+        key = data_or_key
+        val = float(val_arg) if val_arg is not None else None
+        ts = ts_arg or datetime.now(timezone.utc).isoformat()
+        details = details_arg or {}
+
+        defn = next((d for d in RECORD_DEFINITIONS if d["key"] == key), {
+            "key": key, "category": "custom", "title": key, "type": "max", "unit": ""
+        })
+
+        cursor.execute("SELECT * FROM weather_extremes WHERE record_key = ?", (key,))
+        row = cursor.fetchone()
+        curr = dict(row) if row else None
+
+        if val is None:
+            conn.close()
+            return {"is_new": False, "old_value": None, "new_value": None}
+
+        if curr is None:
+            cursor.execute("""
+                INSERT OR REPLACE INTO weather_extremes (record_key, category, title, value, unit, timestamp, details_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (key, defn["category"], defn["title"], val, defn["unit"], ts, json.dumps(details)))
+            conn.commit()
+            conn.close()
+            return {"is_new": True, "old_value": None, "new_value": val}
+
+        old_val = float(curr["value"]) if curr.get("value") is not None else None
+        is_broken = False
+        if old_val is None:
+            is_broken = True
+        elif defn["type"] == "max" and val > old_val:
+            is_broken = True
+        elif defn["type"] == "min" and val < old_val:
+            is_broken = True
+
+        if not is_broken:
+            conn.close()
+            return {"is_new": False, "old_value": old_val, "new_value": val}
+
+        min_step = 0.2
+        if key in ("temp_max", "temp_min", "temp_min_highest", "dew_point_max"):
+            min_step = 0.2
+        elif key in ("wind_gust_max", "wind_speed_max"):
+            min_step = 2.0
+        elif key in ("rain_rate_max", "rain_daily_max"):
+            min_step = 1.0
+        elif key in ("pressure_max", "pressure_min"):
+            min_step = 1.5
+        elif key == "solar_max":
+            min_step = 50.0
+        elif key == "uv_max":
+            min_step = 1.0
+
+        is_significant = abs(val - old_val) >= min_step
+
+        if is_significant:
+            cursor.execute("""
+                INSERT OR REPLACE INTO weather_extremes (record_key, category, title, value, unit, timestamp, details_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (key, defn["category"], defn["title"], val, defn["unit"], ts, json.dumps(details)))
+            cursor.execute("""
+                INSERT INTO records_history (record_key, category, title, old_value, new_value, unit, timestamp, details_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (key, defn["category"], defn["title"], old_val, val, defn["unit"], ts, json.dumps(details)))
+            conn.commit()
+            conn.close()
+            return {"is_new": True, "old_value": old_val, "new_value": val}
+        else:
+            conn.close()
+            return {"is_new": False, "old_value": old_val, "new_value": val}
+
+    # Modalità dict: payload completo
+    data = data_or_key
     ts = data.get("timestamp") or datetime.now(timezone.utc).isoformat()
     new_records_broken = []
     
     candidates = {
         "temp_max": (data.get("temp_c"), {}),
         "temp_min": (data.get("temp_c"), {}),
+        "temp_min_highest": (data.get("temp_min_highest"), {"date": data.get("temp_min_highest_date") or ts[:10]}) if data.get("temp_min_highest") is not None else (None, {}),
         "dew_point_max": (data.get("dew_point_c") or calc_dew_point(data.get("temp_c"), data.get("humidity")), {}),
         "wind_gust_max": (data.get("wind_gust_kmh"), {"dir": deg_to_compass(data.get("wind_dir_deg"))}),
         "wind_speed_max": (data.get("wind_speed_kmh"), {"dir": deg_to_compass(data.get("wind_dir_deg"))}),
@@ -461,9 +939,6 @@ def check_and_update_records(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     l_dist = lightning.get("distance_km")
     if l_dist is not None and l_dist > 0:
         candidates["lightning_closest"] = (l_dist, {"count": lightning.get("count_total")})
-
-    conn = get_connection()
-    cursor = conn.cursor()
 
     cursor.execute("SELECT * FROM weather_extremes")
     current_extremes = {row["record_key"]: dict(row) for row in cursor.fetchall()}
@@ -482,61 +957,79 @@ def check_and_update_records(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             continue
 
         curr = current_extremes.get(key)
-        is_broken = False
-        old_val = None
-
         if curr is None:
-            is_broken = True
-        else:
-            old_val = curr["value"]
-            if defn["type"] == "max" and val > old_val:
-                is_broken = True
-            elif defn["type"] == "min" and val < old_val:
-                is_broken = True
-
-        if is_broken:
-            # Soglie minime di variazione per evitare spam nei log e notifiche per ogni 0.1
-            min_step = 0.0
-            if key in ("temp_max", "temp_min", "dew_point_max"):
-                min_step = 0.5
-            elif key in ("wind_gust_max", "wind_speed_max"):
-                min_step = 5.0
-            elif key in ("rain_rate_max", "rain_daily_max"):
-                min_step = 1.0
-            elif key in ("pressure_max", "pressure_min"):
-                min_step = 2.0
-            elif key == "solar_max":
-                min_step = 50.0
-
-            is_significant = (old_val is None) or (abs(val - old_val) >= min_step)
-
-            # Aggiorna sempre il record estremo assoluto attuale
+            # Primo valore mai salvato: imposta il record senza generare allarmi a valanga
             cursor.execute("""
                 INSERT OR REPLACE INTO weather_extremes (record_key, category, title, value, unit, timestamp, details_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (key, defn["category"], defn["title"], val, defn["unit"], ts, json.dumps(details)))
+            continue
+        else:
+            old_val = float(curr["value"]) if curr.get("value") is not None else None
+            is_broken = False
+            if old_val is None:
+                is_broken = True
+            elif defn["type"] == "max" and val > old_val:
+                is_broken = True
+            elif defn["type"] == "min" and val < old_val:
+                is_broken = True
 
-            # Inserisci nella cronologia storica solo se l'incremento è significativo
-            if is_significant:
+            if is_broken and old_val is not None:
+                # Soglie minime di variazione per evitare spam nei log e notifiche per ogni 0.1
+                min_step = 0.2
+                if key in ("temp_max", "temp_min", "temp_min_highest", "dew_point_max"):
+                    min_step = 0.2
+                elif key in ("wind_gust_max", "wind_speed_max"):
+                    min_step = 2.0
+                elif key in ("rain_rate_max", "rain_daily_max"):
+                    min_step = 1.0
+                elif key in ("pressure_max", "pressure_min"):
+                    min_step = 1.5
+                elif key == "solar_max":
+                    min_step = 50.0
+                elif key == "uv_max":
+                    min_step = 1.0
+
+                # Il confronto avviene con il record "di riferimento" (ultimo record notificato), non con
+                # l'ultimo micro-aggiornamento: altrimenti una salita a piccoli passi (+0.1°C ogni lettura)
+                # non supererebbe mai la soglia minima e il record non verrebbe mai registrato/notificato.
+                try:
+                    prev_details = json.loads(curr.get("details_json") or "{}") or {}
+                except (TypeError, ValueError):
+                    prev_details = {}
+                ref_val = prev_details.get("ref_value")
+                ref_val = float(ref_val) if ref_val is not None else old_val
+                is_significant = abs(val - ref_val) >= min_step
+                stored_details = dict(details) if is_significant else {**details, "ref_value": ref_val}
+
+                # Aggiorna sempre il record estremo assoluto attuale
                 cursor.execute("""
-                    INSERT INTO records_history (record_key, category, title, old_value, new_value, unit, timestamp, details_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (key, defn["category"], defn["title"], old_val, val, defn["unit"], ts, json.dumps(details)))
+                    INSERT OR REPLACE INTO weather_extremes (record_key, category, title, value, unit, timestamp, details_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (key, defn["category"], defn["title"], val, defn["unit"], ts, json.dumps(stored_details)))
 
-                # Non inviare notifiche push per pressione e solare
-                should_notify = key not in ("pressure_max", "pressure_min", "solar_max")
+                # Inserisci nella cronologia storica e invia alert solo se l'incremento è significativo
+                if is_significant:
+                    old_val = ref_val
+                    cursor.execute("""
+                        INSERT INTO records_history (record_key, category, title, old_value, new_value, unit, timestamp, details_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (key, defn["category"], defn["title"], old_val, val, defn["unit"], ts, json.dumps(details)))
 
-                new_records_broken.append({
-                    "key": key,
-                    "title": defn["title"],
-                    "category": defn["category"],
-                    "old_value": old_val,
-                    "new_value": val,
-                    "unit": defn["unit"],
-                    "timestamp": ts,
-                    "details": details,
-                    "should_notify": should_notify
-                })
+                    # Non inviare notifiche push per pressione e solare
+                    should_notify = key not in ("pressure_max", "pressure_min", "solar_max")
+
+                    new_records_broken.append({
+                        "key": key,
+                        "title": defn["title"],
+                        "category": defn["category"],
+                        "old_value": old_val,
+                        "new_value": val,
+                        "unit": defn["unit"],
+                        "timestamp": ts,
+                        "details": details,
+                        "should_notify": should_notify
+                    })
 
     conn.commit()
     conn.close()
@@ -598,13 +1091,14 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
     now = datetime.now(timezone.utc)
     if period == "7d":
         since = (now - timedelta(days=7)).isoformat()
-        group_sql = "strftime('%Y-%m-%d %H:00:00', timestamp)"
+        # Etichette orarie esplicitamente in UTC ('Z'): il browser le converte nell'ora locale corretta
+        group_sql = "strftime('%Y-%m-%dT%H:00:00Z', timestamp)"
     elif period == "30d":
         since = (now - timedelta(days=30)).isoformat()
-        group_sql = "strftime('%Y-%m-%d %H:00:00', timestamp)"
+        group_sql = "strftime('%Y-%m-%dT%H:00:00Z', timestamp)"
     elif period == "1y":
         since = (now - timedelta(days=365)).isoformat()
-        group_sql = "strftime('%Y-%m-%d', timestamp)"
+        group_sql = "local_date(timestamp)"
     else:
         since = (now - timedelta(hours=24)).isoformat()
         group_sql = None
@@ -628,7 +1122,8 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
                 ROUND(MAX(wind_gust_kmh), 1) AS wind_gust_max,
                 ROUND(MAX(daily_rain_mm), 1) AS rain_day,
                 ROUND(AVG(solar_radiation), 1) AS solar_avg,
-                MAX(uv_index) AS uv_max
+                MAX(uv_index) AS uv_max,
+                GROUP_CONCAT(soil_moisture_json, '||') as soil_jsons
             FROM weather_records
             WHERE timestamp >= ?
             GROUP BY bucket
@@ -638,6 +1133,32 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
         rows = cursor.fetchall()
         conn.close()
         
+        soil_channels = set()
+        bucket_soil_averages = []
+        for r in rows:
+            raw_concat = r["soil_jsons"] if "soil_jsons" in r.keys() and r["soil_jsons"] else ""
+            ch_sums = {}
+            ch_counts = {}
+            if raw_concat:
+                for piece in raw_concat.split("||"):
+                    if piece and piece != "{}":
+                        try:
+                            item = json.loads(piece)
+                            if isinstance(item, dict):
+                                for k, v in item.items():
+                                    if v is not None:
+                                        soil_channels.add(k)
+                                        ch_sums[k] = ch_sums.get(k, 0.0) + float(v)
+                                        ch_counts[k] = ch_counts.get(k, 0) + 1
+                        except Exception:
+                            pass
+            b_avg = {k: round(ch_sums[k] / ch_counts[k], 1) for k in ch_sums if ch_counts.get(k, 0) > 0}
+            bucket_soil_averages.append(b_avg)
+            
+        soil_moisture_series = {}
+        for ch in sorted(soil_channels):
+            soil_moisture_series[ch] = [b.get(ch) for b in bucket_soil_averages]
+
         return {
             "period": period,
             "labels": [r["bucket"] for r in rows],
@@ -653,13 +1174,14 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
             "wind_gust": [r["wind_gust_max"] for r in rows],
             "daily_rain": [r["rain_day"] for r in rows],
             "solar": [r["solar_avg"] for r in rows],
-            "uv": [r["uv_max"] for r in rows]
+            "uv": [r["uv_max"] for r in rows],
+            "soil_moisture": soil_moisture_series
         }
     else:
         cursor.execute("""
             SELECT timestamp, temp_c, temp_in_c, humidity, humidity_in, dew_point_c, pressure_rel_hpa,
                    wind_speed_kmh, wind_gust_kmh, rain_rate_mm_hr, daily_rain_mm,
-                   solar_radiation, uv_index
+                   solar_radiation, uv_index, soil_moisture_json
             FROM weather_records
             WHERE timestamp >= ?
             ORDER BY timestamp ASC
@@ -667,6 +1189,24 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
         """, (since,))
         rows = cursor.fetchall()
         conn.close()
+
+        soil_channels = set()
+        parsed_rows_soil = []
+        for r in rows:
+            s_val = {}
+            raw_s = r["soil_moisture_json"] if "soil_moisture_json" in r.keys() else None
+            if raw_s:
+                try:
+                    s_val = json.loads(raw_s) if isinstance(raw_s, str) else raw_s
+                    if isinstance(s_val, dict):
+                        soil_channels.update(s_val.keys())
+                except Exception:
+                    pass
+            parsed_rows_soil.append(s_val if isinstance(s_val, dict) else {})
+        
+        soil_moisture_series = {}
+        for ch in sorted(soil_channels):
+            soil_moisture_series[ch] = [p.get(ch) for p in parsed_rows_soil]
 
         return {
             "period": "24h",
@@ -682,7 +1222,8 @@ def get_timeseries(period: str = "24h") -> Dict[str, Any]:
             "rain_rate": [r["rain_rate_mm_hr"] for r in rows],
             "daily_rain": [r["daily_rain_mm"] for r in rows],
             "solar": [r["solar_radiation"] for r in rows],
-            "uv": [r["uv_index"] for r in rows]
+            "uv": [r["uv_index"] for r in rows],
+            "soil_moisture": soil_moisture_series
         }
 
 # ----------------- RICERCA ARCHIVIO & EXPORT -----------------
@@ -706,13 +1247,18 @@ def search_history(start_date: Optional[str] = None, end_date: Optional[str] = N
     total_count = cursor.fetchone()[0]
 
     cursor.execute(f"""
-        SELECT * FROM weather_records {where_sql}
+        SELECT id, timestamp, temp_c, temp_in_c, humidity, humidity_in, dew_point_c, pressure_rel_hpa,
+               wind_speed_kmh, wind_gust_kmh, wind_dir_deg, rain_rate_mm_hr, daily_rain_mm,
+               solar_radiation, uv_index, soil_moisture_json
+        FROM weather_records
+        {where_sql}
         ORDER BY timestamp DESC
         LIMIT ? OFFSET ?
     """, params + [limit, offset])
+    
     rows = cursor.fetchall()
     conn.close()
-
+    
     records = []
     for r in rows:
         d = dict(r)
@@ -721,26 +1267,272 @@ def search_history(start_date: Optional[str] = None, end_date: Optional[str] = N
                 d["soil_moisture"] = json.loads(d["soil_moisture_json"])
             except Exception:
                 d["soil_moisture"] = {}
+        else:
+            d["soil_moisture"] = {}
         records.append(d)
+        
     return records, total_count
+
+def get_history_kpis(start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    where_clauses = []
+    params = []
+    if start_date:
+        where_clauses.append("timestamp >= ?")
+        params.append(start_date if "T" in start_date else f"{start_date}T00:00:00")
+    if end_date:
+        where_clauses.append("timestamp <= ?")
+        params.append(end_date if "T" in end_date else f"{end_date}T23:59:59")
+
+    where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+    
+    cursor.execute(f"""
+        SELECT 
+            COUNT(*) as total_records,
+            MIN(temp_c) as min_temp,
+            MAX(temp_c) as max_temp,
+            AVG(temp_c) as avg_temp,
+            MIN(humidity) as min_hum,
+            MAX(humidity) as max_hum,
+            AVG(humidity) as avg_hum,
+            MIN(temp_in_c) as min_temp_in,
+            MAX(temp_in_c) as max_temp_in,
+            AVG(temp_in_c) as avg_temp_in,
+            MIN(humidity_in) as min_hum_in,
+            MAX(humidity_in) as max_hum_in,
+            AVG(humidity_in) as avg_hum_in,
+            MAX(wind_speed_kmh) as max_wind,
+            AVG(wind_speed_kmh) as avg_wind,
+            MAX(wind_gust_kmh) as max_gust,
+            MIN(pressure_rel_hpa) as min_press,
+            MAX(pressure_rel_hpa) as max_press,
+            AVG(pressure_rel_hpa) as avg_press,
+            MAX(solar_radiation) as max_solar,
+            MAX(uv_index) as max_uv,
+            MAX(rain_rate_mm_hr) as max_rain_rate,
+            MIN(timestamp) as first_ts,
+            MAX(timestamp) as last_ts
+        FROM weather_records {where_sql}
+    """, params)
+    row = cursor.fetchone()
+    
+    cursor.execute(f"""
+        SELECT COALESCE(SUM(day_rain), 0.0) FROM (
+            SELECT local_date(timestamp) as day, MAX(daily_rain_mm) as day_rain
+            FROM weather_records {where_sql}
+            GROUP BY local_date(timestamp)
+        )
+    """, params)
+    rain_row = cursor.fetchone()
+    total_rain = rain_row[0] if rain_row and rain_row[0] is not None else 0.0
+
+    # Conteggio Notti Tropicali (Tmin >= 20°C) e Notti Roventi (Tmin >= 25°C) nel periodo
+    where_temp_sql = ("WHERE temp_c IS NOT NULL AND " + " AND ".join(where_clauses)) if where_clauses else "WHERE temp_c IS NOT NULL"
+    cursor.execute(f"""
+        SELECT 
+            COUNT(CASE WHEN day_min >= 20.0 THEN 1 END) as tropical_nights_count,
+            COUNT(CASE WHEN day_min >= 25.0 THEN 1 END) as very_hot_nights_count
+        FROM (
+            SELECT local_date(timestamp) as day, MIN(temp_c) as day_min
+            FROM weather_records {where_temp_sql}
+            GROUP BY local_date(timestamp)
+        )
+    """, params)
+    trop_row = cursor.fetchone()
+    tropical_nights_count = trop_row["tropical_nights_count"] if trop_row else 0
+    very_hot_nights_count = trop_row["very_hot_nights_count"] if trop_row else 0
+    
+    conn.close()
+    
+    if not row or row["total_records"] == 0:
+        return {
+            "total_records": 0,
+            "min_temp": None, "max_temp": None, "avg_temp": None,
+            "min_hum": None, "max_hum": None, "avg_hum": None,
+            "min_temp_in": None, "max_temp_in": None, "avg_temp_in": None,
+            "min_hum_in": None, "max_hum_in": None, "avg_hum_in": None,
+            "max_wind": None, "avg_wind": None, "max_gust": None,
+            "min_press": None, "max_press": None, "avg_press": None,
+            "max_solar": None, "max_uv": None,
+            "max_rain_rate": None, "total_rain": 0.0,
+            "tropical_nights": 0, "very_hot_nights": 0,
+            "first_ts": None, "last_ts": None
+        }
+        
+    return {
+        "total_records": row["total_records"],
+        "min_temp": round(row["min_temp"], 1) if row["min_temp"] is not None else None,
+        "max_temp": round(row["max_temp"], 1) if row["max_temp"] is not None else None,
+        "avg_temp": round(row["avg_temp"], 1) if row["avg_temp"] is not None else None,
+        "min_hum": round(row["min_hum"]) if row["min_hum"] is not None else None,
+        "max_hum": round(row["max_hum"]) if row["max_hum"] is not None else None,
+        "avg_hum": round(row["avg_hum"]) if row["avg_hum"] is not None else None,
+        "min_temp_in": round(row["min_temp_in"], 1) if row["min_temp_in"] is not None else None,
+        "max_temp_in": round(row["max_temp_in"], 1) if row["max_temp_in"] is not None else None,
+        "avg_temp_in": round(row["avg_temp_in"], 1) if row["avg_temp_in"] is not None else None,
+        "min_hum_in": round(row["min_hum_in"]) if row["min_hum_in"] is not None else None,
+        "max_hum_in": round(row["max_hum_in"]) if row["max_hum_in"] is not None else None,
+        "avg_hum_in": round(row["avg_hum_in"]) if row["avg_hum_in"] is not None else None,
+        "max_wind": round(row["max_wind"], 1) if row["max_wind"] is not None else None,
+        "avg_wind": round(row["avg_wind"], 1) if row["avg_wind"] is not None else None,
+        "max_gust": round(row["max_gust"], 1) if row["max_gust"] is not None else None,
+        "min_press": round(row["min_press"], 1) if row["min_press"] is not None else None,
+        "max_press": round(row["max_press"], 1) if row["max_press"] is not None else None,
+        "avg_press": round(row["avg_press"], 1) if row["avg_press"] is not None else None,
+        "max_solar": round(row["max_solar"], 0) if row["max_solar"] is not None else None,
+        "max_uv": round(row["max_uv"], 1) if row["max_uv"] is not None else None,
+        "max_rain_rate": round(row["max_rain_rate"], 1) if row["max_rain_rate"] is not None else None,
+        "total_rain": round(total_rain, 1),
+        "tropical_nights": tropical_nights_count,
+        "very_hot_nights": very_hot_nights_count,
+        "first_ts": row["first_ts"],
+        "last_ts": row["last_ts"]
+    }
 
 def log_alert_db(alert_type: str, title: str, message: str, data: Optional[Dict[str, Any]] = None):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO alert_logs (timestamp, alert_type, title, message, data_json)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO alert_logs (timestamp, alert_type, title, message, data_json, is_read)
+        VALUES (?, ?, ?, ?, ?, 0)
     """, (datetime.now(timezone.utc).isoformat(), alert_type, title, message, json.dumps(data or {})))
     conn.commit()
     conn.close()
 
-def get_alert_logs(limit: int = 20) -> List[Dict[str, Any]]:
+def get_alert_logs(limit: int = 50, unread_only: bool = False) -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM alert_logs ORDER BY id DESC LIMIT ?", (limit,))
+    if unread_only:
+        cursor.execute("SELECT * FROM alert_logs WHERE COALESCE(is_read, 0) = 0 ORDER BY id DESC LIMIT ?", (limit,))
+    else:
+        cursor.execute("SELECT * FROM alert_logs ORDER BY id DESC LIMIT ?", (limit,))
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def get_unread_alerts_count() -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM alert_logs WHERE is_read = 0 OR is_read IS NULL")
+    row = cursor.fetchone()
+    conn.close()
+    return int(row[0]) if row else 0
+
+def mark_alert_as_read(alert_id: int) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE alert_logs SET is_read = 1 WHERE id = ?", (alert_id,))
+    conn.commit()
+    affected = cursor.rowcount > 0
+    conn.close()
+    return affected
+
+def mark_all_alerts_as_read() -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE alert_logs SET is_read = 1 WHERE COALESCE(is_read, 0) = 0")
+    conn.commit()
+    affected = cursor.rowcount
+    conn.close()
+    return affected
+
+def delete_alert_log(alert_id: int) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM alert_logs WHERE id = ?", (alert_id,))
+    conn.commit()
+    affected = cursor.rowcount > 0
+    conn.close()
+    return affected
+
+def clear_all_alert_logs() -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM alert_logs")
+    conn.commit()
+    affected = cursor.rowcount
+    conn.close()
+    return affected
+
+def get_alerts_stats() -> Dict[str, Any]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # 1. Conteggio totale
+    cursor.execute("SELECT COUNT(*) FROM alert_logs")
+    row_tot = cursor.fetchone()
+    total_count = int(row_tot[0]) if row_tot else 0
+    
+    # 2. Conteggio non lette
+    cursor.execute("SELECT COUNT(*) FROM alert_logs WHERE COALESCE(is_read, 0) = 0")
+    row_unread = cursor.fetchone()
+    unread_count = int(row_unread[0]) if row_unread else 0
+    
+    # 3. Conteggio odierno
+    today_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    cursor.execute("SELECT COUNT(*) FROM alert_logs WHERE timestamp LIKE ?", (f"{today_prefix}%",))
+    row_today = cursor.fetchone()
+    today_count = int(row_today[0]) if row_today else 0
+    
+    # 4. Tipo di notifica più frequente
+    cursor.execute("""
+        SELECT alert_type, COUNT(*) as c 
+        FROM alert_logs 
+        GROUP BY alert_type 
+        ORDER BY c DESC 
+        LIMIT 1
+    """)
+    top_row = cursor.fetchone()
+    top_type = top_row[0] if top_row else None
+    top_type_count = int(top_row[1]) if top_row else 0
+    
+    # 5. Ultimo allarme registrato
+    cursor.execute("SELECT timestamp, alert_type, title FROM alert_logs ORDER BY id DESC LIMIT 1")
+    latest_row = cursor.fetchone()
+    latest_alert = dict(latest_row) if latest_row else None
+    
+    conn.close()
+    return {
+        "total_count": total_count,
+        "unread_count": unread_count,
+        "today_count": today_count,
+        "top_type": top_type,
+        "top_type_count": top_type_count,
+        "latest_alert": latest_alert
+    }
+
+def get_latest_alerts_by_type() -> Dict[str, Dict[str, Any]]:
+    """
+    Recupera l'ultima occorrenza registrata nel DB per ogni alert_type.
+    Utile per ricostruire i cooldown e prevenire duplicati al riavvio del server.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT alert_type, timestamp, title, message, data_json
+        FROM alert_logs
+        WHERE id IN (
+            SELECT MAX(id) FROM alert_logs GROUP BY alert_type
+        )
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    
+    res = {}
+    for r in rows:
+        try:
+            data = json.loads(r["data_json"]) if r["data_json"] else {}
+        except Exception:
+            data = {}
+        res[r["alert_type"]] = {
+            "timestamp": r["timestamp"],
+            "title": r["title"],
+            "message": r["message"],
+            "data": data
+        }
+    return res
 
 # ----------------- ANALISI GIORNALIERA & CONFRONTI -----------------
 
@@ -896,41 +1688,138 @@ def get_recent_rain_totals() -> Dict[str, float]:
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Ultimi 7 giorni: somma dei massimi giornalieri
+    # Unica scansione dal punto più vecchio richiesto: massimo giornaliero per giorno LOCALE
+    # (daily_rain_mm si azzera alla mezzanotte locale della stazione).
+    scan_start_utc = min(week_start_utc, month_start_utc, year_start_utc)
     cursor.execute("""
-        SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
+        SELECT local_date(timestamp) as day, MAX(daily_rain_mm) as day_rain
         FROM weather_records
         WHERE timestamp >= ? AND daily_rain_mm IS NOT NULL
-        GROUP BY date(timestamp)
-    """, (week_start_utc,))
-    week_rows = cursor.fetchall()
-    week_rain = round(sum([float(r["day_rain"] or 0) for r in week_rows]), 1)
+        GROUP BY local_date(timestamp)
+    """, (scan_start_utc,))
+    day_max = {r["day"]: float(r["day_rain"] or 0) for r in cursor.fetchall()}
 
-    # Mese corrente: somma dei massimi giornalieri
-    cursor.execute("""
-        SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
-        FROM weather_records
-        WHERE timestamp >= ? AND daily_rain_mm IS NOT NULL
-        GROUP BY date(timestamp)
-    """, (month_start_utc,))
-    month_rows = cursor.fetchall()
-    month_rain = round(sum([float(r["day_rain"] or 0) for r in month_rows]), 1)
+    week_start_day = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+    month_start_day = month_start_local.strftime("%Y-%m-%d")
+    year_start_day = year_start_local.strftime("%Y-%m-%d")
+    week_rain = round(sum(v for d, v in day_max.items() if d >= week_start_day), 1)
+    month_rain = round(sum(v for d, v in day_max.items() if d >= month_start_day), 1)
+    year_rain = round(sum(v for d, v in day_max.items() if d >= year_start_day), 1)
 
-    # Anno corrente dal 1° Gennaio (calcolato da DB)
+    # Ultime 48h esatte: per il primo giorno (parziale) conta solo l'incremento dentro la finestra
+    rain_48h_start_utc = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
     cursor.execute("""
-        SELECT date(timestamp) as day, MAX(daily_rain_mm) as day_rain
+        SELECT local_date(timestamp) as day, MAX(daily_rain_mm) as max_r, MIN(daily_rain_mm) as min_r
         FROM weather_records
         WHERE timestamp >= ? AND daily_rain_mm IS NOT NULL
-        GROUP BY date(timestamp)
-    """, (year_start_utc,))
-    year_rows = cursor.fetchall()
-    year_rain = round(sum([float(r["day_rain"] or 0) for r in year_rows]), 1)
+        GROUP BY local_date(timestamp)
+        ORDER BY day
+    """, (rain_48h_start_utc,))
+    rows_48h = cursor.fetchall()
+    rain_48h = 0.0
+    for i, r in enumerate(rows_48h):
+        mx = float(r["max_r"] or 0)
+        rain_48h += (mx - float(r["min_r"] or 0)) if i == 0 else mx
 
     conn.close()
     return {
+        "rain_48h": round(rain_48h, 1),
         "week_rain_mm": week_rain,
         "month_rain_mm": month_rain,
         "year_rain_mm": year_rain
+    }
+
+def get_climate_comparisons() -> Dict[str, Any]:
+    """
+    Calcola statistiche climatiche e scostamenti storici (Climatologia Locale):
+    - Confronto temperatura odierna rispetto alla media degli ultimi 30 giorni.
+    - Numero di giorni caldi (Tmax >= 30°C e >= 35°C) nel mese corrente.
+    - Giorni piovosi nel mese e accumulo rispetto al periodo.
+    """
+    tz = settings.get_tz()
+    now = settings.now_local()
+    
+    today_start_local = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=tz)
+    today_start_utc = today_start_local.astimezone(timezone.utc).isoformat()
+    
+    month_start_local = datetime(now.year, now.month, 1, 0, 0, 0, tzinfo=tz)
+    month_start_utc = month_start_local.astimezone(timezone.utc).isoformat()
+    
+    last_30d_utc = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # 1. Media temperatura di oggi
+    cursor.execute("""
+        SELECT AVG(temp_c) as avg_temp, MAX(temp_c) as max_temp, MIN(temp_c) as min_temp
+        FROM weather_records
+        WHERE timestamp >= ? AND temp_c IS NOT NULL
+    """, (today_start_utc,))
+    today_row = cursor.fetchone()
+    today_avg = round(float(today_row["avg_temp"]), 1) if today_row and today_row["avg_temp"] is not None else None
+    
+    # 2. Media temperatura ultimi 30 giorni
+    cursor.execute("""
+        SELECT AVG(temp_c) as avg_temp
+        FROM weather_records
+        WHERE timestamp >= ? AND temp_c IS NOT NULL
+    """, (last_30d_utc,))
+    last_30d_row = cursor.fetchone()
+    last_30d_avg = round(float(last_30d_row["avg_temp"]), 1) if last_30d_row and last_30d_row["avg_temp"] is not None else None
+    
+    diff_30d = None
+    diff_30d_str = "Dati storici in accumulo"
+    if today_avg is not None and last_30d_avg is not None:
+        diff_30d = round(today_avg - last_30d_avg, 1)
+        sign = "+" if diff_30d > 0 else ""
+        if abs(diff_30d) < 0.4:
+            diff_30d_str = f"In linea con la media degli ultimi 30 giorni ({today_avg}°C vs {last_30d_avg}°C)"
+        elif diff_30d > 0:
+            diff_30d_str = f"Oggi {sign}{diff_30d}°C più caldo della media degli ultimi 30 giorni ({today_avg}°C vs {last_30d_avg}°C)"
+        else:
+            diff_30d_str = f"Oggi {diff_30d}°C più fresco della media degli ultimi 30 giorni ({today_avg}°C vs {last_30d_avg}°C)"
+
+    # 3. Statistiche termiche del mese corrente (giorni > 30°C, > 35°C, giorni di pioggia)
+    cursor.execute("""
+        SELECT local_date(timestamp) as day, MAX(temp_c) as max_t, MIN(temp_c) as min_t, MAX(daily_rain_mm) as max_r
+        FROM weather_records
+        WHERE timestamp >= ? AND temp_c IS NOT NULL
+        GROUP BY local_date(timestamp)
+    """, (month_start_utc,))
+    month_days = cursor.fetchall()
+    
+    days_above_30 = 0
+    days_above_35 = 0
+    days_rain = 0
+    month_temp_sums = []
+    
+    for row in month_days:
+        mt = float(row["max_t"]) if row["max_t"] is not None else None
+        mr = float(row["max_r"]) if row["max_r"] is not None else 0.0
+        if mt is not None:
+            month_temp_sums.append(mt)
+            if mt >= 35.0:
+                days_above_35 += 1
+            if mt >= 30.0:
+                days_above_30 += 1
+        if mr >= 1.0:
+            days_rain += 1
+
+    month_name = ITALIAN_MONTHS.get(now.month, f"Mese {now.month}")
+    
+    conn.close()
+    
+    return {
+        "today_avg_temp": today_avg,
+        "last_30d_avg_temp": last_30d_avg,
+        "diff_30d": diff_30d,
+        "diff_30d_str": diff_30d_str,
+        "month_name": month_name,
+        "month_days_count": len(month_days),
+        "days_above_30": days_above_30,
+        "days_above_35": days_above_35,
+        "days_rain": days_rain
     }
 
 # ----------------- SOTTOSCRIZIONI WEB PUSH PWA -----------------
@@ -1008,7 +1897,7 @@ def save_energy_reading(data: Dict[str, Any]) -> int:
 def get_latest_energy() -> Optional[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM energy_records ORDER BY id DESC LIMIT 1")
+    cursor.execute("SELECT * FROM energy_records ORDER BY timestamp DESC, id DESC LIMIT 1")
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
@@ -1021,7 +1910,7 @@ def get_energy_timeseries(hours: int = 24) -> List[Dict[str, Any]]:
         SELECT timestamp, p_solare, p_utenze, p_batteria, p_rete, soc
         FROM energy_records
         WHERE timestamp >= ?
-        ORDER BY id ASC
+        ORDER BY timestamp ASC, id ASC
     """, (since_dt,))
     rows = cursor.fetchall()
     conn.close()
@@ -1047,12 +1936,12 @@ def get_today_energy_summary() -> Dict[str, Any]:
                soc, e_pannelli_wh, e_comprata_wh, e_venduta_wh, e_batteria_wh
         FROM energy_records 
         WHERE timestamp >= ? 
-        ORDER BY id ASC
+        ORDER BY timestamp ASC, id ASC
     """, (today_start_utc,))
     rows = cursor.fetchall()
     
     if not rows:
-        cursor.execute("SELECT * FROM energy_records ORDER BY id DESC LIMIT 1")
+        cursor.execute("SELECT * FROM energy_records ORDER BY timestamp DESC, id DESC LIMIT 1")
         last_row = cursor.fetchone()
         rows = [last_row] if last_row else []
     
@@ -1163,6 +2052,92 @@ def save_sensor_alias(sensor_id: str, alias: str) -> None:
     conn.commit()
     conn.close()
 
+# ----------------- GESTIONE ALIAS DISPOSITIVI SMART -----------------
+
+def get_device_aliases() -> Dict[str, str]:
+    """Restituisce la mappa di tutti gli alias personalizzati assegnati a qualsiasi dispositivo smart."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT device_id, alias FROM device_aliases")
+    rows = cursor.fetchall()
+    conn.close()
+    return {r["device_id"]: r["alias"] for r in rows}
+
+def save_device_alias(device_id: str, alias: str) -> bool:
+    """Salva o rimuove un alias personalizzato per qualsiasi dispositivo smart (Tuya, HA, LG, ST, Aton)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    device_id_clean = str(device_id).strip()
+    alias_clean = str(alias).strip() if alias else ""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    
+    if not alias_clean:
+        cursor.execute("DELETE FROM device_aliases WHERE device_id = ?", (device_id_clean,))
+    else:
+        cursor.execute("""
+            INSERT INTO device_aliases (device_id, alias, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(device_id) DO UPDATE SET alias=excluded.alias, updated_at=excluded.updated_at
+        """, (device_id_clean, alias_clean, now_iso))
+    conn.commit()
+    conn.close()
+    return True
+
+def delete_device_alias(device_id: str) -> bool:
+    """Rimuove l'alias personalizzato ripristinando il nome predefinito del dispositivo."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM device_aliases WHERE device_id = ?", (str(device_id).strip(),))
+    rows = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return rows > 0
+
+# ----------------- GESTIONE DISPOSITIVI TUYA / SMART LIFE -----------------
+
+def get_tuya_device_configs() -> Dict[str, Dict[str, Any]]:
+    """Restituisce le preferenze di attivazione e nomi dei dispositivi Tuya."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT device_id, enabled, custom_name, category, icon, updated_at FROM tuya_devices_config")
+    rows = cursor.fetchall()
+    conn.close()
+    return {
+        r["device_id"]: {
+            "device_id": r["device_id"],
+            "enabled": bool(r["enabled"]),
+            "custom_name": r["custom_name"],
+            "category": r["category"],
+            "icon": r["icon"],
+            "updated_at": r["updated_at"]
+        }
+        for r in rows
+    }
+
+def save_tuya_device_config(
+    device_id: str,
+    enabled: bool,
+    custom_name: Optional[str] = None,
+    category: Optional[str] = None,
+    icon: Optional[str] = None
+) -> None:
+    """Salva o aggiorna lo stato di abilitazione e il nome personalizzato di un dispositivo Tuya."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT INTO tuya_devices_config (device_id, enabled, custom_name, category, icon, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(device_id) DO UPDATE SET
+            enabled=excluded.enabled,
+            custom_name=COALESCE(excluded.custom_name, tuya_devices_config.custom_name),
+            category=COALESCE(excluded.category, tuya_devices_config.category),
+            icon=COALESCE(excluded.icon, tuya_devices_config.icon),
+            updated_at=excluded.updated_at
+    """, (device_id.strip(), 1 if enabled else 0, custom_name, category, icon, now_iso))
+    conn.commit()
+    conn.close()
+
 # ----------------- STATISTICHE & MANUTENZIONE DATABASE -----------------
 
 def get_database_stats() -> Dict[str, Any]:
@@ -1209,6 +2184,100 @@ def get_database_stats() -> Dict[str, Any]:
         "wal_mode_enabled": True
     }
 
+_WEATHER_DOWNSAMPLE_COLUMNS = [
+    ("temp_c", "ROUND(AVG(temp_c), 1)"),
+    ("humidity", "ROUND(AVG(humidity), 1)"),
+    ("dew_point_c", "ROUND(AVG(dew_point_c), 1)"),
+    ("temp_in_c", "ROUND(AVG(temp_in_c), 1)"),
+    ("humidity_in", "ROUND(AVG(humidity_in), 1)"),
+    ("pressure_rel_hpa", "ROUND(AVG(pressure_rel_hpa), 1)"),
+    ("pressure_abs_hpa", "ROUND(AVG(pressure_abs_hpa), 1)"),
+    ("wind_speed_kmh", "ROUND(AVG(wind_speed_kmh), 1)"),
+    ("wind_gust_kmh", "ROUND(MAX(wind_gust_kmh), 1)"),
+    ("wind_dir_deg", "ROUND(AVG(wind_dir_deg), 0)"),
+    ("max_daily_gust_kmh", "ROUND(MAX(max_daily_gust_kmh), 1)"),
+    ("rain_rate_mm_hr", "ROUND(MAX(rain_rate_mm_hr), 1)"),
+    ("daily_rain_mm", "ROUND(MAX(daily_rain_mm), 1)"),
+    ("event_rain_mm", "ROUND(MAX(event_rain_mm), 1)"),
+    ("yearly_rain_mm", "ROUND(MAX(yearly_rain_mm), 1)"),
+    ("solar_radiation", "ROUND(AVG(solar_radiation), 1)"),
+    ("uv_index", "MAX(uv_index)"),
+    ("vpd", "ROUND(AVG(vpd), 2)"),
+    ("lightning_count", "MAX(lightning_count)"),
+    ("lightning_distance_km", "MIN(lightning_distance_km)"),
+]
+
+_ENERGY_DOWNSAMPLE_COLUMNS = [
+    ("p_solare", "ROUND(AVG(p_solare), 1)"),
+    ("p_utenze", "ROUND(AVG(p_utenze), 1)"),
+    ("p_batteria", "ROUND(AVG(p_batteria), 1)"),
+    ("p_rete", "ROUND(AVG(p_rete), 1)"),
+    ("soc", "ROUND(AVG(soc), 1)"),
+    ("temp_battery", "ROUND(AVG(temp_battery), 1)"),
+    ("e_pannelli_wh", "MAX(e_pannelli_wh)"),
+    ("e_comprata_wh", "MAX(e_comprata_wh)"),
+    ("e_venduta_wh", "MAX(e_venduta_wh)"),
+    ("e_batteria_wh", "MAX(e_batteria_wh)"),
+]
+
+
+def _downsample_table_hourly(conn: sqlite3.Connection, table: str, columns: List[Tuple[str, str]], cutoff_day: str) -> Tuple[int, int]:
+    """
+    Condensa a 1 riga/ora tutte le letture della tabella nei giorni (UTC) precedenti a cutoff_day.
+    Lavora un giorno alla volta con commit separati, così l'ingestione live non resta bloccata a lungo.
+    Il filtro per giorno usa il prefisso 'YYYY-MM-DD', valido sia per timestamp ISO ('T') sia con spazio.
+    Restituisce (ore_compattate, righe_eliminate).
+    """
+    hour_key = "strftime('%Y-%m-%dT%H:00:00+00:00', timestamp)"
+    col_names = ", ".join(c for c, _ in columns)
+    col_aggs = ", ".join(f"{agg} AS {c}" for c, agg in columns)
+
+    cursor = conn.cursor()
+    cursor.execute(f"""
+        SELECT DISTINCT substr(timestamp, 1, 10) AS day
+        FROM {table}
+        WHERE timestamp < ?
+        ORDER BY day
+    """, (cutoff_day,))
+    days = [r["day"] for r in cursor.fetchall()]
+
+    compressed_hours = 0
+    purged = 0
+    for day in days:
+        next_day = (datetime.strptime(day, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        try:
+            cursor.execute("DROP TABLE IF EXISTS temp._downsample")
+            cursor.execute(f"""
+                CREATE TEMP TABLE _downsample AS
+                SELECT {hour_key} AS hb, {col_aggs}, COUNT(*) AS cnt
+                FROM {table}
+                WHERE timestamp >= ? AND timestamp < ?
+                GROUP BY hb
+                HAVING cnt > 1
+            """, (day, next_day))
+            cursor.execute("SELECT COUNT(*) AS n, COALESCE(SUM(cnt), 0) AS rows FROM temp._downsample")
+            stats = cursor.fetchone()
+            if not stats["n"]:
+                continue
+            cursor.execute(f"""
+                DELETE FROM {table}
+                WHERE timestamp >= ? AND timestamp < ?
+                  AND {hour_key} IN (SELECT hb FROM temp._downsample)
+            """, (day, next_day))
+            cursor.execute(f"""
+                INSERT INTO {table} (timestamp, {col_names})
+                SELECT hb, {col_names} FROM temp._downsample
+            """)
+            conn.commit()
+            compressed_hours += stats["n"]
+            purged += stats["rows"] - stats["n"]
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"[DB-MAINTENANCE] Downsampling {table} fallito per il giorno {day}: {e}")
+    cursor.execute("DROP TABLE IF EXISTS temp._downsample")
+    return compressed_hours, purged
+
+
 def perform_database_maintenance(retention_days: int = 60) -> Dict[str, Any]:
     """
     Esegue la compattazione e il downsampling intelligente dello storico:
@@ -1218,133 +2287,15 @@ def perform_database_maintenance(retention_days: int = 60) -> Dict[str, Any]:
     - I record estremi (Albo dei Record e storico record infranti) NON vengono mai cancellati né alterati.
     - Esegue il checkpoint del file WAL e PRAGMA optimize.
     """
-    cutoff_utc = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
-    
+    cutoff_day = (datetime.now(timezone.utc) - timedelta(days=retention_days)).strftime("%Y-%m-%d")
+
     conn = get_connection()
     cursor = conn.cursor()
-    
-    # 1. Recupera i bucket orari da condensare
-    cursor.execute("""
-        SELECT strftime('%Y-%m-%d %H:00:00', timestamp) AS hour_bucket, COUNT(*) AS cnt
-        FROM weather_records
-        WHERE timestamp < ?
-        GROUP BY hour_bucket
-        HAVING cnt > 1
-    """, (cutoff_utc,))
-    buckets_to_downsample = cursor.fetchall()
-    
-    compressed_buckets = 0
-    purged_records = 0
-    
-    for row in buckets_to_downsample:
-        h_bucket = row["hour_bucket"]
-        # Calcola le aggregazioni scientifiche per l'ora
-        cursor.execute("""
-            SELECT 
-                ROUND(AVG(temp_c), 1) as avg_temp,
-                ROUND(MIN(temp_c), 1) as min_temp,
-                ROUND(MAX(temp_c), 1) as max_temp,
-                ROUND(AVG(humidity), 1) as avg_hum,
-                ROUND(AVG(dew_point_c), 1) as avg_dew,
-                ROUND(AVG(temp_in_c), 1) as avg_temp_in,
-                ROUND(AVG(humidity_in), 1) as avg_hum_in,
-                ROUND(AVG(pressure_rel_hpa), 1) as avg_press,
-                ROUND(AVG(pressure_abs_hpa), 1) as avg_press_abs,
-                ROUND(AVG(wind_speed_kmh), 1) as avg_wind_spd,
-                ROUND(MAX(wind_gust_kmh), 1) as max_wind_gust,
-                ROUND(AVG(wind_dir_deg), 0) as avg_wind_dir,
-                ROUND(MAX(max_daily_gust_kmh), 1) as max_day_gust,
-                ROUND(MAX(rain_rate_mm_hr), 1) as max_rain_rate,
-                ROUND(MAX(daily_rain_mm), 1) as max_daily_rain,
-                ROUND(MAX(event_rain_mm), 1) as max_event_rain,
-                ROUND(MAX(yearly_rain_mm), 1) as max_yearly_rain,
-                ROUND(AVG(solar_radiation), 1) as avg_solar,
-                MAX(uv_index) as max_uv,
-                ROUND(AVG(vpd), 2) as avg_vpd,
-                MAX(lightning_count) as max_l_count,
-                MIN(lightning_distance_km) as min_l_dist,
-                COUNT(*) as bucket_count
-            FROM weather_records
-            WHERE timestamp >= ? AND timestamp < datetime(?, '+1 hour')
-        """, (h_bucket, h_bucket))
-        agg = cursor.fetchone()
-        
-        if agg and agg["bucket_count"] > 1:
-            # Elimina i record singoli ad alta frequenza del bucket
-            cursor.execute("""
-                DELETE FROM weather_records
-                WHERE timestamp >= ? AND timestamp < datetime(?, '+1 hour')
-            """, (h_bucket, h_bucket))
-            purged_records += (agg["bucket_count"] - 1)
-            
-            # Inserisce la singola lettura oraria consolidata
-            cursor.execute("""
-                INSERT INTO weather_records (
-                    timestamp, temp_c, humidity, dew_point_c, temp_in_c, humidity_in,
-                    pressure_rel_hpa, pressure_abs_hpa, wind_speed_kmh, wind_gust_kmh,
-                    wind_dir_deg, max_daily_gust_kmh, rain_rate_mm_hr, daily_rain_mm,
-                    event_rain_mm, yearly_rain_mm, solar_radiation, uv_index, vpd,
-                    lightning_count, lightning_distance_km
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                h_bucket, agg["avg_temp"], agg["avg_hum"], agg["avg_dew"], agg["avg_temp_in"], agg["avg_hum_in"],
-                agg["avg_press"], agg["avg_press_abs"], agg["avg_wind_spd"], agg["max_wind_gust"],
-                agg["avg_wind_dir"], agg["max_day_gust"], agg["max_rain_rate"], agg["max_daily_rain"],
-                agg["max_event_rain"], agg["max_yearly_rain"], agg["avg_solar"], agg["max_uv"], agg["avg_vpd"],
-                agg["max_l_count"], agg["min_l_dist"]
-            ))
-            compressed_buckets += 1
 
-    # 2. Downsampling analogo per telemetria energetica Aton > retention_days
-    cursor.execute("""
-        SELECT strftime('%Y-%m-%d %H:00:00', timestamp) AS hour_bucket, COUNT(*) AS cnt
-        FROM energy_records
-        WHERE timestamp < ?
-        GROUP BY hour_bucket
-        HAVING cnt > 1
-    """, (cutoff_utc,))
-    energy_buckets = cursor.fetchall()
-    
-    purged_energy = 0
-    for erow in energy_buckets:
-        eh_bucket = erow["hour_bucket"]
-        cursor.execute("""
-            SELECT 
-                ROUND(AVG(p_solare), 1) as avg_p_solare,
-                ROUND(AVG(p_utenze), 1) as avg_p_utenze,
-                ROUND(AVG(p_batteria), 1) as avg_p_batteria,
-                ROUND(AVG(p_rete), 1) as avg_p_rete,
-                ROUND(AVG(soc), 1) as avg_soc,
-                ROUND(AVG(temp_battery), 1) as avg_temp_batt,
-                MAX(e_pannelli_wh) as max_e_pan,
-                MAX(e_comprata_wh) as max_e_comp,
-                MAX(e_venduta_wh) as max_e_vend,
-                MAX(e_batteria_wh) as max_e_batt,
-                COUNT(*) as b_cnt
-            FROM energy_records
-            WHERE timestamp >= ? AND timestamp < datetime(?, '+1 hour')
-        """, (eh_bucket, eh_bucket))
-        eagg = cursor.fetchone()
-        if eagg and eagg["b_cnt"] > 1:
-            cursor.execute("""
-                DELETE FROM energy_records
-                WHERE timestamp >= ? AND timestamp < datetime(?, '+1 hour')
-            """, (eh_bucket, eh_bucket))
-            purged_energy += (eagg["b_cnt"] - 1)
-            
-            cursor.execute("""
-                INSERT INTO energy_records (
-                    timestamp, p_solare, p_utenze, p_batteria, p_rete, soc,
-                    temp_battery, e_pannelli_wh, e_comprata_wh, e_venduta_wh, e_batteria_wh
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                eh_bucket, eagg["avg_p_solare"], eagg["avg_p_utenze"], eagg["avg_p_batteria"],
-                eagg["avg_p_rete"], eagg["avg_soc"], eagg["avg_temp_batt"],
-                eagg["max_e_pan"], eagg["max_e_comp"], eagg["max_e_vend"], eagg["max_e_batt"]
-            ))
+    # 1-2. Downsampling orario di meteo ed energia (giorno per giorno)
+    compressed_buckets, purged_records = _downsample_table_hourly(conn, "weather_records", _WEATHER_DOWNSAMPLE_COLUMNS, cutoff_day)
+    _, purged_energy = _downsample_table_hourly(conn, "energy_records", _ENERGY_DOWNSAMPLE_COLUMNS, cutoff_day)
 
-    conn.commit()
-    
     # 3. Checkpoint WAL & Ottimizzazione indici SQLite
     try:
         cursor.execute("PRAGMA wal_checkpoint(TRUNCATE);")
@@ -1362,4 +2313,1726 @@ def perform_database_maintenance(retention_days: int = 60) -> Dict[str, Any]:
         "energy_records_purged": purged_energy,
         "stats_after": get_database_stats()
     }
+
+# ----------------- STATISTICHE NOTTI TROPICALI & CLIMATOLOGIA -----------------
+
+def get_tropical_nights_stats(year: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Calcola le statistiche climatologiche delle Notti Tropicali (Tmin >= 20°C)
+    e Notti Roventi (Tmin >= 25°C) per l'anno specificato (o anno corrente).
+    Include streak consecutivi, notti più calde, e distribuzione mensile.
+    """
+    tz = settings.get_tz()
+    now = settings.now_local()
+    if year is None:
+        year = now.year
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    year_start = f"{year}-01-01T00:00:00"
+    year_end = f"{year}-12-31T23:59:59"
+
+    cursor.execute("""
+        SELECT 
+            local_date(timestamp) as day_str,
+            ROUND(MIN(temp_c), 1) as min_temp,
+            ROUND(MAX(temp_c), 1) as max_temp,
+            ROUND(AVG(temp_c), 1) as avg_temp,
+            COUNT(*) as readings_count
+        FROM weather_records
+        WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
+        GROUP BY local_date(timestamp)
+        HAVING readings_count >= 1
+        ORDER BY day_str ASC
+    """, (year_start, year_end))
+    days = cursor.fetchall()
+    conn.close()
+
+    total_tropical_nights = 0
+    total_super_tropical_nights = 0
+    highest_min_temp = None
+    highest_min_day = None
+    
+    monthly_counts = {
+        "05": 0, "06": 0, "07": 0, "08": 0, "09": 0, "10": 0
+    }
+    
+    max_streak = 0
+    temp_streak = 0
+    recent_tropical_days = []
+
+    today_str = now.strftime("%Y-%m-%d")
+    yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    today_is_tropical = False
+    yesterday_was_tropical = False
+
+    for d in days:
+        d_str = d["day_str"]
+        min_t = d["min_temp"]
+        if min_t is None:
+            continue
+        
+        is_trop = (min_t >= settings.TROPICAL_NIGHT_TEMP_THRESHOLD_C)
+        is_super = (min_t >= settings.SUPER_TROPICAL_NIGHT_TEMP_THRESHOLD_C)
+
+        if d_str == today_str and is_trop:
+            today_is_tropical = True
+        if d_str == yesterday_str and is_trop:
+            yesterday_was_tropical = True
+
+        if is_trop:
+            total_tropical_nights += 1
+            temp_streak += 1
+            if temp_streak > max_streak:
+                max_streak = temp_streak
+            
+            m = d_str[5:7]
+            if m in monthly_counts:
+                monthly_counts[m] += 1
+                
+            if is_super:
+                total_super_tropical_nights += 1
+                
+            if highest_min_temp is None or min_t > highest_min_temp:
+                highest_min_temp = min_t
+                highest_min_day = d_str
+
+            recent_tropical_days.append({
+                "date": d_str,
+                "min_temp": min_t,
+                "is_super": is_super
+            })
+        else:
+            temp_streak = 0
+
+    # Calcolo streak corrente a ritroso
+    streak_count = 0
+    days_dict = {d["day_str"]: d["min_temp"] for d in days if d["min_temp"] is not None}
+    check_dt = now.date()
+    if today_str not in days_dict or days_dict[today_str] < settings.TROPICAL_NIGHT_TEMP_THRESHOLD_C:
+        check_dt = check_dt - timedelta(days=1)
+    
+    while True:
+        c_str = check_dt.strftime("%Y-%m-%d")
+        if c_str in days_dict and days_dict[c_str] >= settings.TROPICAL_NIGHT_TEMP_THRESHOLD_C:
+            streak_count += 1
+            check_dt = check_dt - timedelta(days=1)
+        else:
+            break
+
+    monthly_stats = [
+        {"month_key": k, "name": get_month_name(int(k), f"Mese {k}"), "count": v}
+        for k, v in monthly_counts.items()
+    ]
+
+    res = {
+        "year": year,
+        "threshold_c": settings.TROPICAL_NIGHT_TEMP_THRESHOLD_C,
+        "super_threshold_c": settings.SUPER_TROPICAL_NIGHT_TEMP_THRESHOLD_C,
+        "total_tropical_nights": total_tropical_nights,
+        "total_super_tropical_nights": total_super_tropical_nights,
+        "highest_min_temp": highest_min_temp,
+        "highest_min_day": highest_min_day,
+        "current_streak": streak_count,
+        "max_streak": max_streak,
+        "today_is_tropical": today_is_tropical,
+        "yesterday_was_tropical": yesterday_was_tropical,
+        "monthly_counts": monthly_counts,
+        "monthly_stats": monthly_stats,
+        "recent_tropical_days": recent_tropical_days[-10:]
+    }
+    return res
+
+# ----------------- STATO & TREND UMIDITÀ TERRENO -----------------
+
+def get_soil_moisture_summary() -> Dict[str, Any]:
+    """
+    Calcola lo stato in tempo reale, il trend 24h e il livello di salute per i sensori di umidità WH51.
+    """
+    latest = get_latest_reading() or {}
+    soil = latest.get("soil_moisture", {})
+    aliases = get_sensor_aliases()
+
+    if not soil:
+        # Fallback alla lettura più recente che contiene dati suolo
+        conn_fb = get_connection()
+        cur_fb = conn_fb.cursor()
+        cur_fb.execute("""
+            SELECT soil_moisture_json FROM weather_records 
+            WHERE soil_moisture_json IS NOT NULL AND soil_moisture_json NOT IN ('{}', 'null', '')
+            ORDER BY timestamp DESC, id DESC LIMIT 1
+        """)
+        row_fb = cur_fb.fetchone()
+        conn_fb.close()
+        if row_fb and row_fb["soil_moisture_json"]:
+            try:
+                soil = json.loads(row_fb["soil_moisture_json"])
+            except Exception:
+                soil = {}
+
+    if not soil:
+        return {
+            "has_sensors": False,
+            "channels": {},
+            "avg_moisture": None,
+            "status": "none",
+            "status_text": "Nessun sensore WH51 configurato"
+        }
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    now = datetime.now(timezone.utc)
+    t_24h = (now - timedelta(hours=24)).isoformat()
+
+    cursor.execute("""
+        SELECT soil_moisture_json FROM weather_records
+        WHERE timestamp <= ? AND soil_moisture_json IS NOT NULL
+        ORDER BY timestamp DESC LIMIT 1
+    """, (t_24h,))
+    row_24h = cursor.fetchone()
+    conn.close()
+
+    soil_24h = json.loads(row_24h["soil_moisture_json"]) if row_24h and row_24h["soil_moisture_json"] else {}
+
+    channels_data = {}
+    values_list = []
+
+    for ch, val in soil.items():
+        if val is None:
+            continue
+        v = float(val)
+        values_list.append(v)
+
+        alias = aliases.get(f"soil_{ch}") or aliases.get(ch) or f"Sensore {ch.upper()}"
+        v_24h = float(soil_24h.get(ch)) if soil_24h.get(ch) is not None else None
+        diff_24h = round(v - v_24h, 1) if v_24h is not None else 0.0
+
+        if v < 15.0:
+            status_code = "critical"
+            status_label = "Critico / Arido"
+            badge_class = "badge-danger"
+        elif v < settings.SOIL_MOISTURE_LOW_THRESHOLD:
+            status_code = "dry"
+            status_label = "Terreno Secco"
+            badge_class = "badge-warning"
+        elif v <= 60.0:
+            status_code = "optimal"
+            status_label = "Umidità Ottimale"
+            badge_class = "badge-success"
+        else:
+            status_code = "wet"
+            status_label = "Molto Umido"
+            badge_class = "badge-info"
+
+        if diff_24h > 5.0:
+            trend_icon = "↗"
+            trend_text = f"+{diff_24h}% (Irrigato)"
+        elif diff_24h < -5.0:
+            trend_icon = "↘"
+            trend_text = f"{diff_24h}% (Asciugatura)"
+        else:
+            trend_icon = "→"
+            trend_text = "Stabile"
+
+        channels_data[ch] = {
+            "channel": ch,
+            "name": alias,
+            "value": v,
+            "diff_24h": diff_24h,
+            "trend_icon": trend_icon,
+            "trend_text": trend_text,
+            "status": status_code,
+            "status_label": status_label,
+            "badge_class": badge_class
+        }
+
+    avg_moisture = round(sum(values_list) / len(values_list), 1) if values_list else None
+
+    return {
+        "has_sensors": len(channels_data) > 0,
+        "channels": channels_data,
+        "avg_moisture": avg_moisture,
+        "status": "optimal" if avg_moisture and avg_moisture >= settings.SOIL_MOISTURE_LOW_THRESHOLD else ("dry" if avg_moisture else "none"),
+        "status_text": "Umidità Ottimale" if avg_moisture and avg_moisture >= settings.SOIL_MOISTURE_LOW_THRESHOLD else ("Terreno Secco" if avg_moisture else "In attesa dati")
+    }
+
+
+# ----------------- GESTIONE AUTOMAZIONI CLIMATIZZATORI (LG THINQ) -----------------
+
+DEFAULT_CLIMATE_AUTOMATIONS_CONFIG: Dict[str, Any] = {
+    "master_enabled": True,
+    # 1. Uscita di casa: 'off' (spegnimento automatico), 'notify' (solo notifica per presenza altri), 'disabled'
+    "away_action": "notify",
+    "away_delay_min": 10,
+    # 2. Max Runtime / Dimenticanza: 'off', 'notify', 'disabled'
+    "max_runtime_action": "notify",
+    "max_runtime_hours": 5,
+    # 3. Free cooling notturno: 'off', 'notify', 'disabled'
+    "night_cooling_action": "notify",
+    "night_start_hour": 23,
+    "night_end_hour": 7,
+    "night_temp_diff": 1.5,
+    # 4. Pre-cooling solare Aton: 'on', 'notify', 'disabled'
+    "solar_preconditioning_action": "notify",
+    "solar_surplus_w": 1800,
+    "solar_min_soc": 80,
+    "solar_target_temp": 25.0,
+    # 5. Protezione batteria scarica / rete: 'off', 'notify', 'disabled'
+    "battery_guard_action": "notify",
+    "battery_min_soc": 20,
+    # 6. Termostato Intelligente & Isteresi Comfort Guard: 'on', 'notify', 'disabled'
+    "comfort_guard_action": "notify",
+    "comfort_max_temp": 26.5,
+    "comfort_min_temp": 19.0,
+    "comfort_target_temp": 24.0,
+    "comfort_min_rest_min": 20
+}
+
+def get_climate_automations_config() -> Dict[str, Any]:
+    """Restituisce le preferenze salvate per le automazioni dei climatizzatori."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT value_json FROM climate_automations_config WHERE key = 'main'")
+    row = cursor.fetchone()
+    conn.close()
+
+    cfg = DEFAULT_CLIMATE_AUTOMATIONS_CONFIG.copy()
+    if row and row["value_json"]:
+        try:
+            saved = json.loads(row["value_json"])
+            cfg.update(saved)
+        except Exception:
+            pass
+    return cfg
+
+def save_climate_automations_config(config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Salva le preferenze delle automazioni climatizzatori su SQLite con validazione e sanitizzazione."""
+    current = get_climate_automations_config()
+    
+    if isinstance(config_dict, dict):
+        if "master_enabled" in config_dict:
+            current["master_enabled"] = bool(config_dict["master_enabled"])
+        if "away_action" in config_dict and config_dict["away_action"] in ("off", "notify", "disabled"):
+            current["away_action"] = str(config_dict["away_action"])
+        if "away_delay_min" in config_dict:
+            try:
+                current["away_delay_min"] = max(1, min(120, int(config_dict["away_delay_min"])))
+            except (ValueError, TypeError):
+                pass
+        if "max_runtime_action" in config_dict and config_dict["max_runtime_action"] in ("off", "notify", "disabled"):
+            current["max_runtime_action"] = str(config_dict["max_runtime_action"])
+        if "max_runtime_hours" in config_dict:
+            try:
+                current["max_runtime_hours"] = max(1.0, min(24.0, float(config_dict["max_runtime_hours"])))
+            except (ValueError, TypeError):
+                pass
+        if "night_cooling_action" in config_dict and config_dict["night_cooling_action"] in ("off", "notify", "disabled"):
+            current["night_cooling_action"] = str(config_dict["night_cooling_action"])
+        if "night_start_hour" in config_dict:
+            try:
+                current["night_start_hour"] = max(0, min(23, int(config_dict["night_start_hour"])))
+            except (ValueError, TypeError):
+                pass
+        if "night_end_hour" in config_dict:
+            try:
+                current["night_end_hour"] = max(0, min(23, int(config_dict["night_end_hour"])))
+            except (ValueError, TypeError):
+                pass
+        if "night_temp_diff" in config_dict:
+            try:
+                current["night_temp_diff"] = max(0.5, min(10.0, float(config_dict["night_temp_diff"])))
+            except (ValueError, TypeError):
+                pass
+        if "solar_preconditioning_action" in config_dict and config_dict["solar_preconditioning_action"] in ("on", "notify", "disabled"):
+            current["solar_preconditioning_action"] = str(config_dict["solar_preconditioning_action"])
+        if "solar_surplus_w" in config_dict:
+            try:
+                current["solar_surplus_w"] = max(500, min(10000, int(config_dict["solar_surplus_w"])))
+            except (ValueError, TypeError):
+                pass
+        if "solar_min_soc" in config_dict:
+            try:
+                current["solar_min_soc"] = max(10, min(100, int(config_dict["solar_min_soc"])))
+            except (ValueError, TypeError):
+                pass
+        if "solar_target_temp" in config_dict:
+            try:
+                current["solar_target_temp"] = max(18.0, min(30.0, float(config_dict["solar_target_temp"])))
+            except (ValueError, TypeError):
+                pass
+        if "battery_guard_action" in config_dict and config_dict["battery_guard_action"] in ("off", "notify", "disabled"):
+            current["battery_guard_action"] = str(config_dict["battery_guard_action"])
+        if "battery_min_soc" in config_dict:
+            try:
+                current["battery_min_soc"] = max(5, min(50, int(config_dict["battery_min_soc"])))
+            except (ValueError, TypeError):
+                pass
+        if "comfort_guard_action" in config_dict and config_dict["comfort_guard_action"] in ("on", "notify", "disabled"):
+            current["comfort_guard_action"] = str(config_dict["comfort_guard_action"])
+        if "comfort_max_temp" in config_dict:
+            try:
+                current["comfort_max_temp"] = max(20.0, min(35.0, float(config_dict["comfort_max_temp"])))
+            except (ValueError, TypeError):
+                pass
+        if "comfort_min_temp" in config_dict:
+            try:
+                current["comfort_min_temp"] = max(10.0, min(25.0, float(config_dict["comfort_min_temp"])))
+            except (ValueError, TypeError):
+                pass
+        if "comfort_target_temp" in config_dict:
+            try:
+                current["comfort_target_temp"] = max(18.0, min(30.0, float(config_dict["comfort_target_temp"])))
+            except (ValueError, TypeError):
+                pass
+        if "comfort_min_rest_min" in config_dict:
+            try:
+                current["comfort_min_rest_min"] = max(5, min(120, int(config_dict["comfort_min_rest_min"])))
+            except (ValueError, TypeError):
+                pass
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    json_str = json.dumps(current, ensure_ascii=False)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO climate_automations_config (key, value_json, updated_at)
+        VALUES ('main', ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at
+    """, (json_str, now_iso))
+    conn.commit()
+    conn.close()
+    return current
+
+
+# ----------------- CONFIGURAZIONE AUTOMAZIONI IRRIGAZIONE INTELLIGENTE -----------------
+
+DEFAULT_IRRIGATION_CONFIG: Dict[str, Any] = {
+    "master_enabled": True,
+    "mode": "auto",  # 'auto' (avvio/arresto autonomo), 'notify' (solo notifica), 'disabled'
+    "crop_profile": "planter_pot",  # 'planter_pot' (Grande Vaso / Fioriera Pomodori & Zucchine), 'garden_bed', 'lawn'
+    "crop_label": "Grande Vaso / Fioriera (Pomodori & Zucchine) 🪴🍅🥒",
+    "target_device_id": "bfeb96waen2hlkvg",  # ID valvola Tuya principale o 'auto'
+    "soil_moisture_channel": "ch1",  # Canale sensore Ecowitt WH51
+    "soil_dry_threshold": 48.0,  # Se umidità <= 48% -> terreno sotto la soglia ideale nel vaso
+    "soil_target_threshold": 70.0,  # Soglia massima di sicurezza di stop (anti-ristagno/palude)
+    "duration_minutes": 2.0,  # Dose controllata micro-impulso vaso: 1.5 - 2.0 min (~1.0 L)
+    "max_safety_duration_min": 4.0,  # Chiusura forzata di sicurezza max (4 min per evitare allagamento del vaso)
+    "morning_start_hour": 6,  # Finestra oraria alba/mattino inizio (06:00)
+    "morning_end_hour": 8,  # Finestra oraria alba/mattino fine (08:00)
+    "evening_start_hour": 21,  # Finestra oraria tramonto/sera inizio (21:00)
+    "evening_end_hour": 23,  # Finestra oraria tramonto/sera fine (23:00)
+    "skip_rain_forecast_mm": 3.0,  # Soglia pioggia prevista 24h per skip
+    "skip_recent_rain_mm": 5.0,  # Soglia pioggia caduta 24-48h per skip
+    "skip_wind_gust_kmh": 35.0,  # Soglia raffica vento per posticipo
+    "frost_guard_temp_c": 3.0,  # Blocco sotto questa temp per antigelo
+    "cooldown_hours": 8.0,  # Ore minime di attesa/percolazione tra due cicli per il vaso
+    "adaptive_learning_enabled": True,  # Auto-apprendimento curva di risposta del vaso
+    "learned_k_efficiency": 12.0,  # Guadagno % umidità appreso per ogni minuto di irrigazione
+    "learned_lag_minutes": 25.0,  # Tempo medio di percolazione misurato (minuti per raggiungere il picco)
+    "total_cycles_learned": 0
+}
+
+def get_irrigation_automations_config() -> Dict[str, Any]:
+    """Restituisce le preferenze salvate per l'irrigazione intelligente."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT value_json FROM irrigation_automations_config WHERE key = 'main'")
+    row = cursor.fetchone()
+    conn.close()
+
+    cfg = DEFAULT_IRRIGATION_CONFIG.copy()
+    if row and row["value_json"]:
+        try:
+            saved = json.loads(row["value_json"])
+            cfg.update(saved)
+        except Exception:
+            pass
+    return cfg
+
+def save_irrigation_automations_config(config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Salva le preferenze dell'irrigazione intelligente su SQLite con validazione."""
+    current = get_irrigation_automations_config()
+    
+    if isinstance(config_dict, dict):
+        if "master_enabled" in config_dict:
+            current["master_enabled"] = bool(config_dict["master_enabled"])
+        if "mode" in config_dict and config_dict["mode"] in ("auto", "notify", "disabled"):
+            current["mode"] = str(config_dict["mode"])
+        if "crop_profile" in config_dict and config_dict["crop_profile"]:
+            current["crop_profile"] = str(config_dict["crop_profile"])
+        if "crop_label" in config_dict and config_dict["crop_label"]:
+            current["crop_label"] = str(config_dict["crop_label"])
+        if "target_device_id" in config_dict and config_dict["target_device_id"]:
+            current["target_device_id"] = str(config_dict["target_device_id"]).strip()
+        if "soil_moisture_channel" in config_dict and config_dict["soil_moisture_channel"]:
+            current["soil_moisture_channel"] = str(config_dict["soil_moisture_channel"]).strip()
+        if "soil_dry_threshold" in config_dict:
+            try:
+                current["soil_dry_threshold"] = max(5.0, min(80.0, float(config_dict["soil_dry_threshold"])))
+            except (ValueError, TypeError):
+                pass
+        if "soil_target_threshold" in config_dict:
+            try:
+                current["soil_target_threshold"] = max(20.0, min(95.0, float(config_dict["soil_target_threshold"])))
+            except (ValueError, TypeError):
+                pass
+        if "duration_minutes" in config_dict:
+            try:
+                current["duration_minutes"] = max(0.5, min(120.0, float(config_dict["duration_minutes"])))
+            except (ValueError, TypeError):
+                pass
+        if "max_safety_duration_min" in config_dict:
+            try:
+                current["max_safety_duration_min"] = max(1.0, min(180.0, float(config_dict["max_safety_duration_min"])))
+            except (ValueError, TypeError):
+                pass
+        if "morning_start_hour" in config_dict:
+            try:
+                current["morning_start_hour"] = max(0, min(23, int(config_dict["morning_start_hour"])))
+            except (ValueError, TypeError):
+                pass
+        if "morning_end_hour" in config_dict:
+            try:
+                current["morning_end_hour"] = max(0, min(23, int(config_dict["morning_end_hour"])))
+            except (ValueError, TypeError):
+                pass
+        if "evening_start_hour" in config_dict:
+            try:
+                current["evening_start_hour"] = max(0, min(23, int(config_dict["evening_start_hour"])))
+            except (ValueError, TypeError):
+                pass
+        if "evening_end_hour" in config_dict:
+            try:
+                current["evening_end_hour"] = max(0, min(23, int(config_dict["evening_end_hour"])))
+            except (ValueError, TypeError):
+                pass
+        if "skip_rain_forecast_mm" in config_dict:
+            try:
+                current["skip_rain_forecast_mm"] = max(0.0, min(50.0, float(config_dict["skip_rain_forecast_mm"])))
+            except (ValueError, TypeError):
+                pass
+        if "skip_recent_rain_mm" in config_dict:
+            try:
+                current["skip_recent_rain_mm"] = max(0.0, min(50.0, float(config_dict["skip_recent_rain_mm"])))
+            except (ValueError, TypeError):
+                pass
+        if "skip_wind_gust_kmh" in config_dict:
+            try:
+                current["skip_wind_gust_kmh"] = max(5.0, min(100.0, float(config_dict["skip_wind_gust_kmh"])))
+            except (ValueError, TypeError):
+                pass
+        if "frost_guard_temp_c" in config_dict:
+            try:
+                current["frost_guard_temp_c"] = max(-5.0, min(15.0, float(config_dict["frost_guard_temp_c"])))
+            except (ValueError, TypeError):
+                pass
+        if "cooldown_hours" in config_dict:
+            try:
+                current["cooldown_hours"] = max(1.0, min(72.0, float(config_dict["cooldown_hours"])))
+            except (ValueError, TypeError):
+                pass
+        if "adaptive_learning_enabled" in config_dict:
+            current["adaptive_learning_enabled"] = bool(config_dict["adaptive_learning_enabled"])
+        if "learned_k_efficiency" in config_dict:
+            try:
+                current["learned_k_efficiency"] = float(config_dict["learned_k_efficiency"])
+            except (ValueError, TypeError):
+                pass
+        if "learned_lag_minutes" in config_dict:
+            try:
+                current["learned_lag_minutes"] = float(config_dict["learned_lag_minutes"])
+            except (ValueError, TypeError):
+                pass
+        if "total_cycles_learned" in config_dict:
+            try:
+                current["total_cycles_learned"] = int(config_dict["total_cycles_learned"])
+            except (ValueError, TypeError):
+                pass
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    json_str = json.dumps(current, ensure_ascii=False)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO irrigation_automations_config (key, value_json, updated_at)
+        VALUES ('main', ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at
+    """, (json_str, now_iso))
+    conn.commit()
+    conn.close()
+    return current
+
+# --- AUTO-APPRENDIMENTO & PERCOLAZIONE VASO ---
+
+def log_irrigation_cycle_start(duration_min: float, start_moisture: float, temp_c: Optional[float] = None, et_mm: Optional[float] = None) -> int:
+    """Registra l'avvio di un ciclo per monitorare la curva di percolazione."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO irrigation_learning_history 
+        (cycle_start_time, duration_sec, duration_min, start_moisture, peak_moisture, peak_time, temp_c, et_mm, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'monitoring', ?)
+    """, (now_iso, float(duration_min) * 60.0, float(duration_min), float(start_moisture), float(start_moisture), now_iso, temp_c, et_mm, now_iso))
+    cycle_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return cycle_id
+
+def update_irrigation_cycle_sample(cycle_id: int, current_moisture: float):
+    """Aggiorna il picco di umidità durante la finestra di percolazione."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT peak_moisture FROM irrigation_learning_history WHERE id = ?", (cycle_id,))
+    row = cursor.fetchone()
+    if row:
+        prev_peak = float(row["peak_moisture"] or 0.0)
+        if current_moisture > prev_peak:
+            cursor.execute("""
+                UPDATE irrigation_learning_history 
+                SET peak_moisture = ?, peak_time = ?
+                WHERE id = ?
+            """, (float(current_moisture), now_iso, cycle_id))
+            conn.commit()
+    conn.close()
+
+def finalize_irrigation_cycle(cycle_id: int, current_moisture: float) -> Optional[Dict[str, Any]]:
+    """Conclude il ciclo di apprendimento, calcola delta, efficienza K e tempo di risposta (lag)."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM irrigation_learning_history WHERE id = ?", (cycle_id,))
+    row = cursor.fetchone()
+    if not row or row["status"] == "completed":
+        conn.close()
+        return None
+
+    start_m = float(row["start_moisture"])
+    peak_m = float(max(row["peak_moisture"] or start_m, current_moisture))
+    duration_min = max(0.5, float(row["duration_min"]))
+    delta_m = round(peak_m - start_m, 2)
+    k_eff = round(delta_m / duration_min, 2) if delta_m > 0 else 0.0
+
+    # Calcola il lag di percolazione in minuti
+    lag_min = 20.0
+    try:
+        t_start = datetime.fromisoformat(row["cycle_start_time"].replace("Z", "+00:00"))
+        t_peak = datetime.fromisoformat((row["peak_time"] or now_iso).replace("Z", "+00:00"))
+        lag_min = round(max(1.0, (t_peak - t_start).total_seconds() / 60.0), 1)
+    except Exception:
+        pass
+
+    cursor.execute("""
+        UPDATE irrigation_learning_history 
+        SET cycle_end_time = ?, peak_moisture = ?, lag_minutes = ?, delta_moisture = ?, k_efficiency = ?, status = 'completed'
+        WHERE id = ?
+    """, (now_iso, peak_m, lag_min, delta_m, k_eff, cycle_id))
+    conn.commit()
+    conn.close()
+
+    # Aggiorna il modello di apprendimento (Exponential Moving Average) nella configurazione
+    if delta_m > 0 and k_eff > 0:
+        cfg = get_irrigation_automations_config()
+        old_k = float(cfg.get("learned_k_efficiency", 12.0))
+        old_lag = float(cfg.get("learned_lag_minutes", 25.0))
+        count = int(cfg.get("total_cycles_learned", 0)) + 1
+        
+        alpha = 0.35  # Peso per il nuovo ciclo
+        new_k = round(old_k * (1 - alpha) + k_eff * alpha, 2)
+        new_lag = round(old_lag * (1 - alpha) + lag_min * alpha, 1)
+
+        cfg["learned_k_efficiency"] = new_k
+        cfg["learned_lag_minutes"] = new_lag
+        cfg["total_cycles_learned"] = count
+        save_irrigation_automations_config(cfg)
+
+    return {
+        "cycle_id": cycle_id,
+        "start_moisture": start_m,
+        "peak_moisture": peak_m,
+        "delta_moisture": delta_m,
+        "k_efficiency": k_eff,
+        "lag_minutes": lag_min,
+        "duration_min": duration_min
+    }
+
+def get_irrigation_learning_summary() -> Dict[str, Any]:
+    """Restituisce il sommario dell'auto-apprendimento per il vaso."""
+    cfg = get_irrigation_automations_config()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM irrigation_learning_history 
+        ORDER BY id DESC LIMIT 10
+    """)
+    rows = cursor.fetchall()
+    cursor.execute("SELECT COUNT(*) as total FROM irrigation_learning_history WHERE status = 'completed'")
+    count_row = cursor.fetchone()
+    completed_total = int(count_row["total"]) if count_row else 0
+    conn.close()
+
+    cycles = []
+    for r in rows:
+        cycles.append({
+            "id": r["id"],
+            "start_time": to_local_datetime_str(r["cycle_start_time"]),
+            "duration_min": r["duration_min"],
+            "start_moisture": r["start_moisture"],
+            "peak_moisture": r["peak_moisture"],
+            "lag_minutes": r["lag_minutes"],
+            "delta_moisture": r["delta_moisture"],
+            "k_efficiency": r["k_efficiency"],
+            "status": r["status"]
+        })
+
+    k_eff = float(cfg.get("learned_k_efficiency", 12.0))
+    lag_min = float(cfg.get("learned_lag_minutes", 25.0))
+    dry_th = float(cfg.get("soil_dry_threshold", 48.0))
+    target_th = float(cfg.get("soil_target_threshold", 70.0))
+
+    # Stima del fabbisogno in minuti per colmare il deficit tipico nel vaso
+    target_deficit = max(5.0, target_th - dry_th)
+    suggested_pulse = round(max(1.0, min(3.5, target_deficit / max(2.0, k_eff))), 1)
+
+    total_learned = max(int(cfg.get("total_cycles_learned", 0)), completed_total)
+
+    return {
+        "adaptive_learning_enabled": cfg.get("adaptive_learning_enabled", True),
+        "learned_k_efficiency": k_eff,
+        "learned_lag_minutes": lag_min,
+        "total_cycles_learned": total_learned,
+        "suggested_pulse_minutes": suggested_pulse,
+        "recent_cycles": cycles
+    }
+
+
+# =========================================================================
+# GESTIONE PROGRAMMAZIONE & TIMER DISPOSITIVI SMART (PERSISTENZA DB)
+# =========================================================================
+
+def save_scheduled_task(
+    task_id: str,
+    ecosystem: str,
+    device_id: str,
+    device_name: str,
+    action: str,
+    execute_at: str,
+    payload: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Salva una nuova azione programmata (timer) nel database SQLite."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    created_at = datetime.now(timezone.utc).isoformat()
+    payload_json = json.dumps(payload or {}, ensure_ascii=False)
+    
+    cursor.execute("""
+        INSERT INTO scheduled_device_tasks (
+            task_id, created_at, execute_at, ecosystem, device_id, device_name, action, action_payload_json, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    """, (task_id, created_at, execute_at, ecosystem, device_id, device_name, action, payload_json))
+    
+    conn.commit()
+    conn.close()
+    
+    return {
+        "task_id": task_id,
+        "created_at": created_at,
+        "execute_at": execute_at,
+        "ecosystem": ecosystem,
+        "device_id": device_id,
+        "device_name": device_name,
+        "action": action,
+        "payload": payload or {},
+        "status": "pending"
+    }
+
+def get_due_scheduled_tasks() -> List[Dict[str, Any]]:
+    """Restituisce tutti i task in stato 'pending' la cui data/ora di esecuzione è già trascorsa o attuale."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_utc = datetime.now(timezone.utc).isoformat()
+    
+    cursor.execute("""
+        SELECT * FROM scheduled_device_tasks
+        WHERE status = 'pending' AND execute_at <= ?
+        ORDER BY execute_at ASC
+    """, (now_utc,))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    tasks = []
+    for r in rows:
+        payload = {}
+        try:
+            if r["action_payload_json"]:
+                payload = json.loads(r["action_payload_json"])
+        except Exception:
+            pass
+            
+        tasks.append({
+            "id": r["id"],
+            "task_id": r["task_id"],
+            "created_at": r["created_at"],
+            "execute_at": r["execute_at"],
+            "ecosystem": r["ecosystem"],
+            "device_id": r["device_id"],
+            "device_name": r["device_name"],
+            "action": r["action"],
+            "payload": payload,
+            "status": r["status"]
+        })
+    return tasks
+
+def get_active_scheduled_tasks() -> List[Dict[str, Any]]:
+    """Restituisce tutti i task attualmente pendenti e attivi."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT * FROM scheduled_device_tasks
+        WHERE status = 'pending'
+        ORDER BY execute_at ASC
+    """)
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    tasks = []
+    now_utc_dt = datetime.now(timezone.utc)
+    for r in rows:
+        payload = {}
+        try:
+            if r["action_payload_json"]:
+                payload = json.loads(r["action_payload_json"])
+        except Exception:
+            pass
+            
+        try:
+            exec_dt = datetime.fromisoformat(str(r["execute_at"]).replace("Z", "+00:00"))
+            if exec_dt.tzinfo is None:
+                exec_dt = exec_dt.replace(tzinfo=timezone.utc)
+            rem_sec = max(0, int((exec_dt - now_utc_dt).total_seconds()))
+        except Exception:
+            rem_sec = 0
+
+        # Formatta etichetta leggibile del tempo rimanente (es. "tra 45 minuti", "tra 1 ora e 30 minuti")
+        if rem_sec < 60:
+            rem_label = "tra meno di un minuto"
+        elif rem_sec < 3600:
+            m = max(1, rem_sec // 60)
+            rem_label = f"tra {m} {'minuto' if m == 1 else 'minuti'}"
+        else:
+            hrs = rem_sec // 3600
+            mins = (rem_sec % 3600) // 60
+            h_str = "1 ora" if hrs == 1 else f"{hrs} ore"
+            if mins > 0:
+                m_str = "1 minuto" if mins == 1 else f"{mins} minuti"
+                rem_label = f"tra {h_str} e {m_str}"
+            else:
+                rem_label = f"tra {h_str}"
+
+        tasks.append({
+            "id": r["id"],
+            "task_id": r["task_id"],
+            "created_at": r["created_at"],
+            "created_at_local": to_local_datetime_str(r["created_at"]),
+            "execute_at": r["execute_at"],
+            "execute_at_local": to_local_datetime_str(r["execute_at"]),
+            "ecosystem": r["ecosystem"],
+            "device_id": r["device_id"],
+            "device_name": r["device_name"],
+            "action": r["action"],
+            "action_label": "Accensione" if r["action"] == "turn_on" else ("Spegnimento" if r["action"] == "turn_off" else r["action"]),
+            "payload": payload,
+            "status": r["status"],
+            "remaining_seconds": rem_sec,
+            "remaining_label": rem_label
+        })
+    return tasks
+
+def get_device_active_schedules(device_id: str) -> List[Dict[str, Any]]:
+    """Restituisce i task attivi pendenti per uno specifico dispositivo."""
+    all_active = get_active_scheduled_tasks()
+    d_clean = str(device_id).strip()
+    return [
+        t for t in all_active
+        if t["device_id"] == d_clean
+        or f"tuya_{t['device_id']}" == d_clean
+        or f"thinq_{t['device_id']}" == d_clean
+        or f"st_{t['device_id']}" == d_clean
+        or f"hass_{t['device_id']}" == d_clean
+        or t["device_id"] == d_clean.replace("tuya_", "")
+        or t["device_id"] == d_clean.replace("thinq_", "")
+        or t["device_id"] == d_clean.replace("st_", "")
+        or t["device_id"] == d_clean.replace("hass_", "")
+    ]
+
+def cancel_scheduled_task(task_id: str) -> bool:
+    """Cancella un'azione programmata pendente."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE scheduled_device_tasks 
+        SET status = 'cancelled', executed_at = ?
+        WHERE task_id = ? AND status = 'pending'
+    """, (datetime.now(timezone.utc).isoformat(), task_id))
+    rows_affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return rows_affected > 0
+
+# --- TUYA LOCAL DEVICES (Zero Cloud / LAN Protocol) ---
+
+def save_tuya_local_device(device_id: str, name: str, local_key: str, ip_address: Optional[str] = None, version: str = "3.3", category: str = "cz") -> bool:
+    """Salva o aggiorna un dispositivo Tuya per il controllo locale LAN."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_utc = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT INTO tuya_local_devices (device_id, name, local_key, ip_address, version, category, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(device_id) DO UPDATE SET
+            name = excluded.name,
+            local_key = excluded.local_key,
+            ip_address = COALESCE(excluded.ip_address, tuya_local_devices.ip_address),
+            version = excluded.version,
+            category = excluded.category,
+            updated_at = excluded.updated_at
+    """, (device_id.strip(), name.strip(), local_key.strip(), (ip_address.strip() if ip_address else None), str(version).strip(), category, now_utc))
+    conn.commit()
+    conn.close()
+    return True
+
+def get_tuya_local_devices() -> List[Dict[str, Any]]:
+    """Restituisce tutti i dispositivi configurati per il controllo locale."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT device_id, name, local_key, ip_address, version, category, is_on, power_w, voltage_v, current_a, updated_at
+        FROM tuya_local_devices
+        ORDER BY name ASC
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    devices = []
+    for r in rows:
+        devices.append({
+            "device_id": r[0],
+            "name": r[1],
+            "local_key": r[2],
+            "ip_address": r[3],
+            "version": r[4] or "3.3",
+            "category": r[5] or "cz",
+            "is_on": bool(r[6]) if r[6] is not None else None,
+            "power_w": float(r[7] or 0.0),
+            "voltage_v": float(r[8] or 0.0),
+            "current_a": float(r[9] or 0.0),
+            "updated_at": r[10]
+        })
+    return devices
+
+def get_tuya_local_device(device_id: str) -> Optional[Dict[str, Any]]:
+    """Restituisce la configurazione locale di uno specifico dispositivo Tuya."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT device_id, name, local_key, ip_address, version, category, is_on, power_w, voltage_v, current_a, updated_at
+        FROM tuya_local_devices
+        WHERE device_id = ?
+    """, (device_id,))
+    r = cursor.fetchone()
+    conn.close()
+    if not r:
+        return None
+    return {
+        "device_id": r[0],
+        "name": r[1],
+        "local_key": r[2],
+        "ip_address": r[3],
+        "version": r[4] or "3.3",
+        "category": r[5] or "cz",
+        "is_on": bool(r[6]) if r[6] is not None else None,
+        "power_w": float(r[7] or 0.0),
+        "voltage_v": float(r[8] or 0.0),
+        "current_a": float(r[9] or 0.0),
+        "updated_at": r[10]
+    }
+
+def update_tuya_local_status(device_id: str, is_on: Optional[bool] = None, power_w: Optional[float] = None, voltage_v: Optional[float] = None, current_a: Optional[float] = None) -> bool:
+    """Aggiorna lo stato telemetrico locale del dispositivo."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_utc = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        UPDATE tuya_local_devices
+        SET is_on = COALESCE(?, is_on),
+            power_w = COALESCE(?, power_w),
+            voltage_v = COALESCE(?, voltage_v),
+            current_a = COALESCE(?, current_a),
+            updated_at = ?
+        WHERE device_id = ?
+    """, (1 if is_on is True else (0 if is_on is False else None), power_w, voltage_v, current_a, now_utc, device_id))
+    conn.commit()
+    conn.close()
+    return True
+
+def update_tuya_local_device_ip(device_id: str, ip_address: str) -> bool:
+    """Aggiorna l'IP locale associato al dispositivo."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_utc = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        UPDATE tuya_local_devices
+        SET ip_address = ?, updated_at = ?
+        WHERE device_id = ?
+    """, (ip_address.strip(), now_utc, device_id))
+    conn.commit()
+    conn.close()
+    return True
+
+def delete_tuya_local_device(device_id: str) -> bool:
+    """Rimuove un dispositivo dalla configurazione locale."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM tuya_local_devices WHERE device_id = ?", (device_id,))
+    rows = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return rows > 0
+
+
+def claim_scheduled_task(task_id: str) -> bool:
+    """Passa un task da 'pending' a 'running'. Restituisce False se un altro ciclo lo ha già preso."""
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            "UPDATE scheduled_device_tasks SET status = 'running' WHERE task_id = ? AND status = 'pending'",
+            (task_id,)
+        )
+        conn.commit()
+        return cursor.rowcount == 1
+    finally:
+        conn.close()
+
+
+def mark_scheduled_task_completed(task_id: str, status: str, result: Any = None) -> bool:
+    """Aggiorna lo stato di un task completato (executed o failed)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_utc = datetime.now(timezone.utc).isoformat()
+    res_json = json.dumps(result or {}, ensure_ascii=False)
+    
+    cursor.execute("""
+        UPDATE scheduled_device_tasks
+        SET status = ?, executed_at = ?, result_json = ?
+        WHERE task_id = ?
+    """, (status, now_utc, res_json, task_id))
+    
+    rows_affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return rows_affected > 0
+
+
+# ---------------------------------------------------------------------------
+# 15. RIEPILOGHI MENSILI & RECORD MENSILI STORICI (All-Time Monthly Primates)
+# ---------------------------------------------------------------------------
+
+def calculate_monthly_summary(year: int, month: int) -> Dict[str, Any]:
+    """
+    Calcola l'aggregazione statistica completa di un mese solare:
+    - Metriche meteo (T media, T max/min con orari, Notti Tropicali, Pioggia, Vento, UV, Solare, Fulmini)
+    - Metriche energetiche Aton (Produzione solare totale kWh, Picco W, Consumo casa, Autarchia %, Autoconsumo %)
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    if month == 12:
+        next_year = year + 1
+        next_month = 1
+    else:
+        next_year = year
+        next_month = month + 1
+    
+    last_day = (datetime(next_year, next_month, 1) - timedelta(days=1)).day
+    start_iso = f"{year:04d}-{month:02d}-01T00:00:00"
+    end_iso = f"{year:04d}-{month:02d}-{last_day:02d}T23:59:59"
+    year_month = f"{year:04d}-{month:02d}"
+    month_name = f"{ITALIAN_MONTHS.get(month, str(month))} {year}"
+
+    # 1. Metriche Generali Meteo
+    cursor.execute("""
+        SELECT 
+            COUNT(*) as total_records,
+            AVG(temp_c) as avg_temp,
+            MIN(temp_c) as min_temp,
+            MAX(temp_c) as max_temp,
+            AVG(humidity) as avg_hum,
+            AVG(wind_speed_kmh) as avg_wind_speed,
+            MAX(wind_gust_kmh) as max_wind_gust,
+            MAX(solar_radiation) as max_solar_rad,
+            MAX(uv_index) as max_uv_index,
+            MAX(rain_rate_mm_hr) as max_rain_rate
+        FROM weather_records
+        WHERE timestamp >= ? AND timestamp <= ?
+    """, (start_iso, end_iso))
+    row = cursor.fetchone()
+
+    total_records = row["total_records"] if row else 0
+    avg_temp = round(row["avg_temp"], 1) if row and row["avg_temp"] is not None else None
+    min_temp = round(row["min_temp"], 1) if row and row["min_temp"] is not None else None
+    max_temp = round(row["max_temp"], 1) if row and row["max_temp"] is not None else None
+    temp_range = round(max_temp - min_temp, 1) if (max_temp is not None and min_temp is not None) else None
+    avg_wind_speed = round(row["avg_wind_speed"], 1) if row and row["avg_wind_speed"] is not None else None
+    max_wind_gust = round(row["max_wind_gust"], 1) if row and row["max_wind_gust"] is not None else None
+    max_solar_rad = round(row["max_solar_rad"], 1) if row and row["max_solar_rad"] is not None else None
+    max_uv_index = int(row["max_uv_index"]) if row and row["max_uv_index"] is not None else None
+    max_rain_rate = round(row["max_rain_rate"], 1) if row and row["max_rain_rate"] is not None else None
+
+    # Timestamp Max Temp
+    max_temp_time = None
+    if max_temp is not None:
+        cursor.execute("""
+            SELECT timestamp FROM weather_records
+            WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
+            ORDER BY temp_c DESC, timestamp ASC LIMIT 1
+        """, (start_iso, end_iso))
+        r_tmax = cursor.fetchone()
+        if r_tmax:
+            max_temp_time = r_tmax["timestamp"]
+
+    # Timestamp Min Temp
+    min_temp_time = None
+    if min_temp is not None:
+        cursor.execute("""
+            SELECT timestamp FROM weather_records
+            WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
+            ORDER BY temp_c ASC, timestamp ASC LIMIT 1
+        """, (start_iso, end_iso))
+        r_tmin = cursor.fetchone()
+        if r_tmin:
+            min_temp_time = r_tmin["timestamp"]
+
+    # Raffica Max dettagli (ora e direzione)
+    max_wind_gust_time = None
+    max_wind_gust_dir = None
+    if max_wind_gust is not None and max_wind_gust > 0:
+        cursor.execute("""
+            SELECT timestamp, wind_dir_deg FROM weather_records
+            WHERE timestamp >= ? AND timestamp <= ? AND wind_gust_kmh IS NOT NULL
+            ORDER BY wind_gust_kmh DESC, timestamp ASC LIMIT 1
+        """, (start_iso, end_iso))
+        r_gust = cursor.fetchone()
+        if r_gust:
+            max_wind_gust_time = r_gust["timestamp"]
+            max_wind_gust_dir = deg_to_compass(r_gust["wind_dir_deg"])
+
+    # Precipitazioni Giornaliere (Accumulo totale, giorno record e giorni piovosi)
+    cursor.execute("""
+        SELECT day, MAX(day_rain) as day_rain FROM (
+            SELECT local_date(timestamp) as day, MAX(daily_rain_mm) as day_rain
+            FROM weather_records
+            WHERE timestamp >= ? AND timestamp <= ?
+            GROUP BY local_date(timestamp)
+        ) GROUP BY day
+    """, (start_iso, end_iso))
+    rain_days = cursor.fetchall()
+    
+    total_rain_mm = round(sum((r["day_rain"] or 0.0) for r in rain_days), 1)
+    rainy_days_count = sum(1 for r in rain_days if (r["day_rain"] or 0.0) >= 0.2)
+    
+    max_daily_rain_mm = 0.0
+    max_daily_rain_date = None
+    if rain_days:
+        best_rain = max(rain_days, key=lambda x: x["day_rain"] or 0.0)
+        max_daily_rain_mm = round(best_rain["day_rain"] or 0.0, 1)
+        max_daily_rain_date = best_rain["day"]
+
+    # Notti Tropicali (Tmin >= 20°C) e Notti Roventi (Tmin >= 25°C)
+    cursor.execute("""
+        SELECT day, MIN(temp_c) as day_min FROM (
+            SELECT local_date(timestamp) as day, temp_c
+            FROM weather_records
+            WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
+        ) GROUP BY day
+    """, (start_iso, end_iso))
+    temp_days = cursor.fetchall()
+
+    tropical_nights_count = sum(1 for r in temp_days if (r["day_min"] or 0.0) >= 20.0)
+    super_tropical_nights_count = sum(1 for r in temp_days if (r["day_min"] or 0.0) >= 25.0)
+
+    # Fulmini nel mese
+    cursor.execute("""
+        SELECT MAX(lightning_count) - MIN(lightning_count) as diff_lightnings
+        FROM weather_records
+        WHERE timestamp >= ? AND timestamp <= ? AND lightning_count IS NOT NULL
+    """, (start_iso, end_iso))
+    r_light = cursor.fetchone()
+    lightning_count_total = max(0, int(r_light["diff_lightnings"] or 0)) if r_light and r_light["diff_lightnings"] is not None else 0
+
+    # 2. Metriche Energetiche Aton
+    cursor.execute("""
+        SELECT 
+            local_date(timestamp) as day,
+            MAX(e_pannelli_wh) as day_solar_wh,
+            MAX(e_comprata_wh) as day_bought_wh,
+            MAX(e_venduta_wh) as day_sold_wh,
+            MAX(p_solare) as max_solar_w
+        FROM energy_records
+        WHERE timestamp >= ? AND timestamp <= ?
+        GROUP BY local_date(timestamp)
+    """, (start_iso, end_iso))
+    energy_days = cursor.fetchall()
+
+    solar_total_kwh = round(sum((r["day_solar_wh"] or 0.0) for r in energy_days) / 1000.0, 2)
+    bought_kwh = round(sum((r["day_bought_wh"] or 0.0) for r in energy_days) / 1000.0, 2)
+    sold_kwh = round(sum((r["day_sold_wh"] or 0.0) for r in energy_days) / 1000.0, 2)
+    solar_max_w = round(max([(r["max_solar_w"] or 0.0) for r in energy_days] + [0.0]), 1)
+    
+    self_consumed_kwh = max(0.0, round(solar_total_kwh - sold_kwh, 2))
+    house_consumption_kwh = round(self_consumed_kwh + bought_kwh, 2)
+
+    if house_consumption_kwh > 0:
+        autarky_pct = round(max(0.0, min(100.0, (1.0 - (bought_kwh / house_consumption_kwh)) * 100.0)), 1)
+    else:
+        autarky_pct = 0.0
+
+    if solar_total_kwh > 0:
+        self_consumption_pct = round(max(0.0, min(100.0, (self_consumed_kwh / solar_total_kwh) * 100.0)), 1)
+    else:
+        self_consumption_pct = 100.0
+
+    conn.close()
+
+    now_utc = datetime.now(timezone.utc).isoformat()
+    return {
+        "year_month": year_month,
+        "year": year,
+        "month": month,
+        "month_name": month_name,
+        "total_records": total_records,
+        "avg_temp": avg_temp,
+        "max_temp": max_temp,
+        "max_temp_time": max_temp_time,
+        "min_temp": min_temp,
+        "min_temp_time": min_temp_time,
+        "temp_range": temp_range,
+        "tropical_nights_count": tropical_nights_count,
+        "super_tropical_nights_count": super_tropical_nights_count,
+        "total_rain_mm": total_rain_mm,
+        "max_daily_rain_mm": max_daily_rain_mm,
+        "max_daily_rain_date": max_daily_rain_date,
+        "max_rain_rate_mm_hr": max_rain_rate,
+        "rainy_days_count": rainy_days_count,
+        "max_wind_gust_kmh": max_wind_gust,
+        "max_wind_gust_time": max_wind_gust_time,
+        "max_wind_gust_dir": max_wind_gust_dir,
+        "avg_wind_speed_kmh": avg_wind_speed,
+        "solar_total_kwh": solar_total_kwh,
+        "solar_max_w": solar_max_w,
+        "house_consumption_kwh": house_consumption_kwh,
+        "autarky_pct": autarky_pct,
+        "self_consumption_pct": self_consumption_pct,
+        "bought_kwh": bought_kwh,
+        "sold_kwh": sold_kwh,
+        "max_solar_rad": max_solar_rad,
+        "max_uv_index": max_uv_index,
+        "lightning_count_total": lightning_count_total,
+        "details_json": json.dumps({"start_iso": start_iso, "end_iso": end_iso}),
+        "created_at": now_utc,
+        "updated_at": now_utc
+    }
+
+def save_monthly_summary(summary: Dict[str, Any]) -> None:
+    """Salva o aggiorna il riepilogo mensile consolidato nella tabella monthly_summaries."""
+    if not summary or not summary.get("year_month"):
+        return
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_utc = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT OR REPLACE INTO monthly_summaries (
+            year_month, year, month, month_name, total_records,
+            avg_temp, max_temp, max_temp_time, min_temp, min_temp_time, temp_range,
+            tropical_nights_count, super_tropical_nights_count,
+            total_rain_mm, max_daily_rain_mm, max_daily_rain_date, max_rain_rate_mm_hr, rainy_days_count,
+            max_wind_gust_kmh, max_wind_gust_time, max_wind_gust_dir, avg_wind_speed_kmh,
+            solar_total_kwh, solar_max_w, house_consumption_kwh, autarky_pct, self_consumption_pct,
+            bought_kwh, sold_kwh, max_solar_rad, max_uv_index, lightning_count_total,
+            details_json, created_at, updated_at
+        ) VALUES (
+            :year_month, :year, :month, :month_name, :total_records,
+            :avg_temp, :max_temp, :max_temp_time, :min_temp, :min_temp_time, :temp_range,
+            :tropical_nights_count, :super_tropical_nights_count,
+            :total_rain_mm, :max_daily_rain_mm, :max_daily_rain_date, :max_rain_rate_mm_hr, :rainy_days_count,
+            :max_wind_gust_kmh, :max_wind_gust_time, :max_wind_gust_dir, :avg_wind_speed_kmh,
+            :solar_total_kwh, :solar_max_w, :house_consumption_kwh, :autarky_pct, :self_consumption_pct,
+            :bought_kwh, :sold_kwh, :max_solar_rad, :max_uv_index, :lightning_count_total,
+            :details_json, :created_at, :updated_at
+        )
+    """, {
+        **summary,
+        "created_at": summary.get("created_at") or now_utc,
+        "updated_at": now_utc
+    })
+    conn.commit()
+    conn.close()
+
+def check_and_update_monthly_records(summary: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Confronta le metriche del mese con l'Albo dei Record Mensili Storici (All-Time Monthly Extremes).
+    Se un primato storico viene superato, aggiorna monthly_extremes e registra l'evento in monthly_records_history.
+    Restituisce la lista dei nuovi record infranti.
+    """
+    if not summary or summary.get("total_records", 0) == 0:
+        return []
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM monthly_extremes")
+    current_records = {row["record_key"]: dict(row) for row in cursor.fetchall()}
+
+    now_utc = datetime.now(timezone.utc).isoformat()
+    new_records_broken = []
+
+    for defn in MONTHLY_RECORD_DEFINITIONS:
+        key = defn["key"]
+        field = defn["field"]
+        val = summary.get(field)
+        if val is None:
+            continue
+
+        val = float(val)
+        # Salta valori non validi o nulli per record di tipo max (es. pioggia 0 non è record max pioggia)
+        if defn["type"] == "max" and val <= 0 and key in ("rainiest_month", "highest_solar_production_month", "highest_rain_rate_month", "most_tropical_nights_month"):
+            continue
+
+        curr = current_records.get(key)
+        ym = summary["year_month"]
+        mname = summary["month_name"]
+
+        if curr is None:
+            # Primo record storico assoluto mai registrato
+            cursor.execute("""
+                INSERT OR REPLACE INTO monthly_extremes (
+                    record_key, category, title, value, unit, year_month, month_name, timestamp, details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (key, defn["category"], defn["title"], val, defn["unit"], ym, mname, now_utc, json.dumps(summary)))
+            continue
+
+        old_val = float(curr["value"]) if curr.get("value") is not None else None
+        old_ym = curr.get("year_month", "")
+        old_mname = curr.get("month_name", "")
+
+        is_broken = False
+        if old_val is None:
+            is_broken = True
+        elif defn["type"] == "max" and val > old_val:
+            is_broken = True
+        elif defn["type"] == "min" and val < old_val:
+            is_broken = True
+
+        if is_broken and old_val is not None:
+            # Aggiorna il record attuale
+            cursor.execute("""
+                INSERT OR REPLACE INTO monthly_extremes (
+                    record_key, category, title, value, unit, year_month, month_name, timestamp, details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (key, defn["category"], defn["title"], val, defn["unit"], ym, mname, now_utc, json.dumps(summary)))
+
+            # Inserisci nella cronologia storica
+            cursor.execute("""
+                INSERT INTO monthly_records_history (
+                    record_key, category, title, old_value, new_value, unit, old_year_month, new_year_month, timestamp, details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (key, defn["category"], defn["title"], old_val, val, defn["unit"], old_ym, ym, now_utc, json.dumps(summary)))
+
+            new_records_broken.append({
+                "record_key": key,
+                "category": defn["category"],
+                "title": defn["title"],
+                "old_value": old_val,
+                "new_value": val,
+                "unit": defn["unit"],
+                "old_year_month": old_ym,
+                "old_month_name": old_mname,
+                "new_year_month": ym,
+                "new_month_name": mname,
+                "timestamp": now_utc
+            })
+
+    conn.commit()
+    conn.close()
+    return new_records_broken
+
+def get_monthly_records() -> List[Dict[str, Any]]:
+    """Restituisce l'elenco completo dei Record Mensili Storici attuali con i dettagli."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM monthly_extremes")
+    stored = {row["record_key"]: dict(row) for row in cursor.fetchall()}
+    conn.close()
+
+    result = []
+    for defn in MONTHLY_RECORD_DEFINITIONS:
+        key = defn["key"]
+        if key in stored:
+            item = stored[key]
+            if item.get("details_json"):
+                try:
+                    item["details"] = json.loads(item["details_json"])
+                except Exception:
+                    item["details"] = {}
+            result.append(item)
+        else:
+            result.append({
+                "record_key": key,
+                "category": defn["category"],
+                "title": defn["title"],
+                "value": None,
+                "unit": defn["unit"],
+                "year_month": None,
+                "month_name": "In attesa dati",
+                "timestamp": None,
+                "details": {}
+            })
+    return result
+
+def get_all_monthly_summaries(limit: int = 36) -> List[Dict[str, Any]]:
+    """Restituisce la lista di tutti i riepiloghi mensili ordinati dal più recente al più vecchio."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM monthly_summaries ORDER BY year_month DESC LIMIT ?", (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        d = dict(r)
+        if d.get("details_json"):
+            try:
+                d["details"] = json.loads(d["details_json"])
+            except Exception:
+                d["details"] = {}
+        result.append(d)
+    return result
+
+def get_monthly_summary_by_key(year_month: str) -> Optional[Dict[str, Any]]:
+    """Recupera il riepilogo mensile per un determinato mese (es. '2026-08')."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM monthly_summaries WHERE year_month = ?", (year_month,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        d = dict(row)
+        if d.get("details_json"):
+            try:
+                d["details"] = json.loads(d["details_json"])
+            except Exception:
+                d["details"] = {}
+        return d
+    return None
+
+def rebuild_all_historical_monthly_summaries() -> Dict[str, Any]:
+    """
+    Scansiona tutte le letture storiche nel DB, genera e salva il riepilogo mensile per ogni mese,
+    e ricalcola i primati mensili storici (monthly_extremes) in ordine cronologico.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT DISTINCT strftime('%Y-%m', timestamp) as ym
+        FROM weather_records
+        WHERE timestamp IS NOT NULL
+        ORDER BY ym ASC
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+
+    months = [r["ym"] for r in rows if r["ym"] and len(r["ym"]) == 7]
+    processed_count = 0
+    all_broken_records = []
+
+    for ym in months:
+        try:
+            parts = ym.split("-")
+            y = int(parts[0])
+            m = int(parts[1])
+            summary = calculate_monthly_summary(y, m)
+            if summary.get("total_records", 0) > 0:
+                save_monthly_summary(summary)
+                broken = check_and_update_monthly_records(summary)
+                if broken:
+                    all_broken_records.extend(broken)
+                processed_count += 1
+        except Exception as e:
+            logger.error(f"[MONTHLY-REBUILD] Errore elaborazione mese {ym}: {e}")
+
+    return {
+        "status": "success",
+        "processed_months": processed_count,
+        "months": months,
+        "records_set": len(all_broken_records)
+    }
+
+# ----------------- SALUTE & PARAMETRI BIOMETRICI (Samsung Health & Health Connect) -----------------
+
+def record_health_snapshot(health_data: Dict[str, Any]) -> bool:
+    """
+    Salva o aggiorna la telemetria sanitaria giornaliera in SQLite.
+    Mantiene il massimo dei passi, calorie e metriche aggregate del giorno.
+    """
+    if not health_data or not health_data.get("is_available"):
+        return False
+
+    today_str = settings.now_local().strftime("%Y-%m-%d")
+    now_iso = settings.now_local().isoformat()
+
+    steps_info = health_data.get("steps", {})
+    cal_info = health_data.get("calories", {})
+    heart_info = health_data.get("heart", {})
+    sleep_info = health_data.get("sleep", {})
+    body_info = health_data.get("body", {})
+    hyd_info = health_data.get("hydration", {})
+
+    steps = steps_info.get("daily") or 0
+    dist_m = steps_info.get("distance_m") or 0.0
+    floors = steps_info.get("floors") or 0
+    tot_cal = cal_info.get("total_kcal") or 0.0
+    act_cal = cal_info.get("active_kcal") or 0.0
+    basal_cal = cal_info.get("basal_kcal") or 0.0
+    hr = heart_info.get("rate_bpm")
+    spo2 = heart_info.get("spo2_pct")
+    vo2 = heart_info.get("vo2_max")
+    sleep_min = sleep_info.get("duration_min") or 0.0
+    weight = body_info.get("weight_kg")
+    fat = body_info.get("fat_pct")
+    water = body_info.get("water_mass_kg")
+    lean = body_info.get("lean_mass_kg")
+    bone = body_info.get("bone_mass_kg")
+    hyd = hyd_info.get("daily_ml") or 0.0
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM health_daily_history WHERE date = ?", (today_str,))
+        row = cursor.fetchone()
+        if row:
+            old_steps = int(row["steps"] or 0)
+            if old_steps > 8000 and 0 < int(steps) < 8000:
+                cur_steps = int(steps)
+                cur_dist = float(dist_m)
+            else:
+                cur_steps = max(old_steps, int(steps))
+                cur_dist = max(float(row["distance_m"] or 0.0), float(dist_m))
+            cur_tot_cal = max(float(row["total_calories"] or 0.0), float(tot_cal))
+            cur_act_cal = max(float(row["active_calories"] or 0.0), float(act_cal))
+            cur_floors = max(int(row["floors"] or 0), int(floors))
+            cur_sleep = max(float(row["sleep_minutes"] or 0.0), float(sleep_min))
+            cur_hr_max = max(float(row["heart_rate_max"] or 0.0), float(hr)) if hr else row["heart_rate_max"]
+            cur_hr_min = min(float(row["heart_rate_min"] or 999.0), float(hr)) if hr else row["heart_rate_min"]
+            cur_hr_avg = round((float(row["heart_rate_avg"] or hr) + float(hr)) / 2.0, 1) if hr and row["heart_rate_avg"] else hr
+
+            cursor.execute("""
+                UPDATE health_daily_history SET
+                    steps = ?,
+                    distance_m = ?,
+                    total_calories = ?,
+                    active_calories = ?,
+                    basal_calories = COALESCE(?, basal_calories),
+                    floors = ?,
+                    heart_rate_avg = ?,
+                    heart_rate_max = ?,
+                    heart_rate_min = ?,
+                    spo2_avg = COALESCE(?, spo2_avg),
+                    vo2_max = COALESCE(?, vo2_max),
+                    sleep_minutes = ?,
+                    weight_kg = COALESCE(?, weight_kg),
+                    body_fat_pct = COALESCE(?, body_fat_pct),
+                    water_mass_kg = COALESCE(?, water_mass_kg),
+                    lean_mass_kg = COALESCE(?, lean_mass_kg),
+                    bone_mass_kg = COALESCE(?, bone_mass_kg),
+                    hydration_ml = ?,
+                    updated_at = ?
+                WHERE date = ?
+            """, (
+                cur_steps, cur_dist, cur_tot_cal, cur_act_cal, basal_cal if basal_cal > 0 else None,
+                cur_floors, cur_hr_avg, cur_hr_max, cur_hr_min, spo2, vo2, cur_sleep,
+                weight, fat, water, lean, bone, hyd, now_iso, today_str
+            ))
+        else:
+            cursor.execute("""
+                INSERT INTO health_daily_history (
+                    date, steps, distance_m, total_calories, active_calories, basal_calories,
+                    floors, heart_rate_avg, heart_rate_max, heart_rate_min, spo2_avg, vo2_max,
+                    sleep_minutes, weight_kg, body_fat_pct, water_mass_kg, lean_mass_kg,
+                    bone_mass_kg, hydration_ml, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                today_str, steps, dist_m, tot_cal, act_cal, basal_cal,
+                floors, hr, hr, hr, spo2, vo2,
+                sleep_min, weight, fat, water, lean,
+                bone, hyd, now_iso, now_iso
+            ))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"[HEALTH-DB] Errore salvataggio snapshot sanitario: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_health_daily_history(days: int = 30) -> List[Dict[str, Any]]:
+    """Restituisce lo storico giornaliero dei parametri sanitari per gli ultimi N giorni."""
+    seed_health_baseline_if_empty()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM health_daily_history
+        ORDER BY date DESC
+        LIMIT ?
+    """, (days,))
+    rows = cursor.fetchall()
+    conn.close()
+
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["distance_km"] = round((d["distance_m"] or 0.0) / 1000.0, 2)
+        sleep_m = d.get("sleep_minutes") or 0.0
+        h = int(sleep_m) // 60
+        m = int(sleep_m) % 60
+        d["sleep_formatted"] = f"{h}h {m:02d}m" if sleep_m > 0 else "--"
+        d["sleep_hours"] = round(sleep_m / 60.0, 1) if sleep_m > 0 else 0.0
+        result.append(d)
+
+    return list(reversed(result))
+
+def get_health_stats_summary() -> Dict[str, Any]:
+    """
+    Calcola e restituisce il compendio analitico dei parametri di salute:
+    - Medie giornaliere (7gg, 30gg)
+    - Medie mensili e confronto con mese precedente
+    - Record storici (giorno con più passi, più calorie)
+    - Trend e storico per grafici
+    """
+    seed_health_baseline_if_empty()
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # 1. Ultime 30 giornate
+    cursor.execute("SELECT * FROM health_daily_history ORDER BY date DESC LIMIT 30")
+    recent_rows = [dict(r) for r in cursor.fetchall()]
+
+    # 2. Record assoluti
+    cursor.execute("SELECT date, steps FROM health_daily_history WHERE steps IS NOT NULL ORDER BY steps DESC LIMIT 1")
+    max_steps_row = cursor.fetchone()
+
+    cursor.execute("SELECT date, total_calories FROM health_daily_history WHERE total_calories IS NOT NULL ORDER BY total_calories DESC LIMIT 1")
+    max_cal_row = cursor.fetchone()
+
+    # 3. Medie per mese
+    cursor.execute("""
+        SELECT 
+            strftime('%Y-%m', date) as year_month,
+            COUNT(*) as days_count,
+            SUM(steps) as total_steps,
+            AVG(steps) as avg_daily_steps,
+            SUM(distance_m) as total_distance_m,
+            AVG(total_calories) as avg_calories,
+            AVG(sleep_minutes) as avg_sleep_min,
+            AVG(heart_rate_avg) as avg_hr
+        FROM health_daily_history
+        GROUP BY strftime('%Y-%m', date)
+        ORDER BY year_month DESC
+        LIMIT 12
+    """)
+    monthly_rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+
+    # Calcolo Medie 7gg e 30gg
+    last_7 = recent_rows[:7]
+    avg_steps_7d = int(round(sum(r["steps"] or 0 for r in last_7) / len(last_7))) if last_7 else 0
+    avg_cal_7d = int(round(sum(r["total_calories"] or 0 for r in last_7) / len(last_7))) if last_7 else 0
+    avg_sleep_min_7d = (sum(r["sleep_minutes"] or 0 for r in last_7) / len(last_7)) if last_7 else 0.0
+    sleep_h_7d = int(avg_sleep_min_7d) // 60
+    sleep_m_7d = int(avg_sleep_min_7d) % 60
+    avg_sleep_fmt_7d = f"{sleep_h_7d}h {sleep_m_7d:02d}m" if avg_sleep_min_7d > 0 else "--"
+
+    avg_steps_30d = int(round(sum(r["steps"] or 0 for r in recent_rows) / len(recent_rows))) if recent_rows else 0
+    avg_cal_30d = int(round(sum(r["total_calories"] or 0 for r in recent_rows) / len(recent_rows))) if recent_rows else 0
+
+    # Mese corrente vs precedente
+    current_ym = settings.now_local().strftime("%Y-%m")
+    current_month_stat = next((m for m in monthly_rows if m["year_month"] == current_ym), None)
+    prev_month_stat = monthly_rows[1] if len(monthly_rows) > 1 else None
+
+    curr_m_total_steps = current_month_stat["total_steps"] if current_month_stat else 0
+    curr_m_avg_steps = int(round(current_month_stat["avg_daily_steps"])) if current_month_stat and current_month_stat["avg_daily_steps"] else avg_steps_30d
+    prev_m_avg_steps = int(round(prev_month_stat["avg_daily_steps"])) if prev_month_stat and prev_month_stat["avg_daily_steps"] else 0
+
+    month_diff_pct = 0.0
+    if prev_m_avg_steps > 0:
+        month_diff_pct = round(((curr_m_avg_steps - prev_m_avg_steps) / prev_m_avg_steps) * 100, 1)
+
+    # Formattazione array per grafici Chart.js (Passi 14gg)
+    chart_days = list(reversed(recent_rows[:14]))
+    chart_labels = [r["date"][5:] for r in chart_days]  # MM-DD
+    chart_steps = [r["steps"] or 0 for r in chart_days]
+    chart_cals = [int(round(r["total_calories"] or 0)) for r in chart_days]
+
+    # Formattazione array per grafico Peso & Composizione Corporea (30gg)
+    weight_days = list(reversed(recent_rows))
+    weight_labels = [r["date"][5:] for r in weight_days if r.get("weight_kg") is not None]
+    weight_vals = [round(float(r["weight_kg"]), 1) for r in weight_days if r.get("weight_kg") is not None]
+    fat_vals = [round(float(r["body_fat_pct"]), 1) for r in weight_days if r.get("body_fat_pct") is not None]
+    lean_vals = [round(float(r["lean_mass_kg"]), 1) for r in weight_days if r.get("lean_mass_kg") is not None]
+
+    return {
+        "avg_daily_steps_7d": avg_steps_7d,
+        "avg_daily_cal_7d": avg_cal_7d,
+        "avg_sleep_7d": avg_sleep_fmt_7d,
+        "avg_sleep_hours_7d": round(avg_sleep_min_7d / 60.0, 1),
+        "avg_daily_steps_30d": avg_steps_30d,
+        "avg_daily_cal_30d": avg_cal_30d,
+        "current_month_total_steps": curr_m_total_steps,
+        "current_month_avg_daily_steps": curr_m_avg_steps,
+        "prev_month_avg_daily_steps": prev_m_avg_steps,
+        "month_diff_pct": month_diff_pct,
+        "max_steps_record": {
+            "date": max_steps_row["date"] if max_steps_row else "--",
+            "steps": max_steps_row["steps"] if max_steps_row else 0
+        },
+        "max_calories_record": {
+            "date": max_cal_row["date"] if max_cal_row else "--",
+            "calories": int(round(max_cal_row["total_calories"])) if max_cal_row and max_cal_row["total_calories"] else 0
+        },
+        "monthly_breakdown": monthly_rows,
+        "chart_data_14d": {
+            "labels": chart_labels,
+            "steps": chart_steps,
+            "calories": chart_cals
+        },
+        "weight_chart_30d": {
+            "labels": weight_labels,
+            "weights": weight_vals,
+            "fats": fat_vals,
+            "leans": lean_vals,
+            "latest_weight": weight_vals[-1] if weight_vals else None,
+            "min_weight": min(weight_vals) if weight_vals else None,
+            "max_weight": max(weight_vals) if weight_vals else None
+        }
+    }
+
+def seed_health_baseline_if_empty():
+    """Non genera più dati fittizi: mantiene solo misurazioni reali sincronizzate dai dispositivi."""
+    pass
+
+
 

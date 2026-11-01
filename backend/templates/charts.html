@@ -75,12 +75,30 @@
         <canvas id="chartForecast"></canvas>
     </div>
 </div>
+
+<!-- GRAFICO 6: UMIDITÀ DEL TERRENO WH51 -->
+<div class="card" id="cardChartSoil">
+    <div class="card-header">
+        <span>🌱 Umidità del Terreno (% - Sensori WH51)</span>
+        <span class="badge badge-success" style="font-size: 0.75rem;">Soglia Minima: 25%</span>
+    </div>
+    <div style="height: 250px; position: relative;">
+        <canvas id="chartSoil"></canvas>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-    let chartTemp, chartWind, chartRain, chartPress, chartSolar;
+    let chartTemp, chartWind, chartRain, chartPress, chartSolar, chartForecast, chartSoil;
+    let sensorAliases = {};
     const defaultFont = { family: 'Plus Jakarta Sans' };
+
+    // Carica alias sensori
+    fetch('/api/sensors/aliases')
+        .then(r => r.json())
+        .then(data => { if (data) sensorAliases = data; })
+        .catch(() => {});
 
     function loadCharts(period = '24h') {
         fetch(`/api/history?period=${period}`)
@@ -105,6 +123,7 @@
                 if (chartRain) chartRain.destroy();
                 if (chartPress) chartPress.destroy();
                 if (chartSolar) chartSolar.destroy();
+                if (chartSoil) chartSoil.destroy();
 
                 // 1. Chart Temp
                 const datasetsTemp = [
@@ -242,6 +261,76 @@
                         }
                     }
                 });
+
+                // 6. Chart Umidità Terreno WH51
+                const soilColors = ['#10b981', '#14b8a6', '#06b6d4', '#3b82f6', '#8b5cf6', '#d946ef', '#f43f5e', '#f59e0b'];
+                const soilDatasets = [];
+                const soilData = d.soil_moisture || {};
+                let cIdx = 0;
+
+                for (const [ch, vals] of Object.entries(soilData)) {
+                    if (vals && vals.some(v => v !== null && v !== undefined)) {
+                        const alias = sensorAliases[`soil_${ch}`] || sensorAliases[ch] || `Canale ${ch.toUpperCase()}`;
+                        const color = soilColors[cIdx % soilColors.length];
+                        soilDatasets.push({
+                            label: `${alias} (%)`,
+                            data: vals,
+                            borderColor: color,
+                            backgroundColor: `${color}18`,
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: false
+                        });
+                        cIdx++;
+                    }
+                }
+
+                const soilCardEl = document.getElementById('cardChartSoil');
+                if (soilDatasets.length > 0) {
+                    if (soilCardEl) soilCardEl.style.display = 'block';
+                    chartSoil = new Chart(document.getElementById('chartSoil').getContext('2d'), {
+                        type: 'line',
+                        data: { labels, datasets: soilDatasets },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: { mode: 'index', intersect: false },
+                            plugins: {
+                                legend: { labels: { color: '#94a3b8', font: defaultFont } }
+                            },
+                            scales: {
+                                x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', maxTicksLimit: 12 } },
+                                y: {
+                                    grid: { color: 'rgba(255,255,255,0.05)' },
+                                    ticks: { color: '#10b981' },
+                                    min: 0,
+                                    max: 100,
+                                    title: { display: true, text: '% Umidità', color: '#10b981' }
+                                }
+                            }
+                        }
+                    });
+                } else {
+                    // Nessun dato terreno: mostra messaggio placeholder
+                    if (soilCardEl) {
+                        chartSoil = new Chart(document.getElementById('chartSoil').getContext('2d'), {
+                            type: 'line',
+                            data: { labels: labels.slice(0, 10), datasets: [] },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    title: {
+                                        display: true,
+                                        text: 'In attesa di letture dai sensori terreno WH51',
+                                        color: '#64748b',
+                                        font: defaultFont
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
             });
 
         // Carica Previsioni Modello Orarie Prossime 36h

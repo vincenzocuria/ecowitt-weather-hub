@@ -1,124 +1,127 @@
-import math
-from PIL import Image, ImageDraw
+"""
+Genera le icone dell'app (PWA, Apple, badge notifiche, ntfy) in stile flat:
+sfondo pieno a gradiente cielo (il sistema operativo applica da sé gli angoli arrotondati),
+un sole caldo parzialmente coperto da una nuvola morbida, margini ampi per la "safe zone" maskable.
 
-def create_weather_icon(size=512):
-    # Draw at 4x for smooth antialiasing
-    scale = 4
-    s = size * scale
-    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+Uso: python generate_icons.py
+"""
+from pathlib import Path
+from PIL import Image, ImageDraw, ImageFilter
+
+ICONS_DIR = Path(__file__).resolve().parent / "backend" / "static" / "icons"
+SS = 4  # supersampling per bordi morbidi
+
+SKY_TOP = (56, 189, 248)      # sky-400
+SKY_BOTTOM = (29, 78, 216)    # blue-700
+SUN_LIGHT = (253, 224, 71)    # yellow-300
+SUN_DARK = (245, 158, 11)     # amber-500
+CLOUD = (255, 255, 255)
+CLOUD_SHADE = (219, 234, 254)  # blue-100
+
+
+def lerp(a, b, t):
+    return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
+
+
+def vertical_gradient(size, top, bottom):
+    img = Image.new("RGB", (size, size))
     draw = ImageDraw.Draw(img)
+    for y in range(size):
+        draw.line([(0, y), (size, y)], fill=lerp(top, bottom, y / (size - 1)))
+    return img
 
-    # 1. Background Rounded Rectangle with Gradient
-    r = int(s * 0.22)
-    # Background gradient from deep dark navy to vibrant azure
-    for y in range(s):
-        ratio = y / s
-        r_c = int(15 * (1 - ratio) + 2 * ratio)
-        g_c = int(23 * (1 - ratio) + 132 * ratio)
-        b_c = int(42 * (1 - ratio) + 199 * ratio)
-        draw.line([(0, y), (s, y)], fill=(r_c, g_c, b_c, 255))
 
-    # Mask with rounded corners
+def radial_sun(size, cx, cy, r):
+    """Disco del sole con leggero gradiente radiale (centro più chiaro)."""
+    layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    steps = 48
+    for i in range(steps, 0, -1):
+        t = i / steps
+        rr = r * t
+        color = lerp(SUN_LIGHT, SUN_DARK, t ** 1.6)
+        draw.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], fill=color + (255,))
+    return layer
+
+
+def cloud_mask(size, ox, oy, w):
+    """Silhouette di nuvola: tre cerchi + base arrotondata, larghezza w con origine (ox, oy) in basso a sinistra."""
+    mask = Image.new("L", (size, size), 0)
+    d = ImageDraw.Draw(mask)
+    h = w * 0.30                                   # altezza della base
+    base_top = oy - h
+    d.rounded_rectangle([ox, base_top, ox + w, oy], radius=h / 2, fill=255)
+    for cx, cy, r in (
+        (ox + w * 0.30, base_top + h * 0.15, w * 0.20),
+        (ox + w * 0.56, base_top - h * 0.30, w * 0.27),
+        (ox + w * 0.80, base_top + h * 0.25, w * 0.17),
+    ):
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=255)
+    return mask
+
+
+def draw_artwork(size, with_background=True):
+    s = size * SS
+    canvas = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    if with_background:
+        canvas.paste(vertical_gradient(s, SKY_TOP, SKY_BOTTOM), (0, 0))
+
+    # Sole in alto a destra, dentro la safe zone (cerchio centrale dell'80%)
+    sun = radial_sun(s, s * 0.60, s * 0.43, s * 0.20)
+    canvas.alpha_composite(sun)
+
+    # Nuvola: ombra morbida + corpo bianco con leggera sfumatura in basso
+    cw = s * 0.62
+    ox, oy = s * 0.19, s * 0.745
+    mask = cloud_mask(s, ox, oy, cw)
+
+    shadow = Image.new("RGBA", (s, s), (15, 23, 42, 0))
+    shadow.putalpha(mask.point(lambda v: int(v * 0.22)))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(s * 0.025))
+    canvas.alpha_composite(shadow, (0, int(s * 0.02)))
+
+    # Leggera sfumatura azzurrina solo nella parte bassa della nuvola
+    top_px, bottom_px = int(oy - cw * 0.30 - cw * 0.57), int(oy)
+    grad = Image.new("RGBA", (s, s), CLOUD + (255,))
+    gd = ImageDraw.Draw(grad)
+    for y in range(top_px, bottom_px):
+        t = (y - top_px) / max(1, bottom_px - top_px)
+        gd.line([(0, y), (s, y)], fill=lerp(CLOUD, CLOUD_SHADE, max(0.0, t - 0.35) / 0.65 if t > 0.35 else 0.0) + (255,))
+    for y in range(bottom_px, s):
+        gd.line([(0, y), (s, y)], fill=CLOUD_SHADE + (255,))
+    grad.putalpha(mask)
+    canvas.alpha_composite(grad)
+
+    return canvas.resize((size, size), Image.LANCZOS)
+
+
+def draw_badge(size=96):
+    """Badge monocromatico per le notifiche Android: silhouette bianca su trasparente."""
+    s = size * SS
     mask = Image.new("L", (s, s), 0)
-    mask_draw = ImageDraw.Draw(mask)
-    mask_draw.rounded_rectangle([0, 0, s, s], radius=r, fill=255)
+    d = ImageDraw.Draw(mask)
+    cx, cy, r = s * 0.62, s * 0.36, s * 0.22
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=255)
+    cloud = cloud_mask(s, s * 0.08, s * 0.84, s * 0.80)
+    # Stacco trasparente tra sole e nuvola, così le due forme restano distinguibili
+    halo = cloud.filter(ImageFilter.MaxFilter(int(s * 0.05) | 1))
+    mask.paste(0, (0, 0), halo)
+    mask.paste(255, (0, 0), cloud)
+    img = Image.new("RGBA", (s, s), (255, 255, 255, 0))
     img.putalpha(mask)
+    return img.resize((size, size), Image.LANCZOS)
 
-    draw = ImageDraw.Draw(img)
 
-    # Subtle inner border
-    draw.rounded_rectangle([scale * 3, scale * 3, s - scale * 3, s - scale * 3], radius=r - scale * 2, outline=(56, 189, 248, 80), width=scale * 4)
+def main():
+    ICONS_DIR.mkdir(parents=True, exist_ok=True)
+    full = draw_artwork(1024)
+    for name, px in (("icon-512.png", 512), ("icon-192.png", 192), ("apple-touch-icon.png", 180), ("ntfy-icon.png", 256)):
+        full.resize((px, px), Image.LANCZOS).convert("RGB" if name == "apple-touch-icon.png" else "RGBA").save(ICONS_DIR / name, optimize=True)
+    # Favicon piccola: stessa grafica
+    full.resize((48, 48), Image.LANCZOS).save(ICONS_DIR / "favicon-48.png", optimize=True)
+    draw_badge(96).save(ICONS_DIR / "badge-96.png", optimize=True)
+    print("Icone generate in", ICONS_DIR)
 
-    # 2. Golden Sun in the upper-right
-    sun_cx, sun_cy = int(s * 0.65), int(s * 0.38)
-    sun_radius = int(s * 0.18)
-
-    # Sun glow
-    for glow_r in range(sun_radius + int(s * 0.08), sun_radius, -int(scale * 2)):
-        alpha = int(30 * (1 - (glow_r - sun_radius) / (s * 0.08)))
-        draw.ellipse([sun_cx - glow_r, sun_cy - glow_r, sun_cx + glow_r, sun_cy + glow_r], fill=(251, 191, 36, alpha))
-
-    # Sun rays
-    num_rays = 8
-    ray_len = int(s * 0.06)
-    ray_dist = sun_radius + int(s * 0.03)
-    for i in range(num_rays):
-        angle = i * (2 * math.pi / num_rays)
-        x1 = sun_cx + int(ray_dist * math.cos(angle))
-        y1 = sun_cy + int(ray_dist * math.sin(angle))
-        x2 = sun_cx + int((ray_dist + ray_len) * math.cos(angle))
-        y2 = sun_cy + int((ray_dist + ray_len) * math.sin(angle))
-        draw.line([(x1, y1), (x2, y2)], fill=(245, 158, 11, 230), width=scale * 6)
-
-    # Sun body gradient / solid
-    draw.ellipse([sun_cx - sun_radius, sun_cy - sun_radius, sun_cx + sun_radius, sun_cy + sun_radius], fill=(251, 191, 36, 255))
-
-    # 3. Fluffy stylized Cloud in the center-left
-    cloud_color = (255, 255, 255, 250)
-    cloud_shadow = (203, 213, 225, 255)
-
-    # Base cloud circles
-    c1 = (int(s * 0.32), int(s * 0.62), int(s * 0.16)) # left
-    c2 = (int(s * 0.48), int(s * 0.50), int(s * 0.22)) # center top
-    c3 = (int(s * 0.68), int(s * 0.63), int(s * 0.15)) # right
-
-    # Bottom pill base
-    cloud_bottom_y = int(s * 0.76)
-    draw.rounded_rectangle([int(s * 0.20), int(s * 0.58), int(s * 0.80), cloud_bottom_y], radius=int(s * 0.08), fill=cloud_color)
-
-    # Circles for cloud puffs
-    draw.ellipse([c1[0] - c1[2], c1[1] - c1[2], c1[0] + c1[2], c1[1] + c1[2]], fill=cloud_color)
-    draw.ellipse([c3[0] - c3[2], c3[1] - c3[2], c3[0] + c3[2], c3[1] + c3[2]], fill=cloud_color)
-    draw.ellipse([c2[0] - c2[2], c2[1] - c2[2], c2[0] + c2[2], c2[1] + c2[2]], fill=cloud_color)
-
-    # 4. Weather Station Signals / Lightning / Raindrop accent
-    # Lightning bolt or rain droplet accent
-    drop_x, drop_y = int(s * 0.40), int(s * 0.84)
-    draw.line([(drop_x, drop_y), (drop_x - int(s*0.02), drop_y + int(s*0.04))], fill=(56, 189, 248, 240), width=scale * 5)
-    
-    drop_x2, drop_y2 = int(s * 0.55), int(s * 0.83)
-    draw.line([(drop_x2, drop_y2), (drop_x2 - int(s*0.02), drop_y2 + int(s*0.04))], fill=(56, 189, 248, 240), width=scale * 5)
-
-    drop_x3, drop_y3 = int(s * 0.70), int(s * 0.84)
-    draw.line([(drop_x3, drop_y3), (drop_x3 - int(s*0.02), drop_y3 + int(s*0.04))], fill=(56, 189, 248, 240), width=scale * 5)
-
-    # Downsample with Lanczos for ultra-crisp output
-    final_img = img.resize((size, size), Image.Resampling.LANCZOS)
-    return final_img
-
-def create_monochrome_badge(size=96):
-    # Android Chrome Notification Badge must be transparent with solid white shape
-    scale = 4
-    s = size * scale
-    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
-    # Sun rays & circle
-    sun_cx, sun_cy = int(s * 0.65), int(s * 0.35)
-    sun_r = int(s * 0.16)
-    draw.ellipse([sun_cx - sun_r, sun_cy - sun_r, sun_cx + sun_r, sun_cy + sun_r], fill=(255, 255, 255, 255))
-
-    # Cloud shape
-    c1 = (int(s * 0.35), int(s * 0.60), int(s * 0.17))
-    c2 = (int(s * 0.52), int(s * 0.48), int(s * 0.22))
-    c3 = (int(s * 0.70), int(s * 0.60), int(s * 0.16))
-
-    draw.rounded_rectangle([int(s * 0.20), int(s * 0.56), int(s * 0.82), int(s * 0.76)], radius=int(s * 0.08), fill=(255, 255, 255, 255))
-    draw.ellipse([c1[0] - c1[2], c1[1] - c1[2], c1[0] + c1[2], c1[1] + c1[2]], fill=(255, 255, 255, 255))
-    draw.ellipse([c3[0] - c3[2], c3[1] - c3[2], c3[0] + c3[2], c3[1] + c3[2]], fill=(255, 255, 255, 255))
-    draw.ellipse([c2[0] - c2[2], c2[1] - c2[2], c2[0] + c2[2], c2[1] + c2[2]], fill=(255, 255, 255, 255))
-
-    return img.resize((size, size), Image.Resampling.LANCZOS)
 
 if __name__ == "__main__":
-    icon_512 = create_weather_icon(512)
-    icon_512.save("backend/static/icons/icon-512.png", "PNG")
-    icon_512.save("backend/static/icons/ntfy-icon.png", "PNG")
-
-    icon_192 = create_weather_icon(192)
-    icon_192.save("backend/static/icons/icon-192.png", "PNG")
-
-    badge_96 = create_monochrome_badge(96)
-    badge_96.save("backend/static/icons/badge-96.png", "PNG")
-
-    print("Icons generated successfully!")
+    main()

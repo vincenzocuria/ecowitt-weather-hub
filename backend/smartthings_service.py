@@ -20,36 +20,8 @@ logger = logging.getLogger("SmartThingsService")
 SMARTTHINGS_API_BASE = "https://api.smartthings.com/v1"
 
 
-# Mappe etichette in italiano
-WASHER_STATE_MAP = {
-    "none": "In Standby / Pronto",
-    "weightSensing": "Pesatura Carico & Bilanciamento",
-    "wash": "Lavaggio in Corso 🫧",
-    "rinse": "Risciacquo in Corso 💧",
-    "spin": "Centrifuga in Corso 🌀",
-    "drying": "Asciugatura in Corso ♨️",
-    "finish": "Ciclo Lavaggio Completato ✅",
-    "delayEnd": "Partenza Ritardata Programmata ⏱️",
-    "freezePrevent": "Protezione Antigelo",
-}
-
-DISHWASHER_STATE_MAP = {
-    "none": "In Standby / Pronto",
-    "ready": "Pronto",
-    "prewash": "Prelavaggio 🫧",
-    "wash": "Lavaggio in Corso 🍽️",
-    "rinse": "Risciacquo 💧",
-    "dry": "Asciugatura Piatti ♨️",
-    "cooling": "Raffreddamento Piatti 🌬️",
-    "drain": "Scarico Acqua 💧",
-    "sanitize": "Igienizzazione / Sanitize 🧼",
-    "finish": "Ciclo Lavastoviglie Terminato ✅",
-    "delayStart": "Partenza Ritardata ⏱️",
-    "paused": "In Pausa ⏸️",
-    "pause": "In Pausa ⏸️",
-    "running": "Lavaggio in Corso 🍽️",
-    "run": "Lavaggio in Corso 🍽️",
-}
+# Mappe etichette centralizzate da modulo appliances
+from backend.homeassistant.parsers.appliances import WASHER_STATE_MAP, DISHWASHER_STATE_MAP
 
 DISHWASHER_CYCLE_MAP = {
     "auto": "Auto",
@@ -59,7 +31,7 @@ DISHWASHER_CYCLE_MAP = {
     "intensive": "Intensivo / Pentole",
     "quick": "Rapido / Express",
     "delicate": "Delicato / Cristalli",
-    "sanitize": "Igienizzante",
+    "sanitize": "Igienizzante ad Alta Temp 🧼",
     "rinseAndDry": "Risciacquo & Asciugatura",
     "selfClean": "Autopulizia Macchina",
     "rinsePlus": "Risciacquo Plus",
@@ -67,10 +39,22 @@ DISHWASHER_CYCLE_MAP = {
 }
 
 
+import os
+import json
+import base64
+
 class SmartThingsService:
     def __init__(self):
         self.token = settings.SMARTTHINGS_PAT
-        self.enabled = settings.SMARTTHINGS_ENABLED and bool(self.token)
+        self.refresh_token_str = settings.SMARTTHINGS_REFRESH_TOKEN
+        self.client_id = settings.SMARTTHINGS_CLIENT_ID
+        self.client_secret = settings.SMARTTHINGS_CLIENT_SECRET
+        # Le richieste in parallelo (sync_all) possono ricevere 401 insieme: un solo rinnovo alla volta,
+        # perché il refresh token SmartThings è a rotazione e un secondo uso lo invaliderebbe.
+        self._refresh_lock = asyncio.Lock()
+        self._last_refresh_at = 0.0
+
+        self.enabled = settings.SMARTTHINGS_ENABLED and (bool(self.token) or bool(self.refresh_token_str))
         self.poll_interval = settings.SMARTTHINGS_POLL_INTERVAL_SEC
         self.devices: List[Dict[str, Any]] = []
 
@@ -79,6 +63,106 @@ class SmartThingsService:
         self.sync_error: Optional[str] = None
         self.is_connected = False
         self._session: Optional[aiohttp.ClientSession] = None
+        self.cache_file = os.path.join(settings.DATA_DIR, "smartthings_cache.json")
+        self._load_cache()
+
+    def _load_cache(self):
+        """Carica lo stato dei dispositivi e le chiavi OAuth persistiti su disco."""
+        try:
+            if os.path.exists(self.cache_file):
+                with open(self.cache_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.devices = data.get("devices", [])
+                    self.device_statuses = data.get("device_statuses", {})
+                    self.last_sync_time = data.get("last_sync_time")
+                    saved_token = data.get("access_token")
+                    saved_refresh = data.get("refresh_token")
+                    if saved_token:
+                        self.token = saved_token
+                    if saved_refresh:
+                        self.refresh_token_str = saved_refresh
+                    if self.devices:
+                        logger.info(f"📂 [SmartThings] Caricati {len(self.devices)} dispositivi dalla cache locale persistente.")
+        except Exception as e:
+            logger.warning(f"⚠️ [SmartThings] Impossibile caricare la cache da disco: {e}")
+
+    def _save_cache(self):
+        """Salva lo stato dei dispositivi e le chiavi OAuth su file JSON in modo atomico."""
+        try:
+            os.makedirs(settings.DATA_DIR, exist_ok=True)
+            tmp_path = f"{self.cache_file}.tmp"
+            payload = {
+                "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "devices": self.devices,
+                "device_statuses": self.device_statuses,
+                "last_sync_time": self.last_sync_time,
+                "access_token": self.token,
+                "refresh_token": self.refresh_token_str
+            }
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, self.cache_file)
+        except Exception as e:
+            logger.warning(f"⚠️ [SmartThings] Impossibile salvare la cache su disco: {e}")
+
+    async def refresh_access_token(self) -> bool:
+        """Rinnova in automatico l'access_token SmartThings usando il refresh_token OAuth 2.0 in background."""
+        ref_tok = self.refresh_token_str or settings.SMARTTHINGS_REFRESH_TOKEN
+        c_id = self.client_id or settings.SMARTTHINGS_CLIENT_ID
+        c_sec = self.client_secret or settings.SMARTTHINGS_CLIENT_SECRET
+        
+        if not ref_tok or not c_id or not c_sec:
+            return False
+
+        async with self._refresh_lock:
+            # Un'altra richiesta ha appena rinnovato il token: basta riprovare con quello nuovo
+            if time.time() - self._last_refresh_at < 30:
+                return True
+            ok = await self._do_refresh_access_token()
+            if ok:
+                self._last_refresh_at = time.time()
+            return ok
+
+    async def _do_refresh_access_token(self) -> bool:
+        ref_tok = self.refresh_token_str or settings.SMARTTHINGS_REFRESH_TOKEN
+        c_id = self.client_id or settings.SMARTTHINGS_CLIENT_ID
+        c_sec = self.client_secret or settings.SMARTTHINGS_CLIENT_SECRET
+        try:
+            url = "https://api.smartthings.com/oauth/token"
+            auth_header = base64.b64encode(f"{c_id}:{c_sec}".encode()).decode()
+            headers = {
+                "Authorization": f"Basic {auth_header}",
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+            data = {
+                "grant_type": "refresh_token",
+                "refresh_token": ref_tok,
+                "client_id": c_id
+            }
+
+            # La sessione HTTP resta aperta: chiuderla qui interromperebbe le risposte ancora in lettura
+            session = await self.get_session()
+
+            async with session.post(url, headers=headers, data=data) as resp:
+                if resp.status == 200:
+                    res_json = await resp.json()
+                    new_acc = res_json.get("access_token")
+                    new_ref = res_json.get("refresh_token")
+                    if new_acc:
+                        self.token = new_acc
+                        if new_ref:
+                            self.refresh_token_str = new_ref
+                        self.is_connected = True
+                        self.sync_error = None
+                        self._save_cache()
+                        logger.info("✅ [SmartThings] Token OAuth 2.0 rinnovato in automatico con successo!")
+                        return True
+                else:
+                    err_body = await resp.text()
+                    logger.warning(f"⚠️ [SmartThings] Rinnovo OAuth 2.0 non riuscito (HTTP {resp.status}): {err_body[:180]}")
+        except Exception as e:
+            logger.error(f"❌ [SmartThings] Eccezione durante il rinnovo token OAuth 2.0: {e}")
+        return False
 
     async def get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -105,7 +189,7 @@ class SmartThingsService:
     async def fetch_devices_list(self) -> List[Dict[str, Any]]:
         """Recupera l'elenco completo dei dispositivi associati all'account."""
         if not self.enabled:
-            return []
+            return self.devices
 
         session = await self.get_session()
         try:
@@ -116,16 +200,37 @@ class SmartThingsService:
                     self.devices = data.get("items", [])
                     self.is_connected = True
                     self.sync_error = None
+                    self._save_cache()
+                    return self.devices
+                elif resp.status == 401:
+                    # Tenta il rinnovo automatico tramite OAuth2 Refresh Token
+                    if await self.refresh_access_token():
+                        session_retry = await self.get_session()
+                        async with session_retry.get(url) as resp_retry:
+                            if resp_retry.status == 200:
+                                data_retry = await resp_retry.json()
+                                self.devices = data_retry.get("items", [])
+                                self.is_connected = True
+                                self.sync_error = None
+                                self._save_cache()
+                                return self.devices
+
+                    err_txt = await resp.text()
+                    self.is_connected = False
+                    self.sync_error = f"HTTP {resp.status}: {err_txt[:150]}"
+                    logger.error(f"Errore recupero lista dispositivi SmartThings: {self.sync_error}")
                     return self.devices
                 else:
                     err_txt = await resp.text()
+                    self.is_connected = False
                     self.sync_error = f"HTTP {resp.status}: {err_txt[:150]}"
                     logger.error(f"Errore recupero lista dispositivi SmartThings: {self.sync_error}")
-                    return []
+                    return self.devices
         except Exception as e:
+            self.is_connected = False
             self.sync_error = str(e)
             logger.error(f"Eccezione durante fetch_devices_list SmartThings: {e}")
-            return []
+            return self.devices
 
     async def fetch_device_status(self, device_id: str) -> Optional[Dict[str, Any]]:
         """Recupera lo stato attuale delle capability di un singolo dispositivo."""
@@ -136,13 +241,25 @@ class SmartThingsService:
                 if resp.status == 200:
                     data = await resp.json()
                     self.device_statuses[device_id] = data
+                    self._save_cache()
                     return data
+                elif resp.status == 401:
+                    if await self.refresh_access_token():
+                        session_retry = await self.get_session()
+                        async with session_retry.get(url) as resp_retry:
+                            if resp_retry.status == 200:
+                                data_retry = await resp_retry.json()
+                                self.device_statuses[device_id] = data_retry
+                                self._save_cache()
+                                return data_retry
+                    logger.warning(f"Status per dispositivo {device_id} ha risposto HTTP {resp.status}")
+                    return self.device_statuses.get(device_id)
                 else:
                     logger.warning(f"Status per dispositivo {device_id} ha risposto HTTP {resp.status}")
-                    return None
+                    return self.device_statuses.get(device_id)
         except Exception as e:
             logger.warning(f"Errore recupero status dispositivo {device_id}: {e}")
-            return None
+            return self.device_statuses.get(device_id)
 
     async def sync_all(self):
         """Sincronizza tutti i dispositivi SmartThings monitorati."""
@@ -163,6 +280,7 @@ class SmartThingsService:
             await asyncio.gather(*tasks, return_exceptions=True)
 
         self.last_sync_time = time.time()
+        self._save_cache()
         logger.info(f"Sincronizzazione SmartThings completata: {len(self.device_statuses)} stati aggiornati.")
 
     def parse_washer_data(self, status: Dict[str, Any], dev_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -333,6 +451,19 @@ class SmartThingsService:
         main_comp = status.get("components", {}).get("main", {})
         presence_val = main_comp.get("presenceSensor", {}).get("presence", {}).get("value", "not present")
         is_present = presence_val == "present"
+
+        # Estrazione percentuale batteria se fornita da SmartThings
+        battery_val = (
+            main_comp.get("battery", {}).get("battery", {}).get("value")
+            or main_comp.get("samsungce.battery", {}).get("battery", {}).get("value")
+        )
+        battery_pct = None
+        if battery_val is not None:
+            try:
+                battery_pct = int(round(float(battery_val)))
+            except (ValueError, TypeError):
+                battery_pct = None
+
         raw_name = dev_info.get("label") or dev_info.get("name") or "S26 Ultra"
         clean_name = raw_name.replace("di Vincenzo", "").strip()
 
@@ -341,7 +472,9 @@ class SmartThingsService:
             "name": raw_name,
             "device_name": clean_name or "S26 Ultra",
             "is_present": is_present,
-            "presence_label": "A Casa 🏠" if is_present else "Fuori Casa 🚗"
+            "presence_label": "A Casa 🏠" if is_present else "Fuori Casa 🚗",
+            "battery_percent": battery_pct,
+            "battery_pct": battery_pct
         }
 
     def get_summary(
@@ -360,11 +493,13 @@ class SmartThingsService:
         other_devices: List[Dict[str, Any]] = []
 
         for dev in self.devices:
+            if not isinstance(dev, dict):
+                continue
             dev_id = dev.get("deviceId")
             lbl = (dev.get("label") or dev.get("name") or "").lower()
             dev_type = (dev.get("deviceTypeName") or dev.get("type") or "").lower()
             status = self.device_statuses.get(dev_id)
-            if not status:
+            if not status or not isinstance(status, dict):
                 continue
 
             main_comp = status.get("components", {}).get("main", {})
@@ -497,14 +632,23 @@ class SmartThingsService:
 
     async def worker_loop(self):
         """Loop di polling in background per sincronizzare costantemente gli elettrodomestici."""
-        logger.info("Avvio worker loop SmartThings Service...")
+        if not self.enabled:
+            logger.info("ℹ️ [SmartThings] Servizio non abilitato o PAT assente.")
+            return
+
+        logger.info(f"🚀 [SmartThings] Background worker avviato (Intervallo: {self.poll_interval}s)")
         while True:
             try:
                 if self.enabled:
                     await self.sync_all()
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.error(f"Errore nel ciclo di polling SmartThings: {e}")
-            await asyncio.sleep(self.poll_interval)
+            
+            # Se errore 401 (PAT non valido o scaduto), attendi 5 minuti prima del prossimo tentativo per non intasare i log
+            sleep_time = 300 if (self.sync_error and "401" in self.sync_error) else self.poll_interval
+            await asyncio.sleep(sleep_time)
 
 
 # Istanza singleton globale

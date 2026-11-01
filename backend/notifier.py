@@ -1,11 +1,16 @@
+from __future__ import annotations
 import os
 import json
+import time
+import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import base64
 import logging
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from backend.config import settings
-from backend.database import log_alert_db, get_all_push_subscriptions, delete_push_subscription
+from backend.database import log_alert_db, get_all_push_subscriptions, delete_push_subscription, get_unread_alerts_count
 
 try:
     from py_vapid import Vapid
@@ -17,11 +22,27 @@ except ImportError:
 
 logger = logging.getLogger("ecowitt_notifier")
 
+EMERGENCY_ALERT_TYPES = {
+    "leak",                    # Allagamento sensori perdite d'acqua
+    "grid_overload_critical",  # Prelievo rete >= 4.9 kW rischio distacco contatore 4.5 kW
+    "hail_warning",            # Rischio grandine e temporale violento
+    "storm",                   # Crollo barometrico burrasca
+    "lightning",               # Fulmini vicini <= 30 km
+    "civil_protection",        # Allerte Protezione Civile (Arancione / Rossa)
+    "freeze",                  # Allerta gelata
+}
+
+_DELIVERY_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="notify")
+
+
 class NotificationService:
     def __init__(self):
         self.vapid_private_pem_path = os.path.join(settings.DATA_DIR, "vapid_private.pem")
         self.vapid_public_txt_path = os.path.join(settings.DATA_DIR, "vapid_public_b64.txt")
         self.vapid_public_key_b64: Optional[str] = None
+        # Notifiche silenziate durante le Quiet Hours: consegnate in un unico riepilogo al risveglio
+        self._deferred: List[Dict[str, str]] = []
+        self._deferred_lock = threading.Lock()
         self._init_vapid()
 
     def _init_vapid(self):
@@ -69,18 +90,29 @@ class NotificationService:
         if not subs:
             return
 
+        unread_count = get_unread_alerts_count()
+        # Genera un tag univoco per non sovrascrivere allerte distinte dello stesso tipo
+        sub_key = (extra_data or {}).get("record_key") or (extra_data or {}).get("leak_channel") or (extra_data or {}).get("channel") or int(time.time())
+        notification_tag = f"meteo-{alert_type}-{sub_key}"
+
         payload = json.dumps({
             "title": title,
             "body": message,
             "icon": "/static/icons/icon-192.png",
             "badge": "/static/icons/badge-96.png",
-            "tag": f"meteo-{alert_type}",
+            "tag": notification_tag,
+            "unread_count": unread_count,
             "data": {
                 "url": "/alerts-page",
                 "alert_type": alert_type,
+                "unread_count": unread_count,
                 "extra": extra_data or {}
             }
         })
+
+        sub_claim = settings.VAPID_CLAIM_EMAIL or "mailto:admin@weatherhub.local"
+        if not sub_claim.startswith(("mailto:", "https://")):
+            sub_claim = f"mailto:{sub_claim}"
 
         for sub in subs:
             endpoint = sub.get("endpoint")
@@ -101,8 +133,9 @@ class NotificationService:
                     subscription_info=sub_info,
                     data=payload,
                     vapid_private_key=self.vapid_private_pem_path,
-                    vapid_claims={"sub": settings.VAPID_CLAIM_EMAIL},
-                    ttl=3600
+                    vapid_claims={"sub": sub_claim},
+                    ttl=3600,
+                    timeout=10
                 )
                 logger.info(f"[WEBPUSH] Notifica inviata con successo al dispositivo {endpoint[:35]}...")
             except WebPushException as ex:
@@ -120,15 +153,75 @@ class NotificationService:
         title: str,
         message: str,
         priority: str = "high",
-        extra_data: Optional[Dict[str, str]] = None
+        extra_data: Optional[Dict[str, str]] = None,
+        tags: Optional[List[str]] = None,
+        force: bool = False
     ):
         """
         Invia notifiche push via Web Push nativo (PWA) e via ntfy.sh (se attivo),
         registrando l'evento nel database storico.
         """
         logger.info(f"[NOTIFICA] [{alert_type}] {title}: {message}")
+        # Registrazione costante nel database storico (consultabile sempre dal registro e badge)
         log_alert_db(alert_type, title, message, extra_data)
 
+        # Controllo Quiet Hours (Modalità Non Disturbare Notturno: ore 23:00 - 07:00)
+        # Se attivo e in orario notturno, sopprime i push/suoni per eventi ordinari, consentendo solo emergenze, test espliciti e azioni manuali
+        is_test = force or alert_type.startswith("test") or (extra_data and (extra_data.get("is_test") == "true" or extra_data.get("scenario")))
+        is_manual_action = alert_type in ("device_scheduled_action", "irrigation_manual_start", "irrigation_manual_stop")
+
+        if not is_test and not is_manual_action and settings.is_in_quiet_hours() and alert_type not in EMERGENCY_ALERT_TYPES:
+            logger.info(f"[QUIET-HOURS] Notifica push silenziata per orario notturno ({settings.QUIET_HOURS_START}:00-{settings.QUIET_HOURS_END}:00): [{alert_type}] {title}")
+            with self._deferred_lock:
+                self._deferred.append({"alert_type": alert_type, "title": title})
+            return
+
+        # Se chiamata dal thread dell'event loop asyncio (route async, scheduler, automazioni),
+        # la consegna di rete (Web Push senza risposta, ntfy fino a 8s) avviene in un thread dedicato
+        # per non congelare l'intero server. Da thread di lavoro resta sincrona.
+        try:
+            asyncio.get_running_loop()
+            on_event_loop = True
+        except RuntimeError:
+            on_event_loop = False
+        if on_event_loop:
+            _DELIVERY_POOL.submit(self._deliver_safe, alert_type, title, message, priority, extra_data, tags)
+        else:
+            self._deliver(alert_type, title, message, priority, extra_data, tags)
+
+    def _deliver_safe(self, *args):
+        try:
+            self._deliver(*args)
+        except Exception as e:
+            logger.error(f"[NOTIFICA] Errore consegna in background: {e}")
+
+    def flush_deferred_summary(self) -> bool:
+        """
+        Fuori dalle Quiet Hours invia un solo riepilogo degli avvisi silenziati durante la notte,
+        così nessun avviso (es. batteria scarica alle 23:30) va perso per sempre.
+        """
+        if settings.is_in_quiet_hours():
+            return False
+        with self._deferred_lock:
+            pending, self._deferred = self._deferred, []
+        if not pending:
+            return False
+        # Un titolo per tipo (l'ultimo), nell'ordine in cui sono arrivati
+        by_type: Dict[str, str] = {}
+        for item in pending:
+            by_type.pop(item["alert_type"], None)
+            by_type[item["alert_type"]] = item["title"]
+        lines = [f"• {t}" for t in list(by_type.values())[-8:]]
+        extra = len(by_type) - len(lines)
+        if extra > 0:
+            lines.append(f"…e altri {extra} avvisi")
+        title = f"🌙 Durante la notte: {len(pending)} avvisi"
+        message = "\n".join(lines) + "\nDettagli nella sezione Allarmi."
+        self._deliver("night_summary", title, message, "normal", {"count": str(len(pending))}, None)
+        return True
+
+    def _deliver(self, alert_type, title, message, priority, extra_data, tags):
+        """Consegna effettiva su Web Push e ntfy (senza filtri Quiet Hours)."""
         # 1. Web Push Nativo PWA
         try:
             self._send_web_push(alert_type, title, message, extra_data)
@@ -138,22 +231,17 @@ class NotificationService:
         # 2. ntfy.sh (invio JSON compatibile al 100% con caratteri UTF-8, emoji e formattazione)
         if settings.ENABLE_NTFY and settings.NTFY_TOPIC:
             try:
-                tags = self._get_tags(alert_type).split(",")
+                ntfy_tags = tags if tags else self._get_tags(alert_type).split(",")
                 prio_val = 5 if priority == "urgent" else (4 if priority == "high" else 3)
                 ntfy_payload = {
                     "topic": settings.NTFY_TOPIC,
                     "title": title,
                     "message": message,
                     "priority": prio_val,
-                    "tags": tags
+                    "tags": ntfy_tags
                 }
                 # Icona personalizzata per ntfy
-                icon_url = settings.NTFY_ICON_URL
-                if not icon_url and settings.NTFY_CLICK_URL:
-                    icon_url = settings.NTFY_CLICK_URL.rstrip('/') + '/static/icons/ntfy-icon.png'
-                if not icon_url:
-                    icon_url = "https://raw.githubusercontent.com/walkxcode/dashboard-icons/main/png/weather.png"
-
+                icon_url = self.get_icon_url_for_alert(alert_type)
                 ntfy_payload["icon"] = icon_url
 
                 if settings.NTFY_CLICK_URL:
@@ -179,13 +267,61 @@ class NotificationService:
                 logger.error(f"[NTFY] Errore invio notifica ntfy: {e}")
 
     @staticmethod
+    def get_icon_url_for_alert(alert_type: str) -> str:
+        """Restituisce l'URL pubblico dell'icona 3D ad alta definizione per l'allerta ntfy."""
+        if settings.NTFY_ICON_URL:
+            return settings.NTFY_ICON_URL
+
+        # Se NTFY_CLICK_URL è un dominio pubblico HTTPS (non localhost/IP privato), usa l'icona locale
+        if settings.NTFY_CLICK_URL and settings.NTFY_CLICK_URL.startswith("https://"):
+            domain_lower = settings.NTFY_CLICK_URL.lower()
+            if not any(private in domain_lower for private in ("localhost", "127.0.0.1", "192.168.", "10.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.")):
+                return f"{settings.NTFY_CLICK_URL.rstrip('/')}/static/icons/ntfy-icon.png"
+
+        # Icone 3D ad alta definizione dedicate per ogni tipologia di allerta meteo (Microsoft Fluent 3D via jsDelivr CDN)
+        cdn_base = "https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets"
+        icons_map = {
+            "lightning": f"{cdn_base}/High%20voltage/3D/high_voltage_3d.png",
+            "storm": f"{cdn_base}/Cloud%20with%20lightning%20and%20rain/3D/cloud_with_lightning_and_rain_3d.png",
+            "rain": f"{cdn_base}/Cloud%20with%20rain/3D/cloud_with_rain_3d.png",
+            "rain_start": f"{cdn_base}/Sun%20behind%20rain%20cloud/3D/sun_behind_rain_cloud_3d.png",
+            "rain_forecast": f"{cdn_base}/Umbrella%20with%20rain%20drops/3D/umbrella_with_rain_drops_3d.png",
+            "freeze": f"{cdn_base}/Snowflake/3D/snowflake_3d.png",
+            "heatwave": f"{cdn_base}/Fire/3D/fire_3d.png",
+            "wind_spike": f"{cdn_base}/Dashing%20away/3D/dashing_away_3d.png",
+            "soil_dry": f"{cdn_base}/Seedling/3D/seedling_3d.png",
+            "soil_wet": f"{cdn_base}/Droplet/3D/droplet_3d.png",
+            "soil_recovered": f"{cdn_base}/Seedling/3D/seedling_3d.png",
+            "tropical_night": f"{cdn_base}/Palm%20tree/3D/palm_tree_3d.png",
+            "record": f"{cdn_base}/Trophy/3D/trophy_3d.png",
+            "digest": f"{cdn_base}/Hot%20beverage/3D/hot_beverage_3d.png",
+            "monthly_digest": f"{cdn_base}/Spiral%20calendar/3D/spiral_calendar_3d.png",
+            "energy_digest": f"{cdn_base}/Zap/3D/zap_3d.png",
+            "offline": f"{cdn_base}/Satellite%20antenna/3D/satellite_antenna_3d.png",
+            "online": f"{cdn_base}/Check%20mark%20button/3D/check_mark_button_3d.png",
+            "battery_low": f"{cdn_base}/Battery/3D/battery_3d.png",
+            "uv_extreme": f"{cdn_base}/Sun/3D/sun_3d.png",
+            "anomaly": f"{cdn_base}/Warning/3D/warning_3d.png",
+            "leak": f"{cdn_base}/Droplet/3D/droplet_3d.png",
+            "civil_protection": f"{cdn_base}/Shield/3D/shield_3d.png",
+            "hail_warning": f"{cdn_base}/Cloud%20with%20lightning%20and%20rain/3D/cloud_with_lightning_and_rain_3d.png",
+            "grid_overload_critical": f"{cdn_base}/Zap/3D/zap_3d.png",
+            "grid_overload_warning": f"{cdn_base}/Zap/3D/zap_3d.png",
+            "climate_night_cooling": f"{cdn_base}/Crescent%20moon/3D/crescent_moon_3d.png"
+        }
+        return icons_map.get(alert_type, f"{cdn_base}/Sun%20behind%20cloud/3D/sun_behind_cloud_3d.png")
+
+    @staticmethod
     def _get_tags(alert_type: str) -> str:
         mapping = {
             "offline": "warning,rotating_light,satellite",
             "online": "white_check_mark,satellite",
             "record": "trophy,star,tada",
             "lightning": "warning,zap",
-            "soil_dry": "herb,droplet",
+            "soil_dry": "herb,droplet,warning",
+            "soil_wet": "droplet,warning,herb",
+            "soil_recovered": "seedling,white_check_mark",
+            "tropical_night": "palm_tree,hot_face,crescent_moon",
             "freeze": "snowflake,cold_face",
             "heatwave": "hot_face,sunny",
             "rain": "cloud_with_rain",
@@ -196,7 +332,14 @@ class NotificationService:
             "wind_spike": "wind_blowing_face,warning",
             "uv_extreme": "sunglasses,fire",
             "battery_low": "battery,warning",
-            "digest": "coffee,sunrise,partly_sunny"
+            "digest": "coffee,sunrise,partly_sunny",
+            "monthly_digest": "spiral_calendar,trophy,bar_chart",
+            "energy_digest": "zap,bar_chart,sun_with_face",
+            "civil_protection": "warning,shield,rotating_light",
+            "hail_warning": "warning,cloud_with_lightning_and_rain,rotating_light",
+            "grid_overload_critical": "warning,zap,rotating_light",
+            "grid_overload_warning": "warning,zap",
+            "climate_night_cooling": "crescent_moon,wind_face"
         }
         return mapping.get(alert_type, "loudspeaker")
 

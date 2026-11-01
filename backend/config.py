@@ -25,15 +25,20 @@ class Settings:
     
     # Soglie Allarmi Standard
     SOIL_MOISTURE_LOW_THRESHOLD: float = float(os.getenv("SOIL_MOISTURE_LOW_THRESHOLD", "25.0"))
+    SOIL_MOISTURE_HIGH_THRESHOLD: float = float(os.getenv("SOIL_MOISTURE_HIGH_THRESHOLD", "75.0"))
     LIGHTNING_MAX_DISTANCE_KM: float = float(os.getenv("LIGHTNING_MAX_DISTANCE_KM", "30.0"))
     TEMP_FREEZE_THRESHOLD_C: float = float(os.getenv("TEMP_FREEZE_THRESHOLD_C", "1.0"))
     TEMP_HEAT_THRESHOLD_C: float = float(os.getenv("TEMP_HEAT_THRESHOLD_C", "38.0"))
+    TROPICAL_NIGHT_TEMP_THRESHOLD_C: float = float(os.getenv("TROPICAL_NIGHT_TEMP_THRESHOLD_C", "20.0"))
+    SUPER_TROPICAL_NIGHT_TEMP_THRESHOLD_C: float = float(os.getenv("SUPER_TROPICAL_NIGHT_TEMP_THRESHOLD_C", "25.0"))
     RAIN_RATE_ALERT_MM_HR: float = float(os.getenv("RAIN_RATE_ALERT_MM_HR", "5.0"))
     
     # Soglie Eventi Anomali
-    PRESSURE_DROP_3H_THRESHOLD: float = float(os.getenv("PRESSURE_DROP_3H_THRESHOLD", "2.0"))     # Calo >= 2 hPa in 3h -> burrasca
-    TEMP_DROP_1H_THRESHOLD: float = float(os.getenv("TEMP_DROP_1H_THRESHOLD", "4.0"))           # Crollo >= 4°C in 1h
-    TEMP_RISE_1H_THRESHOLD: float = float(os.getenv("TEMP_RISE_1H_THRESHOLD", "4.0"))           # Impennata >= 4°C in 1h
+    PRESSURE_DROP_3H_THRESHOLD: float = float(os.getenv("PRESSURE_DROP_3H_THRESHOLD", "3.0"))     # Calo >= 3 hPa in 3h -> burrasca (standard WMO/nautico)
+    TEMP_DROP_1H_THRESHOLD: float = float(os.getenv("TEMP_DROP_1H_THRESHOLD", "5.5"))           # Crollo >= 5.5°C in 1h
+    TEMP_RISE_1H_THRESHOLD: float = float(os.getenv("TEMP_RISE_1H_THRESHOLD", "5.5"))           # Impennata >= 5.5°C in 1h
+    TEMP_ANOMALY_SOLAR_FILTER_ENABLED: bool = os.getenv("TEMP_ANOMALY_SOLAR_FILTER_ENABLED", "true").lower() in ("true", "1", "yes") # Filtro intelligente ciclo solare alba/tramonto
+    TEMP_EXTREME_CHANGE_THRESHOLD: float = float(os.getenv("TEMP_EXTREME_CHANGE_THRESHOLD", "7.0")) # Variazione estrema >= 7.0°C in 1h (notifica sempre anche a ridosso alba/tramonto)
     GUST_SPIKE_THRESHOLD_KMH: float = float(os.getenv("GUST_SPIKE_THRESHOLD_KMH", "45.0"))       # Raffica anomala >= 45 km/h
     RAIN_BURST_THRESHOLD_MM_HR: float = float(os.getenv("RAIN_BURST_THRESHOLD_MM_HR", "25.0"))  # Nubifragio >= 25 mm/h
     UV_EXTREME_THRESHOLD: int = int(os.getenv("UV_EXTREME_THRESHOLD", "8"))                      # UV Pericoloso >= 8
@@ -48,8 +53,12 @@ class Settings:
     RAIN_FORECAST_ALERT_ENABLED: bool = os.getenv("RAIN_FORECAST_ALERT_ENABLED", "true").lower() in ("true", "1", "yes")
     RAIN_FORECAST_PROB_THRESHOLD: int = int(os.getenv("RAIN_FORECAST_PROB_THRESHOLD", "60"))
     RAIN_FORECAST_COOLDOWN_MIN: int = int(os.getenv("RAIN_FORECAST_COOLDOWN_MIN", "180"))
-    RECORD_BROKEN_COOLDOWN_MIN: int = int(os.getenv("RECORD_BROKEN_COOLDOWN_MIN", "1"))
+    RECORD_BROKEN_COOLDOWN_MIN: int = int(os.getenv("RECORD_BROKEN_COOLDOWN_MIN", "720")) # 12h per evitare spam
     ANOMALY_ALERT_COOLDOWN_MIN: int = int(os.getenv("ANOMALY_ALERT_COOLDOWN_MIN", "60"))
+    STORM_ALERT_COOLDOWN_MIN: int = int(os.getenv("STORM_ALERT_COOLDOWN_MIN", "240"))  # Cooldown burrasca: 4h per evitare spam durante depressioni stazionarie
+    
+    # Impianto Fotovoltaico (Potenza Nominale kWp per Previsione Energetica)
+    SOLAR_INSTALLED_KWP: float = float(os.getenv("SOLAR_INSTALLED_KWP", "6.0"))
     
     # Nome Stazione & Località
     STATION_NAME: str = os.getenv("STATION_NAME", "Ecowitt Weather Hub")
@@ -77,17 +86,45 @@ class Settings:
         """Restituisce il datetime corrente timezone-aware nel fuso orario della stazione."""
         from datetime import datetime
         return datetime.now(self.get_tz())
+
+    # Fascia Oraria Notturna / Quiet Hours (Protezione Anti-Spam Notturna)
+    QUIET_HOURS_ENABLED: bool = os.getenv("QUIET_HOURS_ENABLED", "true").lower() in ("true", "1", "yes")
+    QUIET_HOURS_START: int = int(os.getenv("QUIET_HOURS_START", "23"))  # Ore 23:00
+    QUIET_HOURS_END: int = int(os.getenv("QUIET_HOURS_END", "7"))      # Ore 07:00
+
+    def is_in_quiet_hours(self, dt=None) -> bool:
+        """
+        Verifica se il momento indicato (o l'orario corrente locale) rientra nelle Quiet Hours notturne.
+        Gestisce correttamente l'attraversamento della mezzanotte (es. 23:00 -> 07:00).
+        """
+        if not self.QUIET_HOURS_ENABLED:
+            return False
+        if dt is None:
+            dt = self.now_local()
+        h = dt.hour
+        start = self.QUIET_HOURS_START
+        end = self.QUIET_HOURS_END
+        if start > end:
+            # Es: 23:00 -> 07:00 (attraversa la mezzanotte)
+            return h >= start or h < end
+        elif start < end:
+            # Es: 00:00 -> 06:00
+            return start <= h < end
+        return False
     
     # Notifica Mattutina "Buongiorno Meteo" (Daily Digest)
     DAILY_DIGEST_ENABLED: bool = os.getenv("DAILY_DIGEST_ENABLED", "true").lower() in ("true", "1", "yes")
     DAILY_DIGEST_HOUR: int = int(os.getenv("DAILY_DIGEST_HOUR", "8"))
     DAILY_DIGEST_MINUTE: int = int(os.getenv("DAILY_DIGEST_MINUTE", "0"))
 
+    # Configurazione Ingestione Stazione Ecowitt (Validazione PASSKEY opzionale)
+    ECOWITT_STATION_PASSKEY: str = os.getenv("ECOWITT_STATION_PASSKEY", "")
+
     # Configurazione Accumulatore Aton Green Storage
     ATON_ENABLED: bool = os.getenv("ATON_ENABLED", "true").lower() in ("true", "1", "yes")
-    ATON_USERNAME: str = os.getenv("ATON_USERNAME", "Curia")
-    ATON_PASSWORD: str = os.getenv("ATON_PASSWORD", "calabro")
-    ATON_SN: str = os.getenv("ATON_SN", "R21MY00735F")
+    ATON_USERNAME: str = os.getenv("ATON_USERNAME", "")
+    ATON_PASSWORD: str = os.getenv("ATON_PASSWORD", "")
+    ATON_SN: str = os.getenv("ATON_SN", "")
     ATON_POLL_INTERVAL_SEC: int = int(os.getenv("ATON_POLL_INTERVAL_SEC", "20"))
 
     # Soglie Allarmi Energetici
@@ -103,7 +140,7 @@ class Settings:
     LG_THINQ_ENABLED: bool = os.getenv("LG_THINQ_ENABLED", "true").lower() in ("true", "1", "yes")
     LG_THINQ_PAT: str = os.getenv("LG_THINQ_PAT", os.getenv("THINQ_PAT", ""))
     LG_THINQ_COUNTRY: str = os.getenv("LG_THINQ_COUNTRY", "IT")
-    LG_THINQ_POLL_INTERVAL_SEC: int = int(os.getenv("LG_THINQ_POLL_INTERVAL_SEC", "30"))
+    LG_THINQ_POLL_INTERVAL_SEC: int = int(os.getenv("LG_THINQ_POLL_INTERVAL_SEC", "300"))
     
     # Automazione Clima & Solare Eco
     CLIMATE_SOLAR_ECO_ENABLED: bool = os.getenv("CLIMATE_SOLAR_ECO_ENABLED", "true").lower() in ("true", "1", "yes")
@@ -113,10 +150,20 @@ class Settings:
     # Configurazione Samsung SmartThings
     SMARTTHINGS_ENABLED: bool = os.getenv("SMARTTHINGS_ENABLED", "true").lower() in ("true", "1", "yes")
     SMARTTHINGS_PAT: str = os.getenv("SMARTTHINGS_PAT", os.getenv("SAMSUNG_PAT", ""))
-    SMARTTHINGS_POLL_INTERVAL_SEC: int = int(os.getenv("SMARTTHINGS_POLL_INTERVAL_SEC", "30"))
+    SMARTTHINGS_REFRESH_TOKEN: str = os.getenv("SMARTTHINGS_REFRESH_TOKEN", "")
+    SMARTTHINGS_CLIENT_ID: str = os.getenv("SMARTTHINGS_CLIENT_ID", "")
+    SMARTTHINGS_CLIENT_SECRET: str = os.getenv("SMARTTHINGS_CLIENT_SECRET", "")
+    SMARTTHINGS_POLL_INTERVAL_SEC: int = int(os.getenv("SMARTTHINGS_POLL_INTERVAL_SEC", "180"))
+
+    # Configurazione Tuya / Smart Life
+    TUYA_ENABLED: bool = os.getenv("TUYA_ENABLED", "true").lower() in ("true", "1", "yes")
+    TUYA_CLIENT_ID: str = os.getenv("TUYA_CLIENT_ID", "")
+    TUYA_SECRET: str = os.getenv("TUYA_SECRET", "")
+    TUYA_REGION: str = os.getenv("TUYA_REGION", "eu")
+    TUYA_POLL_INTERVAL_SEC: int = int(os.getenv("TUYA_POLL_INTERVAL_SEC", "30"))
 
     # Notifiche push (ntfy.sh) & Web Push
-    ENABLE_NTFY: bool = True
+    ENABLE_NTFY: bool = os.getenv("ENABLE_NTFY", "true").lower() in ("true", "1", "yes")
     NTFY_TOPIC: str = os.getenv("NTFY_TOPIC", "")
     NTFY_ICON_URL: str = os.getenv("NTFY_ICON_URL", "")
     NTFY_CLICK_URL: str = os.getenv("NTFY_CLICK_URL", "")
@@ -125,6 +172,20 @@ class Settings:
     # Sicurezza & Accesso Riservato (Persistent Device Token)
     AUTH_TOKEN: str = os.getenv("AUTH_TOKEN", "")
     AUTH_COOKIE_NAME: str = "hub_auth_token"
+    CORS_ALLOWED_ORIGINS: list = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+
+    # Protezione Civile & Allerte Meteo Ufficiali (Calabria & Nazionale)
+    CIVIL_PROTECTION_ENABLED: bool = os.getenv("CIVIL_PROTECTION_ENABLED", "true").lower() in ("true", "1", "yes")
+    CIVIL_PROTECTION_ALERT_PUSH_ENABLED: bool = os.getenv("CIVIL_PROTECTION_ALERT_PUSH_ENABLED", "true").lower() in ("true", "1", "yes")
+    CIVIL_PROTECTION_MIN_ALERT_LEVEL: str = os.getenv("CIVIL_PROTECTION_MIN_ALERT_LEVEL", "GIALLA").upper() # GIALLA, ARANCIONE, ROSSA
+    CIVIL_PROTECTION_ZONE_OVERRIDE: str = os.getenv("CIVIL_PROTECTION_ZONE_OVERRIDE", "") # Es. "Versante Jonico Settentrionale"
+    CIVIL_PROTECTION_POLL_INTERVAL_MIN: int = int(os.getenv("CIVIL_PROTECTION_POLL_INTERVAL_MIN", "60"))
+
+    # Configurazione Home Assistant (Hub Domotico Locale)
+    HASS_ENABLED: bool = os.getenv("HASS_ENABLED", "true").lower() in ("true", "1", "yes")
+    HASS_URL: str = os.getenv("HASS_URL", "http://192.168.1.250:8123").rstrip("/")
+    HASS_TOKEN: str = os.getenv("HASS_TOKEN", "")
+    HASS_POLL_INTERVAL_SEC: int = int(os.getenv("HASS_POLL_INTERVAL_SEC", "15"))
 
 settings = Settings()
 

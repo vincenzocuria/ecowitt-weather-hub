@@ -96,7 +96,7 @@ def seed(days: int = 14):
             "uv_index": uv_index,
             "vpd": round(max(0.2, (100.0 - humidity) / 60.0), 2),
             "lightning": lightning,
-            "soil_moisture": {"ch1": 42.0, "ch2": 38.0},
+            "soil_moisture": {"ch1": 42.0},
             "raw_payload": {"model": "WS2900_V2.01.18", "wh65batt": "0"}
         }
         

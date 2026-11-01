@@ -1,249 +1,2083 @@
 {% extends "base.html" %}
 
 {% block content %}
+<!-- HEADER CARD -->
 <div class="header-card">
     <div class="header-title">
         <h1>⚙️ Impostazioni & Centro di Controllo</h1>
-        <p>Configura notifiche push, diagnostica hardware, manutenzione database SQLite, personalizzazione sensori e allarmi.</p>
+        <p>Configura notifiche push, catalogo allarmi, sensori extra, domotica Smart Life e manutenzione del sistema.</p>
     </div>
-    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-        <a href="/api/system/backup" class="btn btn-gold" style="padding: 0.6rem 1.2rem; text-decoration: none;" download>💾 Scarica Backup DB</a>
-        <button id="btn-test-alert" class="btn" style="padding: 0.6rem 1.2rem;" onclick="testPushNotification()">🚀 Prova Notifica Push</button>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+        <a href="/api/system/backup" class="btn btn-gold" style="padding: 0.6rem 1.15rem; text-decoration: none;" download title="Scarica una copia di backup dell'intero database SQLite">
+            💾 Scarica Backup DB
+        </a>
+        <a href="/alerts-page" class="btn btn-outline" style="padding: 0.6rem 1.15rem; text-decoration: none;" title="Vai al registro storico delle notifiche">
+            🔔 Registro Notifiche
+        </a>
     </div>
 </div>
 
-<div class="grid">
-    <!-- 1. NOTIFICHE PUSH NATIVE PWA & AUTOMAZIONI -->
+<!-- BARRA DI NAVIGAZIONE TAB IMPOSTAZIONI (ALLINEATA & RESPONSIVE) -->
+<div class="settings-tab-bar" id="settingsTabBar" role="tablist">
+    <button type="button" class="settings-tab-btn active" data-tab="notifications" onclick="switchSettingsTab('notifications', this)" role="tab" aria-selected="true">
+        <span class="settings-tab-icon">🔔</span>
+        <span>Notifiche & Push</span>
+    </button>
+    <button type="button" class="settings-tab-btn" data-tab="alarms" onclick="switchSettingsTab('alarms', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">📋</span>
+        <span>Allarmi & Soglie</span>
+    </button>
+    <button type="button" class="settings-tab-btn" data-tab="sensors" onclick="switchSettingsTab('sensors', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">🏷️</span>
+        <span>Nomi Sensori</span>
+        {% if detected_sensors %}
+        <span class="settings-tab-badge">{{ detected_sensors|length }}</span>
+        {% endif %}
+    </button>
+    <button type="button" class="settings-tab-btn" data-tab="tuya" onclick="switchSettingsTab('tuya', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">🔌</span>
+        <span>Smart Life & Tuya</span>
+        {% if tuya_summary and tuya_summary.enabled_devices_count %}
+        <span class="settings-tab-badge badge-tuya">{{ tuya_summary.enabled_devices_count }}</span>
+        {% endif %}
+    </button>
+    <button type="button" class="settings-tab-btn" data-tab="climate" onclick="switchSettingsTab('climate', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">❄️</span>
+        <span>Clima Smart</span>
+        {% if climate_config and climate_config.master_enabled %}
+        <span class="settings-tab-badge" style="background: rgba(56, 189, 248, 0.25); color: #38bdf8;">Auto</span>
+        {% endif %}
+    </button>
+    <button type="button" class="settings-tab-btn" data-tab="homeassistant" onclick="switchSettingsTab('homeassistant', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">🏠</span>
+        <span>Home Assistant</span>
+        <span class="settings-tab-badge" style="background: rgba(34, 197, 94, 0.25); color: #4ade80;">LAN ⚡</span>
+    </button>
+    <button type="button" class="settings-tab-btn" data-tab="database" onclick="switchSettingsTab('database', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">🗄️</span>
+        <span>Database & Backup</span>
+    </button>
+    <button type="button" class="settings-tab-btn" data-tab="system" onclick="switchSettingsTab('system', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">📡</span>
+        <span>Diagnostica & Sistema</span>
+    </button>
+</div>
+
+<!-- ========================================================================= -->
+<!-- TAB 1: NOTIFICHE PUSH NATIVE & CANALI -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane active" id="pane-notifications" role="tabpanel">
     <div class="card" style="border: 1px solid var(--accent); background: linear-gradient(145deg, rgba(56, 189, 248, 0.05), var(--card-bg));">
-        <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2);">
+        <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2); flex-wrap: wrap; gap: 0.5rem;">
             <div style="display: flex; align-items: center; gap: 10px;">
-                <span>📱 Notifiche Push Native Web App (PWA)</span>
+                <span style="font-size: 1.25rem;">🔔</span>
+                <strong>Notifiche Push Native (PWA Web Push) & Canali Meteo</strong>
             </div>
             <span id="push-status-badge" class="status-pill badge-waiting">Verifica in corso...</span>
         </div>
 
-        <div style="display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0;">
-            <p id="push-status-text" style="color: var(--text); font-size: 0.92rem; line-height: 1.5;">
-                Ricevi avvisi meteo istantanei direttamente sul tuo smartphone o PC, anche ad applicazione chiusa, senza bisogno di installare app esterne.
+        <div style="display: flex; flex-direction: column; gap: 1.15rem; padding: 0.75rem 0;">
+            <p id="push-status-text" style="color: var(--text); font-size: 0.95rem; line-height: 1.55;">
+                Ricevi avvisi meteorologici tempestivi sul tuo smartphone o computer anche quando l'applicazione è chiusa o in background, senza alcuna app esterna necessaria.
             </p>
 
-            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
-                <button id="btn-push-toggle" class="btn btn-primary" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
+            <div class="push-actions-row">
+                <button id="btn-push-toggle" class="btn btn-primary push-action-btn">
                     🔔 Attiva Notifiche Push PWA
                 </button>
-                <button class="btn btn-outline" style="padding: 0.75rem 1.2rem; font-size: 0.9rem;" onclick="testPushNotification()">
+                <button id="btn-test-alert" class="btn btn-outline push-action-btn" onclick="testPushNotification()">
                     🧪 Prova Notifica Istantanea
                 </button>
-                <a href="/api/daily-digest/send" class="btn btn-gold" style="padding: 0.75rem 1.2rem; font-size: 0.9rem; text-decoration: none;" target="_blank">
-                    ☕ Invia Buongiorno Ora
+                <button class="btn btn-outline push-action-btn" onclick="sendTestDailyDigest()" title="Invia ora l'anteprima del digest Buongiorno Meteo">
+                    ☕ Test Buongiorno Meteo
+                </button>
+                <a href="https://ntfy.sh/{{ ntfy_topic }}" target="_blank" class="btn btn-outline push-action-btn" title="Canale ntfy.sh parallelo per smartwatch o domotica">
+                    📡 Canale ntfy.sh ({{ ntfy_topic }})
                 </a>
             </div>
 
-            <div style="background: rgba(0,0,0,0.25); border-radius: 12px; padding: 1rem; margin-top: 0.5rem; font-size: 0.83rem; color: var(--text-dim); display: flex; flex-direction: column; gap: 0.4rem;">
-                <strong style="color: var(--accent);">💡 Come abilitare le notifiche sui tuoi dispositivi:</strong>
-                <div>🍏 <strong>iPhone / iPad (iOS 16.4+):</strong> Apri il sito in Safari, tocca il tasto Condividi (quadrato con freccia in su) e scegli <em>"Aggiungi alla schermata Home"</em>. Apri l'app e tocca <strong>Attiva Notifiche</strong>.</div>
-                <div>🤖 <strong>Android:</strong> Clicca semplicemente su <em>"Attiva Notifiche Push"</em> (funziona sia da browser che da WebApp installata).</div>
-                <div>💻 <strong>PC / Mac:</strong> Clicca su <em>"Attiva Notifiche"</em> e consenti i permessi del browser Chrome, Edge, Safari o Firefox.</div>
+            <!-- GUIDA ATTIVAZIONE -->
+            <div class="push-guide-box">
+                <strong style="color: var(--accent); font-size: 0.95rem;">💡 Come attivare la ricezione sui tuoi dispositivi:</strong>
+                <div>🍏 <strong>iPhone / iPad (iOS 16.4+):</strong> Apri il sito in Safari, tocca il pulsante Condividi (quadrato con freccia in su) e seleziona <em>"Aggiungi alla schermata Home"</em>. Apri l'icona creata sulla schermata Home e premi <strong>Attiva Notifiche Push</strong>.</div>
+                <div>🤖 <strong>Android:</strong> Clicca su <em>"Attiva Notifiche Push"</em> (funziona direttamente da Chrome, Edge o Web App PWA installata).</div>
+                <div>💻 <strong>PC / Mac:</strong> Clicca su <em>"Attiva Notifiche"</em> e accetta i permessi del browser.</div>
+            </div>
+
+            <!-- COLLEGAMENTO AL REGISTRO NOTIFICHE E AZIONI RAPIDE -->
+            <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 1rem; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; margin-top: 0.5rem;">
+                <div>
+                    <strong style="color: #fff; font-size: 0.95rem;">📋 Registro Storico Notifiche</strong>
+                    <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Consulta tutti gli eventi registrati, filtra per categoria ed esporta in Excel.</p>
+                </div>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="markAllAlertsAsReadFromSettings()">
+                        ✓ Segna tutte lette
+                    </button>
+                    <a href="/api/export/alerts-csv" class="btn btn-sm btn-gold" style="text-decoration: none;">
+                        📥 Esporta CSV
+                    </a>
+                    <a href="/alerts-page" class="btn btn-sm btn-outline" style="text-decoration: none;">
+                        Apri Centro Notifiche ➔
+                    </a>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- 2. CANALE PUSH PARALLELO NTFY & CANALE PUBBLICO -->
-    <div class="card">
-        <div class="card-header">
-            <span>📡 Canale Push ntfy.sh & Automazioni</span>
-            <span class="sub-badge">Topic: {{ ntfy_topic }}</span>
+    <!-- SEZIONE MODALITÀ NON DISTURBARE NOTTURNO (QUIET HOURS) -->
+    <div class="card" style="margin-top: 1.5rem; border: 1px solid rgba(168, 85, 247, 0.35); background: linear-gradient(145deg, rgba(168, 85, 247, 0.06), var(--card-bg));">
+        <div class="card-header" style="border-bottom: 1px solid rgba(168, 85, 247, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.25rem;">🌙</span>
+                <strong>Filtro Notturno Intelligente (Quiet Hours 23:00 - 07:00)</strong>
+            </div>
+            <span class="status-pill" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3);">
+                Attivo • Nessun Disturbo Notturno
+            </span>
         </div>
-        <div class="item-list">
-            <div class="item"><span>Canale Push Primario:</span> <strong>{{ ntfy_topic }}</strong></div>
-            <div class="item"><span>Batteria Sensore 7 in 1:</span> <strong>{{ batt_wh65 }}</strong></div>
-            <div class="item"><span>Digest 'Buongiorno':</span> <strong>Attivo ogni giorno (08:00)</strong></div>
-            <div class="item"><span>Watchdog Offline:</span> <strong>Attivo (controllo 10 min)</strong></div>
-        </div>
-        <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
-            <a href="https://ntfy.sh/{{ ntfy_topic }}" target="_blank" class="btn btn-outline" style="flex: 1; text-align: center; text-decoration: none;">🌐 Apri Canale ntfy.sh</a>
-            <a href="/api/test-alert" class="btn" style="flex: 1; text-align: center; text-decoration: none;" target="_blank">🚀 Test Notifica ntfy</a>
+        <div style="display: flex; flex-direction: column; gap: 1rem; padding: 0.75rem 0;">
+            <p style="color: var(--text); font-size: 0.92rem; line-height: 1.55; margin: 0;">
+                Per proteggere il tuo sonno ed evitare notifiche rumorose nel cuore della notte, il sistema applica una distinzione automatica intelligente tra emergenze reali ed eventi ordinari:
+            </p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+                <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 10px; padding: 0.85rem;">
+                    <div style="color: #f87171; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 6px;">
+                        🚨 Emergenze Reali (Svegliano SEMPRE):
+                    </div>
+                    <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.84rem; color: var(--text-dim); line-height: 1.5;">
+                        <li><strong>Allagamento:</strong> sensori perdite d'acqua</li>
+                        <li><strong>Sovraccarico Rete:</strong> prelievo ≥ 4.9 kW (anti-blackout)</li>
+                        <li><strong>Grandine & Nubifragio:</strong> pioggia estrema ≥ 25 mm/h</li>
+                        <li><strong>Burrasca Violenta:</strong> crollo barometrico rapido</li>
+                        <li><strong>Fulmini Vicini:</strong> scariche entro 30 km</li>
+                        <li><strong>Protezione Civile:</strong> codici Arancione o Rosso</li>
+                    </ul>
+                </div>
+                <div style="background: rgba(100, 116, 139, 0.1); border: 1px solid rgba(100, 116, 139, 0.2); border-radius: 10px; padding: 0.85rem;">
+                    <div style="color: #94a3b8; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 6px;">
+                        💤 Eventi Ordinari (Silenziati di Notte):
+                    </div>
+                    <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.84rem; color: var(--text-dim); line-height: 1.5;">
+                        <li><strong>Batteria Aton:</strong> esaurimento carica al 15% alle 03:00</li>
+                        <li><strong>Terreno Secco:</strong> promemoria annaffiatura WH51</li>
+                        <li><strong>Pile Sensori:</strong> avviso batterie scariche</li>
+                        <li><strong>Previsione Pioggia:</strong> modelli pioggia oraria debole</li>
+                        <li><strong>Consumo Generico:</strong> assorbimenti elettrodomestici</li>
+                    </ul>
+                    <div style="font-size: 0.76rem; color: #a855f7; margin-top: 0.4rem;">
+                        * Registrati nel DB e riassunti alle ore 08:00 nel "Buongiorno Meteo".
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- 3. PERSONALIZZAZIONE NOMI SENSORI (ALIAS UTENTE) -->
-    <div class="card">
-        <div class="card-header">
-            <span>🏷️ Personalizzazione Nomi Sensori</span>
-            <span class="sub-badge">Alias Utente</span>
+    <!-- SEZIONE PROTEZIONE CIVILE & ALLERTE METEO -->
+    <div class="card" style="margin-top: 1.5rem; border: 1px solid rgba(16, 185, 129, 0.3); background: linear-gradient(145deg, rgba(16, 185, 129, 0.05), var(--card-bg));">
+        <div class="card-header" style="border-bottom: 1px solid rgba(16, 185, 129, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.25rem;">🛡️</span>
+                <strong>Allerte Ufficiali Protezione Civile (Calabria & Nazionale)</strong>
+            </div>
+            <span class="status-pill badge-live">Attivo • DPC / ARPACAL</span>
         </div>
-        <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.85rem;">
-            Assegna un'etichetta personalizzata e riconoscibile ai tuoi sensori (es: <em>"Piante Soggiorno"</em>, <em>"Orto Pomodori"</em>, <em>"Giardino"</em>).
+        <div style="display: flex; flex-direction: column; gap: 1rem; padding: 0.75rem 0;">
+            <p style="color: var(--text); font-size: 0.92rem; line-height: 1.55; margin: 0;">
+                Il sistema monitora quotidianamente i Bollettini di Criticità Idrogeologica e Idraulica emessi dal Dipartimento Nazionale della Protezione Civile e dal Centro Funzionale Decentrato Regionale (ARPACAL per la Calabria), notificando tempestivamente codici Gialli, Arancioni o Rossi per oggi e per domani.
+            </p>
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
+                <a href="/api/civil_protection" target="_blank" class="btn btn-outline btn-sm" style="text-decoration: none;">
+                    📄 Visualizza JSON Bollettino
+                </a>
+                <button type="button" class="btn btn-primary btn-sm" onclick="testCivilProtectionAlert()">
+                    🧪 Simula Notifica Protezione Civile
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- TAB 2: CATALOGO ALLARMI & SOGLIE ATTIVE -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-alarms" role="tabpanel">
+    <div class="card" style="min-width: 0;">
+        <div class="card-header" style="flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.9rem; margin-bottom: 1rem;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.25rem;">📋</span>
+                <div>
+                    <strong>Catalogo Allarmi & Soglie di Scatto del Sistema</strong>
+                    <div style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Tutte le condizioni meteorologiche monitorate in background con protezione anti-spam debounced</div>
+                </div>
+            </div>
+            <span class="sub-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--accent);">16 Regole Attive</span>
+        </div>
+
+        <!-- BARRA DI RICERCA REGOLE -->
+        <div style="margin-bottom: 1rem; position: relative; max-width: 450px;">
+            <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 0.95rem; color: var(--text-dim); pointer-events: none;">🔍</span>
+            <input 
+                type="text" 
+                id="alarm-search-input" 
+                placeholder="Cerca allarme per evento o condizione (es. gelo, fulmine, pioggia)..." 
+                style="width: 100%; padding: 0.55rem 2rem 0.55rem 2.4rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-size: 0.88rem; outline: none; transition: border-color 0.2s;"
+                oninput="filterAlarmsTable(this.value)"
+            >
+            <button 
+                type="button" 
+                id="alarm-search-clear" 
+                onclick="document.getElementById('alarm-search-input').value=''; filterAlarmsTable(''); this.style.display='none';" 
+                style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-dim); font-size: 1rem; cursor: pointer; display: none;"
+            >✕</button>
+        </div>
+
+        <div class="table-responsive" style="width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;">
+            <table class="weather-table" id="alarms-rules-table" style="min-width: 520px;">
+                <thead>
+                    <tr>
+                        <th style="width: 250px;">Evento Allarme</th>
+                        <th style="width: 60px; text-align: center;">Icona</th>
+                        <th>Condizione di Scatto Automatica</th>
+                        <th style="width: 110px;">Priorità</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🛡️ Allerta Protezione Civile</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🛡️</span></td>
+                        <td>Bollettino di Criticità DPC/ARPACAL con Codice Giallo, Arancione o Rosso per la zona locale</td>
+                        <td><span class="badge-tag urgent">Urgente</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>⚡ Temporale / Fulmini</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">⚡</span></td>
+                        <td>Fulmine rilevato a meno di 30 km dalla stazione</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>⚠️ Burrasca / Crollo Pressione</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">⚠️ ↘️</span></td>
+                        <td>Calo barometrico ≥ 2.0 hPa in 3 ore (forte peggioramento)</td>
+                        <td><span class="badge-tag urgent">Urgente</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🌧️ Nubifragio / Bomba d'Acqua</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌧️</span></td>
+                        <td>Intensità di pioggia estrema ≥ 25.0 mm/h</td>
+                        <td><span class="badge-tag urgent">Urgente</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>☔ Pioggia Prevista a Breve</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">☔</span></td>
+                        <td>Previsione oraria Open-Meteo: probabilità pioggia ≥ 60% o ≥ 0.5 mm nelle prossime 1-2 ore</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🌧️ Ha Iniziato a Piovere</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌧️💧</span></td>
+                        <td>Rilevamento prime gocce / inizio precipitazioni dalla stazione</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🌧️ Pioggia Intensa</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌧️</span></td>
+                        <td>Rovescio moderato/forte ≥ 5.0 mm/h</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>💨 Raffica di Vento Anomala</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">💨</span></td>
+                        <td>Raffica improvvisa (Wind Spike) ≥ 45.0 km/h</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>❄️ Allerta Gelo</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">❄️</span></td>
+                        <td>Temperatura scesa a ≤ 1.0°C (rischio ghiaccio/piante)</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🔥 Caldo Estremo</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🔥</span></td>
+                        <td>Temperatura salita a ≥ 38.0°C</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🌡️ Sbalzo Termico Repentino</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌡️</span></td>
+                        <td>Crollo o impennata anomala ≥ 5.5°C in 1h (con filtro intelligente ciclo solare alba/tramonto)</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>☀️ Indice UV Pericoloso</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">☀️</span></td>
+                        <td>Indice UV ≥ 8 (rischio scottature in pochi minuti)</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🌱 Terreno Secco</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌱</span></td>
+                        <td>Umidità suolo sensore WH51 ≤ 25.0% (promemoria annaffiatura)</td>
+                        <td><span class="badge-tag">Normale</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🏆 Record Storico Infranto</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🏆</span></td>
+                        <td>Battuto un nuovo record assoluto significativo (Temp ≥0.5°C, Raffica ≥5 km/h)</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>☕ Buongiorno Meteo</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">☕</span></td>
+                        <td>Ogni giorno alle 08:00 (Previsione, Minima, Sole, Asciugatura bucato)</td>
+                        <td><span class="badge-tag">Digest</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🔴 Stazione Offline / Riconnessa</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">📡</span></td>
+                        <td>Watchdog: assenza segnale per oltre 10 minuti</td>
+                        <td><span class="badge-tag urgent">Urgente</span></td>
+                    </tr>
+                    <tr class="alarm-rule-row">
+                        <td><strong>🪫 Batteria Sensori Bassa</strong></td>
+                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🪫</span></td>
+                        <td>Pile sensori in esaurimento (WH65 7-in-1, WH57, WH51, WH31)</td>
+                        <td><span class="badge-tag urgent">Alta</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- TAB 3: PERSONALIZZAZIONE NOMI SENSORI EXTRA -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-sensors" role="tabpanel">
+    <div class="card">
+        <div class="card-header" style="flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.25rem;">🏷️</span>
+                <strong>Personalizzazione Nomi Sensori</strong>
+            </div>
+            <span class="sub-badge">{% if detected_sensors %}{{ detected_sensors|length }} Rilevati{% else %}Nessun Extra{% endif %}</span>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.1rem; line-height: 1.5;">
+            Assegna un'etichetta personalizzata e riconoscibile ai sensori opzionali associati alla tua stazione meteo.
         </p>
+        
+        {% if detected_sensors %}
         <div class="item-list" id="sensor_alias_form_list">
-            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
-                <span style="font-size: 0.85rem; width: 120px; color: var(--text-muted);">🌱 Suolo CH1:</span>
-                <input type="text" id="alias_soil_ch1" value="{{ sensor_aliases.get('soil_ch1', '') if sensor_aliases else '' }}" placeholder="Es: Giardino Prato" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
-                <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('soil_ch1', document.getElementById('alias_soil_ch1').value)">Salva</button>
+            {% for s in detected_sensors %}
+            <div class="sensor-alias-row">
+                <div class="sensor-alias-header-line">
+                    <span class="sensor-alias-title">{{ s.icon }} <strong>{{ s.type_label }}</strong> ({{ s.channel_label }})</span>
+                    {% if s.current_val %}
+                    <span class="badge-tag" style="font-size: 0.72rem;">{{ s.current_val }}</span>
+                    {% endif %}
+                </div>
+                <div class="sensor-alias-input-group">
+                    <input type="text" id="alias_{{ s.key }}" class="sensor-alias-input" value="{{ s.alias }}" placeholder="Es: Giardino, Piante Soggiorno...">
+                    <button type="button" class="btn btn-sm sensor-alias-btn" onclick="saveSensorAlias({{ s.key|js }}, document.getElementById('alias_' + {{ s.key|js }}).value)">Salva</button>
+                </div>
             </div>
-            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
-                <span style="font-size: 0.85rem; width: 120px; color: var(--text-muted);">🌱 Suolo CH2:</span>
-                <input type="text" id="alias_soil_ch2" value="{{ sensor_aliases.get('soil_ch2', '') if sensor_aliases else '' }}" placeholder="Es: Piante Balcone" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
-                <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('soil_ch2', document.getElementById('alias_soil_ch2').value)">Salva</button>
-            </div>
-            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
-                <span style="font-size: 0.85rem; width: 120px; color: var(--text-muted);">🌱 Suolo CH3:</span>
-                <input type="text" id="alias_soil_ch3" value="{{ sensor_aliases.get('soil_ch3', '') if sensor_aliases else '' }}" placeholder="Es: Vasi Terrazzo" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
-                <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('soil_ch3', document.getElementById('alias_soil_ch3').value)">Salva</button>
-            </div>
-            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
-                <span style="font-size: 0.85rem; width: 120px; color: var(--text-muted);">🌡️ Temp Extra 1:</span>
-                <input type="text" id="alias_temp_ch1" value="{{ sensor_aliases.get('temp_ch1', '') if sensor_aliases else '' }}" placeholder="Es: Cantina / Garage" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.85rem;">
-                <button type="button" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="saveSensorAlias('temp_ch1', document.getElementById('alias_temp_ch1').value)">Salva</button>
-            </div>
+            {% endfor %}
         </div>
         <div id="sensor_alias_status" style="font-size: 0.8rem; color: #10b981; margin-top: 0.5rem; display: none;"></div>
+        {% else %}
+        <div style="background: rgba(255,255,255,0.03); border: 1px dashed var(--card-border); border-radius: 12px; padding: 1.5rem; text-align: center; color: var(--text-dim); font-size: 0.88rem; line-height: 1.5;">
+            🌱 <strong>Nessun sensore opzionale aggiuntivo connesso al momento.</strong><br>
+            La stazione sta trasmettendo con il gruppo sensori esterno standard (7-in-1). Se colleghi sensori opzionali di umidità suolo (WH51), termometri multi-canale (WH31), sonde temperatura (WN34) o rilevatori perdite (WH55), appariranno automaticamente qui per essere rinominati.
+        </div>
+        {% endif %}
     </div>
+</div>
 
-    <!-- 4. DATABASE SQLITE & MANUTENZIONE STORICO -->
-    <div class="card">
-        <div class="card-header">
-            <span>🗄️ Database SQLite & Manutenzione</span>
-            <span class="sub-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">WAL Mode Attivo</span>
+<!-- ========================================================================= -->
+<!-- TAB 4: DISPOSITIVI SMART LIFE (TUYA) -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-tuya" role="tabpanel">
+    <div class="card" id="tuya_settings_card" style="border: 1px solid rgba(168, 85, 247, 0.3); background: linear-gradient(145deg, rgba(168, 85, 247, 0.05), var(--card-bg));">
+        <div class="card-header" style="border-bottom: 1px solid rgba(168, 85, 247, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.25rem;">🔌</span>
+                <strong>Dispositivi Smart Life / Tuya & Gestione Visibilità</strong>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="sub-badge" id="tuya_active_count_badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc;">
+                    {{ tuya_summary.enabled_devices_count }} / {{ tuya_summary.total_devices_count }} Dispositivi Attivi
+                </span>
+                <button type="button" class="btn btn-sm btn-primary" onclick="syncTuyaDevicesNow()" title="Forza sincronizzazione con Tuya Cloud">🔄 Sincronizza</button>
+            </div>
         </div>
-        <div class="item-list">
-            <div class="item"><span>Dimensione Database:</span> <strong id="db_size_val">{{ db_stats.db_size_mb if db_stats else '--' }} MB</strong></div>
-            <div class="item"><span>Letture Meteo Salvate:</span> <strong id="db_weather_cnt">{{ db_stats.weather_records_count if db_stats else '--' }}</strong></div>
-            <div class="item"><span>Letture Energetiche Aton:</span> <strong id="db_energy_cnt">{{ db_stats.energy_records_count if db_stats else '--' }}</strong></div>
-            <div class="item"><span>Politica Retention:</span> <strong>Raw 60gg + Downsampling Orario/Giorno</strong></div>
-        </div>
-        <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
-            <a href="/api/system/backup" class="btn btn-gold" style="flex: 1; text-align: center; text-decoration: none;" download>💾 Scarica Backup DB (.db)</a>
-            <button type="button" class="btn" style="flex: 1;" onclick="triggerDbMaintenance()">🧹 Compattazione & Ottimizza</button>
-        </div>
-        <div id="db_maintenance_result" style="font-size: 0.8rem; color: #38bdf8; margin-top: 0.5rem; display: none;"></div>
-    </div>
 
-    <!-- 5. DIAGNOSTICA HARDWARE & RETE -->
-    <div class="card">
-        <div class="card-header">
-            <span>📡 Diagnostica Hardware, Rete & Integrazioni</span>
-            <span class="sub-badge badge-live">Connesso</span>
-        </div>
-        <div class="item-list">
-            <div class="item"><span>Modello Stazione:</span> <strong>{{ station_model }}</strong></div>
-            <div class="item"><span>Inverter / Batteria:</span> <strong>Aton Green Storage ({{ aton_sn }})</strong></div>
-            <div class="item"><span>Climatizzazione Smart:</span> <strong>LG ThinQ Connect</strong></div>
-            <div class="item"><span>Domotica Elettrodomestici:</span> <strong>Samsung SmartThings</strong></div>
-            <div class="item"><span>Modelli Previsionali:</span> <strong>ECMWF IFS 9km / ICON-EU</strong></div>
-        </div>
-        <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
-            <a href="/alerts-page" class="btn" style="flex: 1; text-align: center; text-decoration: none;">⚙️ Catalogo Notifiche & Log</a>
-            <a href="/history" class="btn" style="flex: 1; text-align: center; text-decoration: none;">🔍 Archivio Storico</a>
-        </div>
-    </div>
-
-    <!-- 6. SICUREZZA & SESSIONE -->
-    <div class="card">
-        <div class="card-header">
-            <span>🔒 Sicurezza & Disconnessione</span>
-            <span class="sub-badge">Accesso Protetto</span>
-        </div>
-        <p style="font-size: 0.84rem; color: var(--text-muted); margin-bottom: 0.75rem; line-height: 1.45;">
-            La tua sessione corrente su questo browser è autenticata e protetta tramite cookie di sicurezza HTTP-Only.
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.5;">
+            Abilita o disabilita individualmente ciascun dispositivo Smart Life per decidere se mostrarlo nella dashboard e includerlo nelle statistiche energetiche e nelle automazioni. I dispositivi disattivati non appariranno nella home.
         </p>
-        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <a href="/logout" class="btn btn-outline" style="color: #ef4444; border-color: rgba(239,68,68,0.4); text-decoration: none;">
-                🚪 Disconnetti questo dispositivo (Logout)
+
+        <div id="tuya_status_msg" style="font-size: 0.82rem; margin-bottom: 0.75rem; display: none;"></div>
+
+        {% if tuya_devices %}
+        <div class="tuya-devices-list" id="tuya_devices_container">
+            {% for dev in tuya_devices %}
+            <div class="tuya-device-row {% if dev.get('enabled') is false %}is-disabled{% endif %}" id="tuya_row_{{ dev.id }}">
+                <div class="tuya-device-left">
+                    <span class="tuya-device-icon">{{ dev.icon or '📱' }}</span>
+                    <div class="tuya-device-info">
+                        <div class="tuya-device-name-line">
+                            <strong class="tuya-dev-name" id="tuya_name_disp_{{ dev.id }}">{{ dev.name or 'Dispositivo' }}</strong>
+                            <span class="badge-tag" style="font-size: 0.7rem;">{{ dev.type_label or 'Smart Life' }}</span>
+                            {% if dev.get('is_on') is not none %}
+                            <span class="badge-tag {% if dev.is_on %}tag-on{% else %}tag-off{% endif %}" id="tuya_state_tag_{{ dev.id }}">
+                                {% if dev.is_on %}🟢 ON{% else %}⚪ OFF{% endif %}
+                            </span>
+                            {% endif %}
+                        </div>
+                        <div class="tuya-device-meta">
+                            <span>Modello: {{ dev.product_name or dev.model or 'Generico' }}</span> • <span style="font-family: monospace; font-size: 0.75rem; color: var(--text-dim);">ID: {{ dev.id }}</span>
+                            {% if dev.get('power_w') and dev.power_w > 0 %}
+                            • <strong style="color: #38bdf8;">⚡ {{ dev.power_w }} W</strong>
+                            {% endif %}
+                            {% if dev.get('battery_pct') is not none %}
+                            • <span style="color: #10b981;">🔋 {{ dev.battery_pct }}%</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tuya-device-actions">
+                    <!-- Toggle Visibilità Switch -->
+                    <label class="tuya-toggle-label" title="Attiva o disattiva il dispositivo nella Dashboard">
+                        <input type="checkbox" class="tuya-switch-input" id="tuya_toggle_{{ dev.id }}" {% if dev.get('enabled') is not false %}checked{% endif %} onchange="updateTuyaDeviceConfig('{{ dev.id }}', this.checked)">
+                        <span class="tuya-switch-slider"></span>
+                        <span class="tuya-switch-text" id="tuya_text_{{ dev.id }}">{% if dev.get('enabled') is not false %}Attivo{% else %}Disattivato{% endif %}</span>
+                    </label>
+
+                    <!-- Test rapido ON/OFF se presa o luce -->
+                    {% if dev.get('is_on') is not none %}
+                    <button type="button" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="testToggleTuya('{{ dev.id }}')">
+                        ⚡ Toggle ON/OFF
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div style="background: rgba(255,255,255,0.03); border: 1px dashed var(--card-border); border-radius: 12px; padding: 1.25rem; text-align: center; color: var(--text-dim); font-size: 0.85rem;">
+            Nessun dispositivo Tuya rilevato. Verifica le credenziali Client ID e Secret nel file di configurazione.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- SEZIONE 2: CONTROLLO 100% LOCALE LAN (ZERO CLOUD) -->
+    <div class="card" id="tuya_local_card" style="margin-top: 1.5rem; border: 1px solid rgba(56, 189, 248, 0.35); background: linear-gradient(145deg, rgba(56, 189, 248, 0.06), var(--card-bg));">
+        <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.25rem;">🏠</span>
+                <strong>Controllo 100% Locale LAN (Zero Cloud / Senza Scadenze)</strong>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-sm btn-outline" onclick="scanTuyaLan()" id="btn_scan_lan" title="Cerca i dispositivi Tuya accesi sulla rete Wi-Fi locale">
+                    📡 Scansiona Rete LAN
+                </button>
+                <button type="button" class="btn btn-sm btn-outline" onclick="importTuyaCloudKeys()" id="btn_import_cloud" title="Scarica le Local Key da Tuya Cloud per salvarle per sempre in locale">
+                    📥 Importa da Cloud
+                </button>
+                <button type="button" class="btn btn-sm btn-primary" onclick="openAddLocalTuyaModal()">
+                    ➕ Aggiungi Dispositivo LAN
+                </button>
+            </div>
+        </div>
+
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.5;">
+            Comanda le prese e i dispositivi Tuya direttamente via TCP/IP sulla rete Wi-Fi locale. <strong>Zero richieste cloud, nessuna scadenza di API trial, funzionamento garantito anche senza internet e tempi di risposta istantanei (15 ms)</strong>.
+        </p>
+
+        <div id="tuya_local_status_msg" style="font-size: 0.82rem; margin-bottom: 0.75rem; display: none; padding: 0.5rem 0.75rem; border-radius: 8px;"></div>
+
+        <!-- ELENCO DISPOSITIVI LOCALI REGISTRATI -->
+        <div id="tuya_local_devices_container">
+            {% if tuya_local_devices %}
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                {% for ldev in tuya_local_devices %}
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 10px; padding: 0.85rem 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;" id="local_row_{{ ldev.device_id }}">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.4rem;">🔌</span>
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <strong style="color: var(--text); font-size: 0.95rem;">{{ ldev.name }}</strong>
+                                <span class="badge-tag" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; font-size: 0.7rem;">LAN ⚡ ver {{ ldev.version }}</span>
+                                {% if ldev.is_on is true %}
+                                <span class="badge-tag tag-on" style="font-size: 0.7rem;">🟢 ON</span>
+                                {% elif ldev.is_on is false %}
+                                <span class="badge-tag tag-off" style="font-size: 0.7rem;">⚪ OFF</span>
+                                {% endif %}
+                            </div>
+                            <div style="font-size: 0.78rem; color: var(--text-dim); margin-top: 2px;">
+                                <span>IP: <strong style="color: #f1f5f9;">{{ ldev.ip_address or 'Auto-Discovery' }}</strong></span> • 
+                                <span style="font-family: monospace;">ID: {{ ldev.device_id }}</span> • 
+                                <span>Key: <strong style="font-family: monospace; color: #a78bfa;">{{ ldev.local_key[:4] }}••••••••{{ ldev.local_key[-4:] if ldev.local_key|length >= 8 else '' }}</strong></span>
+                                {% if ldev.power_w and ldev.power_w > 0 %}
+                                • <strong style="color: #38bdf8;">⚡ {{ ldev.power_w }} W</strong>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <button type="button" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="testToggleTuya({{ ldev.device_id|js }})">
+                            ⚡ Prova Toggle LAN
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.55rem; font-size: 0.78rem;" data-id="{{ ldev.device_id }}" data-name="{{ ldev.name }}" data-ip="{{ ldev.ip_address or '' }}" data-ver="{{ ldev.version }}" onclick="editLocalTuya(this.dataset)">
+                            ✏️ Modifica
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.55rem; font-size: 0.78rem; border-color: #ef4444; color: #ef4444;" onclick="deleteLocalTuya('{{ ldev.device_id }}')">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div style="background: rgba(0,0,0,0.2); border: 1px dashed var(--card-border); border-radius: 10px; padding: 1.5rem 1rem; text-align: center; color: var(--text-dim); font-size: 0.85rem;">
+                <div style="font-size: 2rem; margin-bottom: 0.4rem;">🏠</div>
+                <strong style="color: var(--text); font-size: 0.95rem;">Nessun dispositivo Tuya configurato per il controllo locale</strong>
+                <p style="margin-top: 0.35rem;">Puoi aggiungere la tua presa (es. <em>Cisterna</em>) con ID e Local Key oppure cliccare su <strong>"📥 Importa da Cloud"</strong>.</p>
+                <button type="button" class="btn btn-primary btn-sm" style="margin-top: 0.75rem;" onclick="openAddLocalTuyaModal()">➕ Aggiungi Dispositivo Locale</button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- MODALE AGGIUNGI / MODIFICA DISPOSITIVO TUYA LOCALE -->
+<div id="modal_tuya_local" class="device-modal-backdrop" style="display: none;" onclick="closeTuyaLocalModal(event)">
+    <div class="device-modal-dialog" style="max-width: 520px;" onclick="event.stopPropagation()">
+        <div class="device-modal-header">
+            <div class="modal-title-group">
+                <div class="modal-icon-badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8;">⚡</div>
+                <div>
+                    <h3 id="modal_tuya_local_title">Aggiungi Dispositivo Tuya Locale (LAN)</h3>
+                    <div class="modal-device-meta">Controllo diretto via Wi-Fi senza Cloud</div>
+                </div>
+            </div>
+            <button type="button" class="modal-close-btn" onclick="closeTuyaLocalModal()">&times;</button>
+        </div>
+
+        <div class="device-modal-body" style="padding: 1.25rem;">
+            <div style="display: flex; flex-direction: column; gap: 1rem;">
+                <div>
+                    <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">Nome Dispositivo</label>
+                    <input type="text" id="tuya_local_input_name" placeholder="es. Cisterna / Presa Smart" style="width: 100%; padding: 0.6rem 0.75rem; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-size: 0.9rem;" />
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">ID Dispositivo Tuya (Device ID)</label>
+                    <input type="text" id="tuya_local_input_id" placeholder="es. 04564850cc50e3d1ca35" style="width: 100%; padding: 0.6rem 0.75rem; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-family: monospace; font-size: 0.88rem;" />
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">Local Key (Chiave di Rete a 16 caratteri)</label>
+                    <input type="text" id="tuya_local_input_key" placeholder="es. a1b2c3d4e5f67890" style="width: 100%; padding: 0.6rem 0.75rem; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-family: monospace; font-size: 0.88rem;" />
+                    <small style="font-size: 0.72rem; color: var(--text-dim); display: block; margin-top: 2px;">La chiave univoca di cifratura locale associata al dispositivo.</small>
+                </div>
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.75rem;">
+                    <div>
+                        <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">Indirizzo IP Locale (Opzionale)</label>
+                        <input type="text" id="tuya_local_input_ip" placeholder="es. 192.168.1.145 (o lascia vuoto per auto-discovery)" style="width: 100%; padding: 0.6rem 0.75rem; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-size: 0.88rem;" />
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">Versione</label>
+                        <select id="tuya_local_input_ver" style="width: 100%; padding: 0.6rem 0.5rem; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-size: 0.88rem;">
+                            <option value="3.3" selected>3.3 (Standard)</option>
+                            <option value="3.4">3.4</option>
+                            <option value="3.5">3.5</option>
+                            <option value="3.1">3.1 (Legacy)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="device-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeTuyaLocalModal()">Annulla</button>
+            <button type="button" class="btn btn-primary" onclick="submitTuyaLocalDevice()">💾 Salva Dispositivo</button>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- TAB: CLIMATIZZAZIONE INTELLIGENTE & CONTROLLO AUTONOMO (LG THINQ) -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-climate" role="tabpanel">
+    <!-- MASTER SWITCH & STATUS CARD -->
+    <div class="card" style="border: 1px solid rgba(56, 189, 248, 0.35); background: linear-gradient(145deg, rgba(56, 189, 248, 0.08), var(--card-bg)); margin-bottom: 1.25rem;">
+        <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.35rem;">❄️</span>
+                <div>
+                    <strong style="font-size: 1.05rem;">Controllo Autonomo & Intelligenza Climatizzatori (LG ThinQ)</strong>
+                    <div style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Gestione proattiva di accensione, spegnimento e notifiche intelligenti incrociate con meteo ed energia</div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                {% if thinq_enabled %}
+                <span class="sub-badge badge-live">LG ThinQ Connesso</span>
+                {% else %}
+                <span class="sub-badge" style="background: rgba(239, 68, 68, 0.2); color: #f87171;">ThinQ Non Attivo</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div style="padding: 0.75rem 0; display: flex; flex-direction: column; gap: 1rem;">
+            <!-- MASTER TOGGLE ROW -->
+            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.25); border-radius: 12px; padding: 1rem 1.2rem; border: 1px solid rgba(255,255,255,0.06); flex-wrap: wrap; gap: 0.75rem;">
+                <div>
+                    <strong style="font-size: 1rem; color: #fff;">🧠 Interruttore Generale Automazioni Clima</strong>
+                    <p style="font-size: 0.84rem; color: var(--text-dim); margin-top: 3px; max-width: 550px;">
+                        Abilita o sospende tutte le azioni autonome (Auto-OFF / Auto-ON) e le relative notifiche sui condizionatori con un solo interruttore (utile se sei in partenza o vacanza).
+                    </p>
+                </div>
+                <label class="tuya-toggle-label">
+                    <input type="checkbox" class="tuya-switch-input" id="climate_master_enabled" {% if climate_config.master_enabled %}checked{% endif %} onchange="toggleClimateMaster(this.checked)">
+                    <span class="tuya-switch-slider"></span>
+                    <span class="tuya-switch-text" id="climate_master_text">{% if climate_config.master_enabled %}Attivo{% else %}Disattivato{% endif %}</span>
+                </label>
+            </div>
+
+            <!-- STATUS BAR & FEEDBACK -->
+            <div id="climate_save_feedback" style="display: none; padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.88rem;"></div>
+
+            <!-- CARDS DEGLI SCENARI INTELLIGENTI -->
+            <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem;">
+                
+                <!-- SCENARIO 1: USCITA DI CASA / PARTENZA -->
+                <div class="climate-scenario-card">
+                    <div class="climate-scenario-head">
+                        <span class="climate-scenario-icon">🚗</span>
+                        <div>
+                            <strong style="color: #fff; font-size: 0.95rem;">Uscita di Casa / Partenza (Vincenzo Away)</strong>
+                            <div class="climate-scenario-desc">Rileva quando esci con smartphone S26 Ultra se uno o più climatizzatori sono rimasti accesi.</div>
+                        </div>
+                    </div>
+                    <div class="climate-scenario-body">
+                        <label class="climate-select-label">Azione all'Uscita:</label>
+                        <select class="climate-select-ctrl" id="climate_away_action">
+                            <option value="notify" {% if climate_config.away_action == 'notify' %}selected{% endif %}>🔔 Solo Notifica (Consigliato: in casa ci sono gli altri)</option>
+                            <option value="off" {% if climate_config.away_action == 'off' %}selected{% endif %}>🤖 Auto-Spegnimento Ritardato (Spegne i clima se sei fuori)</option>
+                            <option value="disabled" {% if climate_config.away_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
+                        </select>
+                        <div class="climate-sub-setting" style="margin-top: 0.6rem;">
+                            <label style="font-size: 0.8rem; color: var(--text-dim);">Ritardo spegnimento dopo l'uscita:</label>
+                            <select class="climate-select-ctrl" id="climate_away_delay_min" style="margin-top: 3px;">
+                                <option value="5" {% if climate_config.away_delay_min == 5 %}selected{% endif %}>5 Minuti</option>
+                                <option value="10" {% if climate_config.away_delay_min == 10 or not climate_config.away_delay_min %}selected{% endif %}>10 Minuti (Default)</option>
+                                <option value="15" {% if climate_config.away_delay_min == 15 %}selected{% endif %}>15 Minuti</option>
+                                <option value="30" {% if climate_config.away_delay_min == 30 %}selected{% endif %}>30 Minuti</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SCENARIO 2: MAX RUNTIME / DIMENTICANZA -->
+                <div class="climate-scenario-card">
+                    <div class="climate-scenario-head">
+                        <span class="climate-scenario-icon">⏱️</span>
+                        <div>
+                            <strong style="color: #fff; font-size: 0.95rem;">Dimenticanza / Acceso da Troppo Tempo</strong>
+                            <div class="climate-scenario-desc">Protezione contro ore continuative di funzionamento ininterrotto.</div>
+                        </div>
+                    </div>
+                    <div class="climate-scenario-body">
+                        <label class="climate-select-label">Azione a Tempo Limite:</label>
+                        <select class="climate-select-ctrl" id="climate_max_runtime_action">
+                            <option value="notify" {% if climate_config.max_runtime_action == 'notify' %}selected{% endif %}>🔔 Solo Notifica di Promemoria</option>
+                            <option value="off" {% if climate_config.max_runtime_action == 'off' %}selected{% endif %}>🤖 Auto-Spegnimento di Sicurezza</option>
+                            <option value="disabled" {% if climate_config.max_runtime_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
+                        </select>
+                        <div class="climate-sub-setting" style="margin-top: 0.6rem;">
+                            <label style="font-size: 0.8rem; color: var(--text-dim);">Soglia ore continuative accensione:</label>
+                            <select class="climate-select-ctrl" id="climate_max_runtime_hours" style="margin-top: 3px;">
+                                <option value="2" {% if climate_config.max_runtime_hours == 2 %}selected{% endif %}>Dopo 2 Ore</option>
+                                <option value="3" {% if climate_config.max_runtime_hours == 3 %}selected{% endif %}>Dopo 3 Ore</option>
+                                <option value="4" {% if climate_config.max_runtime_hours == 4 %}selected{% endif %}>Dopo 4 Ore</option>
+                                <option value="5" {% if climate_config.max_runtime_hours == 5 or not climate_config.max_runtime_hours %}selected{% endif %}>Dopo 5 Ore (Consigliato)</option>
+                                <option value="6" {% if climate_config.max_runtime_hours == 6 %}selected{% endif %}>Dopo 6 Ore</option>
+                                <option value="8" {% if climate_config.max_runtime_hours == 8 %}selected{% endif %}>Dopo 8 Ore</option>
+                                <option value="10" {% if climate_config.max_runtime_hours == 10 %}selected{% endif %}>Dopo 10 Ore</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SCENARIO 3: FREE COOLING NOTTURNO -->
+                <div class="climate-scenario-card">
+                    <div class="climate-scenario-head">
+                        <span class="climate-scenario-icon">🌙</span>
+                        <div>
+                            <strong style="color: #fff; font-size: 0.95rem;">Free Cooling Notturno (Fresco all'Esterno)</strong>
+                            <div class="climate-scenario-desc">Confronta la temperatura esterna con la stanza e consiglia aria fresca naturale.</div>
+                        </div>
+                    </div>
+                    <div class="climate-scenario-body">
+                        <label class="climate-select-label">Azione se Fuori è più Fresco:</label>
+                        <select class="climate-select-ctrl" id="climate_night_cooling_action">
+                            <option value="notify" {% if climate_config.night_cooling_action == 'notify' %}selected{% endif %}>🔔 Solo Notifica (Consiglia di aprire finestre e spegnere)</option>
+                            <option value="off" {% if climate_config.night_cooling_action == 'off' %}selected{% endif %}>🤖 Auto-Spegnimento Notturno</option>
+                            <option value="disabled" {% if climate_config.night_cooling_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
+                        </select>
+                        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.6rem;">
+                            <div>
+                                <label style="font-size: 0.8rem; color: var(--text-dim);">Inizio Notte:</label>
+                                <select class="climate-select-ctrl" id="climate_night_start_hour" style="margin-top: 3px;">
+                                    <option value="22" {% if climate_config.night_start_hour == 22 %}selected{% endif %}>22:00</option>
+                                    <option value="23" {% if climate_config.night_start_hour == 23 or not climate_config.night_start_hour %}selected{% endif %}>23:00 (Default)</option>
+                                    <option value="0" {% if climate_config.night_start_hour == 0 %}selected{% endif %}>00:00</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 0.8rem; color: var(--text-dim);">Fine Notte:</label>
+                                <select class="climate-select-ctrl" id="climate_night_end_hour" style="margin-top: 3px;">
+                                    <option value="6" {% if climate_config.night_end_hour == 6 %}selected{% endif %}>06:00</option>
+                                    <option value="7" {% if climate_config.night_end_hour == 7 or not climate_config.night_end_hour %}selected{% endif %}>07:00 (Default)</option>
+                                    <option value="8" {% if climate_config.night_end_hour == 8 %}selected{% endif %}>08:00</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem; line-height: 1.3;">
+                            ℹ️ Si attiva se fuori fa più fresco di &ge; 1.5°C e non piove.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SCENARIO 4: PRE-RAFFRESCAMENTO SOLARE ATON -->
+                <div class="climate-scenario-card">
+                    <div class="climate-scenario-head">
+                        <span class="climate-scenario-icon">☀️</span>
+                        <div>
+                            <strong style="color: #fff; font-size: 0.95rem;">Pre-Cooling Solare Gratuito (Aton Storage)</strong>
+                            <div class="climate-scenario-desc">Avvia il raffrescamento a costo zero quando c'è forte surplus solare.</div>
+                        </div>
+                    </div>
+                    <div class="climate-scenario-body">
+                        <label class="climate-select-label">Azione con Surplus Solare:</label>
+                        <select class="climate-select-ctrl" id="climate_solar_action">
+                            <option value="notify" {% if climate_config.solar_preconditioning_action == 'notify' %}selected{% endif %}>🔔 Solo Notifica Opportunità a Costo Zero</option>
+                            <option value="on" {% if climate_config.solar_preconditioning_action == 'on' %}selected{% endif %}>🤖 Auto-Accensione Solare (Avvia Clima)</option>
+                            <option value="disabled" {% if climate_config.solar_preconditioning_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
+                        </select>
+                        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.6rem;">
+                            <div>
+                                <label style="font-size: 0.8rem; color: var(--text-dim);">Min Watt Solari:</label>
+                                <select class="climate-select-ctrl" id="climate_solar_surplus_w" style="margin-top: 3px;">
+                                    <option value="1200" {% if climate_config.solar_surplus_w == 1200 %}selected{% endif %}>1200 W</option>
+                                    <option value="1500" {% if climate_config.solar_surplus_w == 1500 %}selected{% endif %}>1500 W</option>
+                                    <option value="1800" {% if climate_config.solar_surplus_w == 1800 or not climate_config.solar_surplus_w %}selected{% endif %}>1800 W (Default)</option>
+                                    <option value="2200" {% if climate_config.solar_surplus_w == 2200 %}selected{% endif %}>2200 W</option>
+                                    <option value="2500" {% if climate_config.solar_surplus_w == 2500 %}selected{% endif %}>2500 W</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 0.8rem; color: var(--text-dim);">Min % Batteria:</label>
+                                <select class="climate-select-ctrl" id="climate_solar_min_soc" style="margin-top: 3px;">
+                                    <option value="70" {% if climate_config.solar_min_soc == 70 %}selected{% endif %}>70%</option>
+                                    <option value="80" {% if climate_config.solar_min_soc == 80 or not climate_config.solar_min_soc %}selected{% endif %}>80% (Default)</option>
+                                    <option value="90" {% if climate_config.solar_min_soc == 90 %}selected{% endif %}>90%</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SCENARIO 5: PROTEZIONE BATTERIA SCARICA -->
+                <div class="climate-scenario-card">
+                    <div class="climate-scenario-head">
+                        <span class="climate-scenario-icon">🔋</span>
+                        <div>
+                            <strong style="color: #fff; font-size: 0.95rem;">Protezione Batteria Aton & Prelievo Rete</strong>
+                            <div class="climate-scenario-desc">Evita consumi elevati a pagamento dalla rete quando la batteria è scarica.</div>
+                        </div>
+                    </div>
+                    <div class="climate-scenario-body">
+                        <label class="climate-select-label">Azione con Batteria Bassa:</label>
+                        <select class="climate-select-ctrl" id="climate_battery_guard_action">
+                            <option value="notify" {% if climate_config.battery_guard_action == 'notify' %}selected{% endif %}>🔔 Solo Notifica di Prelievo Rete</option>
+                            <option value="off" {% if climate_config.battery_guard_action == 'off' %}selected{% endif %}>🤖 Auto-Spegnimento Batteria Scarica</option>
+                            <option value="disabled" {% if climate_config.battery_guard_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
+                        </select>
+                        <div class="climate-sub-setting" style="margin-top: 0.6rem;">
+                            <label style="font-size: 0.8rem; color: var(--text-dim);">Soglia Minima Batteria (SoC):</label>
+                            <select class="climate-select-ctrl" id="climate_battery_min_soc" style="margin-top: 3px;">
+                                <option value="15" {% if climate_config.battery_min_soc == 15 %}selected{% endif %}>&le; 15%</option>
+                                <option value="20" {% if climate_config.battery_min_soc == 20 or not climate_config.battery_min_soc %}selected{% endif %}>&le; 20% (Default)</option>
+                                <option value="25" {% if climate_config.battery_min_soc == 25 %}selected{% endif %}>&le; 25%</option>
+                                <option value="30" {% if climate_config.battery_min_soc == 30 %}selected{% endif %}>&le; 30%</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SCENARIO 6: TERMOSTATO INTELLIGENTE & ISTERESI COMFORT GUARD -->
+                <div class="climate-scenario-card" style="border-color: rgba(56, 189, 248, 0.25);">
+                    <div class="climate-scenario-head">
+                        <span class="climate-scenario-icon">🌡️</span>
+                        <div>
+                            <strong style="color: #38bdf8; font-size: 0.95rem;">Termostato con Isteresi & Auto-Ripristino</strong>
+                            <div class="climate-scenario-desc">Se il clima è a riposo ma la stanza torna calda, riavvia in autonomia.</div>
+                        </div>
+                    </div>
+                    <div class="climate-scenario-body">
+                        <label class="climate-select-label">Azione Ripristino Termico:</label>
+                        <select class="climate-select-ctrl" id="climate_comfort_guard_action">
+                            <option value="notify" {% if climate_config.comfort_guard_action == 'notify' or not climate_config.comfort_guard_action %}selected{% endif %}>🔔 Solo Notifica (Stanza Fuori Comfort)</option>
+                            <option value="on" {% if climate_config.comfort_guard_action == 'on' %}selected{% endif %}>🤖 Auto-Riaccensione Intelligente (Ripristina Comfort)</option>
+                            <option value="disabled" {% if climate_config.comfort_guard_action == 'disabled' %}selected{% endif %}>⚪ Disabilitato</option>
+                        </select>
+                        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.6rem;">
+                            <div>
+                                <label style="font-size: 0.8rem; color: var(--text-dim);">Soglia Max Estate:</label>
+                                <select class="climate-select-ctrl" id="climate_comfort_max_temp" style="margin-top: 3px;">
+                                    <option value="25.5" {% if climate_config.comfort_max_temp == 25.5 %}selected{% endif %}>25.5°C</option>
+                                    <option value="26.0" {% if climate_config.comfort_max_temp == 26.0 %}selected{% endif %}>26.0°C</option>
+                                    <option value="26.5" {% if climate_config.comfort_max_temp == 26.5 or not climate_config.comfort_max_temp %}selected{% endif %}>26.5°C (Consigliato)</option>
+                                    <option value="27.0" {% if climate_config.comfort_max_temp == 27.0 %}selected{% endif %}>27.0°C</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 0.8rem; color: var(--text-dim);">Pausa Compressore:</label>
+                                <select class="climate-select-ctrl" id="climate_comfort_min_rest_min" style="margin-top: 3px;">
+                                    <option value="15" {% if climate_config.comfort_min_rest_min == 15 %}selected{% endif %}>15 Minuti</option>
+                                    <option value="20" {% if climate_config.comfort_min_rest_min == 20 or not climate_config.comfort_min_rest_min %}selected{% endif %}>20 Minuti (Sicuro)</option>
+                                    <option value="30" {% if climate_config.comfort_min_rest_min == 30 %}selected{% endif %}>30 Minuti</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- PULSANTI SALVATAGGIO & TEST -->
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.5rem; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 1rem;">
+                <button type="button" class="btn btn-primary" onclick="saveClimateSettings()" style="padding: 0.65rem 1.35rem; font-size: 0.92rem; font-weight: 700;">
+                    💾 Salva Impostazioni Clima
+                </button>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-outline btn-sm" onclick="testClimateNotification('away')">🧪 Test Uscita</button>
+                    <button type="button" class="btn btn-outline btn-sm" onclick="testClimateNotification('comfort')">🧪 Test Comfort Guard</button>
+                    <button type="button" class="btn btn-outline btn-sm" onclick="testClimateNotification('night')">🧪 Test Free Cooling</button>
+                    <button type="button" class="btn btn-outline btn-sm" onclick="testClimateNotification('solar')">🧪 Test Solare</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- TAB: HOME ASSISTANT (HUB DOMOTICO LOCALE UNIFICATO) -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-homeassistant" role="tabpanel">
+    <div class="card" style="border: 1px solid rgba(34, 197, 94, 0.35); background: linear-gradient(145deg, rgba(34, 197, 94, 0.05), var(--card-bg));">
+        <div class="card-header" style="border-bottom: 1px solid rgba(34, 197, 94, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.35rem;">🏠</span>
+                <div>
+                    <strong>Home Assistant • Hub Domotico Locale</strong>
+                    <div style="font-size: 0.78rem; color: var(--text-dim);">Esecuzione locale su QNAP NAS (Porta 8123)</div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <a href="http://192.168.1.250:8123" target="_blank" class="btn btn-sm btn-primary" style="text-decoration: none;">
+                    🚀 Apri Home Assistant ↗
+                </a>
+            </div>
+        </div>
+
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem; line-height: 1.5;">
+            Home Assistant gira come container nativo sul tuo NAS QNAP con accesso completo alla rete di casa (<strong>Network Host</strong>). Rileva e comanda in automatico tutti i dispositivi (Tuya, Shelly, Sonoff, Zigbee, Matter, ecc.) in locale senza alcun bisogno di cloud o API key a pagamento.
+        </p>
+
+        <!-- STATO DEL SERVIZIO -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem;">
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 10px; padding: 0.85rem 1rem;">
+                <span style="font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase;">Indirizzo Web UI</span>
+                <div style="font-size: 0.95rem; font-weight: 700; color: #38bdf8; margin-top: 2px;">
+                    <a href="http://192.168.1.250:8123" target="_blank" style="color: inherit; text-decoration: none;">http://192.168.1.250:8123</a>
+                </div>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 10px; padding: 0.85rem 1rem;">
+                <span style="font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase;">Stato Container NAS</span>
+                <div style="font-size: 0.95rem; font-weight: 700; color: #4ade80; margin-top: 2px;" id="hass_container_status">
+                    🟢 Attivo su QNAP
+                </div>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 10px; padding: 0.85rem 1rem;">
+                <span style="font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase;">Collegamento Weather Hub</span>
+                <div style="font-size: 0.95rem; font-weight: 700; color: {% if hass_has_token %}#4ade80{% else %}#f59e0b{% endif %}; margin-top: 2px;" id="hass_link_status">
+                    {% if hass_has_token %}🟢 Token Configurato{% else %}🟡 In attesa del Token{% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- GUIDA CONFIGURAZIONE RAPIDA TOKEN -->
+        <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--card-border); border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1.25rem;">
+            <strong style="color: var(--text); font-size: 0.9rem; display: block; margin-bottom: 0.4rem;">
+                ⚡ Come collegare Home Assistant al Weather Hub in 2 passi:
+            </strong>
+            <ol style="margin: 0; padding-left: 1.2rem; font-size: 0.83rem; color: var(--text-muted); line-height: 1.6;">
+                <li>Apri <strong><a href="http://192.168.1.250:8123" target="_blank" style="color: #38bdf8;">Home Assistant (http://192.168.1.250:8123)</a></strong> e completa la creazione del tuo utente amministratore.</li>
+                <li>Vai sul tuo <strong>Profilo Utente</strong> (in basso a sinistra su HA) ➔ scorri in fondo su <strong>"Token di accesso di lunga durata"</strong> ➔ clicca <strong>"Crea Token"</strong> e copialo nel file <code>.env</code> (parametro <code>HASS_TOKEN=...</code>).</li>
+            </ol>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <button type="button" class="btn btn-outline" onclick="checkHassStatus()" id="btn_check_hass">
+                🔄 Sincronizza Entità Home Assistant
+            </button>
+            <a href="/devices" class="btn btn-primary" style="text-decoration: none;">
+                💡 Vai alla Centrale Dispositivi ↗
             </a>
         </div>
+        <div id="hass_check_msg" style="font-size: 0.82rem; margin-top: 0.75rem; display: none;"></div>
     </div>
 </div>
 
-<!-- CATALOGO COMPLETO DELLE NOTIFICHE ATTIVE -->
-<div class="card" style="margin-top: 1.25rem;">
-    <div class="card-header">
-        <span>📋 Catalogo Allarmi & Soglie di Monitoraggio Attive</span>
-        <a href="/api/export/alerts-csv" class="btn btn-gold" style="font-size: 0.8rem; padding: 0.35rem 0.8rem; text-decoration: none;">📥 Esporta CSV</a>
-    </div>
-    <div class="table-responsive">
-        <table class="weather-table">
-            <thead>
-                <tr>
-                    <th>Evento</th>
-                    <th>Icona</th>
-                    <th>Condizione di Scatto</th>
-                    <th>Priorità</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td><strong>Vento Forte</strong></td>
-                    <td>💨</td>
-                    <td>Velocità media &ge; 40 km/h</td>
-                    <td><span class="badge-tag badge-warning">Media</span></td>
-                </tr>
-                <tr>
-                    <td><strong>Raffica Estrema</strong></td>
-                    <td>🌪️</td>
-                    <td>Raffica istantanea &ge; 60 km/h</td>
-                    <td><span class="badge-tag badge-danger">Alta</span></td>
-                </tr>
-                <tr>
-                    <td><strong>Pioggia Intensa</strong></td>
-                    <td>🌧️</td>
-                    <td>Rateo &ge; 20 mm/h</td>
-                    <td><span class="badge-tag badge-warning">Media</span></td>
-                </tr>
-                <tr>
-                    <td><strong>Alluvione Lampo / Nubifragio</strong></td>
-                    <td>🌊</td>
-                    <td>Rateo &ge; 50 mm/h</td>
-                    <td><span class="badge-tag badge-danger">Critica</span></td>
-                </tr>
-                <tr>
-                    <td><strong>Crollo Barometrico Rapido</strong></td>
-                    <td>📉</td>
-                    <td>Calo pressione &gt; 2.5 hPa in 3 ore (Possibile tempesta)</td>
-                    <td><span class="badge-tag badge-warning">Media</span></td>
-                </tr>
-                <tr>
-                    <td><strong>Gelo & Ghiaccio</strong></td>
-                    <td>❄️</td>
-                    <td>Temperatura esterna &le; 0.0 °C</td>
-                    <td><span class="badge-tag badge-info">Informativa</span></td>
-                </tr>
-                <tr>
-                    <td><strong>Ondata di Calore Estrema</strong></td>
-                    <td>🔥</td>
-                    <td>Temperatura &ge; 38.0 °C oppure Indice Afa (Humidex) &ge; 45</td>
-                    <td><span class="badge-tag badge-danger">Alta</span></td>
-                </tr>
-                <tr>
-                    <td><strong>Temporale / Fulmini Vicini</strong></td>
-                    <td>⚡</td>
-                    <td>Scarica rilevata entro 15 km</td>
-                    <td><span class="badge-tag badge-danger">Alta</span></td>
-                </tr>
-                <tr>
-                    <td><strong>Batteria Sensore Scarica</strong></td>
-                    <td>🪫</td>
-                    <td>Sensore WH65 segnala batteria scarica</td>
-                    <td><span class="badge-tag badge-warning">Media</span></td>
-                </tr>
-                <tr>
-                    <td><strong>Stazione Offline (Watchdog)</strong></td>
-                    <td>🔌</td>
-                    <td>Nessun dato ricevuto da oltre 10 minuti</td>
-                    <td><span class="badge-tag badge-danger">Alta</span></td>
-                </tr>
-            </tbody>
-        </table>
+
+<!-- ========================================================================= -->
+<!-- TAB 5: DATABASE SQLITE & MANUTENZIONE -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-database" role="tabpanel">
+    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <!-- STATISTICHE E MANUTENZIONE BASE -->
+        <div class="card">
+            <div class="card-header" style="justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.25rem;">🗄️</span>
+                    <strong>Database SQLite Locale & Manutenzione</strong>
+                </div>
+                <span class="sub-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">WAL Mode Attivo</span>
+            </div>
+            <div class="item-list">
+                <div class="item"><span>Dimensione Database su Disco:</span> <strong id="db_size_val">{{ db_stats.db_size_mb if db_stats else '--' }} MB</strong></div>
+                <div class="item"><span>Letture Meteo Campionate:</span> <strong id="db_weather_cnt">{{ db_stats.weather_records_count if db_stats else '--' }}</strong></div>
+                <div class="item"><span>Letture Energetiche Inverter Aton:</span> <strong id="db_energy_cnt">{{ db_stats.energy_records_count if db_stats else '--' }}</strong></div>
+                <div class="item"><span>Politica Retention Storico:</span> <strong>Raw 60gg + Downsampling Orario/Giorno</strong></div>
+            </div>
+            <div style="display: flex; gap: 0.6rem; margin-top: 1.2rem; flex-wrap: wrap;">
+                <a href="/api/system/backup" class="btn btn-gold" style="flex: 1 1 160px; text-align: center; text-decoration: none;" download>
+                    💾 Scarica Backup DB (.db)
+                </a>
+                <button type="button" class="btn btn-primary" style="flex: 1 1 160px;" onclick="triggerDbMaintenance()">
+                    🧹 Ottimizza Database Ora
+                </button>
+            </div>
+            <div id="db_maintenance_result" style="font-size: 0.85rem; color: #38bdf8; margin-top: 0.75rem; display: none;"></div>
+        </div>
+
+        <!-- BACKFILL ARCHIVIO STORICO & RICALCOLO ALBO DEI RECORD -->
+        <div class="card" style="border: 1px solid rgba(56, 189, 248, 0.3); background: linear-gradient(145deg, rgba(56, 189, 248, 0.04), var(--card-bg));">
+            <div class="card-header" style="justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(56, 189, 248, 0.15); padding-bottom: 0.8rem;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.25rem;">⏳</span>
+                    <div>
+                        <strong>Sincronizzazione Storico Pluriennale (ICORIG10)</strong>
+                        <div style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Recupera lo storico 2022–oggi da Weather Underground & ricalcola l'Albo dei Record</div>
+                    </div>
+                </div>
+                <span id="backfill-status-pill" class="status-pill badge-neutral">Pronto</span>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0;">
+                <p style="font-size: 0.9rem; color: var(--text); line-height: 1.55; margin: 0;">
+                    La stazione meteo <strong>ICORIG10</strong> ha trasmesso oltre 4 anni di dati continuativi dal <strong>9 Luglio 2022</strong>.
+                    Puoi avviare il download automatico in background per popolare grafici annuali, climatologia e calcolare gli estremi assoluti reali.
+                </p>
+
+                <!-- BARRA DI AVANZAMENTO -->
+                <div id="backfill-progress-container" style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--card-border); border-radius: 10px; padding: 0.85rem; display: none;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.4rem;">
+                        <span id="backfill-status-msg" style="color: #38bdf8; font-weight: 600;">Download in corso...</span>
+                        <strong id="backfill-pct-label" style="color: #fff;">0%</strong>
+                    </div>
+                    <div style="width: 100%; height: 10px; background: rgba(255,255,255,0.08); border-radius: 5px; overflow: hidden;">
+                        <div id="backfill-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #38bdf8, #10b981); transition: width 0.3s ease;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--text-dim); margin-top: 0.4rem;">
+                        <span id="backfill-days-info">Giorni: 0 / 0</span>
+                        <span id="backfill-records-info">Record inseriti: 0</span>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center;">
+                    <button type="button" id="btn-start-backfill" class="btn btn-primary" style="flex: 1 1 200px;" onclick="startHistoryBackfill()">
+                        🚀 Avvia Backfill Completo (2022–Oggi)
+                    </button>
+                    <button type="button" id="btn-recalc-records" class="btn btn-outline" style="flex: 1 1 200px;" onclick="recalculateRecordsNow()">
+                        🏆 Ricalcola Solo Albo dei Record
+                    </button>
+                </div>
+                <div id="backfill-action-feedback" style="font-size: 0.85rem; display: none; padding: 0.6rem 0.85rem; border-radius: 8px;"></div>
+            </div>
+        </div>
     </div>
 </div>
 
-{% endblock %}
+<!-- ========================================================================= -->
+<!-- TAB 6: DIAGNOSTICA HARDWARE & RETE & SICUREZZA -->
+<!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-system" role="tabpanel">
+    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <!-- DIAGNOSTICA HARDWARE -->
+        <div class="card">
+            <div class="card-header" style="justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.25rem;">📡</span>
+                    <strong>Diagnostica Hardware, Rete & Integrazioni</strong>
+                </div>
+                <span class="sub-badge badge-live">Connesso</span>
+            </div>
+            <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem; margin-top: 0.5rem;">
+                <div class="item-list">
+                    <div class="item"><span>Modello Stazione:</span> <strong>{{ station_model }}</strong></div>
+                    <div class="item"><span>Stato Batteria Gruppo 7-in-1:</span> <strong>{{ batt_wh65 }}</strong></div>
+                    <div class="item"><span>Inverter / Batteria:</span> <strong>Aton Green Storage ({{ aton_sn }})</strong></div>
+                </div>
+                <div class="item-list">
+                    <div class="item"><span>Climatizzazione Smart:</span> <strong>{% if thinq_enabled %}🟢 LG ThinQ Attivo{% else %}⚪ LG ThinQ Disattivato{% endif %}</strong></div>
+                    <div class="item"><span>Domotica Elettrodomestici:</span> <strong>{% if smartthings_enabled %}🟢 Samsung SmartThings Attivo{% else %}⚪ SmartThings Disattivato{% endif %}</strong></div>
+                    <div class="item"><span>Modelli Previsionali:</span> <strong>ECMWF IFS 9km / ICON-EU</strong></div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 0.6rem; margin-top: 1rem; flex-wrap: wrap;">
+                <a href="/api/live" class="btn btn-outline" style="flex: 1 1 140px; text-align: center; text-decoration: none;" target="_blank">🌐 API Dati Live</a>
+                <a href="/history" class="btn btn-outline" style="flex: 1 1 140px; text-align: center; text-decoration: none;">🔍 Archivio Storico</a>
+            </div>
+        </div>
 
-{% block scripts %}
-<script>
-    // Inizializza stato push PWA se presente
-    if (typeof checkPushSubscription === 'function') {
-        checkPushSubscription();
+        <!-- SICUREZZA & SESSIONE -->
+        <div class="card">
+            <div class="card-header" style="justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.25rem;">🔒</span>
+                    <strong>Sicurezza & Disconnessione</strong>
+                </div>
+                <span class="sub-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">Sessione Protetta</span>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.85rem; line-height: 1.5;">
+                La tua sessione corrente su questo browser è autenticata e protetta tramite cookie di sicurezza HTTP-Only crittografato.
+            </p>
+            <div style="display: flex; gap: 0.5rem;">
+                <a href="/logout" class="btn btn-outline" style="color: #ef4444; border-color: rgba(239,68,68,0.4); text-decoration: none; width: 100%; text-align: center; padding: 0.7rem;">
+                    🚪 Disconnetti questo dispositivo (Logout)
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* ==========================================================================
+   SETTINGS TAB NAVIGATION BAR (ALLINEATA & RESPONSIVE)
+   ========================================================================== */
+.settings-tab-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: rgba(15, 23, 42, 0.7);
+    padding: 6px;
+    border-radius: 16px;
+    border: 1px solid var(--card-border);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin-bottom: 1.25rem;
+}
+.settings-tab-bar::-webkit-scrollbar {
+    display: none;
+}
+.settings-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 0.65rem 1.05rem;
+    border-radius: 11px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    font-size: 0.86rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    user-select: none;
+}
+.settings-tab-btn:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.05);
+}
+.settings-tab-btn.active {
+    background: rgba(56, 189, 248, 0.15);
+    color: var(--accent);
+    border-color: rgba(56, 189, 248, 0.35);
+    box-shadow: 0 4px 14px rgba(56, 189, 248, 0.15);
+}
+.settings-tab-icon {
+    font-size: 1.05rem;
+}
+.settings-tab-badge {
+    font-size: 0.72rem;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 10px;
+    background: rgba(56, 189, 248, 0.2);
+    color: var(--accent);
+}
+.settings-tab-badge.badge-tuya {
+    background: rgba(168, 85, 247, 0.25);
+    color: #c084fc;
+}
+.settings-tab-pane {
+    display: none;
+    animation: fadeInTab 0.22s ease-in-out;
+}
+.settings-tab-pane.active {
+    display: block;
+}
+@keyframes fadeInTab {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* PUSH ACTIONS & GUIDES */
+.push-actions-row {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.push-action-btn {
+    padding: 0.7rem 1.1rem;
+    font-size: 0.9rem;
+    flex: 1 1 200px;
+    text-align: center;
+    white-space: normal;
+    word-break: normal;
+    text-decoration: none;
+}
+.push-guide-box {
+    background: rgba(0,0,0,0.25);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-top: 0.25rem;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    border: 1px solid rgba(255,255,255,0.04);
+}
+
+/* SENSOR ALIAS STYLES */
+.sensor-alias-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.sensor-alias-row:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+.sensor-alias-header-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    color: var(--text);
+}
+.sensor-alias-title {
+    font-size: 0.85rem;
+}
+.sensor-alias-input-group {
+    display: flex;
+    gap: 0.4rem;
+    width: 100%;
+}
+.sensor-alias-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.45rem 0.65rem;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(0,0,0,0.3);
+    color: #fff;
+    font-size: 0.85rem;
+}
+.sensor-alias-btn {
+    padding: 0.45rem 0.85rem;
+    font-size: 0.82rem;
+    flex-shrink: 0;
+}
+.badge-tag {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(148, 163, 184, 0.15);
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+.badge-tag.urgent {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.badge-tag.tag-on {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+}
+.badge-tag.tag-off {
+    background: rgba(148, 163, 184, 0.15);
+    color: var(--text-dim);
+}
+
+/* TUYA DEVICES LIST STYLES */
+.tuya-devices-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+.tuya-device-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 0.85rem 1.1rem;
+    gap: 1rem;
+    flex-wrap: wrap;
+    transition: all 0.2s ease;
+}
+.tuya-device-row.is-disabled {
+    opacity: 0.45;
+    border-style: dashed;
+    background: rgba(0, 0, 0, 0.12);
+}
+.tuya-device-left {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: 220px;
+    flex: 1 1 auto;
+}
+.tuya-device-icon {
+    font-size: 1.6rem;
+    flex-shrink: 0;
+}
+.tuya-device-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+.tuya-device-name-line {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.tuya-dev-name {
+    font-size: 0.95rem;
+    color: #fff;
+}
+.tuya-device-meta {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+.tuya-device-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+/* Modern Switch Toggle */
+.tuya-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+}
+.tuya-switch-input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.tuya-switch-slider {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 24px;
+    transition: all 0.25s ease;
+}
+.tuya-switch-slider::before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    border-radius: 50%;
+    transition: all 0.25s ease;
+}
+.tuya-switch-input:checked + .tuya-switch-slider {
+    background-color: #10b981;
+}
+.tuya-switch-input:checked + .tuya-switch-slider::before {
+    transform: translateX(20px);
+}
+.tuya-switch-text {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* CLIMATE AUTOMATIONS STYLES */
+.climate-scenario-card {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    transition: all 0.2s ease;
+}
+.climate-scenario-card:hover {
+    border-color: rgba(56, 189, 248, 0.3);
+    background: rgba(0, 0, 0, 0.35);
+}
+.climate-scenario-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+.climate-scenario-icon {
+    font-size: 1.6rem;
+    line-height: 1;
+}
+.climate-scenario-desc {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-top: 3px;
+    line-height: 1.4;
+}
+.climate-scenario-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: auto;
+}
+.climate-select-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text);
+}
+.climate-select-ctrl {
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.85rem;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+.climate-select-ctrl:focus {
+    border-color: var(--accent);
+}
+
+@media (max-width: 600px) {
+    .push-action-btn {
+        flex: 1 1 100%;
+        width: 100%;
     }
+    .tuya-device-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .tuya-device-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+}
+</style>
+
+<script>
+// =========================================================================
+// GESTIONE SWITCH TAB IMPOSTAZIONI
+// =========================================================================
+function switchSettingsTab(tabName, btnElem) {
+    const panes = document.querySelectorAll('.settings-tab-pane');
+    const buttons = document.querySelectorAll('.settings-tab-btn');
+
+    panes.forEach(p => p.classList.remove('active'));
+    buttons.forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-selected', 'false');
+    });
+
+    const targetPane = document.getElementById(`pane-${tabName}`);
+    if (targetPane) {
+        targetPane.classList.add('active');
+    }
+
+    if (btnElem) {
+        btnElem.classList.add('active');
+        btnElem.setAttribute('aria-selected', 'true');
+    } else {
+        const matchingBtn = document.querySelector(`.settings-tab-btn[data-tab="${tabName}"]`);
+        if (matchingBtn) {
+            matchingBtn.classList.add('active');
+            matchingBtn.setAttribute('aria-selected', 'true');
+        }
+    }
+
+    // Salva preferenza e aggiorna URL hash
+    try {
+        localStorage.setItem('settings_active_tab', tabName);
+        if (history.replaceState) {
+            history.replaceState(null, null, `#${tabName}`);
+        }
+    } catch (e) {}
+}
+
+// Inizializza tab da URL hash o da localStorage
+document.addEventListener('DOMContentLoaded', () => {
+    let initialTab = 'notifications';
+    const hash = window.location.hash.replace('#', '').toLowerCase();
+    
+    // Mappa tab valide
+    const validTabs = ['notifications', 'alarms', 'sensors', 'tuya', 'climate', 'homeassistant', 'database', 'system'];
+    if (hash && validTabs.includes(hash)) {
+        initialTab = hash;
+    } else {
+        const saved = localStorage.getItem('settings_active_tab');
+        if (saved && validTabs.includes(saved)) {
+            initialTab = saved;
+        }
+    }
+    switchSettingsTab(initialTab);
+});
+
+// FILTRO RAPIDO TABELLA ALLARMI
+function filterAlarmsTable(query) {
+    const q = (query || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('#alarms-rules-table tbody .alarm-rule-row');
+    const clearBtn = document.getElementById('alarm-search-clear');
+    if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
+
+    rows.forEach(r => {
+        const text = r.textContent.toLowerCase();
+        r.style.display = (!q || text.includes(q)) ? '' : 'none';
+    });
+}
+
+// AZIONE SEGNA TUTTE LE NOTIFICHE LETTE DA SETTINGS
+async function markAllAlertsAsReadFromSettings() {
+    try {
+        const resp = await fetch('/api/alerts/mark-all-read', { method: 'POST' });
+        if (resp.ok) {
+            alert('✅ Tutte le notifiche sono state contrassegnate come lette!');
+            if (typeof updateBadgeElements === 'function') {
+                updateBadgeElements(0);
+            } else {
+                const badge = document.getElementById('desktop-alert-badge');
+                if (badge) badge.style.display = 'none';
+                const mobBadge = document.getElementById('mobile-alert-badge');
+                if (mobBadge) mobBadge.style.display = 'none';
+            }
+        } else {
+            alert('Errore durante l\'aggiornamento delle notifiche (HTTP ' + resp.status + ')');
+        }
+    } catch (e) {
+        alert('Errore di connessione: ' + e.message);
+    }
+}
+
+// TUYA DEVICES MANAGEMENT
+async function updateTuyaDeviceConfig(deviceId, isEnabled) {
+    const row = document.getElementById(`tuya_row_${deviceId}`);
+    const textEl = document.getElementById(`tuya_text_${deviceId}`);
+    const msgEl = document.getElementById('tuya_status_msg');
+    
+    if (textEl) {
+        textEl.innerText = isEnabled ? 'Attivo' : 'Disattivato';
+    }
+    if (row) {
+        if (isEnabled) row.classList.remove('is-disabled');
+        else row.classList.add('is-disabled');
+    }
+    
+    try {
+        const resp = await fetch(`/api/tuya/device/${deviceId}/config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: isEnabled })
+        });
+        const res = await resp.json();
+        if (msgEl) {
+            msgEl.style.display = 'block';
+            msgEl.style.color = '#10b981';
+            msgEl.innerText = `✅ Dispositivo ${isEnabled ? 'attivato' : 'disattivato'} nella Dashboard!`;
+            setTimeout(() => { msgEl.style.display = 'none'; }, 3500);
+        }
+        updateTuyaBadgeCounts();
+    } catch (e) {
+        if (msgEl) {
+            msgEl.style.display = 'block';
+            msgEl.style.color = '#ef4444';
+            msgEl.innerText = `❌ Errore salvataggio impostazione: ${e.message}`;
+        }
+    }
+}
+
+function updateTuyaBadgeCounts() {
+    const checkboxes = document.querySelectorAll('.tuya-switch-input');
+    const badge = document.getElementById('tuya_active_count_badge');
+    if (!badge || !checkboxes.length) return;
+    let enabledCount = 0;
+    checkboxes.forEach(cb => { if (cb.checked) enabledCount++; });
+    badge.innerText = `${enabledCount} / ${checkboxes.length} Dispositivi Attivi`;
+}
+
+async function testToggleTuya(deviceId) {
+    const msgEl = document.getElementById('tuya_status_msg');
+    if (msgEl) {
+        msgEl.style.display = 'block';
+        msgEl.style.color = '#38bdf8';
+        msgEl.innerText = 'Invio comando in corso...';
+    }
+    try {
+        const resp = await fetch(`/api/tuya/device/${deviceId}/toggle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const res = await resp.json();
+        if (msgEl) {
+            msgEl.style.color = '#10b981';
+            msgEl.innerText = '✅ Comando inviato con successo a Tuya Cloud!';
+            setTimeout(() => { msgEl.style.display = 'none'; }, 3000);
+        }
+        setTimeout(async () => {
+            const devResp = await fetch('/api/tuya/summary');
+            const summary = await devResp.json();
+            const dev = (summary.all_devices || []).find(d => d.id === deviceId);
+            if (dev && dev.is_on !== null) {
+                const tag = document.getElementById(`tuya_state_tag_${deviceId}`);
+                if (tag) {
+                    tag.className = `badge-tag ${dev.is_on ? 'tag-on' : 'tag-off'}`;
+                    tag.innerText = dev.is_on ? '🟢 ON' : '⚪ OFF';
+                }
+            }
+        }, 1500);
+    } catch (e) {
+        if (msgEl) {
+            msgEl.style.color = '#ef4444';
+            msgEl.innerText = `❌ Errore invio comando: ${e.message}`;
+        }
+    }
+}
+
+async function syncTuyaDevicesNow() {
+    const msgEl = document.getElementById('tuya_status_msg');
+    if (msgEl) {
+        msgEl.style.display = 'block';
+        msgEl.style.color = '#38bdf8';
+        msgEl.innerText = 'Sincronizzazione dispositivi con Tuya Cloud...';
+    }
+    try {
+        const resp = await fetch('/api/tuya/sync', { method: 'POST' });
+        const summary = await resp.json();
+        if (msgEl) {
+            msgEl.style.color = '#10b981';
+            msgEl.innerText = `✅ Sincronizzazione completata! (${summary.total_devices_count || 0} dispositivi)`;
+            setTimeout(() => { location.reload(); }, 1200);
+        }
+    } catch (e) {
+        if (msgEl) {
+            msgEl.style.color = '#ef4444';
+            msgEl.innerText = `❌ Errore sincronizzazione: ${e.message}`;
+        }
+    }
+}
+
+// =========================================================================
+// GESTIONE CONTROLLO LOCALE TUYA LAN (ZERO CLOUD)
+// =========================================================================
+
+function openAddLocalTuyaModal() {
+    document.getElementById('modal_tuya_local_title').innerText = 'Aggiungi Dispositivo Tuya Locale (LAN)';
+    document.getElementById('tuya_local_input_name').value = '';
+    document.getElementById('tuya_local_input_id').value = '';
+    document.getElementById('tuya_local_input_id').readOnly = false;
+    document.getElementById('tuya_local_input_key').value = '';
+    document.getElementById('tuya_local_input_key').placeholder = 'es. a1b2c3d4e5f67890';
+    document.getElementById('tuya_local_input_ip').value = '';
+    document.getElementById('tuya_local_input_ver').value = '3.3';
+    const modal = document.getElementById('modal_tuya_local');
+    modal.style.display = 'flex';
+    modal.classList.add('show');
+}
+
+function closeTuyaLocalModal(e) {
+    if (e && e.target !== document.getElementById('modal_tuya_local') && !e.target.classList.contains('modal-close-btn') && !e.target.classList.contains('btn-secondary')) {
+        return;
+    }
+    const modal = document.getElementById('modal_tuya_local');
+    modal.style.display = 'none';
+    modal.classList.remove('show');
+}
+
+function editLocalTuya({ id, name, ip, ver }) {
+    document.getElementById('modal_tuya_local_title').innerText = `Modifica Dispositivo: ${name}`;
+    document.getElementById('tuya_local_input_name').value = name || '';
+    document.getElementById('tuya_local_input_id').value = id || '';
+    document.getElementById('tuya_local_input_id').readOnly = true;
+    // La Local Key non viene mai inviata al browser: lasciala vuota per mantenere quella salvata
+    document.getElementById('tuya_local_input_key').value = '';
+    document.getElementById('tuya_local_input_key').placeholder = 'Lascia vuoto per mantenere la chiave attuale';
+    document.getElementById('tuya_local_input_ip').value = ip || '';
+    document.getElementById('tuya_local_input_ver').value = ver || '3.3';
+    const modal = document.getElementById('modal_tuya_local');
+    modal.style.display = 'flex';
+    modal.classList.add('show');
+}
+
+async function submitTuyaLocalDevice() {
+    const name = document.getElementById('tuya_local_input_name').value.trim();
+    const id = document.getElementById('tuya_local_input_id').value.trim();
+    const key = document.getElementById('tuya_local_input_key').value.trim();
+    const ip = document.getElementById('tuya_local_input_ip').value.trim();
+    const ver = document.getElementById('tuya_local_input_ver').value;
+
+    const isEdit = document.getElementById('tuya_local_input_id').readOnly;
+    if (!id || (!key && !isEdit)) {
+        alert('Device ID e Local Key sono obbligatori!');
+        return;
+    }
+
+    try {
+        const resp = await fetch('/api/tuya/local/device', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                device_id: id,
+                name: name || 'Dispositivo Tuya',
+                local_key: key,
+                ip_address: ip || null,
+                version: ver || '3.3'
+            })
+        });
+        const res = await resp.json();
+        if (resp.ok) {
+            closeTuyaLocalModal();
+            location.reload();
+        } else {
+            alert('Errore: ' + (res.error || 'Salvataggio fallito'));
+        }
+    } catch (e) {
+        alert('Errore di comunicazione: ' + e.message);
+    }
+}
+
+async function deleteLocalTuya(id) {
+    if (!confirm(`Sei sicuro di voler rimuovere il dispositivo locale ${id}?`)) return;
+    try {
+        const resp = await fetch(`/api/tuya/local/device/${id}`, { method: 'DELETE' });
+        if (resp.ok) {
+            location.reload();
+        }
+    } catch (e) {
+        alert('Errore eliminazione: ' + e.message);
+    }
+}
+
+async function scanTuyaLan() {
+    const btn = document.getElementById('btn_scan_lan');
+    const msgEl = document.getElementById('tuya_local_status_msg');
+    btn.disabled = true;
+    btn.innerText = '⏳ Scansione...';
+    if (msgEl) {
+        msgEl.style.display = 'block';
+        msgEl.style.background = 'rgba(56, 189, 248, 0.15)';
+        msgEl.style.color = '#38bdf8';
+        msgEl.innerText = '📡 Scansione rapida in corso sulla rete locale (192.168.1.0/24)...';
+    }
+
+    try {
+        const resp = await fetch('/api/tuya/local/scan', { method: 'POST' });
+        const data = await resp.json();
+        if (msgEl) {
+            if (data.count > 0) {
+                const ips = data.found_devices.map(d => d.ip).join(', ');
+                msgEl.style.background = 'rgba(16, 185, 129, 0.15)';
+                msgEl.style.color = '#10b981';
+                msgEl.innerHTML = `✅ <strong>Trovati ${data.count} dispositivi Tuya su LAN!</strong> IP attivi: <code>${ips}</code>`;
+            } else {
+                msgEl.style.background = 'rgba(234, 179, 8, 0.15)';
+                msgEl.style.color = '#eab308';
+                msgEl.innerText = 'Nessun dispositivo Tuya risponde attualmente sulla porta 6668. Verifica che siano accesi e connessi al Wi-Fi.';
+            }
+        }
+    } catch (e) {
+        if (msgEl) {
+            msgEl.style.background = 'rgba(239, 68, 68, 0.15)';
+            msgEl.style.color = '#ef4444';
+            msgEl.innerText = 'Errore scansione LAN: ' + e.message;
+        }
+    } finally {
+        btn.disabled = false;
+        btn.innerText = '📡 Scansiona Rete LAN';
+    }
+}
+
+async function importTuyaCloudKeys() {
+    const btn = document.getElementById('btn_import_cloud');
+    const msgEl = document.getElementById('tuya_local_status_msg');
+    btn.disabled = true;
+    btn.innerText = '⏳ Download...';
+    if (msgEl) {
+        msgEl.style.display = 'block';
+        msgEl.style.background = 'rgba(56, 189, 248, 0.15)';
+        msgEl.style.color = '#38bdf8';
+        msgEl.innerText = '📥 Scaricamento Local Key da Tuya Cloud...';
+    }
+
+    try {
+        const resp = await fetch('/api/tuya/local/import-cloud-keys', { method: 'POST' });
+        const data = await resp.json();
+        if (msgEl) {
+            if (data.success && data.imported_count > 0) {
+                msgEl.style.background = 'rgba(16, 185, 129, 0.15)';
+                msgEl.style.color = '#10b981';
+                msgEl.innerText = `🎉 Importate con successo ${data.imported_count} chiavi locali permanenti! Ricarica in corso...`;
+                setTimeout(() => location.reload(), 1500);
+            } else if (data.success && data.imported_count === 0) {
+                msgEl.style.background = 'rgba(234, 179, 8, 0.15)';
+                msgEl.style.color = '#eab308';
+                msgEl.innerText = 'Nessun nuovo dispositivo con Local Key trovato su Tuya Cloud.';
+            } else {
+                msgEl.style.background = 'rgba(239, 68, 68, 0.15)';
+                msgEl.style.color = '#ef4444';
+                msgEl.innerText = `⚠️ Impossibile scaricare le chiavi: ${data.error || 'Trial API Cloud scaduta. Rinnova su iot.tuya.com per scaricare le chiavi una tantum, oppure inserisci ID e Local Key manualmente.'}`;
+            }
+        }
+    } catch (e) {
+        if (msgEl) {
+            msgEl.style.background = 'rgba(239, 68, 68, 0.15)';
+            msgEl.style.color = '#ef4444';
+            msgEl.innerText = 'Errore importazione: ' + e.message;
+        }
+    } finally {
+        btn.disabled = false;
+        btn.innerText = '📥 Importa da Cloud';
+    }
+}
+
+// =========================================================================
+// GESTIONE HOME ASSISTANT (HUB LOCALE)
+// =========================================================================
+
+async function checkHassStatus() {
+    const btn = document.getElementById('btn_check_hass');
+    const msgEl = document.getElementById('hass_check_msg');
+    btn.disabled = true;
+    btn.innerText = '⏳ Verifica in corso...';
+    if (msgEl) {
+        msgEl.style.display = 'block';
+        msgEl.style.color = '#38bdf8';
+        msgEl.innerText = 'Interrogazione Home Assistant su http://192.168.1.250:8123...';
+    }
+
+    try {
+        const resp = await fetch('/api/homeassistant/status');
+        const data = await resp.json();
+        if (msgEl) {
+            if (data.is_connected) {
+                msgEl.style.color = '#10b981';
+                msgEl.innerHTML = `✅ <strong>Home Assistant Connesso con Successo!</strong> (${data.entities_count} entità sincronizzate)`;
+            } else if (!data.enabled) {
+                msgEl.style.color = '#eab308';
+                msgEl.innerHTML = `ℹ️ Home Assistant è attivo su <a href="http://192.168.1.250:8123" target="_blank" style="color:#38bdf8;">http://192.168.1.250:8123</a>. Genera il Token sul tuo Profilo HA e impostalo per abilitare il controllo integrato.`;
+            } else {
+                msgEl.style.color = '#ef4444';
+                msgEl.innerText = `❌ Errore connessione: ${data.error || 'Server non raggiungibile o token non valido'}`;
+            }
+        }
+    } catch (e) {
+        if (msgEl) {
+            msgEl.style.color = '#ef4444';
+            msgEl.innerText = '❌ Errore chiamata: ' + e.message;
+        }
+    } finally {
+        btn.disabled = false;
+        btn.innerText = '🔄 Sincronizza Entità Home Assistant';
+    }
+}
+
+// =========================================================================
+// CLIMATE AUTOMATIONS MANAGEMENT (LG THINQ)
+// =========================================================================
+function toggleClimateMaster(isEnabled) {
+    const textEl = document.getElementById('climate_master_text');
+    if (textEl) textEl.innerText = isEnabled ? 'Attivo' : 'Disattivato';
+}
+
+async function saveClimateSettings() {
+    const feedbackEl = document.getElementById('climate_save_feedback');
+    const masterEnabled = document.getElementById('climate_master_enabled')?.checked ?? true;
+    const awayAction = document.getElementById('climate_away_action')?.value || 'notify';
+    const awayDelayMin = parseInt(document.getElementById('climate_away_delay_min')?.value || '10');
+    const maxRuntimeAction = document.getElementById('climate_max_runtime_action')?.value || 'notify';
+    const maxRuntimeHours = parseFloat(document.getElementById('climate_max_runtime_hours')?.value || '5');
+    const nightCoolingAction = document.getElementById('climate_night_cooling_action')?.value || 'notify';
+    const nightStartHour = parseInt(document.getElementById('climate_night_start_hour')?.value || '23');
+    const nightEndHour = parseInt(document.getElementById('climate_night_end_hour')?.value || '7');
+    const solarAction = document.getElementById('climate_solar_action')?.value || 'notify';
+    const solarSurplusW = parseInt(document.getElementById('climate_solar_surplus_w')?.value || '1800');
+    const solarMinSoc = parseInt(document.getElementById('climate_solar_min_soc')?.value || '80');
+    const batteryGuardAction = document.getElementById('climate_battery_guard_action')?.value || 'notify';
+    const batteryMinSoc = parseInt(document.getElementById('climate_battery_min_soc')?.value || '20');
+    const comfortGuardAction = document.getElementById('climate_comfort_guard_action')?.value || 'notify';
+    const comfortMaxTemp = parseFloat(document.getElementById('climate_comfort_max_temp')?.value || '26.5');
+    const comfortMinRestMin = parseInt(document.getElementById('climate_comfort_min_rest_min')?.value || '20');
+
+    const payload = {
+        master_enabled: masterEnabled,
+        away_action: awayAction,
+        away_delay_min: awayDelayMin,
+        max_runtime_action: maxRuntimeAction,
+        max_runtime_hours: maxRuntimeHours,
+        night_cooling_action: nightCoolingAction,
+        night_start_hour: nightStartHour,
+        night_end_hour: nightEndHour,
+        solar_preconditioning_action: solarAction,
+        solar_surplus_w: solarSurplusW,
+        solar_min_soc: solarMinSoc,
+        battery_guard_action: batteryGuardAction,
+        battery_min_soc: batteryMinSoc,
+        comfort_guard_action: comfortGuardAction,
+        comfort_max_temp: comfortMaxTemp,
+        comfort_min_rest_min: comfortMinRestMin
+    };
+
+    if (feedbackEl) {
+        feedbackEl.style.display = 'block';
+        feedbackEl.style.background = 'rgba(56, 189, 248, 0.15)';
+        feedbackEl.style.color = '#38bdf8';
+        feedbackEl.style.border = '1px solid rgba(56, 189, 248, 0.3)';
+        feedbackEl.innerText = 'Salvataggio preferenze clima in corso...';
+    }
+
+    try {
+        const resp = await fetch('/api/climate/automations/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const res = await resp.json();
+        if (resp.ok) {
+            if (feedbackEl) {
+                feedbackEl.style.background = 'rgba(16, 185, 129, 0.15)';
+                feedbackEl.style.color = '#10b981';
+                feedbackEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                feedbackEl.innerText = '✅ Impostazioni Clima Intelligente salvate con successo!';
+                setTimeout(() => { feedbackEl.style.display = 'none'; }, 4000);
+            }
+        } else {
+            throw new Error(res.message || 'Errore salvataggio');
+        }
+    } catch (e) {
+        if (feedbackEl) {
+            feedbackEl.style.background = 'rgba(239, 68, 68, 0.15)';
+            feedbackEl.style.color = '#ef4444';
+            feedbackEl.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            feedbackEl.innerText = '❌ Errore durante il salvataggio: ' + e.message;
+        }
+    }
+}
+
+async function testClimateNotification(scenario) {
+    try {
+        const resp = await fetch('/api/climate/automations/test-action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scenario: scenario })
+        });
+        if (resp.ok) {
+            alert('🧪 Notifica push di prova inviata con successo per scenario: ' + scenario.toUpperCase() + '!');
+        } else {
+            alert('Errore invio notifica test (HTTP ' + resp.status + ')');
+        }
+    } catch (e) {
+        alert('Errore di connessione: ' + e.message);
+    }
+}
+
+// =========================================================================
+// HISTORICAL BACKFILL & RECORD REBUILD
+// =========================================================================
+let backfillPollTimer = null;
+
+async function checkBackfillStatus() {
+    try {
+        const resp = await fetch('/api/system/history-backfill/status');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        
+        const pillEl = document.getElementById('backfill-status-pill');
+        const containerEl = document.getElementById('backfill-progress-container');
+        const msgEl = document.getElementById('backfill-status-msg');
+        const pctEl = document.getElementById('backfill-pct-label');
+        const barEl = document.getElementById('backfill-progress-bar');
+        const daysEl = document.getElementById('backfill-days-info');
+        const recsEl = document.getElementById('backfill-records-info');
+        const startBtn = document.getElementById('btn-start-backfill');
+
+        if (data.is_running) {
+            if (pillEl) {
+                pillEl.className = 'status-pill badge-live';
+                pillEl.innerText = 'In Corso';
+            }
+            if (containerEl) containerEl.style.display = 'block';
+            if (msgEl) msgEl.innerText = data.status_message || 'Download in corso...';
+            if (pctEl) pctEl.innerText = `${data.progress_pct}%`;
+            if (barEl) barEl.style.width = `${data.progress_pct}%`;
+            if (daysEl) daysEl.innerText = `Giorni: ${data.processed_days} / ${data.total_days}`;
+            if (recsEl) recsEl.innerText = `Record inseriti: ${data.records_inserted}`;
+            if (startBtn) {
+                startBtn.disabled = true;
+                startBtn.innerText = '⏳ Backfill in corso...';
+            }
+            
+            if (!backfillPollTimer) {
+                backfillPollTimer = setInterval(checkBackfillStatus, 1500);
+            }
+        } else {
+            if (backfillPollTimer) {
+                clearInterval(backfillPollTimer);
+                backfillPollTimer = null;
+            }
+            if (pillEl) {
+                pillEl.className = 'status-pill badge-neutral';
+                pillEl.innerText = 'Pronto';
+            }
+            if (startBtn) {
+                startBtn.disabled = false;
+                startBtn.innerText = '🚀 Avvia Backfill Completo (2022–Oggi)';
+            }
+            if (data.progress_pct >= 100.0 && containerEl) {
+                containerEl.style.display = 'block';
+                if (msgEl) msgEl.innerText = data.status_message || 'Completato con successo!';
+                if (pctEl) pctEl.innerText = '100%';
+                if (barEl) barEl.style.width = '100%';
+                if (daysEl) daysEl.innerText = `Giorni: ${data.processed_days} / ${data.total_days}`;
+                if (recsEl) recsEl.innerText = `Record inseriti: ${data.records_inserted}`;
+            }
+        }
+    } catch (e) {
+        console.error('Errore check status backfill:', e);
+    }
+}
+
+async function startHistoryBackfill() {
+    const feedbackEl = document.getElementById('backfill-action-feedback');
+    const startBtn = document.getElementById('btn-start-backfill');
+    
+    if (!confirm("Vuoi avviare il backfill storico dal 2022 a oggi?\nIl processo viene eseguito in background e potrebbe richiedere circa 2-3 minuti.")) {
+        return;
+    }
+
+    if (startBtn) {
+        startBtn.disabled = true;
+        startBtn.innerText = 'Avvio in corso...';
+    }
+
+    try {
+        const resp = await fetch('/api/system/history-backfill/start', { method: 'POST' });
+        const data = await resp.json();
+        if (feedbackEl) {
+            feedbackEl.style.display = 'block';
+            feedbackEl.style.background = 'rgba(56, 189, 248, 0.15)';
+            feedbackEl.style.color = '#38bdf8';
+            feedbackEl.innerText = data.message || 'Processo avviato con successo.';
+        }
+        checkBackfillStatus();
+    } catch (e) {
+        if (feedbackEl) {
+            feedbackEl.style.display = 'block';
+            feedbackEl.style.background = 'rgba(239, 68, 68, 0.15)';
+            feedbackEl.style.color = '#ef4444';
+            feedbackEl.innerText = 'Errore di avvio: ' + e.message;
+        }
+        if (startBtn) {
+            startBtn.disabled = false;
+            startBtn.innerText = '🚀 Avvia Backfill Completo (2022–Oggi)';
+        }
+    }
+}
+
+async function recalculateRecordsNow() {
+    const feedbackEl = document.getElementById('backfill-action-feedback');
+    const recalcBtn = document.getElementById('btn-recalc-records');
+
+    if (recalcBtn) {
+        recalcBtn.disabled = true;
+        recalcBtn.innerText = 'Calcolo in corso...';
+    }
+
+    try {
+        const resp = await fetch('/api/system/history-backfill/recalculate-records', { method: 'POST' });
+        const data = await resp.json();
+        if (feedbackEl) {
+            feedbackEl.style.display = 'block';
+            feedbackEl.style.background = 'rgba(16, 185, 129, 0.15)';
+            feedbackEl.style.color = '#10b981';
+            feedbackEl.innerText = '✅ ' + (data.message || 'Albo dei Record ricalcolato con successo!');
+            setTimeout(() => { feedbackEl.style.display = 'none'; }, 5000);
+        }
+    } catch (e) {
+        if (feedbackEl) {
+            feedbackEl.style.display = 'block';
+            feedbackEl.style.background = 'rgba(239, 68, 68, 0.15)';
+            feedbackEl.style.color = '#ef4444';
+            feedbackEl.innerText = '❌ Errore: ' + e.message;
+        }
+    } finally {
+        if (recalcBtn) {
+            recalcBtn.disabled = false;
+            recalcBtn.innerText = '🏆 Ricalcola Solo Albo dei Record';
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    checkBackfillStatus();
+});
 </script>
 {% endblock %}

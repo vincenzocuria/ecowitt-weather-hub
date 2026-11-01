@@ -1,0 +1,539 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- LEAFLET CSS & CUSTOM RADAR STYLES -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+<div class="radar-page-wrapper">
+    <!-- HEADER DELLA PAGINA RADAR -->
+    <div class="header-card" style="margin-bottom: 12px;">
+        <div class="header-title">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.8rem;">🌧️</span>
+                <div>
+                    <h1 style="margin: 0; font-size: 1.5rem;">Radar Pioggia & Temporali Live</h1>
+                    <p style="margin: 2px 0 0 0; color: var(--text-dim); font-size: 0.88rem;">
+                        Monitoraggio satellitare e radar Doppler in tempo reale con nowcasting ad alta risoluzione (100% Free).
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div class="header-actions" style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-secondary" onclick="centerToStation()" style="display: flex; align-items: center; gap: 6px;">
+                📍 <span>Mia Stazione</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- SELETTORE A 2 TAB: RADAR PIOGGIA vs RADAR FULMINI -->
+    <div class="radar-tabs-nav" style="display: flex; gap: 10px; margin-bottom: 14px;">
+        <button type="button" class="btn btn-tab active" id="tab-btn-rain" onclick="switchRadarTab('rain')" style="flex: 1; padding: 10px 16px; font-weight: 700; font-size: 0.95rem; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s ease; background: var(--primary-hover); color: #fff; border: 1px solid var(--primary-hover); cursor: pointer;">
+            🌧️ <span>Radar Pioggia Live</span>
+        </button>
+        <button type="button" class="btn btn-tab" id="tab-btn-lightning" onclick="switchRadarTab('lightning')" style="flex: 1; padding: 10px 16px; font-weight: 700; font-size: 0.95rem; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s ease; background: rgba(255,255,255,0.06); color: var(--text-dim); border: 1px solid var(--border); opacity: 0.85; cursor: pointer;">
+            ⚡ <span>Radar Fulmini Live</span>
+        </button>
+    </div>
+
+    <!-- TAB 1: RADAR PIOGGIA (100% PULITO COME PRIMA) -->
+    <div id="radar-view-rain" class="radar-view-pane">
+        <!-- CONTENITORE MAPPA & OVERLAY CONTROLLI -->
+        <div class="radar-container">
+        <!-- MAPPA LEAFLET -->
+        <div id="radar-map" class="radar-map"></div>
+
+        <!-- RADAR CONTROLS OVERLAY BAR -->
+        <div class="radar-controls-card">
+            <!-- RIGA 1: STATO TEMPORALE & BADGE INFO -->
+            <div class="radar-status-row">
+                <div class="radar-time-badge" id="radar-time-badge">
+                    <span class="radar-live-dot" id="radar-live-dot"></span>
+                    <span id="radar-frame-label">Caricamento radar...</span>
+                </div>
+                <div class="radar-badge-type" id="radar-frame-type">RADAR PASSATO</div>
+            </div>
+
+            <!-- RIGA 2: TIMELINE SLIDER -->
+            <div class="radar-timeline-row">
+                <input type="range" id="radar-slider" min="0" max="0" value="0" step="1" class="radar-slider" oninput="onSliderInput(this.value)">
+            </div>
+
+            <!-- RIGA 3: PULSANTI PLAY / STEP / VELOCITÀ / OPACITÀ -->
+            <div class="radar-btn-toolbar">
+                <div class="radar-play-group">
+                    <button type="button" class="radar-btn" id="btn-prev-frame" onclick="stepFrame(-1)" title="Fotogramma precedente">
+                        ⏮️
+                    </button>
+                    <button type="button" class="radar-btn radar-btn-play" id="btn-play-pause" onclick="togglePlay()" title="Riproduci / Pausa">
+                        <span id="play-icon">▶️</span>
+                    </button>
+                    <button type="button" class="radar-btn" id="btn-next-frame" onclick="stepFrame(1)" title="Fotogramma successivo">
+                        ⏭️
+                    </button>
+                </div>
+
+                <div class="radar-options-group">
+                    <!-- CONTROLLO OPACITÀ -->
+                    <div class="radar-opacity-control" title="Regola opacità del radar">
+                        <span style="font-size: 0.8rem; color: var(--text-dim);">💧 Opacità:</span>
+                        <input type="range" id="radar-opacity-slider" min="20" max="100" value="80" step="5" class="radar-mini-slider" oninput="changeOpacity(this.value)">
+                    </div>
+
+                    <!-- SELETTORE COLORI RADAR -->
+                    <div class="radar-color-control">
+                        <select id="radar-color-scheme" class="radar-select" onchange="changeColorScheme(this.value)">
+                            <option value="2" selected>Palette: Universale HD (Standard)</option>
+                            <option value="1">Palette: NWS Classic</option>
+                            <option value="8">Palette: Dark Contrast</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LEGENDA INTENSITÀ PIOGGIA -->
+            <div class="radar-legend-bar">
+                <span class="legend-label">Intensità:</span>
+                <div class="legend-scale">
+                    <div class="legend-step" style="background: rgba(0, 90, 185, 0.95); color: #fff;" title="Pioviggine / Debole">Debole</div>
+                    <div class="legend-step" style="background: rgba(0, 230, 100, 0.8);" title="Moderata (2-5 mm/h)">Moderata</div>
+                    <div class="legend-step" style="background: rgba(255, 200, 0, 0.85);" title="Forte (5-15 mm/h)">Forte</div>
+                    <div class="legend-step" style="background: rgba(200, 40, 0, 0.95); color: #fff;" title="Intensa (15-30 mm/h)">Intensa</div>
+                    <div class="legend-step" style="background: rgba(150, 0, 200, 0.95); color: #fff;" title="Nubifragio / Grandine (>30 mm/h)">Nubifragio</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- FINE TAB 1: RADAR PIOGGIA -->
+
+    <!-- TAB 2: RADAR FULMINI LIVE & WH57 -->
+    <div id="radar-view-lightning" class="radar-view-pane" style="display: none;">
+        <!-- CARD METRICHE & STATO SENSORE WH57 -->
+        <div class="card" style="margin-bottom: 14px; border-radius: 12px; background: var(--card-bg, #1e293b); border: 1px solid var(--border, rgba(255,255,255,0.1)); padding: 14px 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.5rem;">⚡</span>
+                    <div>
+                        <strong style="font-size: 1.05rem;">Sensore Fulmini WH57 • Stazione Locale</strong>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Rilevatore radioelettrico onde temporalesche (fino a 40 km)</div>
+                    </div>
+                </div>
+                <span class="sub-badge {{ lightning.trend_badge if lightning else 'badge-neutral' }}" style="font-size: 0.82rem; padding: 4px 12px; border-radius: 20px;">
+                    {{ lightning.trend_icon if lightning else '🟢' }} {{ lightning.trend_label if lightning else 'WH57 • In ascolto' }}
+                </span>
+            </div>
+
+            <!-- GRIGLIA METRICHE RAPIDE -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px;">
+                <div style="background: rgba(0,0,0,0.25); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                    <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600;">Distanza Ultima Scarica</div>
+                    <div style="font-size: 1.45rem; font-weight: 800; color: #facc15; margin-top: 2px;">
+                        {% if lightning and lightning.current_distance_km is not none %}
+                            {{ lightning.current_distance_km }} <span style="font-size: 0.85rem; font-weight: 600;">km</span>
+                        {% else %}
+                            <span style="font-size: 1rem; color: var(--text-dim);">Nessuna vicina</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div style="background: rgba(0,0,0,0.25); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                    <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600;">Ultima Rilevata</div>
+                    <div style="font-size: 0.95rem; font-weight: 700; margin-top: 6px; color: #fff;">
+                        {{ lightning.last_strike_formatted if (lightning and lightning.last_strike_formatted) else (latest.lightning_last_time | lightning_time_it) }}
+                    </div>
+                </div>
+                <div style="background: rgba(0,0,0,0.25); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                    <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600;">Scariche Oggi</div>
+                    <div style="font-size: 1.45rem; font-weight: 800; color: #38bdf8; margin-top: 2px;">
+                        {{ lightning.count_today if lightning else (latest.lightning_count or 0) }}
+                        {% if lightning and lightning.count_1h > 0 %}
+                            <span style="font-size: 0.8rem; font-weight: 500; color: var(--accent);">({{ lightning.count_1h }}/h)</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div style="background: rgba(0,0,0,0.25); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                    <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600;">Più Vicina Oggi</div>
+                    <div style="font-size: 1.2rem; font-weight: 700; margin-top: 5px; color: #e2e8f0;">
+                        {% if lightning and lightning.closest_km_today is not none %}
+                            {{ lightning.closest_km_today }} km
+                        {% else %}
+                            <span style="font-size: 0.9rem; color: var(--text-muted);">--</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- TENDENZA DESCRITTIVA -->
+            <div style="font-size: 0.86rem; padding: 8px 12px; background: rgba(255,255,255,0.03); border-radius: 8px; color: var(--text-dim); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+                <span>Stato fronte temporalesco: <strong style="color: {{ 'var(--danger)' if lightning and lightning.trend == 'approaching' else ('var(--info)' if lightning and lightning.trend == 'moving_away' else '#fff') }};">{{ lightning.trend_desc if lightning else 'Nessuna attività rilevata' }}</strong></span>
+                <a href="{{ lightning.lightning_maps_url if lightning else 'https://www.lightningmaps.org' }}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none; font-weight: 600; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 4px;">
+                    Apri LightningMaps a schermo intero ↗
+                </a>
+            </div>
+        </div>
+
+        <!-- MAPPA LIVE FULMINI BLITZORTUNG A TUTTO SCHERMO -->
+        <div class="radar-container" style="height: 620px; position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--border, rgba(255,255,255,0.1)); box-shadow: 0 8px 24px rgba(0,0,0,0.3);">
+            <iframe id="lightning-map-iframe" src="" data-src="https://map.blitzortung.org/#8/{{ lat or 41.9028 }}/{{ lon or 12.4964 }}" style="width: 100%; height: 100%; border: 0; display: block; background: #121212;" title="Mappa Fulmini Live Blitzortung" loading="lazy" allowfullscreen></iframe>
+        </div>
+    </div>
+    <!-- FINE TAB 2: RADAR FULMINI -->
+</div>
+
+<!-- LEAFLET JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<script>
+    // Dati iniettati dal server per la stazione meteo locale
+    const STATION_LAT = {{ lat or 41.9028 }};
+    const STATION_LON = {{ lon or 12.4964 }};
+    const STATION_NAME = "{{ station_name or 'Stazione Meteo' }}";
+    const LOCATION_NAME = "{{ location_name or '' }}";
+    const STATION_TEMP = "{{ temp_c if temp_c is not none else '--' }}";
+    const STATION_RAIN = "{{ rain_rate if rain_rate is not none else '0.0' }}";
+    const STATION_COND_TEXT = "{{ current_cond.text if current_cond else 'Variabile' }}";
+    const STATION_COND_ICON = "{{ current_cond.icon if current_cond else '🌤️' }}";
+
+    // Variabili stato Radar
+    let map = null;
+    let stationMarker = null;
+    let currentRadarLayer = null;
+    let radarFrames = [];
+    let currentFrameIndex = 0;
+    let isPlaying = false;
+    let playInterval = null;
+    let radarHost = "https://tilecache.rainviewer.com";
+    let colorScheme = 2; // Default Universale
+    let radarOpacity = 0.85;
+    let sliderDebounceTimer = null;
+    const PLAY_SPEED_MS = 1200; // Cadenza fluida e bilanciata
+
+    // Inizializzazione Mappa
+    function initMap() {
+        map = L.map('radar-map', {
+            center: [STATION_LAT, STATION_LON],
+            zoom: 7,
+            minZoom: 4,
+            maxZoom: 14,
+            zoomControl: true
+        });
+
+        // Base map scura Esri (gratuita, senza API key) con etichette; fallback automatico su OpenStreetMap
+        const radarAttribution = 'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | Radar by <a href="https://www.rainviewer.com">RainViewer</a>';
+        // Mappa chiara o scura in base al tema dell'app
+        const mapTone = document.documentElement.dataset.theme === 'light' ? 'Light' : 'Dark';
+        const baseLayer = L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_${mapTone}_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
+            attribution: radarAttribution,
+            maxZoom: 16
+        }).addTo(map);
+        L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_${mapTone}_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, {
+            maxZoom: 16,
+            pane: 'overlayPane',
+            zIndex: 650
+        }).addTo(map);
+        let baseErrors = 0;
+        baseLayer.on('tileerror', () => {
+            if (++baseErrors === 6) {
+                map.removeLayer(baseLayer);
+                L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | Radar by <a href="https://www.rainviewer.com">RainViewer</a>',
+                    maxZoom: 19,
+                    className: mapTone === 'Dark' ? 'osm-dark-tiles' : ''
+                }).addTo(map).bringToBack();
+            }
+        });
+
+        // Marker personalizzato con pulsazione per la stazione meteo
+        const stationIcon = L.divIcon({
+            className: 'custom-station-pin',
+            html: `<div class="station-radar-pin"><span class="pin-core"></span><span class="pin-pulse"></span></div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+
+        stationMarker = L.marker([STATION_LAT, STATION_LON], { icon: stationIcon }).addTo(map);
+        stationMarker.bindPopup(`
+            <div class="radar-station-popup">
+                <div class="popup-title">🏠 ${STATION_NAME}</div>
+                <div class="popup-sub">${LOCATION_NAME}</div>
+                <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.15); margin: 6px 0;">
+                <div class="popup-data-row">
+                    <span>${STATION_COND_ICON} Condizione:</span>
+                    <strong>${STATION_COND_TEXT}</strong>
+                </div>
+                <div class="popup-data-row">
+                    <span>🌡️ Temperatura:</span>
+                    <strong>${STATION_TEMP}°C</strong>
+                </div>
+                <div class="popup-data-row">
+                    <span>🌧️ Tasso Pioggia:</span>
+                    <strong>${STATION_RAIN} mm/h</strong>
+                </div>
+            </div>
+        `);
+
+        // Carica dati fotogrammi da RainViewer on-demand
+        loadRainViewerData();
+
+    }
+
+    // Caricamento API RainViewer (100% On-Demand)
+    async function loadRainViewerData() {
+        try {
+            document.getElementById('radar-frame-label').innerText = "Caricamento fotogrammi radar...";
+            const resp = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+            if (!resp.ok) throw new Error("Errore HTTP da RainViewer API");
+            
+            const data = await resp.json();
+            radarHost = data.host || "https://tilecache.rainviewer.com";
+
+            // Seleziona gli ultimi 5 fotogrammi passati e 3 di nowcast (circa 80 minuti di finestra totale)
+            let past = data.radar?.past || [];
+            if (past.length > 5) {
+                past = past.slice(-5);
+            }
+            let nowcast = data.radar?.nowcast || [];
+            if (nowcast.length > 3) {
+                nowcast = nowcast.slice(0, 3);
+            }
+
+            radarFrames = [];
+            past.forEach(f => radarFrames.push({ ...f, type: 'past' }));
+            nowcast.forEach(f => radarFrames.push({ ...f, type: 'nowcast' }));
+
+            if (radarFrames.length === 0) {
+                document.getElementById('radar-frame-label').innerText = "Nessun dato radar disponibile al momento.";
+                return;
+            }
+
+            const slider = document.getElementById('radar-slider');
+            slider.max = radarFrames.length - 1;
+            
+            // Imposta l'ultimo fotogramma rilevato (stato reale in tempo reale)
+            const lastPastIdx = past.length > 0 ? past.length - 1 : 0;
+            currentFrameIndex = lastPastIdx;
+            slider.value = currentFrameIndex;
+
+            // Mostra il fotogramma corrente
+            showFrame(currentFrameIndex);
+
+        } catch (err) {
+            console.error("Errore caricamento radar:", err);
+            document.getElementById('radar-frame-label').innerText = "Radar temporaneamente non disponibile.";
+        }
+    }
+
+    // Mostra fotogramma radar specifico con gestione sicura a singolo layer attivo
+    function showFrame(index) {
+        if (!radarFrames || radarFrames.length === 0 || index < 0 || index >= radarFrames.length) return;
+
+        const frame = radarFrames[index];
+        const slider = document.getElementById('radar-slider');
+        if (slider) slider.value = index;
+
+        const tileUrl = `${radarHost}${frame.path}/256/{z}/{x}/{y}/${colorScheme}/1_1.png`;
+
+        // Crea il nuovo layer
+        const newLayer = L.tileLayer(tileUrl, {
+            opacity: radarOpacity,
+            zIndex: 10,
+            maxNativeZoom: 7,
+            maxZoom: 14
+        });
+
+        // Gestione morbida di eventuali errori di tassello
+        newLayer.on('tileerror', function(e) {
+            // Ignora silenziosamente errori su singoli tile per evitare interruzioni visive
+        });
+
+        // Aggiunge il nuovo layer e rimuove immediatamente il layer precedente
+        newLayer.addTo(map);
+        if (currentRadarLayer && map.hasLayer(currentRadarLayer)) {
+            map.removeLayer(currentRadarLayer);
+        }
+        currentRadarLayer = newLayer;
+
+        // Formatta orario fotogramma (locale)
+        const frameDate = new Date(frame.time * 1000);
+        const timeStr = frameDate.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = frameDate.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
+
+        const isNowcast = frame.type === 'nowcast';
+        const typeBadge = document.getElementById('radar-frame-type');
+        const liveDot = document.getElementById('radar-live-dot');
+        const label = document.getElementById('radar-frame-label');
+
+        if (isNowcast) {
+            if (typeBadge) {
+                typeBadge.innerText = "NOWCAST PREVISIONE";
+                typeBadge.className = "radar-badge-type nowcast";
+            }
+            if (liveDot) liveDot.className = "radar-live-dot nowcast";
+            if (label) label.innerHTML = `<strong>${timeStr}</strong> <small>(${dateStr})</small> • <span style="color:#60a5fa;">Stima Previsionale</span>`;
+        } else {
+            if (typeBadge) {
+                typeBadge.innerText = "RADAR IN DIRETTA";
+                typeBadge.className = "radar-badge-type past";
+            }
+            if (liveDot) liveDot.className = "radar-live-dot";
+            if (label) label.innerHTML = `<strong>${timeStr}</strong> <small>(${dateStr})</small> • <span style="color:#34d399;">Rilevazione Reale</span>`;
+        }
+
+        currentFrameIndex = index;
+    }
+
+    // Gestione Timeline & Playback con debounce
+    function onSliderInput(val) {
+        stopPlay();
+        const idx = parseInt(val);
+        if (sliderDebounceTimer) clearTimeout(sliderDebounceTimer);
+        sliderDebounceTimer = setTimeout(() => {
+            showFrame(idx);
+        }, 40);
+    }
+
+    function stepFrame(step) {
+        stopPlay();
+        let next = currentFrameIndex + step;
+        if (next < 0) next = radarFrames.length - 1;
+        if (next >= radarFrames.length) next = 0;
+        showFrame(next);
+    }
+
+    function togglePlay() {
+        if (isPlaying) {
+            stopPlay();
+        } else {
+            startPlay();
+        }
+    }
+
+    function startPlay() {
+        if (isPlaying || radarFrames.length === 0) return;
+        isPlaying = true;
+        const playIcon = document.getElementById('play-icon');
+        const playBtn = document.getElementById('btn-play-pause');
+        if (playIcon) playIcon.innerText = "⏸️";
+        if (playBtn) playBtn.classList.add('active');
+
+        playInterval = setInterval(() => {
+            // Se la scheda non è visibile, interrompi subito la riproduzione
+            if (document.hidden) {
+                stopPlay();
+                return;
+            }
+            let next = currentFrameIndex + 1;
+            if (next >= radarFrames.length) next = 0;
+            showFrame(next);
+        }, PLAY_SPEED_MS);
+    }
+
+    function stopPlay() {
+        if (!isPlaying && !playInterval) return;
+        isPlaying = false;
+        if (playInterval) {
+            clearInterval(playInterval);
+            playInterval = null;
+        }
+        const playIcon = document.getElementById('play-icon');
+        const playBtn = document.getElementById('btn-play-pause');
+        if (playIcon) playIcon.innerText = "▶️";
+        if (playBtn) playBtn.classList.remove('active');
+    }
+
+    // Cambio Opacità
+    function changeOpacity(val) {
+        radarOpacity = parseFloat(val) / 100.0;
+        if (currentRadarLayer) {
+            currentRadarLayer.setOpacity(radarOpacity);
+        }
+    }
+
+    // Cambio Palette Colori
+    function changeColorScheme(val) {
+        colorScheme = parseInt(val);
+        showFrame(currentFrameIndex);
+    }
+
+    // Ricentra sulla stazione
+    function centerToStation() {
+        if (map) {
+            map.flyTo([STATION_LAT, STATION_LON], 8, { animate: true, duration: 1 });
+            if (stationMarker) {
+                stationMarker.openPopup();
+            }
+        }
+    }
+
+    // GESTIONE SWITCH TAB: RADAR PIOGGIA vs RADAR FULMINI
+    function switchRadarTab(tab) {
+        const rainView = document.getElementById('radar-view-rain');
+        const lightningView = document.getElementById('radar-view-lightning');
+        const btnRain = document.getElementById('tab-btn-rain');
+        const btnLightning = document.getElementById('tab-btn-lightning');
+        const iframe = document.getElementById('lightning-map-iframe');
+
+        if (tab === 'rain') {
+            if (rainView) rainView.style.display = 'block';
+            if (lightningView) lightningView.style.display = 'none';
+            if (btnRain) {
+                btnRain.classList.add('active');
+                btnRain.style.background = 'var(--primary-hover)';
+                btnRain.style.color = '#fff';
+                btnRain.style.borderColor = 'var(--primary-hover)';
+                btnRain.style.opacity = '1';
+            }
+            if (btnLightning) {
+                btnLightning.classList.remove('active');
+                btnLightning.style.background = 'rgba(255,255,255,0.06)';
+                btnLightning.style.color = 'var(--text-dim)';
+                btnLightning.style.borderColor = 'var(--border)';
+                btnLightning.style.opacity = '0.85';
+            }
+            if (map) {
+                setTimeout(() => {
+                    map.invalidateSize();
+                }, 50);
+            }
+        } else {
+            if (rainView) rainView.style.display = 'none';
+            if (lightningView) lightningView.style.display = 'block';
+            if (btnLightning) {
+                btnLightning.classList.add('active');
+                btnLightning.style.background = '#eab308';
+                btnLightning.style.color = '#000';
+                btnLightning.style.borderColor = '#eab308';
+                btnLightning.style.opacity = '1';
+            }
+            if (btnRain) {
+                btnRain.classList.remove('active');
+                btnRain.style.background = 'rgba(255,255,255,0.06)';
+                btnRain.style.color = 'var(--text-dim)';
+                btnRain.style.borderColor = 'var(--border)';
+                btnRain.style.opacity = '0.85';
+            }
+            stopPlay();
+            if (iframe && !iframe.src && iframe.dataset.src) {
+                iframe.src = iframe.dataset.src;
+            }
+        }
+    }
+
+    // GESTIONE VISIBILITÀ SCHEDA: Ferma tutto quando la pagina è in background o minimizzata
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+            stopPlay();
+        }
+    });
+
+    window.addEventListener("pagehide", () => {
+        stopPlay();
+    });
+
+    // Avvio al caricamento del DOM
+    document.addEventListener("DOMContentLoaded", () => {
+        initMap();
+        if (window.location.hash === '#lightning') {
+            switchRadarTab('lightning');
+        }
+    });
+</script>
+{% endblock %}

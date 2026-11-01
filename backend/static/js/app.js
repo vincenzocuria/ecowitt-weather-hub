@@ -16,9 +16,80 @@ function formatDate(isoStr) {
     }
 }
 
+// Utility per formattare durate in italiano: minuti, poi ore, oltre le 24 ore giorni e ore
+function formatDurationItalian(minutes) {
+    if (minutes === null || minutes === undefined || isNaN(minutes)) return "--";
+    const m = Math.round(Number(minutes));
+    if (m < 0) return "--";
+    if (m === 0) return "meno di un minuto";
+    if (m >= 1440) {
+        const days = Math.floor(m / 1440);
+        const restH = Math.floor((m % 1440) / 60);
+        const dStr = days === 1 ? "1 giorno" : `${days} giorni`;
+        if (restH === 0) return dStr;
+        return `${dStr} e ${restH === 1 ? "1 ora" : `${restH} ore`}`;
+    }
+    const hours = Math.floor(m / 60);
+    const mins = m % 60;
+    if (hours === 0) {
+        return mins === 1 ? "1 minuto" : `${mins} minuti`;
+    }
+    const hStr = hours === 1 ? "1 ora" : `${hours} ore`;
+    if (mins === 0) {
+        return hStr;
+    }
+    const mStr = mins === 1 ? "1 minuto" : `${mins} minuti`;
+    return `${hStr} e ${mStr}`;
+}
+window.formatDurationItalian = formatDurationItalian;
+
+// Utility per formattare orario scariche fulmini in italiano naturale
+function formatLightningTimeIt(val) {
+    if (!val || val === '--' || val === 'null' || val === 'None' || val === 'Nessuna recente') return "Nessuna recente";
+    try {
+        let d;
+        if (typeof val === 'number') {
+            d = new Date(val * 1000);
+        } else if (typeof val === 'string' && /^\d+$/.test(val.trim())) {
+            d = new Date(parseInt(val.trim()) * 1000);
+        } else {
+            d = new Date(val);
+        }
+        if (isNaN(d.getTime())) return val;
+
+        const now = new Date();
+        const diffMin = Math.max(0, Math.floor((now - d) / 60000));
+        const timeStr = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+
+        const isToday = d.toDateString() === now.toDateString();
+        const yesterday = new Date(now);
+        yesterday.setDate(now.getDate() - 1);
+        const isYesterday = d.toDateString() === yesterday.toDateString();
+
+        if (isToday) {
+            let rel = '';
+            if (diffMin < 1) rel = ' (meno di 1 min fa)';
+            else if (diffMin === 1) rel = ' (1 min fa)';
+            else if (diffMin < 60) rel = ` (${diffMin} min fa)`;
+            else if (diffMin < 120) rel = ' (1 ora fa)';
+            else if (diffMin < 1440) rel = ` (${Math.floor(diffMin / 60)} ore fa)`;
+            return `Oggi alle ${timeStr}${rel}`;
+        } else if (isYesterday) {
+            return `Ieri alle ${timeStr}`;
+        } else {
+            const dateStr = d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+            return `${dateStr} alle ${timeStr}`;
+        }
+    } catch {
+        return val;
+    }
+}
+window.formatLightningTimeIt = formatLightningTimeIt;
+
 // Live polling per la Dashboard principale
 function startDashboardPolling() {
     function update() {
+        if (document.hidden) return;
         fetch('/api/live')
             .then(r => r.json())
             .then(d => {
@@ -31,11 +102,17 @@ function startDashboardPolling() {
                     badgeEl.innerText = d.status_info.text;
                 }
 
+                if (d.status_info && typeof setLiveIndicator === 'function') {
+                    setLiveIndicator(!!d.status_info.is_online);
+                }
+
                 if (d.message) return;
                 
                 // Aggiorna timestamp
                 const tsEl = document.getElementById('ts');
-                if (tsEl) tsEl.innerText = formatDate(d.timestamp);
+                if (tsEl && d.timestamp) {
+                    tsEl.innerText = new Date(d.timestamp).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+                }
 
                 // Esterno
                 if (d.temp_c !== undefined) {
@@ -151,15 +228,97 @@ function startDashboardPolling() {
                     if (el) el.innerText = d.humidity_in + ' %';
                 }
 
-                // Fulmini
-                if (d.lightning_distance_km !== undefined && d.lightning_distance_km !== null) {
-                    const el = document.getElementById('lightning');
-                    if (el) el.innerText = '⚡ ' + d.lightning_distance_km + ' km' + (d.lightning_count ? ' (' + d.lightning_count + ' totali)' : '');
+                // Fulmini WH57 & Analisi Trend Live
+                const lInfo = (d.analytics && d.analytics.lightning) ? d.analytics.lightning : d.lightning_analytics;
+                const lDistVal = document.getElementById('lightning_dist_val');
+                const lBadge = document.getElementById('lightning_badge');
+                const lTrendDesc = document.getElementById('lightning_trend_desc');
+                const lTime = document.getElementById('lightning_time');
+                const lClosest = document.getElementById('lightning_closest');
+                const lCountToday = document.getElementById('lightning_count_today');
+                const lArrow = document.getElementById('lightning_trend_arrow');
+                const lTimeline = document.getElementById('lightning_timeline_list');
+                const lThreatPill = document.getElementById('lightning_threat_pill');
+
+                if (lInfo) {
+                    if (lDistVal) {
+                        if (lInfo.current_distance_km !== null && lInfo.current_distance_km !== undefined) {
+                            lDistVal.innerHTML = lInfo.current_distance_km + ' <span class="unit">km</span>';
+                        } else {
+                            lDistVal.innerHTML = (lInfo.count_today || 0) + ' <span class="unit">Scariche Oggi</span>';
+                        }
+                    }
+                    if (lArrow) {
+                        lArrow.innerText = lInfo.trend_arrow || '';
+                    }
+                    if (lBadge) {
+                        lBadge.className = 'sub-badge ' + (lInfo.trend_badge || 'badge-neutral');
+                        lBadge.innerText = (lInfo.trend_icon ? lInfo.trend_icon + ' ' : '') + (lInfo.trend_label || 'WH57 • Standby');
+                    }
+                    if (lTrendDesc) {
+                        lTrendDesc.innerText = lInfo.trend_desc || 'Nessun fronte attivo';
+                        if (lInfo.trend === 'approaching') {
+                            lTrendDesc.style.color = 'var(--danger)';
+                        } else if (lInfo.trend === 'moving_away') {
+                            lTrendDesc.style.color = 'var(--info)';
+                        } else {
+                            lTrendDesc.style.color = 'inherit';
+                        }
+                    }
+                    if (lTime) {
+                        if (lInfo.last_strike_formatted) {
+                            lTime.innerText = lInfo.last_strike_formatted;
+                        } else if (lInfo.last_strike_time) {
+                            lTime.innerText = formatLightningTimeIt(lInfo.last_strike_time);
+                        }
+                    }
+                    if (lClosest) {
+                        if (lInfo.closest_km_today !== null && lInfo.closest_km_today !== undefined) {
+                            const sub = lInfo.closest_time_formatted ? ' <span style="font-weight: normal; color: var(--text-dim); font-size: 0.78rem;">(' + lInfo.closest_time_formatted + ')</span>' : '';
+                            lClosest.innerHTML = lInfo.closest_km_today + ' km' + sub;
+                        } else {
+                            lClosest.innerHTML = '<span style="color: var(--text-muted); font-size: 0.85rem;">--</span>';
+                        }
+                    }
+                    if (lCountToday) {
+                        const c1h = lInfo.count_1h > 0 ? ' <span style="font-weight: normal; color: var(--accent); font-size: 0.78rem;">(' + lInfo.count_1h + ' nell\'ultima ora)</span>' : '';
+                        lCountToday.innerHTML = (lInfo.count_today || 0) + c1h;
+                    }
+                    if (lTimeline && lInfo.recent_strikes && lInfo.recent_strikes.length > 0) {
+                        lTimeline.innerHTML = lInfo.recent_strikes.slice(0, 4).map(st => `
+                            <div class="lightning-strike-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 4px 8px; border-radius: 6px; font-size: 0.82rem;">
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span>⚡</span>
+                                    <span>${st.time_formatted || formatLightningTimeIt(st.strike_time)}</span>
+                                </div>
+                                <div>
+                                    <span class="badge-km" style="font-weight: 600; background: rgba(234, 179, 8, 0.15); color: #fde047; padding: 2px 6px; border-radius: 4px;">${st.distance_km} km</span>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+                    if (lThreatPill) {
+                        if (lInfo.is_storm_active) {
+                            lThreatPill.style.display = 'inline-block';
+                            lThreatPill.className = 'threat-pill ' + (lInfo.threat_badge || 'badge-danger');
+                            lThreatPill.innerText = lInfo.threat_label || 'TEMPORALE VICINO';
+                        } else {
+                            lThreatPill.style.display = 'none';
+                        }
+                    }
+                } else {
+                    if (lTime) {
+                        if (d.lightning_last_time_fmt) {
+                            lTime.innerText = d.lightning_last_time_fmt;
+                        } else if (d.lightning_last_time) {
+                            lTime.innerText = formatLightningTimeIt(d.lightning_last_time);
+                        }
+                    }
+                    if (d.lightning_count !== undefined && lCountToday) {
+                        lCountToday.innerText = d.lightning_count;
+                    }
                 }
-                if (d.lightning_last_time) {
-                    const lt = document.getElementById('lightning_time');
-                    if (lt) lt.innerText = d.lightning_last_time;
-                }
+
 
                 // ANALYTICS & SMART ADVICE
                 if (d.analytics) {
@@ -450,8 +609,115 @@ function startDashboardPolling() {
                     }
 
                     // Elettrodomestici SmartThings
-                    if (data.smartthings) {
-                        updateSmartThingsUI(data.smartthings);
+                    if (d.smartthings) {
+                        updateSmartThingsUI(d.smartthings);
+                    }
+
+                    // Dati Salute & Attività Samsung Health
+                    if (d.health) {
+                        updateHealthUI(d.health);
+                    }
+
+                    // Dispositivi Smart Life (Tuya)
+                    if (d.tuya) {
+                        updateTuyaUI(d.tuya);
+                    }
+
+                    // Protezione Civile
+                    if (d.civil_protection) {
+                        updateCivilProtectionWidget(d.civil_protection);
+                    }
+
+                    // Pill Notte Tropicale
+                    const tropPill = document.getElementById('hero_tropical_pill');
+                    if (tropPill && a.today_extremes) {
+                        if (a.today_extremes.temp_min !== null && a.today_extremes.temp_min >= 20.0) {
+                            tropPill.style.display = 'inline-flex';
+                            tropPill.innerText = `🌴 Notte Tropicale (Min: ${a.today_extremes.temp_min}°)`;
+                        } else {
+                            tropPill.style.display = 'none';
+                        }
+                    }
+
+                    // Umidità Terreno WH51
+                    if (a.soil_summary && a.soil_summary.has_sensors) {
+                        const soilContainer = document.getElementById('soil_moisture_container');
+                        if (soilContainer && a.soil_summary.channels) {
+                            let soilHtml = '';
+                            for (const [ch, info] of Object.entries(a.soil_summary.channels)) {
+                                soilHtml += `<div class="item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                    <span>🌱 ${escapeHtml(info.name)}:</span>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <strong>${info.value}%</strong>
+                                        <span class="badge ${info.badge_class}" style="font-size: 0.72rem; padding: 2px 6px;">${info.status_label}</span>
+                                        <span style="font-size: 0.75rem; color: var(--text-dim);" title="Variazione 24h">${info.trend_icon} ${info.diff_24h > 0 ? '+' : ''}${info.diff_24h}%</span>
+                                    </div>
+                                </div>`;
+                            }
+                            soilContainer.innerHTML = soilHtml;
+                        }
+                    }
+
+                    // Now Highlights (Cosa devi sapere adesso)
+                    if (a.now_highlights && Array.isArray(a.now_highlights)) {
+                        const nowContainer = document.getElementById('now_pills_container');
+                        if (nowContainer) {
+                            nowContainer.innerHTML = a.now_highlights.map(p => `
+                                <div class="now-pill">
+                                    <div class="now-pill-icon">${p.icon}</div>
+                                    <div class="now-pill-content">
+                                        <div class="now-pill-action">${p.action_text || 'INFO'}</div>
+                                        <div class="now-pill-title">${p.title}</div>
+                                        <div class="now-pill-sub">${p.subtitle}</div>
+                                    </div>
+                                </div>
+                            `).join('');
+                        }
+                    }
+
+                    // Rain Nowcasting
+                    if (a.rain_nowcast) {
+                        const nIcon = document.getElementById('nowcasting_icon');
+                        const nHead = document.getElementById('nowcasting_headline');
+                        const nDesc = document.getElementById('nowcasting_desc');
+                        if (nIcon && a.rain_nowcast.icon) nIcon.innerText = a.rain_nowcast.icon;
+                        if (nHead && a.rain_nowcast.headline) nHead.innerText = a.rain_nowcast.headline;
+                        if (nDesc && a.rain_nowcast.desc) nDesc.innerText = a.rain_nowcast.desc;
+                    }
+
+                    // Qualità dell'Aria & Pollini CAMS
+                    if (a.air_quality) {
+                        const aqi = a.air_quality;
+                        const aqiBadge = document.getElementById('aqi_badge');
+                        if (aqiBadge && aqi.eaqi) {
+                            aqiBadge.className = 'aqi-summary-badge ' + (aqi.eaqi.badge_class || 'badge-success');
+                            aqiBadge.innerText = (aqi.eaqi.icon || '🟢') + ' ' + (aqi.eaqi.label || 'Buona');
+                        }
+                        if (aqi.pollutants) {
+                            const p25 = document.getElementById('pm25_val');
+                            const p10 = document.getElementById('pm10_val');
+                            const no2 = document.getElementById('no2_val');
+                            const o3 = document.getElementById('o3_val');
+                            if (p25 && aqi.pollutants.pm2_5) p25.innerHTML = aqi.pollutants.pm2_5.val + ' <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span>';
+                            if (p10 && aqi.pollutants.pm10) p10.innerHTML = aqi.pollutants.pm10.val + ' <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span>';
+                            if (no2 && aqi.pollutants.no2) no2.innerHTML = aqi.pollutants.no2.val + ' <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span>';
+                            if (o3 && aqi.pollutants.o3) o3.innerHTML = aqi.pollutants.o3.val + ' <span style="font-size: 0.65rem; font-weight: normal; color: var(--text-dim);">µg/m³</span>';
+                        }
+                        const aqiAdv = document.getElementById('aqi_advice_text');
+                        if (aqiAdv && aqi.window_advice) aqiAdv.innerText = aqi.window_advice;
+                    }
+
+                    // Solar Forecast
+                    if (a.solar_forecast) {
+                        const sf = a.solar_forecast;
+                        const sKwh = document.getElementById('solar_fc_kwh');
+                        const b100 = document.getElementById('battery_100_est');
+                        const appWin = document.getElementById('appliances_window_est');
+                        const surp = document.getElementById('surplus_fc_kwh');
+                        if (sKwh && sf.tomorrow_range_str) sKwh.innerText = sf.tomorrow_range_str;
+                        if (b100 && sf.battery_100_est) b100.innerText = sf.battery_100_est;
+                        if (appWin && sf.best_appliances_window) appWin.innerText = sf.best_appliances_window;
+                        if (surp && sf.est_surplus_kwh !== undefined) surp.innerHTML = '+' + sf.est_surplus_kwh + ' <span style="font-size: 0.9rem;">kWh</span>';
                     }
                 }
             })
@@ -461,6 +727,7 @@ function startDashboardPolling() {
 
     // Polling energetico Aton Green Storage
     function updateEnergyLive() {
+        if (document.hidden) return;
         fetch('/api/energy/latest')
             .then(r => r.json())
             .then(res => {
@@ -550,6 +817,23 @@ function startDashboardPolling() {
                 if (pUtenzeEl && d.p_utenze !== undefined) {
                     pUtenzeEl.innerHTML = `${Math.round(d.p_utenze)} <span class="unit">W</span>`;
                 }
+                const pUtenzeMain = document.getElementById('p_utenze_main_val');
+                if (pUtenzeMain && d.p_utenze !== undefined) {
+                    pUtenzeMain.innerText = Math.round(d.p_utenze);
+                }
+                const pSolareQuick = document.getElementById('p_solare_quick_val');
+                if (pSolareQuick && d.p_solare !== undefined) {
+                    pSolareQuick.innerText = `${Math.round(d.p_solare)} W`;
+                }
+                const pBattPctQuick = document.getElementById('battery_pct_quick_val');
+                if (pBattPctQuick && d.soc !== undefined) {
+                    pBattPctQuick.innerText = `${Math.round(d.soc)}%`;
+                }
+                const pReteQuick = document.getElementById('p_rete_quick_val');
+                if (pReteQuick && d.p_rete !== undefined) {
+                    const w = Math.round(d.p_rete_in || d.p_rete || 0);
+                    pReteQuick.innerText = `${w} W`;
+                }
 
                 // 4. Rete Elettrica
                 const pReteEl = document.getElementById('p_rete_val');
@@ -587,6 +871,8 @@ function startDashboardPolling() {
                 if (!s) return;
                 const autEl = document.getElementById('autarky_val');
                 if (autEl && s.autarky_pct !== undefined) autEl.innerText = s.autarky_pct + '%';
+                const autQuick = document.getElementById('autarky_quick_val');
+                if (autQuick && s.autarky_pct !== undefined) autQuick.innerText = s.autarky_pct + '%';
 
                 const selfEl = document.getElementById('self_cons_val');
                 if (selfEl && s.self_consumption_pct !== undefined) selfEl.innerText = s.self_consumption_pct + '%';
@@ -600,16 +886,32 @@ function startDashboardPolling() {
                 if (gSub && s.bought_today_kwh !== undefined) {
                     gSub.innerHTML = `Acquistata oggi: <strong>${s.bought_today_kwh} kWh</strong>`;
                 }
+
+                // Aggiorna anche la scheda consumi integrata nella dashboard
+                const dashBreakdownSection = document.getElementById('dash_consumption_breakdown_section');
+                // solo se la sezione è effettivamente visibile (tab Energia attivo)
+                if (dashBreakdownSection && dashBreakdownSection.offsetParent !== null && typeof fetchAndRenderDashboardBreakdown === 'function') {
+                    fetchAndRenderDashboardBreakdown(false);
+                }
             })
             .catch(() => {});
     }
+
+    // Registra hook globale per risvegliare istantaneamente i controller su visibilitychange
+    window.triggerDashboardLiveRefresh = function() {
+        update();
+        updateEnergyLive();
+        updateClimateLive();
+    };
 
     // Avvia aggiornamenti periodici
     setInterval(update, 5000);
     setInterval(updateEnergyLive, 8000);
     setInterval(updateClimateLive, 10000);
+    setInterval(updateHealthLive, 25000);
     updateEnergyLive();
     updateClimateLive();
+    updateHealthLive();
 }
 
 // ==========================================
@@ -617,6 +919,7 @@ function startDashboardPolling() {
 // ==========================================
 
 function updateClimateLive() {
+    if (document.hidden) return;
     fetch('/api/thinq/devices')
         .then(r => r.json())
         .then(res => {
@@ -667,6 +970,10 @@ function updateSingleACUI(dev) {
     const currEl = document.getElementById(`curr_temp_${id}`);
     if (currEl && dev.current_temp !== undefined && dev.current_temp !== null) {
         currEl.innerText = `${dev.current_temp}°C`;
+    }
+    const currMiniEl = document.getElementById(`curr_temp_mini_${id}`);
+    if (currMiniEl && dev.current_temp !== undefined && dev.current_temp !== null) {
+        currMiniEl.innerText = `${dev.current_temp}°C`;
     }
 
     // Target Temp
@@ -802,9 +1109,14 @@ function urlBase64ToUint8Array(base64String) {
 async function getServiceWorkerRegistration() {
     if (!('serviceWorker' in navigator)) return null;
     try {
-        let reg = await navigator.serviceWorker.getRegistration('/static/');
+        // Disattiva eventuali vecchie registrazioni limitate a /static/
+        const oldReg = await navigator.serviceWorker.getRegistration('/static/');
+        if (oldReg) {
+            await oldReg.unregister();
+        }
+        let reg = await navigator.serviceWorker.getRegistration('/');
         if (!reg) {
-            reg = await navigator.serviceWorker.register('/static/sw.js');
+            reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
         }
         await navigator.serviceWorker.ready;
         return reg;
@@ -831,11 +1143,29 @@ async function checkPushSubscriptionStatus() {
 
     try {
         const reg = await getServiceWorkerRegistration();
-        if (!reg) return;
+        if (!reg) {
+            // Service Worker non registrabile (browser integrato, modalità privata, HTTP non sicuro):
+            // non lasciare la UI bloccata su "Verifica in corso…"
+            if (statusText) statusText.innerText = "Impossibile attivare il Service Worker in questo browser. Apri l'app installata (PWA) o un browser standard via HTTPS per ricevere le notifiche push.";
+            if (btn) btn.style.display = 'none';
+            if (badge) {
+                badge.className = 'status-pill badge-offline';
+                badge.innerText = 'Non disponibile';
+            }
+            return;
+        }
 
         const sub = await reg.pushManager.getSubscription();
 
         if (sub && Notification.permission === 'granted') {
+            // Ri-sincronizza la sottoscrizione col server (es. dopo reset DB o rotazione endpoint):
+            // la UI non deve dire "attive" se il server non sa dove inviare.
+            const subJson = sub.toJSON();
+            fetch('/api/push/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ endpoint: sub.endpoint, keys: subJson.keys })
+            }).catch(() => {});
             if (statusText) statusText.innerText = '✅ Notifiche PWA attive e sincronizzate! Questo dispositivo riceverà tutti gli avvisi meteo in tempo reale anche ad applicazione chiusa.';
             if (badge) {
                 badge.className = 'status-pill badge-live';
@@ -921,6 +1251,8 @@ async function subscribeToPush() {
             }
             alert('🎉 Notifiche Push PWA collegate con successo a questo dispositivo!');
         } else {
+            // Evita lo stato incoerente "attive" lato browser ma sconosciute al server
+            await sub.unsubscribe().catch(() => {});
             alert('Errore durante la registrazione sul server.');
         }
     } catch (err) {
@@ -990,19 +1322,313 @@ async function testPushNotification() {
     }
 }
 
+async function testCivilProtectionAlert() {
+    try {
+        const res = await fetch('/api/test-alert?alert_type=civil_protection', { method: 'POST' });
+        const data = await res.json();
+        let msg = `🛡️ Notifica Protezione Civile di prova inviata!\n• Dispositivi PWA registrati: ${data.devices_notified || 0}`;
+        if (data.ntfy_topic) {
+            msg += `\n• Canale ntfy: '${data.ntfy_topic}'`;
+        }
+        alert(msg);
+    } catch (e) {
+        alert('Errore invio notifica Protezione Civile: ' + e.message);
+    }
+}
+
+async function sendTestDailyDigest() {
+    try {
+        const res = await fetch('/api/daily-digest/send', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'sent') {
+            alert('☕ Notifica Buongiorno Meteo inviata con successo!');
+        } else {
+            alert(`Stato invio: ${data.status || 'OK'}`);
+        }
+    } catch (e) {
+        alert('Errore invio Buongiorno Meteo: ' + e.message);
+    }
+}
+
+
 // Ascolta messaggi Push in foreground dal Service Worker
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', (event) => {
         if (event.data && event.data.type === 'PUSH_RECEIVED') {
             console.log('Push ricevuto in foreground:', event.data);
+            if (typeof event.data.unread_count === 'number') {
+                updateBadgeElements(event.data.unread_count);
+            } else {
+                refreshAlertBadges();
+            }
         }
     });
 }
 
-// Inizializza automaticamente lo stato Push al caricamento
+// Sincronizzazione Badge Allerte (Mobile Tab & Desktop Navbar & PWA Icon Badge)
+async function refreshAlertBadges() {
+    if (document.hidden) return;
+    try {
+        const res = await fetch('/api/alerts/unread-count');
+        if (!res.ok) return;
+        const data = await res.json();
+        const count = (data && typeof data.unread_count === 'number') ? data.unread_count : 0;
+        updateBadgeElements(count);
+    } catch (e) {
+        // fail silently
+    }
+}
+
+function updateBadgeElements(count) {
+    const safeCount = Math.max(0, parseInt(count, 10) || 0);
+    const mobBadge = document.getElementById('mobile-alert-badge');
+    const deskBadge = document.getElementById('desktop-alert-badge');
+    const unreadHeaderBadge = document.getElementById('unread-count-badge');
+    const unreadFilterCount = document.getElementById('unread-filter-count');
+    const unreadStatusPill = document.getElementById('unread-status-pill');
+
+    if (mobBadge) {
+        if (safeCount > 0) {
+            mobBadge.innerText = safeCount > 99 ? '99+' : safeCount;
+            mobBadge.style.display = 'block';
+        } else {
+            mobBadge.innerText = '0';
+            mobBadge.style.display = 'none';
+        }
+    }
+    if (deskBadge) {
+        if (safeCount > 0) {
+            deskBadge.innerText = safeCount > 99 ? '99+' : safeCount;
+            deskBadge.style.display = 'inline-block';
+        } else {
+            deskBadge.innerText = '0';
+            deskBadge.style.display = 'none';
+        }
+    }
+    if (unreadHeaderBadge) {
+        unreadHeaderBadge.innerText = safeCount;
+    }
+    if (unreadFilterCount) {
+        unreadFilterCount.innerText = safeCount;
+    }
+    if (unreadStatusPill) {
+        if (safeCount > 0) {
+            unreadStatusPill.className = 'status-pill badge-warning';
+            unreadStatusPill.innerHTML = `<span id="unread-count-badge">${safeCount}</span> da leggere`;
+        } else {
+            unreadStatusPill.className = 'status-pill badge-live';
+            unreadStatusPill.innerHTML = 'Nessuna da leggere';
+        }
+    }
+    const kpiUnreadVal = document.getElementById('kpi-unread-val');
+    const kpiUnreadSub = document.getElementById('kpi-unread-sub');
+    if (kpiUnreadVal) {
+        kpiUnreadVal.innerText = safeCount;
+        kpiUnreadVal.style.color = safeCount > 0 ? '#f59e0b' : '#10b981';
+    }
+    if (kpiUnreadSub) {
+        kpiUnreadSub.innerText = safeCount > 0 ? 'Richiedono attenzione' : 'Tutte lette ✨';
+    }
+
+    // App Badging API su PWA installata (iOS 16.4+ / Android / Chrome Desktop)
+    if (safeCount > 0) {
+        if ('setAppBadge' in navigator) {
+            navigator.setAppBadge(safeCount).catch(() => {});
+        }
+    } else {
+        if ('clearAppBadge' in navigator) {
+            navigator.clearAppBadge().catch(() => {});
+        }
+        if ('setAppBadge' in navigator) {
+            navigator.setAppBadge(0).catch(() => {});
+        }
+    }
+
+    // Comunica al Service Worker lo stato aggiornato del badge
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+            type: safeCount > 0 ? 'SET_BADGE' : 'CLEAR_BADGE',
+            count: safeCount
+        });
+    }
+}
+
+async function markAlertAsRead(alertId) {
+    const item = document.getElementById(`alert-item-${alertId}`);
+    try {
+        const res = await fetch(`/api/alerts/${alertId}/read`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (item) {
+                item.classList.remove('unread');
+                item.setAttribute('data-unread', '0');
+                const btnRead = item.querySelector('.btn-mark-read');
+                if (btnRead) {
+                    btnRead.outerHTML = `<span class="badge-tag read-status-tag" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 0.75rem;">✓ Letta</span>`;
+                }
+                const unreadDot = item.querySelector('.unread-dot');
+                if (unreadDot) unreadDot.remove();
+            }
+            const count = typeof data.unread_count === 'number' ? data.unread_count : 0;
+            updateBadgeElements(count);
+            if (count === 0) {
+                document.querySelectorAll('.kpi-warning-glow').forEach(el => el.classList.remove('kpi-warning-glow'));
+            }
+        } else {
+            console.error('Errore risposta server segna letta:', res.status);
+        }
+    } catch (err) {
+        console.error('Errore segna notifica come letta:', err);
+    }
+}
+
+async function markAllAlertsAsRead() {
+    const btn = document.getElementById('btn-mark-all-read');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = '⏳ Aggiornamento...';
+    }
+    try {
+        const res = await fetch('/api/alerts/mark-all-read', { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        if (res.ok) {
+            const items = document.querySelectorAll('.notification-item');
+            items.forEach(item => {
+                item.classList.remove('unread');
+                item.setAttribute('data-unread', '0');
+                const btnRead = item.querySelector('.btn-mark-read');
+                if (btnRead) {
+                    btnRead.outerHTML = `<span class="badge-tag read-status-tag" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 0.75rem;">✓ Letta</span>`;
+                }
+                const unreadDot = item.querySelector('.unread-dot');
+                if (unreadDot) unreadDot.remove();
+            });
+            updateBadgeElements(0);
+            document.querySelectorAll('.kpi-warning-glow').forEach(el => el.classList.remove('kpi-warning-glow'));
+            
+            if (typeof applyCombinedFilters === 'function') {
+                applyCombinedFilters();
+            } else {
+                const btnUnread = document.getElementById('filter-btn-unread');
+                if (btnUnread && btnUnread.classList.contains('active') && typeof filterAlerts === 'function') {
+                    filterAlerts('unread');
+                }
+            }
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '✓ Tutte lette';
+            }
+        } else {
+            console.error('Errore risposta server:', res.status);
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '❌ Errore (HTTP ' + res.status + ')';
+                setTimeout(() => { btn.innerHTML = '✓ Segna tutte come lette'; }, 3000);
+            }
+        }
+    } catch (err) {
+        console.error('Errore durante la marcatura di tutte le notifiche:', err);
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '❌ Errore';
+            setTimeout(() => { btn.innerHTML = '✓ Segna tutte come lette'; }, 3000);
+        }
+    }
+}
+
+async function deleteAlertItem(alertId) {
+    if (!confirm('Vuoi eliminare questa notifica dal registro?')) return;
+    const item = document.getElementById(`alert-item-${alertId}`);
+    try {
+        const res = await fetch(`/api/alerts/${alertId}`, { method: 'DELETE' });
+        if (res.ok) {
+            const data = await res.json();
+            if (item) item.remove();
+            if (typeof data.unread_count === 'number') {
+                updateBadgeElements(data.unread_count);
+            }
+            const totalBadge = document.getElementById('total-count-badge');
+            if (totalBadge) {
+                const cur = parseInt(totalBadge.innerText, 10) || 0;
+                totalBadge.innerText = Math.max(0, cur - 1);
+            }
+            const remaining = document.querySelectorAll('.notification-item');
+            if (remaining.length === 0) {
+                const list = document.getElementById('notifications-list-container');
+                if (list) {
+                    list.innerHTML = `<div class="card" style="text-align: center; padding: 2.5rem 1rem; color: var(--text-dim);"><p style="font-size: 1.1rem; margin-bottom: 0.5rem;">✨ Nessuna notifica presente</p><p style="font-size: 0.85rem;">Il registro notifiche è vuoto.</p></div>`;
+                }
+            }
+        }
+    } catch (err) {
+        console.error('Errore eliminazione notifica:', err);
+    }
+}
+
+async function clearAllAlerts() {
+    if (!confirm('Sei sicuro di voler svuotare l\'intero registro delle notifiche?')) return;
+    try {
+        const res = await fetch('/api/alerts/clear-all', { method: 'POST' });
+        if (res.ok) {
+            const list = document.getElementById('notifications-list-container');
+            if (list) {
+                list.innerHTML = `<div class="card" style="text-align: center; padding: 2.5rem 1rem; color: var(--text-dim);"><p style="font-size: 1.1rem; margin-bottom: 0.5rem;">✨ Nessuna notifica presente</p><p style="font-size: 0.85rem;">Il registro notifiche è vuoto.</p></div>`;
+            }
+            updateBadgeElements(0);
+            const totalBadge = document.getElementById('total-count-badge');
+            if (totalBadge) totalBadge.innerText = '0';
+        }
+    } catch (err) {
+        console.error('Errore svuotamento registro:', err);
+    }
+}
+
+function filterAlerts(mode) {
+    const btnAll = document.getElementById('filter-btn-all');
+    const btnUnread = document.getElementById('filter-btn-unread');
+    const items = document.querySelectorAll('.notification-item');
+
+    if (mode === 'unread') {
+        if (btnUnread) btnUnread.classList.add('active');
+        if (btnAll) btnAll.classList.remove('active');
+        items.forEach(it => {
+            if (it.getAttribute('data-unread') === '1') {
+                it.style.display = 'flex';
+            } else {
+                it.style.display = 'none';
+            }
+        });
+    } else {
+        if (btnAll) btnAll.classList.add('active');
+        if (btnUnread) btnUnread.classList.remove('active');
+        items.forEach(it => {
+            it.style.display = 'flex';
+        });
+    }
+}
+
+// Inizializza automaticamente lo stato Push e Badge al caricamento
 document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('btn-push-toggle')) {
         checkPushSubscriptionStatus();
+    }
+    refreshAlertBadges();
+    // Aggiornamento periodico badge notifiche (ogni 20s)
+    setInterval(refreshAlertBadges, 20000);
+});
+
+// Sincronizza badge e controller quando l'utente torna sull'app/scheda
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        refreshAlertBadges();
+        if (typeof window.triggerDashboardLiveRefresh === 'function') {
+            window.triggerDashboardLiveRefresh();
+        }
     }
 });
 
@@ -1052,7 +1678,7 @@ function updateSmartThingsUI(st) {
         if (wJob) wJob.innerText = w.job_state_label || 'Pronto';
         if (wTemp) wTemp.innerText = w.water_temp || 'Auto';
         if (wSpin) wSpin.innerText = w.spin_speed || 'Auto';
-        if (wRem) wRem.innerText = w.remaining_min ? (w.remaining_min + ' min') : '--';
+        if (wRem) wRem.innerText = w.remaining_min ? formatDurationItalian(w.remaining_min) : '--';
     }
 
     // Lavastoviglie
@@ -1074,7 +1700,7 @@ function updateSmartThingsUI(st) {
         }
         if (dwJob) dwJob.innerText = dw.job_state_label || 'Pronto';
         if (dwCycle) dwCycle.innerText = dw.cycle_name || 'Auto / Eco';
-        if (dwRem) dwRem.innerText = dw.remaining_min ? (dw.remaining_min + ' min') : '--';
+        if (dwRem) dwRem.innerText = dw.remaining_min ? formatDurationItalian(dw.remaining_min) : '--';
         if (dwEst) dwEst.innerText = dw.finish_estimate || '--:--';
     }
 }
@@ -1093,6 +1719,579 @@ function syncSmartThingsDevices() {
             const btn2 = document.getElementById('st_sync_btn');
             if (btn2) {
                 btn2.innerHTML = `<span class="pulse-dot"></span> <span id="st_status_text">🟢 SmartThings Connesso</span>`;
+            }
+        });
+}
+
+let healthStepsChartInstance = null;
+
+function renderHealthStepsMiniChart(chartData) {
+    const canvas = document.getElementById('healthStepsMiniChart');
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (!chartData || !chartData.labels || !chartData.labels.length) return;
+
+    const ctx = canvas.getContext('2d');
+    if (healthStepsChartInstance) {
+        healthStepsChartInstance.data.labels = chartData.labels;
+        healthStepsChartInstance.data.datasets[0].data = chartData.steps;
+        healthStepsChartInstance.data.datasets[0].backgroundColor = chartData.steps.map(s => s >= 8000 ? 'rgba(16, 185, 129, 0.85)' : 'rgba(56, 189, 248, 0.8)');
+        healthStepsChartInstance.update('none');
+        return;
+    }
+
+    healthStepsChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: chartData.labels,
+            datasets: [{
+                label: 'Passi Giornalieri',
+                data: chartData.steps,
+                backgroundColor: chartData.steps.map(s => s >= 8000 ? 'rgba(16, 185, 129, 0.85)' : 'rgba(56, 189, 248, 0.8)'),
+                borderRadius: 4,
+                borderSkipped: false,
+                maxBarThickness: 18
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#f8fafc',
+                    bodyColor: '#38bdf8',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    callbacks: {
+                        label: function(ctx) {
+                            const steps = ctx.raw || 0;
+                            const cal = chartData.calories ? chartData.calories[ctx.dataIndex] : 0;
+                            const res = [`👟 ${Number(steps).toLocaleString('it-IT')} passi`];
+                            if (cal) res.push(`🔥 ${cal} kcal`);
+                            return res;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { color: '#64748b', font: { size: 10 } }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                    ticks: {
+                        color: '#64748b',
+                        font: { size: 10 },
+                        callback: function(val) {
+                            return (val >= 1000) ? (val / 1000) + 'k' : val;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+let healthWeightChartInstance = null;
+
+function renderHealthWeightMiniChart(weightData) {
+    const canvas = document.getElementById('healthWeightMiniChart');
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (!weightData || !weightData.labels || !weightData.labels.length) return;
+
+    const ctx = canvas.getContext('2d');
+    if (healthWeightChartInstance) {
+        healthWeightChartInstance.data.labels = weightData.labels;
+        healthWeightChartInstance.data.datasets[0].data = weightData.weights;
+        if (healthWeightChartInstance.data.datasets[1] && weightData.fats) {
+            healthWeightChartInstance.data.datasets[1].data = weightData.fats;
+        }
+        if (healthWeightChartInstance.data.datasets[2] && weightData.leans) {
+            healthWeightChartInstance.data.datasets[2].data = weightData.leans;
+        }
+        healthWeightChartInstance.update('none');
+        return;
+    }
+
+    healthWeightChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: weightData.labels,
+            datasets: [
+                {
+                    label: 'Peso (kg)',
+                    data: weightData.weights,
+                    borderColor: '#fbbf24',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    borderWidth: 2.5,
+                    pointRadius: 4,
+                    pointHoverRadius: 7,
+                    pointBackgroundColor: '#fbbf24',
+                    tension: 0.3,
+                    fill: false,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Massa Grassa (%)',
+                    data: weightData.fats || [],
+                    borderColor: '#ef4444',
+                    borderDash: [4, 4],
+                    borderWidth: 1.8,
+                    pointRadius: 3,
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: '#ef4444',
+                    tension: 0.3,
+                    fill: false,
+                    yAxisID: 'y1'
+                },
+                {
+                    label: 'Massa Magra (kg)',
+                    data: weightData.leans || [],
+                    borderColor: '#38bdf8',
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    tension: 0.3,
+                    fill: false,
+                    yAxisID: 'y'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#f8fafc',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    callbacks: {
+                        label: function(ctx) {
+                            if (ctx.datasetIndex === 0) return `⚖️ Peso: ${ctx.raw} kg`;
+                            if (ctx.datasetIndex === 1) return `🥩 Grasso: ${ctx.raw}%`;
+                            if (ctx.datasetIndex === 2) return `💪 Magra: ${ctx.raw} kg`;
+                            return `${ctx.dataset.label}: ${ctx.raw}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { color: '#64748b', font: { size: 10 } }
+                },
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                    ticks: {
+                        color: '#fbbf24',
+                        font: { size: 10 },
+                        callback: function(val) { return val + ' kg'; }
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    grid: { drawOnChartArea: false },
+                    ticks: {
+                        color: '#ef4444',
+                        font: { size: 10 },
+                        callback: function(val) { return val + '%'; }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function updateHealthUI(health) {
+    if (!health) return;
+    const sec = document.getElementById('health_dashboard_section');
+    if (!sec) return;
+
+    if (!health.is_available) {
+        // Non nascondere se la dashboard è già caricata con baseline
+    } else {
+        sec.style.display = 'block';
+    }
+
+    if (health.device_name) {
+        const dName = document.getElementById('health_device_name');
+        if (dName) dName.innerText = health.device_name;
+    }
+
+    if (health.battery_pct !== undefined && health.battery_pct !== null) {
+        const battBadge = document.getElementById('health_battery_badge');
+        const battVal = document.getElementById('health_battery_val');
+        if (battBadge) battBadge.style.display = 'inline-flex';
+        if (battVal) battVal.innerText = `${health.battery_pct}%`;
+    }
+
+    if (health.watch_battery_pct !== undefined && health.watch_battery_pct !== null) {
+        const watchBadge = document.getElementById('health_watch_battery_badge');
+        const watchVal = document.getElementById('health_watch_battery_val');
+        if (watchBadge) watchBadge.style.display = 'inline-flex';
+        if (watchVal) watchVal.innerText = `${health.watch_battery_pct}%`;
+    }
+
+    // 1. Passi
+    if (health.steps) {
+        const s = health.steps;
+        const stepsEl = document.getElementById('health_daily_steps');
+        const stepsPct = document.getElementById('health_steps_pct_badge');
+        const stepsBar = document.getElementById('health_steps_bar');
+        const distEl = document.getElementById('health_distance_val');
+        const floorsEl = document.getElementById('health_floors_val');
+        const odoEl = document.getElementById('health_odometer_val');
+        const tabBadge = document.getElementById('tab_badge_health');
+
+        if (stepsEl && s.daily !== undefined) stepsEl.innerText = Number(s.daily).toLocaleString('it-IT');
+        if (stepsPct && s.pct !== undefined) stepsPct.innerText = `${s.pct}%`;
+        if (stepsBar && s.pct !== undefined) stepsBar.style.width = `${s.pct}%`;
+        if (distEl && s.distance_km !== undefined) distEl.innerText = `${s.distance_km} km`;
+        if (floorsEl && s.floors !== undefined) floorsEl.innerText = s.floors;
+        if (odoEl && s.total_odometer !== undefined) odoEl.innerText = Number(s.total_odometer).toLocaleString('it-IT');
+        if (tabBadge && s.daily !== undefined) tabBadge.innerText = `${Number(s.daily).toLocaleString('it-IT')} 👟`;
+
+        const srcLabel = document.getElementById('health_steps_source_label');
+        if (srcLabel && s.source) srcLabel.innerText = s.source;
+
+        const timeLabel = document.getElementById('health_steps_updated_time');
+        if (timeLabel) {
+            if (s.last_updated_formatted) {
+                timeLabel.innerText = s.last_updated_formatted;
+                timeLabel.style.display = 'inline';
+            } else {
+                timeLabel.style.display = 'none';
+            }
+        }
+    }
+
+    // 2. Calorie
+    if (health.calories) {
+        const c = health.calories;
+        const totCal = document.getElementById('health_total_cal');
+        const actPct = document.getElementById('health_active_pct_badge');
+        const calBar = document.getElementById('health_cal_bar');
+        const actCal = document.getElementById('health_active_cal');
+        const basalCal = document.getElementById('health_basal_cal');
+
+        if (totCal && c.total_kcal !== undefined && c.total_kcal !== null) totCal.innerText = Math.round(c.total_kcal);
+        if (actPct && c.active_pct !== undefined) actPct.innerText = `${c.active_pct}% attive`;
+        if (calBar && c.active_pct !== undefined) calBar.style.width = `${c.active_pct}%`;
+        if (actCal && c.active_kcal !== undefined && c.active_kcal !== null) actCal.innerText = `${c.active_kcal} kcal`;
+        if (basalCal && c.basal_kcal !== undefined && c.basal_kcal !== null) basalCal.innerText = `${Math.round(c.basal_kcal)} kcal`;
+    }
+
+    // 3. Cardio, SpO2 & Sonno
+    if (health.heart) {
+        const h = health.heart;
+        const hrEl = document.getElementById('health_heart_rate');
+        const hrPill = document.getElementById('health_heart_status_pill');
+        const spo2El = document.getElementById('health_spo2_val');
+        const vo2El = document.getElementById('health_vo2_val');
+
+        if (hrEl && h.rate_bpm !== undefined && h.rate_bpm !== null) hrEl.innerText = h.rate_bpm;
+        if (hrPill && h.status) {
+            hrPill.innerText = h.status;
+            hrPill.className = `appliance-status-pill ${h.badge_class || 'pill-standby'}`;
+        }
+        if (spo2El && h.spo2_pct !== undefined && h.spo2_pct !== null) spo2El.innerText = `${h.spo2_pct}%`;
+        if (vo2El && h.vo2_max !== undefined && h.vo2_max !== null) vo2El.innerText = h.vo2_max;
+    }
+
+    if (health.sleep) {
+        const sl = health.sleep;
+        const sleepEl = document.getElementById('health_sleep_formatted');
+        if (sleepEl && sl.duration_formatted) sleepEl.innerText = sl.duration_formatted;
+    }
+
+    // 4. Composizione Corporea
+    if (health.body) {
+        const b = health.body;
+        const wBadge = document.getElementById('health_weight_badge');
+        const fatEl = document.getElementById('health_body_fat_val');
+        const leanEl = document.getElementById('health_lean_mass_val');
+        const waterEl = document.getElementById('health_water_val');
+        const boneEl = document.getElementById('health_bone_val');
+        const subSrc = document.getElementById('health_body_source_sub');
+        const dateSub = document.getElementById('health_body_date_sub');
+
+        if (wBadge && b.weight_kg !== undefined && b.weight_kg !== null) wBadge.innerText = `${b.weight_kg} kg`;
+        if (fatEl && b.fat_pct !== undefined && b.fat_pct !== null) fatEl.innerText = b.fat_pct;
+        if (leanEl && b.lean_mass_kg !== undefined && b.lean_mass_kg !== null) leanEl.innerText = `${b.lean_mass_kg} kg`;
+        if (waterEl && b.water_mass_kg !== undefined && b.water_mass_kg !== null) waterEl.innerText = `${b.water_mass_kg} kg`;
+        if (boneEl && b.bone_mass_kg !== undefined && b.bone_mass_kg !== null) boneEl.innerText = `${b.bone_mass_kg} kg`;
+        if (subSrc && b.source_label) subSrc.innerText = `Analisi BIA • ${b.source_label}`;
+        if (dateSub && b.measured_at_formatted) {
+            dateSub.innerHTML = `🕒 Ultima pesata: <strong>${b.measured_at_formatted}</strong>`;
+            dateSub.style.display = 'block';
+        }
+    }
+
+    // 5. Medie Storiche & KPI Analitici
+    if (health.analytics) {
+        const a = health.analytics;
+        const avg7d = document.getElementById('health_kpi_avg_7d');
+        const avgCal7d = document.getElementById('health_kpi_avg_cal_7d');
+        const avgM = document.getElementById('health_kpi_avg_month');
+        const totM = document.getElementById('health_kpi_tot_month');
+        const maxSteps = document.getElementById('health_kpi_max_steps');
+        const maxDate = document.getElementById('health_kpi_max_date');
+        const avgSleep = document.getElementById('health_kpi_avg_sleep');
+
+        if (avg7d && a.avg_daily_steps_7d !== undefined) avg7d.innerText = Number(a.avg_daily_steps_7d).toLocaleString('it-IT');
+        if (avgCal7d && a.avg_daily_cal_7d !== undefined) avgCal7d.innerText = `~${a.avg_daily_cal_7d} kcal/die`;
+        if (avgM && a.current_month_avg_daily_steps !== undefined) avgM.innerText = Number(a.current_month_avg_daily_steps).toLocaleString('it-IT');
+        if (totM && a.current_month_total_steps !== undefined) totM.innerText = Number(a.current_month_total_steps).toLocaleString('it-IT');
+        if (maxSteps && a.max_steps_record && a.max_steps_record.steps !== undefined) maxSteps.innerText = Number(a.max_steps_record.steps).toLocaleString('it-IT');
+        if (maxDate && a.max_steps_record && a.max_steps_record.date) maxDate.innerText = `il ${a.max_steps_record.date}`;
+        if (avgSleep && a.avg_sleep_7d !== undefined) avgSleep.innerText = a.avg_sleep_7d;
+
+        if (a.chart_data_14d) {
+            renderHealthStepsMiniChart(a.chart_data_14d);
+        }
+        if (a.weight_chart_30d) {
+            renderHealthWeightMiniChart(a.weight_chart_30d);
+        }
+    }
+}
+
+function updateHealthLive() {
+    if (document.hidden) return;
+    fetch('/api/health/summary')
+        .then(r => r.json())
+        .then(res => {
+            if (res && res.is_available) {
+                updateHealthUI(res);
+            }
+        })
+        .catch(err => console.debug('Health live poll error:', err));
+}
+
+function syncHealthLiveMetrics(e) {
+    if (e && e.preventDefault) e.preventDefault();
+
+    const headerBtn = document.getElementById('health_sync_btn');
+    const headerText = document.getElementById('health_status_text');
+    const stepsBtn = document.getElementById('btn_sync_steps');
+    const stepsBtnText = document.getElementById('btn_sync_steps_text');
+
+    if (headerBtn) {
+        headerBtn.classList.add('is-syncing');
+        if (headerText) headerText.innerText = '⏳ Sincronizzazione...';
+    }
+    if (stepsBtn) {
+        stepsBtn.classList.add('is-syncing');
+        if (stepsBtnText) stepsBtnText.innerText = 'Aggiornamento...';
+    }
+
+    fetch('/api/health/sync', { method: 'POST' })
+        .then(r => r.json())
+        .then(res => {
+            if (res) {
+                updateHealthUI(res);
+                const syncTime = res.synced_at || new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                if (headerText) headerText.innerText = `🟢 Sincronizzato alle ${syncTime}`;
+                if (stepsBtnText) stepsBtnText.innerText = `Aggiornato alle ${syncTime}`;
+
+                if (typeof showToast === 'function') {
+                    const stepCount = (res.steps && res.steps.daily !== undefined) ? Number(res.steps.daily).toLocaleString('it-IT') : '0';
+                    showToast(`Passi aggiornati: ${stepCount} passi`);
+                }
+            }
+        })
+        .catch(err => {
+            console.error('Errore sincronizzazione salute:', err);
+            if (headerText) headerText.innerText = '⚠️ Errore sync';
+            if (stepsBtnText) stepsBtnText.innerText = 'Riprova';
+        })
+        .finally(() => {
+            setTimeout(() => {
+                if (headerBtn) {
+                    headerBtn.classList.remove('is-syncing');
+                }
+                if (stepsBtn) {
+                    stepsBtn.classList.remove('is-syncing');
+                    if (stepsBtnText && stepsBtnText.innerText !== 'Riprova') {
+                        stepsBtnText.innerText = 'Sincronizza';
+                    }
+                }
+            }, 2500);
+        });
+}
+
+function loadHealthHistoryOnStartup() {
+    const canvas = document.getElementById('healthStepsMiniChart');
+    const weightCanvas = document.getElementById('healthWeightMiniChart');
+    if (!canvas && !weightCanvas) return;
+    fetch('/api/health/history?days=30')
+        .then(r => r.json())
+        .then(data => {
+            if (data && data.analytics) {
+                if (data.analytics.chart_data_14d) {
+                    renderHealthStepsMiniChart(data.analytics.chart_data_14d);
+                }
+                if (data.analytics.weight_chart_30d) {
+                    renderHealthWeightMiniChart(data.analytics.weight_chart_30d);
+                }
+            }
+        })
+        .catch(err => console.warn('Errore caricamento storico salute:', err));
+}
+
+function updateTuyaUI(tuya) {
+    if (!tuya) return;
+
+    // Totale potenza assorbita
+    const totalWEl = document.getElementById('tuya_total_w_val');
+    if (totalWEl && tuya.total_plug_power_w !== undefined) {
+        totalWEl.innerText = `${tuya.total_plug_power_w} W`;
+    }
+
+    // Badge status
+    const statusText = document.getElementById('tuya_status_text');
+    if (statusText && tuya.enabled_devices_count !== undefined) {
+        statusText.innerText = `🟢 ${tuya.enabled_devices_count} Attivi`;
+    }
+
+    // Aggiornamento singole card
+    const devs = tuya.enabled_devices || [];
+    devs.forEach(dev => {
+        const id = dev.id;
+        
+        // Power W
+        const pEl = document.getElementById(`tuya_p_${id}`);
+        if (pEl && dev.power_w !== undefined) {
+            pEl.innerText = `${dev.power_w} W`;
+            pEl.style.color = (dev.power_w > 50) ? '#38bdf8' : 'var(--text)';
+        }
+
+        // Voltage V
+        const vEl = document.getElementById(`tuya_v_${id}`);
+        if (vEl && dev.voltage_v !== undefined) {
+            vEl.innerText = `${dev.voltage_v} V`;
+        }
+
+        // Current A
+        const iEl = document.getElementById(`tuya_i_${id}`);
+        if (iEl && dev.current_a !== undefined) {
+            iEl.innerText = `${dev.current_a} A`;
+        }
+
+        // State Text
+        const stateEl = document.getElementById(`tuya_state_${id}`);
+        if (stateEl && dev.is_on !== null && dev.is_on !== undefined) {
+            stateEl.innerText = dev.is_on ? 'Alimentato' : 'Spento';
+        }
+
+        // Pill button
+        const pill = document.getElementById(`tuya_pill_${id}`);
+        if (pill && dev.is_on !== null && dev.is_on !== undefined) {
+            pill.className = `appliance-status-pill ${dev.is_on ? 'pill-active' : 'pill-standby'}`;
+            pill.innerText = dev.is_on ? '🟢 ON' : '⚪ OFF';
+        }
+
+        // Card container class
+        const card = document.getElementById(`tuya_card_${id}`);
+        if (card && dev.is_on !== null && dev.is_on !== undefined) {
+            if (dev.is_on) {
+                card.classList.add('is-on');
+                card.classList.remove('is-standby');
+            } else {
+                card.classList.remove('is-on');
+                card.classList.add('is-standby');
+            }
+        }
+    });
+}
+
+async function toggleTuyaFromDashboard(deviceId) {
+    const pill = document.getElementById(`tuya_pill_${deviceId}`);
+    if (pill) {
+        pill.innerText = '⏳ ...';
+    }
+    try {
+        const resp = await fetch(`/api/tuya/device/${deviceId}/toggle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const res = await resp.json();
+        // Refresh immediato
+        setTimeout(async () => {
+            const sumResp = await fetch('/api/tuya/summary');
+            const summary = await sumResp.json();
+            updateTuyaUI(summary);
+        }, 1200);
+    } catch (e) {
+        console.error('Errore toggle Tuya:', e);
+    }
+}
+
+async function sendTuyaCommand(deviceId, commands) {
+    try {
+        const resp = await fetch(`/api/tuya/device/${deviceId}/command`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commands: commands })
+        });
+        const res = await resp.json();
+        setTimeout(async () => {
+            const sumResp = await fetch('/api/tuya/summary');
+            const summary = await sumResp.json();
+            updateTuyaUI(summary);
+        }, 1200);
+        return res;
+    } catch (e) {
+        console.error('Errore invio comando Tuya:', e);
+    }
+}
+
+async function controlTuyaCurtain(deviceId, action) {
+    try {
+        const resp = await fetch(`/api/tuya/device/${deviceId}/curtain`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: action })
+        });
+        const res = await resp.json();
+        setTimeout(async () => {
+            const sumResp = await fetch('/api/tuya/summary');
+            const summary = await sumResp.json();
+            updateTuyaUI(summary);
+        }, 1200);
+        return res;
+    } catch (e) {
+        console.error('Errore comando persiana:', e);
+    }
+}
+
+function syncTuyaLiveDevices() {
+    const btn = document.getElementById('tuya_sync_btn');
+    if (btn) {
+        btn.innerHTML = `<span class="pulse-dot"></span> <span>⏳ Sincronizzazione...</span>`;
+    }
+    fetch('/api/tuya/sync', { method: 'POST' })
+        .then(r => r.json())
+        .then(res => {
+            if (res) updateTuyaUI(res);
+        })
+        .finally(() => {
+            const btn2 = document.getElementById('tuya_sync_btn');
+            if (btn2) {
+                btn2.innerHTML = `<span class="pulse-dot"></span> <span id="tuya_status_text">🟢 Sincronizzato</span>`;
             }
         });
 }
@@ -1143,6 +2342,24 @@ function switchDashboardTab(tabId) {
             try {
                 window.quickChartInstance.resize();
             } catch (e) {}
+        } else if (cleanId === 'energy_home' || cleanId === 'energy-home') {
+            if (typeof fetchAndRenderDashboardBreakdown === 'function') {
+                fetchAndRenderDashboardBreakdown(false);
+            }
+        } else if (cleanId === 'health') {
+            if (typeof loadHealthHistoryOnStartup === 'function') {
+                loadHealthHistoryOnStartup();
+            }
+            if (window.healthStepsChartInstance) {
+                try {
+                    window.healthStepsChartInstance.resize();
+                } catch (e) {}
+            }
+            if (window.healthWeightChartInstance) {
+                try {
+                    window.healthWeightChartInstance.resize();
+                } catch (e) {}
+            }
         }
     }
 }
@@ -1154,16 +2371,29 @@ function initDashboardTabs() {
     // 1. Controlla se c'è un hash nell'URL
     const hash = window.location.hash ? window.location.hash.replace(/^#/, '') : null;
 
-    // 2. Controlla se c'è un tab salvato in localStorage
-    let savedTab = null;
-    try {
-        savedTab = localStorage.getItem('ecowitt_dashboard_active_tab');
-    } catch (e) {}
-
-    const validTabs = ['weather', 'energy-home', 'astro-comfort'];
-    const initialTab = (hash && validTabs.includes(hash)) ? hash : ((savedTab && validTabs.includes(savedTab)) ? savedTab : 'weather');
+    // La Home apre sempre il meteo; la vista Energia si raggiunge con /#energy-home (menu "Altro")
+    const validTabs = ['weather', 'energy-home'];
+    const initialTab = (hash && validTabs.includes(hash)) ? hash : 'weather';
 
     switchDashboardTab(initialTab);
+
+    window.addEventListener('hashchange', () => {
+        const h = window.location.hash.replace(/^#/, '');
+        if (validTabs.includes(h)) {
+            switchDashboardTab(h);
+            window.scrollTo({ top: 0 });
+        }
+    });
+
+    // Il mini grafico 24h sta nei dettagli (chiusi): va ridimensionato quando vengono aperti
+    const details = document.getElementById('home_details');
+    if (details) {
+        details.addEventListener('toggle', () => {
+            if (details.open && window.quickChartInstance) {
+                try { window.quickChartInstance.resize(); } catch (e) {}
+            }
+        });
+    }
 
     // Ascolta cambi hash manuali (es. back button del browser)
     window.addEventListener('hashchange', () => {
@@ -1243,9 +2473,603 @@ async function saveSensorAlias(sensorId, aliasVal) {
     }
 }
 
+// =========================================================================
+// MODALE DETTAGLIO CONSUMI CASA (CHI STA CONSUMANDO ADESSO)
+// =========================================================================
+
+let houseBreakdownTimer = null;
+
+function openHouseConsumptionModal() {
+    const backdrop = document.getElementById('house-consumption-modal-backdrop');
+    if (!backdrop) return;
+    backdrop.classList.add('show');
+    document.body.style.overflow = 'hidden';
+
+    fetchAndRenderHouseBreakdown(true);
+
+    if (houseBreakdownTimer) clearInterval(houseBreakdownTimer);
+    houseBreakdownTimer = setInterval(() => {
+        fetchAndRenderHouseBreakdown(false);
+    }, 4000);
+}
+
+function closeHouseConsumptionModal(e) {
+    if (e && e.target !== document.getElementById('house-consumption-modal-backdrop') &&
+        !e.target.classList.contains('modal-close-btn') &&
+        !e.target.closest('.modal-close-btn') &&
+        !e.target.classList.contains('btn-secondary')) {
+        return;
+    }
+
+    const backdrop = document.getElementById('house-consumption-modal-backdrop');
+    if (backdrop) {
+        backdrop.classList.remove('show');
+    }
+    document.body.style.overflow = '';
+
+    if (houseBreakdownTimer) {
+        clearInterval(houseBreakdownTimer);
+        houseBreakdownTimer = null;
+    }
+}
+
+// Chiusura con tasto Escape
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        const backdrop = document.getElementById('house-consumption-modal-backdrop');
+        if (backdrop && backdrop.classList.contains('show')) {
+            closeHouseConsumptionModal();
+        }
+    }
+});
+
+let houseBreakdownInFlight = false;
+
+async function fetchAndRenderHouseBreakdown(forceSpinner = false) {
+    const bodyEl = document.getElementById('house-modal-body');
+    const refreshBtn = document.getElementById('house-modal-refresh-btn');
+    if (!bodyEl) return;
+    // Niente richieste accavallate se il backend è lento, niente polling a schermo spento
+    if (houseBreakdownInFlight || (!forceSpinner && document.hidden)) return;
+    houseBreakdownInFlight = true;
+    try {
+        await _fetchAndRenderHouseBreakdown(bodyEl, refreshBtn, forceSpinner);
+    } finally {
+        houseBreakdownInFlight = false;
+    }
+}
+
+async function _fetchAndRenderHouseBreakdown(bodyEl, refreshBtn, forceSpinner) {
+
+    if (forceSpinner && !bodyEl.querySelector('.consumption-overview-card')) {
+        bodyEl.innerHTML = `
+            <div class="modal-loading-placeholder">
+                <div class="spinner"></div>
+                <p>Analisi consumi e dispositivi in corso...</p>
+            </div>
+        `;
+    }
+
+    if (refreshBtn) refreshBtn.classList.add('loading');
+
+    try {
+        const resp = await fetch('/api/energy/house-breakdown');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        renderHouseBreakdown(data);
+    } catch (err) {
+        console.error('Errore recupero dettaglio consumi:', err);
+        if (forceSpinner) {
+            bodyEl.innerHTML = `
+                <div class="modal-quick-state-card state-card-off" style="text-align:center; padding: 2rem;">
+                    <div style="font-size:2.5rem; margin-bottom:0.5rem;">⚠️</div>
+                    <h4>Impossibile caricare il dettaglio consumi</h4>
+                    <p style="font-size:0.85rem; color:var(--text-dim); margin-top:0.25rem;">${err.message || 'Verifica la connessione con Aton Storage e i servizi smart.'}</p>
+                    <button type="button" class="btn btn-primary" style="margin-top:1rem;" onclick="fetchAndRenderHouseBreakdown(true)">Riprova</button>
+                </div>
+            `;
+        }
+    } finally {
+        if (refreshBtn) refreshBtn.classList.remove('loading');
+    }
+}
+
+function renderHouseBreakdown(d) {
+    const bodyEl = document.getElementById('house-modal-body');
+    const metaEl = document.getElementById('house-modal-meta');
+    const tickerEl = document.getElementById('house-modal-ticker-text');
+    if (!bodyEl) return;
+
+    const totalW = Math.round(d.total_house_w || 0);
+    const monW = Math.round(d.monitored_power_w || 0);
+    const unmonW = Math.round(d.unmonitored_power_w || 0);
+    const monPct = d.monitored_pct || 0;
+    const unmonPct = d.unmonitored_pct || 0;
+    const todayKwh = d.total_house_kwh || '0.0';
+
+    if (metaEl) {
+        metaEl.innerText = `Carico totale: ${totalW} W • Consumo oggi: ${todayKwh} kWh`;
+    }
+    if (tickerEl) {
+        const now = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        tickerEl.innerText = `Live (${now}) • Aton, SmartThings & Tuya`;
+    }
+
+    const activeList = d.active_consumers || [];
+    const standbyList = d.standby_devices || [];
+
+    let activeCardsHtml = '';
+    if (activeList.length === 0) {
+        activeCardsHtml = `
+            <div class="empty-consumers-box">
+                <span class="empty-icon">🔌</span>
+                <p>Nessun dispositivo smart con assorbimento attivo rilevato al momento.</p>
+                <small>Il carico domestico attuale (${totalW} W) è assorbito da carichi tradizionali o in standby.</small>
+            </div>
+        `;
+    } else {
+        activeCardsHtml = activeList.map(c => {
+            const pW = c.power_w !== undefined ? Math.round(c.power_w * 10) / 10 : 0;
+            const pct = c.percent_of_total || 0;
+            const isPlug = c.type === 'plug' || c.ecosystem === 'tuya';
+            const isAppliance = c.type === 'appliance' || c.ecosystem === 'smartthings';
+            const isClimate = c.type === 'climate' || c.ecosystem === 'thinq';
+
+            let powerBadge = '';
+            if (pW > 0) {
+                powerBadge = `<span class="consumer-power-tag high-power">⚡ <strong>${pW}</strong> W</span>`;
+            } else if (c.is_unmetered_active || (isClimate && c.is_on)) {
+                powerBadge = `<span class="consumer-power-tag running-climate" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">❄️ In Funzione (Totale Casa)</span>`;
+            } else if (c.is_running) {
+                powerBadge = `<span class="consumer-power-tag running-app">🫧 In Funzione</span>`;
+            } else if (c.is_on) {
+                powerBadge = `<span class="consumer-power-tag active-state">🟢 Acceso</span>`;
+            }
+
+            let telemetryLine = '';
+            if (c.voltage_v || c.current_a) {
+                telemetryLine = `<span class="consumer-va-chip">⚡ ${c.voltage_v || 230} V • ${c.current_a || 0} A</span>`;
+            }
+
+            let toggleBtn = '';
+            if (c.can_toggle) {
+                toggleBtn = `
+                    <button type="button" class="consumer-toggle-btn ${c.is_on ? 'btn-turn-off' : 'btn-turn-on'}"
+                            onclick="toggleDeviceFromHouseModal('${c.ecosystem}', '${c.raw_id}', ${c.is_on})"
+                            title="${c.is_on ? 'Spegni dispositivo' : 'Accendi dispositivo'}">
+                        ${c.is_on ? 'Spegni' : 'Accendi'}
+                    </button>
+                `;
+            }
+
+            return `
+                <div class="consumer-card ${pW > 100 ? 'consumer-card-high' : ''}">
+                    <div class="consumer-card-main">
+                        <div class="consumer-icon-wrap">
+                            <span class="consumer-icon">${c.icon || '🔌'}</span>
+                        </div>
+                        <div class="consumer-info">
+                            <div class="consumer-title-row">
+                                <span class="consumer-name">${escapeHtml(c.name)}</span>
+                                ${powerBadge}
+                            </div>
+                            <div class="consumer-sub-row">
+                                <span class="consumer-category">${escapeHtml(c.category_label || 'Dispositivo Smart')}</span>
+                                <span class="consumer-status-desc">${c.status_text || ''}</span>
+                            </div>
+                            ${telemetryLine ? `<div class="consumer-telemetry-row">${telemetryLine}</div>` : ''}
+                        </div>
+                    </div>
+
+                    ${pct > 0 ? `
+                        <div class="consumer-meter-wrap">
+                            <div class="consumer-meter-bar">
+                                <div class="consumer-meter-fill" style="width: ${Math.min(100, Math.max(3, pct))}%;"></div>
+                            </div>
+                            <span class="consumer-meter-label">${pct}% del carico casa</span>
+                        </div>
+                    ` : ''}
+
+                    ${toggleBtn ? `<div class="consumer-action-row">${toggleBtn}</div>` : ''}
+                </div>
+            `;
+        }).join('');
+    }
+
+    // Standby devices list
+    let standbyHtml = '';
+    if (standbyList.length > 0) {
+        const standbyItems = standbyList.map(s => `
+            <div class="standby-mini-item">
+                <span class="standby-icon">${s.icon || '🔌'}</span>
+                <div class="standby-details">
+                    <span class="standby-name">${escapeHtml(s.name)}</span>
+                    <span class="standby-meta">${escapeHtml(s.category_label || 'Smart')} • 0 W (Standby/Spento)</span>
+                </div>
+                ${s.can_toggle ? `
+                    <button type="button" class="btn-mini-on" onclick="toggleDeviceFromHouseModal('${s.ecosystem}', '${s.raw_id}', false)" title="Accendi">
+                        Accendi
+                    </button>
+                ` : ''}
+            </div>
+        `).join('');
+
+        standbyHtml = `
+            <details class="standby-accordion">
+                <summary class="standby-summary">
+                    <span>💤 Altri dispositivi monitorati in Standby o Spenti (${standbyList.length})</span>
+                    <span class="accordion-chevron">▾</span>
+                </summary>
+                <div class="standby-list-grid">
+                    ${standbyItems}
+                </div>
+            </details>
+        `;
+    }
+
+    // Il re-render periodico non deve richiudere l'accordion né far saltare lo scroll
+    const standbyWasOpen = !!bodyEl.querySelector('.standby-accordion[open]');
+    const scrollEl = bodyEl.closest('.modal-content, .modal-dialog') || bodyEl;
+    const prevScroll = scrollEl.scrollTop;
+    requestAnimationFrame(() => {
+        if (standbyWasOpen) bodyEl.querySelector('.standby-accordion')?.setAttribute('open', '');
+        scrollEl.scrollTop = prevScroll;
+    });
+
+    bodyEl.innerHTML = `
+        <!-- PANORAMICA RIPARTIZIONE -->
+        <div class="consumption-overview-card">
+            <div class="consumption-metric-header">
+                <div class="metric-block">
+                    <span class="metric-label">Consumo Casa Totale</span>
+                    <span class="metric-value-total">${totalW} <span class="unit">W</span></span>
+                </div>
+                <div class="metric-block">
+                    <span class="metric-label">Tracciato da Smart IoT</span>
+                    <span class="metric-value-monitored">${monW} <span class="unit">W (${monPct}%)</span></span>
+                </div>
+                <div class="metric-block">
+                    <span class="metric-label">Carico Base / Non Tracciato</span>
+                    <span class="metric-value-unmonitored">${unmonW} <span class="unit">W (${unmonPct}%)</span></span>
+                </div>
+            </div>
+
+            <!-- BARRA RIPARTIZIONE MULTICOLORE -->
+            <div class="consumption-split-bar-wrap">
+                <div class="consumption-split-bar">
+                    <div class="split-segment segment-monitored" style="width: ${monPct}%;" title="Tracciato da Prese e Apparecchi Smart: ${monW} W (${monPct}%)"></div>
+                    <div class="split-segment segment-unmonitored" style="width: ${unmonPct}%;" title="Carico di Base e non tracciato: ${unmonW} W (${unmonPct}%)"></div>
+                </div>
+                <div class="split-legend">
+                    <span class="legend-item"><span class="legend-dot dot-monitored"></span> Dispositivi Noti (${monW} W)</span>
+                    <span class="legend-item"><span class="legend-dot dot-unmonitored"></span> Carico Base & Standby (${unmonW} W)</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- LISTA CONSUMATORI ATTIVI -->
+        <div class="consumers-section">
+            <div class="section-title-wrap">
+                <span class="section-title">⚡ Dispositivi Attivi (${activeList.length})</span>
+                <span class="section-badge">${monW} W monitorati</span>
+            </div>
+            <div class="consumers-list">
+                ${activeCardsHtml}
+            </div>
+        </div>
+
+        <!-- CARICO DI BASE E NON MONITORATO -->
+        <div class="unmonitored-info-box">
+            <div class="unmonitored-icon">🏡</div>
+            <div class="unmonitored-text">
+                <strong>Carico di Base & Apparecchi Tradizionali: ${unmonW} W</strong>
+                <p>Include il consumo continuo di fondo (frigoriferi o elettrodomestici senza presa smart, router Wi-Fi, luci di casa cablate e apparati in standby permanente).</p>
+            </div>
+        </div>
+
+        <!-- LISTA DISPOSITIVI IN STANDBY -->
+        ${standbyHtml}
+    `;
+}
+
+async function toggleDeviceFromHouseModal(ecosystem, rawId, currentState) {
+    const targetState = !currentState;
+    try {
+        let endpoint = '';
+        let body = {};
+
+        if (ecosystem === 'tuya') {
+            endpoint = `/api/tuya/device/${rawId}/toggle`;
+            body = { state: targetState };
+        } else if (ecosystem === 'thinq') {
+            endpoint = `/api/thinq/device/${rawId}/control`;
+            body = { power: targetState };
+        } else if (ecosystem === 'smartthings') {
+            endpoint = `/api/smartthings/device/${rawId}/command`;
+            body = { capability: 'switch', command: targetState ? 'on' : 'off' };
+        } else if (ecosystem === 'homeassistant') {
+            endpoint = `/api/tuya/device/${rawId}/toggle`;
+            body = { state: targetState };
+        }
+
+        if (!endpoint) return;
+
+        const resp = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        if (resp.ok) {
+            // Ricarica immediata della ripartizione sia nel modale che nella dashboard
+            setTimeout(() => {
+                fetchAndRenderHouseBreakdown(false);
+                fetchAndRenderDashboardBreakdown(false);
+            }, 400);
+        }
+    } catch (e) {
+        console.warn('Errore toggle da modale consumi:', e);
+    }
+}
+
+// =========================================================================
+// GESTIONE SCHEDA CONSUMI INTEGRATA NEL TAB ENERGIA DELLA DASHBOARD
+// =========================================================================
+
+async function fetchAndRenderDashboardBreakdown(forceSpinner = false) {
+    const listEl = document.getElementById('dash_active_consumers_list');
+    const refreshBtn = document.getElementById('dash_breakdown_refresh_btn');
+    if (!listEl) return;
+
+    if (forceSpinner && (!listEl.children.length || listEl.querySelector('.modal-loading-placeholder'))) {
+        listEl.innerHTML = `
+            <div class="modal-loading-placeholder" style="padding: 1.5rem; text-align: center;">
+                <div class="spinner"></div>
+                <p style="margin-top: 0.5rem; color: var(--text-dim); font-size: 0.85rem;">Rilevamento assorbimenti carichi in tempo reale...</p>
+            </div>
+        `;
+    }
+
+    if (refreshBtn) refreshBtn.classList.add('loading');
+
+    try {
+        const resp = await fetch('/api/energy/house-breakdown');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        renderDashboardBreakdown(data);
+    } catch (err) {
+        console.error('Errore recupero ripartizione consumi dashboard:', err);
+    } finally {
+        if (refreshBtn) refreshBtn.classList.remove('loading');
+    }
+}
+
+function renderDashboardBreakdown(d) {
+    const totalW = Math.round(d.total_house_w || 0);
+    const monW = Math.round(d.monitored_power_w || 0);
+    const unmonW = Math.round(d.unmonitored_power_w || 0);
+    const monPct = d.monitored_pct || 0;
+    const unmonPct = d.unmonitored_pct || 0;
+    const todayKwh = d.total_house_kwh || '0.0';
+
+    // Aggiorna KPI in cima alla sezione
+    const totalTop = document.getElementById('dash_breakdown_total_top');
+    if (totalTop) totalTop.innerText = `${totalW} W`;
+
+    const kpiTotalW = document.getElementById('dash_kpi_total_w');
+    if (kpiTotalW) kpiTotalW.innerText = `${totalW} W`;
+
+    const kpiTotalKwh = document.getElementById('dash_kpi_total_kwh');
+    if (kpiTotalKwh) kpiTotalKwh.innerText = `Oggi: ${todayKwh} kWh`;
+
+    const kpiMonW = document.getElementById('dash_kpi_monitored_w');
+    if (kpiMonW) kpiMonW.innerText = `${monW} W`;
+
+    const kpiMonPct = document.getElementById('dash_kpi_monitored_pct');
+    if (kpiMonPct) kpiMonPct.innerText = `${monPct}% del totale`;
+
+    const kpiUnmonW = document.getElementById('dash_kpi_unmonitored_w');
+    if (kpiUnmonW) kpiUnmonW.innerText = `${unmonW} W`;
+
+    const kpiUnmonPct = document.getElementById('dash_kpi_unmonitored_pct');
+    if (kpiUnmonPct) kpiUnmonPct.innerText = `${unmonPct}% non monitorato`;
+
+    // Aggiorna barre di ripartizione
+    const progMon = document.getElementById('dash_prog_monitored');
+    if (progMon) progMon.style.width = `${monPct}%`;
+
+    const progUnmon = document.getElementById('dash_prog_unmonitored');
+    if (progUnmon) progUnmon.style.width = `${unmonPct}%`;
+
+    // Rendering lista consumatori attivi
+    const listEl = document.getElementById('dash_active_consumers_list');
+    if (!listEl) return;
+
+    const activeList = d.active_consumers || [];
+
+    if (activeList.length === 0) {
+        listEl.innerHTML = `
+            <div class="empty-consumers-box" style="padding: 1.5rem; text-align: center; background: rgba(255,255,255,0.02); border-radius: 10px; border: 1px dashed rgba(255,255,255,0.1);">
+                <span class="empty-icon" style="font-size: 2rem;">🔌</span>
+                <p style="margin: 0.5rem 0 0.25rem 0; font-weight: 600; color: #fff;">Nessun dispositivo smart con assorbimento elevato al momento.</p>
+                <small style="color: var(--text-dim);">Il carico attuale di ${totalW} W corrisponde a utenze fisse e standby di base.</small>
+            </div>
+        `;
+    } else {
+        listEl.innerHTML = activeList.map(c => {
+            const pW = c.power_w !== undefined ? Math.round(c.power_w * 10) / 10 : 0;
+            const pct = c.percent_of_total || 0;
+
+            let powerBadge = '';
+            if (pW > 0) {
+                powerBadge = `<span class="consumer-power-tag high-power">⚡ <strong>${pW}</strong> W</span>`;
+            } else if (c.is_unmetered_active || (c.type === 'climate' && c.is_on)) {
+                powerBadge = `<span class="consumer-power-tag running-climate" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">❄️ In Funzione (Totale Casa)</span>`;
+            } else if (c.is_running) {
+                powerBadge = `<span class="consumer-power-tag running-app">🫧 In Funzione</span>`;
+            } else if (c.is_on) {
+                powerBadge = `<span class="consumer-power-tag active-state">🟢 Acceso</span>`;
+            }
+
+            let telemetryLine = '';
+            if (c.voltage_v || c.current_a) {
+                telemetryLine = `<span class="consumer-va-chip">⚡ ${c.voltage_v || 230} V • ${c.current_a || 0} A</span>`;
+            }
+
+            let toggleBtn = '';
+            if (c.can_toggle) {
+                toggleBtn = `
+                    <button type="button" class="consumer-toggle-btn ${c.is_on ? 'btn-turn-off' : 'btn-turn-on'}"
+                            onclick="toggleDeviceFromHouseModal('${c.ecosystem}', '${c.raw_id}', ${c.is_on})"
+                            title="${c.is_on ? 'Spegni dispositivo' : 'Accendi dispositivo'}">
+                        ${c.is_on ? 'Spegni' : 'Accendi'}
+                    </button>
+                `;
+            }
+
+            return `
+                <div class="consumer-card ${pW > 100 ? 'consumer-card-high' : ''}">
+                    <div class="consumer-card-main">
+                        <div class="consumer-icon-wrap">
+                            <span class="consumer-icon">${c.icon || '🔌'}</span>
+                        </div>
+                        <div class="consumer-info">
+                            <div class="consumer-title-row">
+                                <span class="consumer-name">${escapeHtml(c.name)}</span>
+                                ${powerBadge}
+                            </div>
+                            <div class="consumer-sub-row">
+                                <span class="consumer-category">${escapeHtml(c.category_label || 'Dispositivo Smart')}</span>
+                                <span class="consumer-status-desc">${c.status_text || ''}</span>
+                            </div>
+                            ${telemetryLine ? `<div class="consumer-telemetry-row">${telemetryLine}</div>` : ''}
+                        </div>
+                    </div>
+
+                    ${pct > 0 ? `
+                        <div class="consumer-meter-wrap">
+                            <div class="consumer-meter-bar">
+                                <div class="consumer-meter-fill" style="width: ${Math.min(100, Math.max(3, pct))}%;"></div>
+                            </div>
+                            <span class="consumer-meter-label">${pct}% del carico casa</span>
+                        </div>
+                    ` : ''}
+
+                    ${toggleBtn ? `<div class="consumer-action-row">${toggleBtn}</div>` : ''}
+                </div>
+            `;
+        }).join('');
+    }
+}
+
+// =========================================================================
+// GESTIONE WIDGET E MODALE PROTEZIONE CIVILE CALABRIA & DPC
+// =========================================================================
+let currentCpData = null;
+
+function updateCivilProtectionWidget(cp) {
+    if (!cp || cp.status !== 'success') return;
+    currentCpData = cp;
+
+    const card = document.getElementById('cp_alert_card');
+    if (card && cp.today) {
+        card.className = `cp-alert-card cp-border-${(cp.today.level || 'verde').toLowerCase()}`;
+    }
+
+    const zoneEl = document.getElementById('cp_zone_name');
+    if (zoneEl && cp.zone_name) zoneEl.innerText = `📍 ${cp.zone_name}`;
+
+    const dateEl = document.getElementById('cp_bulletin_date');
+    if (dateEl && cp.bulletin_date_str) dateEl.innerText = `Bollettino del ${cp.bulletin_date_str}`;
+
+    // Oggi
+    const tBadge = document.getElementById('cp_today_badge');
+    if (tBadge && cp.today) {
+        tBadge.className = `status-pill ${cp.today.badge_class || 'badge-success'}`;
+        tBadge.innerText = `${cp.today.icon || '🟢'} ${cp.today.label || 'Verde'}`;
+    }
+    const tDesc = document.getElementById('cp_today_desc');
+    if (tDesc && cp.today) tDesc.innerText = cp.today.overall_text || 'Assenza di fenomeni significativi';
+
+    // Domani
+    const tomBadge = document.getElementById('cp_tomorrow_badge');
+    if (tomBadge && cp.tomorrow) {
+        tomBadge.className = `status-pill ${cp.tomorrow.badge_class || 'badge-success'}`;
+        tomBadge.innerText = `${cp.tomorrow.icon || '🟢'} ${cp.tomorrow.label || 'Verde'}`;
+    }
+    const tomDesc = document.getElementById('cp_tomorrow_desc');
+    if (tomDesc && cp.tomorrow) tomDesc.innerText = cp.tomorrow.overall_text || 'Assenza di fenomeni significativi';
+}
+
+function openCivilProtectionModal() {
+    const backdrop = document.getElementById('cp-modal-backdrop');
+    if (backdrop) {
+        backdrop.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeCivilProtectionModal(e) {
+    if (e && e.target && e.target.id !== 'cp-modal-backdrop') return;
+    const backdrop = document.getElementById('cp-modal-backdrop');
+    if (backdrop) {
+        backdrop.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+}
+
+function switchCpModalTab(tab) {
+    const paneToday = document.getElementById('cp_tab_pane_today');
+    const paneTomorrow = document.getElementById('cp_tab_pane_tomorrow');
+    const btnToday = document.getElementById('cp_tab_btn_today');
+    const btnTomorrow = document.getElementById('cp_tab_btn_tomorrow');
+
+    if (tab === 'today') {
+        if (paneToday) paneToday.style.display = 'block';
+        if (paneTomorrow) paneTomorrow.style.display = 'none';
+        if (btnToday) { btnToday.className = 'btn btn-sm btn-primary'; }
+        if (btnTomorrow) { btnTomorrow.className = 'btn btn-sm btn-secondary'; }
+    } else {
+        if (paneToday) paneToday.style.display = 'none';
+        if (paneTomorrow) paneTomorrow.style.display = 'block';
+        if (btnToday) { btnToday.className = 'btn btn-sm btn-secondary'; }
+        if (btnTomorrow) { btnTomorrow.className = 'btn btn-sm btn-primary'; }
+    }
+}
+
+async function refreshCivilProtectionLive(showFeedback = false) {
+    const refreshBtn = document.getElementById('cp-modal-refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = '<span>⏳</span> Aggiornamento...';
+    }
+    try {
+        const res = await fetch('/api/civil_protection/refresh', { method: 'POST' });
+        if (res.ok) {
+            const data = await res.json();
+            updateCivilProtectionWidget(data);
+            if (showFeedback && typeof showToast === 'function') {
+                showToast('Bollettino Protezione Civile aggiornato con successo!', 'success');
+            }
+        }
+    } catch (e) {
+        console.error('Errore refresh Protezione Civile:', e);
+        if (showFeedback && typeof showToast === 'function') {
+            showToast('Errore durante l\'aggiornamento del bollettino', 'error');
+        }
+    } finally {
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = '<span>🔄</span> Aggiorna Bollettino';
+        }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     initDashboardTabs();
+    loadHealthHistoryOnStartup();
 });
+
 
 
 

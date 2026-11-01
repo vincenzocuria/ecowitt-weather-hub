@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 import requests
 
 from backend.config import settings
+from backend.helpers import safe_float
 from backend.database import save_energy_reading
 from backend.alert_engine import engine
 
@@ -23,6 +24,9 @@ class AtonService:
         self.is_connected: bool = False
         self.failed_attempts: int = 0
         self._running: bool = False
+        # Pausa crescente dopo login falliti (1, 2, 4... fino a 30 min) per non far bloccare l'account
+        self._login_failures: int = 0
+        self._next_login_at: float = 0.0
 
     def _ensure_session(self) -> bool:
         """Verifica o crea la sessione autenticata su Aton Server."""
@@ -38,6 +42,21 @@ class AtonService:
                 "Content-Type": "application/x-www-form-urlencoded"
             })
 
+        if time.time() < self._next_login_at:
+            return False
+
+        ok = self._login()
+        if ok:
+            self._login_failures = 0
+            self._next_login_at = 0.0
+        else:
+            self._login_failures += 1
+            wait_sec = min(1800, 60 * (2 ** (self._login_failures - 1)))
+            self._next_login_at = time.time() + wait_sec
+            logger.warning(f"[ATON] Prossimo tentativo di login tra {wait_sec // 60} min ({self._login_failures} falliti di fila)")
+        return ok
+
+    def _login(self) -> bool:
         # Test rapido o login
         try:
             # Step 1: Pre-carica login.php per ottenere PHPSESSID se non presente
@@ -94,21 +113,15 @@ class AtonService:
 
     def _parse_telemetry(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         """Converte e normalizza i campi di telemetria Aton in formato pulito."""
-        def safe_float(val, default=0.0):
-            try:
-                if val is None or val == "":
-                    return default
-                return float(val)
-            except (ValueError, TypeError):
-                return default
+        sf = lambda val: safe_float(val, 0.0)
 
-        p_solare = safe_float(raw.get("pSolare"))
-        p_utenze = safe_float(raw.get("pUtenze") or raw.get("pUtenzeReal"))
-        p_batteria = safe_float(raw.get("pBatteria"))
-        p_rete = safe_float(raw.get("pRete") or raw.get("pReteReal"))
-        p_rete_in = safe_float(raw.get("pReteIn"))
-        p_rete_out = safe_float(raw.get("pReteOut"))
-        soc = safe_float(raw.get("soc"))
+        p_solare = sf(raw.get("pSolare"))
+        p_utenze = sf(raw.get("pUtenze") or raw.get("pUtenzeReal"))
+        p_batteria = sf(raw.get("pBatteria"))
+        p_rete = sf(raw.get("pRete") or raw.get("pReteReal"))
+        p_rete_in = sf(raw.get("pReteIn"))
+        p_rete_out = sf(raw.get("pReteOut"))
+        soc = sf(raw.get("soc"))
         
         # Correzioni e direzione flussi
         # In Aton: pBatteria > 0 = scarica batteria (eroga potenza verso la casa: P_FV + P_Batt = P_Utenze),
@@ -123,32 +136,37 @@ class AtonService:
             "data_aton": raw.get("data"),
             "serial_number": raw.get("serialNumber") or settings.ATON_SN,
             "p_solare": p_solare,
+            "solar_power_w": p_solare,
             "p_utenze": p_utenze,
+            "house_load_w": p_utenze,
             "p_batteria": p_batteria,
+            "battery_power_w": p_batteria,
             "battery_power_abs": battery_power_abs,
             "battery_charging": battery_charging,
             "battery_discharging": battery_discharging,
             "battery_status": battery_status,
             "p_rete": p_rete,
+            "grid_power_w": p_rete,
             "p_rete_in": p_rete_in,
             "p_rete_out": p_rete_out,
             "soc": min(100.0, max(0.0, soc)),
-            "vb": safe_float(raw.get("vb")),
-            "ib": safe_float(raw.get("ib")),
-            "temp_battery": safe_float(raw.get("temperatura")),
-            "string1_v": safe_float(raw.get("string1V")),
-            "string1_i": safe_float(raw.get("string1I")),
-            "string2_v": safe_float(raw.get("string2V")),
-            "string2_i": safe_float(raw.get("string2I")),
-            "grid_v": safe_float(raw.get("gridV")),
-            "grid_hz": safe_float(raw.get("gridHz")),
-            "e_pannelli_wh": safe_float(raw.get("ePannelli")),
-            "e_comprata_wh": safe_float(raw.get("eComprata")),
-            "e_venduta_wh": safe_float(raw.get("eVenduta")),
-            "e_batteria_wh": safe_float(raw.get("eBatteria")),
-            "solar_today_kwh": round(safe_float(raw.get("ePannelli")) / 1000.0, 2),
-            "bought_today_kwh": round(safe_float(raw.get("eComprata")) / 1000.0, 2),
-            "sold_today_kwh": round(safe_float(raw.get("eVenduta")) / 1000.0, 2),
+            "battery_soc_pct": min(100.0, max(0.0, soc)),
+            "vb": sf(raw.get("vb")),
+            "ib": sf(raw.get("ib")),
+            "temp_battery": sf(raw.get("temperatura")),
+            "string1_v": sf(raw.get("string1V")),
+            "string1_i": sf(raw.get("string1I")),
+            "string2_v": sf(raw.get("string2V")),
+            "string2_i": sf(raw.get("string2I")),
+            "grid_v": sf(raw.get("gridV")),
+            "grid_hz": sf(raw.get("gridHz")),
+            "e_pannelli_wh": sf(raw.get("ePannelli")),
+            "e_comprata_wh": sf(raw.get("eComprata")),
+            "e_venduta_wh": sf(raw.get("eVenduta")),
+            "e_batteria_wh": sf(raw.get("eBatteria")),
+            "solar_today_kwh": round(sf(raw.get("ePannelli")) / 1000.0, 2),
+            "bought_today_kwh": round(sf(raw.get("eComprata")) / 1000.0, 2),
+            "sold_today_kwh": round(sf(raw.get("eVenduta")) / 1000.0, 2),
             "raw_data": raw
         }
         return parsed

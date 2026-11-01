@@ -1,0 +1,2608 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="devices-page-wrap">
+    
+    <!-- HEADER DELLA PAGINA CON STATISTICHE E AZIONI GLOBALI -->
+    <section class="devices-header-card">
+        <div class="devices-header-top">
+            <div class="devices-header-title">
+                <h1>💡 Dispositivi Smart</h1>
+                <p class="devices-subtitle">Centrale di controllo domotica integrata in tempo reale</p>
+            </div>
+            <div class="devices-header-actions" style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                <button type="button" class="btn btn-action-secondary" id="btn-open-schedules" onclick="openSchedulesModal()" title="Visualizza e gestisci tutti i timer attivi della casa">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                    <span>Timer (<strong id="badge-active-schedules-count">{{ active_schedules|length if active_schedules else 0 }}</strong>)</span>
+                </button>
+                <button type="button" class="btn btn-action-danger" id="btn-turn-all-off" title="Spegne tutte le prese e i climatizzatori accesi">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+                    <span>Spegni Tutti</span>
+                </button>
+                <button type="button" class="btn btn-action-primary" id="btn-sync-devices" title="Forza la risincronizzazione con Tuya, LG ThinQ e SmartThings">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="sync-icon-svg"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                    <span>Aggiorna</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- STATISTICHE COMPATTE -->
+        <div class="devices-stats-row">
+            <div class="stat-pill">
+                <span class="stat-pill-label">Dispositivi</span>
+                <span class="stat-pill-val" id="stat-total">{{ stats.total or devices|length }}</span>
+            </div>
+            <div class="stat-pill stat-pill-active">
+                <span class="stat-pill-label">Accesi / Attivi</span>
+                <span class="stat-pill-val" id="stat-active">{{ stats.active or 0 }}</span>
+            </div>
+            <div class="stat-pill stat-pill-power">
+                <span class="stat-pill-label">Carico Prese</span>
+                <span class="stat-pill-val" id="stat-power">{{ stats.total_power_w or 0 }} W</span>
+            </div>
+            <div class="stat-pill stat-pill-online">
+                <span class="stat-pill-label">Online</span>
+                <span class="stat-pill-val" id="stat-online">{{ stats.online if stats.online is not none else devices|length }}</span>
+            </div>
+            <div class="stat-pill stat-pill-timer" onclick="openSchedulesModal()" style="cursor: pointer;" title="Clicca per visualizzare i timer programmati">
+                <span class="stat-pill-label">⏱️ Timer Attivi</span>
+                <span class="stat-pill-val" id="stat-schedules">{{ stats.scheduled_tasks_count or (active_schedules|length if active_schedules else 0) }}</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- BARRA FILTRI PER CATEGORIA -->
+    <div class="devices-filter-bar">
+        <button class="filter-chip active" data-filter="all">
+            <span>Tutti</span>
+            <span class="filter-badge" id="badge-count-all">{{ devices|length }}</span>
+        </button>
+        <button class="filter-chip" data-filter="weather">
+            <span>🌦️ Stazione & Meteo</span>
+        </button>
+        <button class="filter-chip" data-filter="plugs">
+            <span>🔌 Prese & Luci</span>
+        </button>
+        <button class="filter-chip" data-filter="climate">
+            <span>❄️ Climatizzazione</span>
+        </button>
+        <button class="filter-chip" data-filter="shutters">
+            <span>🪟 Persiane & Tende</span>
+        </button>
+        <button class="filter-chip" data-filter="appliances">
+            <span>🫧 Elettrodomestici</span>
+        </button>
+        <button class="filter-chip" data-filter="irrigation">
+            <span>💧 Irrigazione</span>
+        </button>
+        <button class="filter-chip" data-filter="energy">
+            <span>☀️ Solare & Batteria</span>
+        </button>
+        <button class="filter-chip" data-filter="presence">
+            <span>📍 Presenza</span>
+        </button>
+        <button class="filter-chip" data-filter="health">
+            <span>🩺 Salute & Cardio</span>
+        </button>
+    </div>
+
+    <!-- GRIGLIA A MATTONCINI DEI DISPOSITIVI -->
+    <div class="devices-grid" id="devices-container">
+        {% if devices %}
+            {% for dev in devices %}
+            <div class="device-card {% if dev.is_on and dev.is_online %}device-card-on{% elif not dev.is_online %}device-card-offline{% else %}device-card-off{% endif %} {% if dev.active_schedule %}device-card-has-timer{% endif %}" 
+                 data-id="{{ dev.id }}" 
+                 data-raw-id="{{ dev.raw_id }}" 
+                 data-ecosystem="{{ dev.ecosystem }}" 
+                 data-category="{{ dev.category }}" 
+                 data-is-on="{{ 'true' if dev.is_on else 'false' }}"
+                 data-is-online="{{ 'true' if dev.is_online else 'false' }}"
+                 onclick="openDeviceDetail({{ dev.id|js }})">
+                
+                <div class="device-card-header">
+                    <div class="device-icon-box {% if dev.is_on and dev.is_online %}icon-glow-on{% endif %}">
+                        <span class="device-icon">{{ dev.icon }}</span>
+                    </div>
+                    
+                    <div class="device-status-badge {% if not dev.is_online %}badge-offline{% elif dev.is_on %}badge-on{% else %}badge-standby{% endif %}">
+                        <span class="status-dot"></span>
+                        <span class="status-label">
+                            {% if not dev.is_online %}OFFLINE{% elif dev.is_on %}ON{% else %}STANDBY{% endif %}
+                        </span>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <button type="button" class="card-rename-trigger" title="Rinomina '{{ dev.name }}'" onclick="event.stopPropagation(); quickPromptRename({{ dev.id|js }}, {{ dev.raw_id|js }}, {{ dev.name|js }}, {{ dev.ecosystem|js }})">✏️</button>
+                        {% if dev.can_toggle %}
+                        <button type="button" 
+                                class="device-toggle-btn {% if dev.is_on %}active{% endif %}" 
+                                data-device-id="{{ dev.id }}"
+                                data-raw-id="{{ dev.raw_id }}"
+                                data-ecosystem="{{ dev.ecosystem }}"
+                                title="Commuta ON/OFF"
+                                onclick="event.stopPropagation(); quickToggleDevice(this, '{{ dev.ecosystem }}', '{{ dev.raw_id }}', {{ 'true' if dev.is_on else 'false' }})">
+                            <span class="toggle-slider"></span>
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- BANNER TIMER ATTIVO IN PRIMO PIANO SUL MATTONCINO -->
+                {% if dev.active_schedule %}
+                <div class="device-card-timer-banner" data-task-id="{{ dev.active_schedule.task_id }}" data-execute-at="{{ dev.active_schedule.execute_at }}" onclick="event.stopPropagation(); openSchedulesModal();" title="Timer attivo: clicca per gestire">
+                    <div class="device-card-timer-info">
+                        <span>⏱️</span>
+                        <span class="device-card-timer-action {{ 'timer-action-on' if dev.active_schedule.action == 'turn_on' else 'timer-action-off' }}">
+                            {{ 'ON' if dev.active_schedule.action == 'turn_on' else 'OFF' }}
+                        </span>
+                        <span class="device-card-timer-countdown">{{ dev.active_schedule.remaining_label }}</span>
+                    </div>
+                    <button type="button" class="device-card-timer-cancel" title="Annulla questo timer" onclick="event.stopPropagation(); cancelDeviceTimer({{ dev.active_schedule.task_id|js }})">✕</button>
+                </div>
+                {% endif %}
+
+                <div class="device-card-body">
+                    <div class="device-name" title="{{ dev.name }}">{{ dev.name }}</div>
+                    <div class="device-sub">{{ dev.category_label }}</div>
+                </div>
+
+                <div class="device-card-footer">
+                    <div class="device-metrics-preview">
+                        {% if dev.category == 'plugs' and dev.power_w is not none and dev.power_w > 0 %}
+                            <span class="metric-tag tag-power">⚡ {{ dev.power_w }} W</span>
+                            {% if dev.voltage_v %}<span class="metric-tag tag-volt">{{ dev.voltage_v }} V</span>{% endif %}
+                        {% elif dev.category == 'climate' and dev.temp_current is not none %}
+                            <span class="metric-tag tag-temp">🌡️ {{ dev.temp_current }}°C</span>
+                            {% if dev.temp_set %}<span class="metric-tag tag-target">🎯 {{ dev.temp_set }}°C</span>{% endif %}
+                        {% elif dev.category in ('shutters', 'curtains') %}
+                            <div style="display: flex; gap: 4px; width: 100%; justify-content: space-between;" onclick="event.stopPropagation();">
+                                <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="devControlTuyaCurtain('{{ dev.raw_id }}', 'open')">🔼 Apri</button>
+                                <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="devControlTuyaCurtain('{{ dev.raw_id }}', 'stop')">⏸️ Stop</button>
+                                <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="devControlTuyaCurtain('{{ dev.raw_id }}', 'close')">🔽 Chiudi</button>
+                            </div>
+                        {% elif dev.category == 'irrigation' %}
+                            <div style="display: flex; gap: 6px; width: 100%; align-items: center; justify-content: space-between;" onclick="event.stopPropagation();">
+                                <span class="metric-tag {% if dev.is_on %}tag-power{% else %}tag-dim{% endif %}">
+                                    {% if dev.is_on %}💧 Irrigazione ON{% else %}💤 In Standby{% endif %}
+                                </span>
+                                {% if dev.battery_pct is not none %}
+                                    <span class="metric-tag tag-batt">🔋 {{ dev.battery_pct }}%</span>
+                                {% endif %}
+                                {% if dev.is_on %}
+                                    <button type="button" class="btn btn-outline" style="padding: 3px 8px; font-size: 0.72rem; border-color: #ef4444; color: #ef4444;" onclick="stopIrrigation('{{ dev.raw_id }}')">🛑 Ferma</button>
+                                {% else %}
+                                    <button type="button" class="btn btn-outline" style="padding: 3px 8px; font-size: 0.72rem; border-color: #10b981; color: #10b981;" onclick="startIrrigation(15, '{{ dev.raw_id }}')">💧 Irriga 15m</button>
+                                {% endif %}
+                            </div>
+                        {% elif dev.category == 'appliances' %}
+                            <span class="metric-tag tag-info">{{ dev.status_text }}</span>
+                        {% elif dev.category == 'energy' %}
+                            <span class="metric-tag tag-solar">☀️ {{ dev.solar_power_w|int }} W</span>
+                            <span class="metric-tag tag-batt">🔋 {{ dev.battery_soc_pct|int }}%</span>
+                        {% elif dev.category == 'health' %}
+                            {% if dev.id == 'hass_smart_scale' or dev.body_data or 'bilancia' in dev.name|lower or 'scale' in dev.name|lower %}
+                                <span class="metric-tag tag-temp">⚖️ {{ dev.body_data.weight_kg if dev.body_data and dev.body_data.weight_kg else (dev.health_data.body.weight_kg if dev.health_data and dev.health_data.body and dev.health_data.body.weight_kg else '--') }} kg</span>
+                                <span class="metric-tag tag-power">🥩 {{ dev.body_data.fat_pct if dev.body_data and dev.body_data.fat_pct else (dev.health_data.body.fat_pct if dev.health_data and dev.health_data.body and dev.health_data.body.fat_pct else '--') }}%</span>
+                            {% else %}
+                                <span class="metric-tag tag-info">👟 {{ dev.health_data.steps.daily if dev.health_data and dev.health_data.steps else '--' }} passi</span>
+                                <span class="metric-tag tag-temp">❤️ {{ dev.health_data.heart.rate_bpm if dev.health_data and dev.health_data.heart else '--' }} bpm</span>
+                                <span class="metric-tag tag-solar">🔥 {{ dev.health_data.calories.total_kcal|int if dev.health_data and dev.health_data.calories and dev.health_data.calories.total_kcal else '--' }} kcal</span>
+                            {% endif %}
+                        {% elif dev.category == 'presence' and dev.battery_pct is not none %}
+                            <span class="metric-tag tag-batt">🔋 {{ dev.battery_pct }}%</span>
+                        {% else %}
+                            <span class="metric-tag tag-dim">{{ dev.status_text }}</span>
+                        {% endif %}
+
+                        {% if dev.active_schedule %}
+                            <span class="metric-tag tag-timer" style="background: rgba(56, 189, 248, 0.18); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35);">
+                                ⏱️ {{ 'ON' if dev.active_schedule.action == 'turn_on' else 'OFF' }} {{ dev.active_schedule.remaining_label }}
+                            </span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="devices-empty-state">
+                <div class="empty-icon">🔌</div>
+                <h3>Nessun dispositivo configurato o rilevato</h3>
+                <p>Abilita i dispositivi nelle <a href="/settings" style="color: var(--accent); text-decoration: underline;">Impostazioni</a> (Tuya Smart Life, LG ThinQ, SmartThings).</p>
+            </div>
+        {% endif %}
+    </div>
+
+</div>
+
+<!-- MODALE ELEGANTE DI DETTAGLIO DISPOSITIVO -->
+<div id="device-modal-backdrop" class="device-modal-backdrop" onclick="closeDeviceDetail(event)">
+    <div class="device-modal-dialog" onclick="event.stopPropagation()">
+        
+        <div class="device-modal-header">
+            <div class="modal-title-group" style="flex: 1;">
+                <div class="modal-icon-badge" id="modal-icon-badge">📱</div>
+                <div style="flex: 1;">
+                    <div class="modal-title-with-rename">
+                        <h3 id="modal-device-name">Nome Dispositivo</h3>
+                        <button type="button" class="modal-rename-btn" id="btn-toggle-rename" onclick="toggleModalRenameBox()" title="Rinomina questo dispositivo">
+                            <span>✏️ Rinomina</span>
+                        </button>
+                    </div>
+                    <div class="modal-device-meta" id="modal-device-meta">Ecosistema • Categoria</div>
+                    <div id="modal-rename-box" class="modal-rename-box" style="display: none;">
+                        <div class="modal-rename-input-row">
+                            <input type="text" id="modal-rename-input" class="modal-rename-input" placeholder="Nuovo nome..." onkeydown="if(event.key==='Enter') submitModalRename()" />
+                            <button type="button" class="btn btn-primary btn-sm" onclick="submitModalRename()">Salva</button>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="toggleModalRenameBox(false)">✕</button>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <small id="modal-rename-original-hint" style="color: var(--text-dim); font-size: 0.72rem;"></small>
+                            <button type="button" class="btn btn-outline btn-sm" id="btn-reset-rename" style="padding: 2px 6px; font-size: 0.72rem; color: #f87171; border-color: rgba(239,68,68,0.3); display: none;" onclick="resetDeviceName()">Ripristina Default</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button type="button" class="modal-close-btn" onclick="closeDeviceDetail()" title="Chiudi">&times;</button>
+        </div>
+
+        <div class="device-modal-body" id="modal-device-body">
+            <!-- Il contenuto dinamico viene iniettato via JS in base alla tipologia di dispositivo -->
+            <div class="modal-loading-placeholder">
+                <div class="spinner"></div>
+                <p>Caricamento dettagli dispositivo...</p>
+            </div>
+        </div>
+
+        <div class="device-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeDeviceDetail()">Chiudi</button>
+            <button type="button" class="btn btn-primary" id="modal-refresh-btn" onclick="refreshCurrentDeviceDetail()">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                <span>Aggiorna Dati</span>
+            </button>
+        </div>
+
+    </div>
+</div>
+
+<!-- MODALE RIEPILOGO TUTTI I TIMER ATTIVI -->
+<div id="schedules-modal-backdrop" class="device-modal-backdrop" onclick="closeSchedulesModal(event)">
+    <div class="device-modal-dialog" onclick="event.stopPropagation()">
+        
+        <div class="device-modal-header">
+            <div class="modal-title-group">
+                <div class="modal-icon-badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8;">⏱️</div>
+                <div>
+                    <h3>Programmazioni & Timer Attivi</h3>
+                    <div class="modal-device-meta">Accensioni e spegnimenti temporizzati programmati</div>
+                </div>
+            </div>
+            <button type="button" class="modal-close-btn" onclick="closeSchedulesModal()" title="Chiudi">&times;</button>
+        </div>
+
+        <div class="device-modal-body" id="modal-schedules-body">
+            <div class="modal-loading-placeholder">
+                <div class="spinner"></div>
+                <p>Caricamento timer attivi...</p>
+            </div>
+        </div>
+
+        <div class="device-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeSchedulesModal()">Chiudi</button>
+        </div>
+
+    </div>
+</div>
+
+<!-- SCRIPT DI GESTIONE DISPOSITIVI -->
+<script>
+// Cache dei dispositivi caricati dal server
+let devicesCatalog = {{ devices|tojson|safe }};
+let currentOpenDeviceId = null;
+
+// Gestione Filtri Categoria
+document.querySelectorAll('.filter-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const filter = btn.getAttribute('data-filter');
+        filterDevicesGrid(filter);
+    });
+});
+
+function filterDevicesGrid(filter) {
+    const cards = document.querySelectorAll('.device-card');
+    cards.forEach(card => {
+        const cat = card.getAttribute('data-category');
+        const isMatch = (filter === 'all' || cat === filter || 
+            ((filter === 'shutters' || filter === 'curtains') && (cat === 'shutters' || cat === 'curtains'))
+        );
+        if (isMatch) {
+            card.style.display = 'flex';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+}
+
+// Toggle Rapido o da Modale ON/OFF Unificato
+async function performDeviceToggle(ecosystem, rawId, targetState, sourceBtn = null) {
+    if (sourceBtn && (sourceBtn.classList.contains('loading') || sourceBtn.classList.contains('btn-loading'))) return;
+    if (sourceBtn) {
+        sourceBtn.classList.add('loading');
+        sourceBtn.classList.add('btn-loading');
+        if (sourceBtn.tagName === 'BUTTON') {
+            sourceBtn.disabled = true;
+        }
+    }
+
+    try {
+        let success = false;
+        let errMsg = null;
+
+        if (ecosystem === 'homeassistant') {
+            const resp = await fetch(`/api/homeassistant/device/${encodeURIComponent(rawId)}/toggle`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({state: targetState})
+            });
+            const data = await resp.json();
+            success = resp.ok && data.success === true;
+            if (!success) errMsg = data.error || 'Errore esecuzione comando Home Assistant';
+        } else if (ecosystem === 'tuya') {
+            const resp = await fetch(`/api/tuya/device/${rawId}/toggle`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({state: targetState})
+            });
+            const data = await resp.json();
+            success = resp.ok && data.success !== false && (!data.result || (data.result.success !== false && !data.result.Error));
+            if (!success) errMsg = data.error || (data.result && (data.result.msg || data.result.Error));
+        } else if (ecosystem === 'thinq') {
+            const resp = await fetch(`/api/thinq/device/${rawId}/control`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({power: targetState})
+            });
+            const data = await resp.json();
+            success = resp.ok && data.success !== false;
+            if (!success) errMsg = data.error;
+        } else if (ecosystem === 'smartthings') {
+            const resp = await fetch(`/api/smartthings/device/${rawId}/command`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({capability: 'switch', command: targetState ? 'on' : 'off'})
+            });
+            const data = await resp.json();
+            success = resp.ok && data.success === true;
+            if (!success) errMsg = data.error;
+        }
+
+        if (success) {
+            // Aggiorna catalogo locale in memoria immediatamente
+            const dev = devicesCatalog.find(d => String(d.raw_id) === String(rawId) || String(d.id) === String(rawId) || d.id === `tuya_${rawId}` || d.id === `thinq_${rawId}` || d.id === `st_${rawId}` || d.id === `hass_${rawId}`);
+            if (dev) {
+                dev.is_on = targetState;
+                if (dev.category === 'plugs') {
+                    dev.status_text = targetState ? (dev.power_w > 0 ? `Acceso (${dev.power_w.toFixed(1)} W)` : 'Acceso') : 'Spento';
+                }
+            }
+
+            // Aggiorna card corrispondente nel DOM
+            const cardEl = document.querySelector(`.device-card[data-raw-id="${rawId}"]`);
+            if (cardEl) {
+                const badge = cardEl.querySelector('.device-status-badge');
+                const label = cardEl.querySelector('.status-label');
+                const iconBox = cardEl.querySelector('.device-icon-box');
+                const toggleBtn = cardEl.querySelector('.device-toggle-btn');
+
+                if (targetState) {
+                    cardEl.classList.remove('device-card-off', 'device-card-offline');
+                    cardEl.classList.add('device-card-on');
+                    if (badge) badge.className = 'device-status-badge badge-on';
+                    if (label) label.textContent = 'ON';
+                    if (iconBox) iconBox.classList.add('icon-glow-on');
+                    if (toggleBtn) {
+                        toggleBtn.classList.add('active');
+                        toggleBtn.setAttribute('onclick', `event.stopPropagation(); quickToggleDevice(this, '${ecosystem}', '${rawId}', true)`);
+                    }
+                } else {
+                    cardEl.classList.remove('device-card-on', 'device-card-offline');
+                    cardEl.classList.add('device-card-off');
+                    if (badge) badge.className = 'device-status-badge badge-standby';
+                    if (label) label.textContent = 'STANDBY';
+                    if (iconBox) iconBox.classList.remove('icon-glow-on');
+                    if (toggleBtn) {
+                        toggleBtn.classList.remove('active');
+                        toggleBtn.setAttribute('onclick', `event.stopPropagation(); quickToggleDevice(this, '${ecosystem}', '${rawId}', false)`);
+                    }
+                }
+            }
+
+            // Ricalcola contatori statistiche
+            const activeCount = devicesCatalog.filter(d => d.is_on).length;
+            const statActiveEl = document.getElementById('stat-active');
+            if (statActiveEl) statActiveEl.textContent = activeCount;
+
+            // Se il modale è aperto per questo dispositivo, ri-renderizzalo immediatamente
+            if (currentOpenDeviceId && dev && currentOpenDeviceId === dev.id) {
+                renderModalContent(currentOpenDeviceId);
+            }
+
+            showToast(`Dispositivo ${targetState ? 'acceso' : 'spento'} con successo`, 'success');
+
+            // Sincronizza stato e telemetria dal backend dopo breve delay
+            setTimeout(fetchDevicesData, 1200);
+        } else {
+            showToast(errMsg || 'Errore durante l\'invio del comando al dispositivo', 'danger');
+        }
+    } catch (err) {
+        console.error('Errore toggle device:', err);
+        showToast('Errore di comunicazione: ' + (err.message || err), 'danger');
+    } finally {
+        if (sourceBtn) {
+            sourceBtn.classList.remove('loading');
+            sourceBtn.classList.remove('btn-loading');
+            if (sourceBtn.tagName === 'BUTTON') {
+                sourceBtn.disabled = false;
+            }
+        }
+    }
+}
+
+function quickToggleDevice(btnEl, ecosystem, rawId, currentState) {
+    const newState = (currentState === true || currentState === 'true') ? false : true;
+    performDeviceToggle(ecosystem, rawId, newState, btnEl);
+}
+
+function modalToggleDevice(btnEl, ecosystem, rawId, currentState) {
+    const newState = (currentState === true || currentState === 'true') ? false : true;
+    performDeviceToggle(ecosystem, rawId, newState, btnEl);
+}
+
+// Spegni Tutti
+document.getElementById('btn-turn-all-off').addEventListener('click', async () => {
+    if (!confirm('Sei sicuro di voler spegnere tutte le prese e i climatizzatori attivi?')) return;
+    
+    const btn = document.getElementById('btn-turn-all-off');
+    btn.classList.add('btn-loading');
+    try {
+        const resp = await fetch('/api/devices/turn-all', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({state: false, category: 'all'})
+        });
+        const res = await resp.json();
+        showToast(`Dispositivi spenti: ${res.updated_count}`, 'success');
+        await fetchDevicesData();
+    } catch (err) {
+        console.error('Errore turn-all-off:', err);
+        showToast('Errore durante lo spegnimento collettivo', 'danger');
+    } finally {
+        btn.classList.remove('btn-loading');
+    }
+});
+
+// Sincronizza Tutti
+document.getElementById('btn-sync-devices').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-sync-devices');
+    const icon = document.getElementById('sync-icon-svg');
+    icon.classList.add('spin-anim');
+    
+    try {
+        await Promise.allSettled([
+            fetch('/api/tuya/sync', {method: 'POST'}),
+            fetch('/api/thinq/sync', {method: 'POST'}),
+            fetch('/api/smartthings/sync', {method: 'POST'})
+        ]);
+        await fetchDevicesData();
+        showToast('Stato dispositivi aggiornato', 'success');
+    } catch (e) {
+        console.error('Errore sync:', e);
+    } finally {
+        icon.classList.remove('spin-anim');
+    }
+});
+
+// Fetch dati dispositivi aggiornati in background
+async function fetchDevicesData() {
+    try {
+        const resp = await fetch('/api/devices/all');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        devicesCatalog = data.devices || [];
+        
+        // Aggiorna statistiche
+        if (data.stats) {
+            const statTotalEl = document.getElementById('stat-total');
+            if (statTotalEl) statTotalEl.textContent = data.stats.total || devicesCatalog.length;
+            const statActiveEl = document.getElementById('stat-active');
+            if (statActiveEl) statActiveEl.textContent = data.stats.active || 0;
+            const statPowerEl = document.getElementById('stat-power');
+            if (statPowerEl) statPowerEl.textContent = `${data.stats.total_power_w || 0} W`;
+            const statOnlineEl = document.getElementById('stat-online');
+            if (statOnlineEl) statOnlineEl.textContent = data.stats.online ?? devicesCatalog.length;
+            const badgeCountEl = document.getElementById('badge-count-all');
+            if (badgeCountEl) badgeCountEl.textContent = devicesCatalog.length;
+            
+            const schedCount = data.stats.scheduled_tasks_count || (data.active_schedules ? data.active_schedules.length : 0);
+            const schedPill = document.getElementById('stat-schedules');
+            if (schedPill) schedPill.textContent = schedCount;
+            const schedBadge = document.getElementById('badge-active-schedules-count');
+            if (schedBadge) schedBadge.textContent = schedCount;
+        }
+
+        // Aggiorna in tempo reale i mattoncini dei dispositivi nella griglia
+        updateDevicesGridInDOM(devicesCatalog);
+
+        // Se un modale è aperto, aggiorna i dettagli
+        if (currentOpenDeviceId) {
+            renderModalContent(currentOpenDeviceId);
+        }
+    } catch (e) {
+        console.debug('Polling devices all error:', e);
+    }
+}
+
+// Aggiorna dinamicamente i mattoncini DOM senza ricaricare la pagina
+function updateDevicesGridInDOM(devices) {
+    if (!devices || !Array.isArray(devices)) return;
+    
+    devices.forEach(dev => {
+        const rawId = dev.raw_id;
+        const devId = dev.id;
+        const cardEl = document.querySelector(`.device-card[data-id="${devId}"]`) || document.querySelector(`.device-card[data-raw-id="${rawId}"]`);
+        if (!cardEl) return;
+        
+        // Aggiorna nome e tooltip
+        const nameEl = cardEl.querySelector('.device-name');
+        if (nameEl && nameEl.textContent !== dev.name) {
+            nameEl.textContent = dev.name;
+            nameEl.title = dev.name;
+        }
+        
+        // Aggiorna trigger rinomina
+        const renameTrigger = cardEl.querySelector('.card-rename-trigger');
+        if (renameTrigger) {
+            renameTrigger.title = `Rinomina '${dev.name}'`;
+            renameTrigger.removeAttribute('onclick');
+            renameTrigger.onclick = (ev) => { ev.stopPropagation(); quickPromptRename(dev.id, dev.raw_id, dev.name || '', dev.ecosystem); };
+        }
+        
+        // Aggiorna classe ON/OFF/OFFLINE
+        const isOnline = dev.is_online !== false;
+        const isOn = dev.is_on;
+        cardEl.setAttribute('data-is-on', isOn ? 'true' : 'false');
+        cardEl.setAttribute('data-is-online', isOnline ? 'true' : 'false');
+        
+        if (!isOnline) {
+            cardEl.classList.remove('device-card-on', 'device-card-off');
+            cardEl.classList.add('device-card-offline');
+        } else if (isOn) {
+            cardEl.classList.remove('device-card-off', 'device-card-offline');
+            cardEl.classList.add('device-card-on');
+        } else {
+            cardEl.classList.remove('device-card-on', 'device-card-offline');
+            cardEl.classList.add('device-card-off');
+        }
+        
+        // Aggiorna badge ON/STANDBY/OFFLINE
+        const badge = cardEl.querySelector('.device-status-badge');
+        const label = cardEl.querySelector('.status-label');
+        if (badge && label) {
+            if (!isOnline) {
+                badge.className = 'device-status-badge badge-offline';
+                label.textContent = 'OFFLINE';
+            } else if (isOn === true) {
+                badge.className = 'device-status-badge badge-on';
+                label.textContent = 'ON';
+            } else if (isOn === false) {
+                badge.className = 'device-status-badge badge-standby';
+                label.textContent = 'STANDBY';
+            } else {
+                badge.className = 'device-status-badge badge-standby';
+                label.textContent = 'STANDBY';
+            }
+        }
+        
+        // Aggiorna glow icona
+        const iconBox = cardEl.querySelector('.device-icon-box');
+        if (iconBox) {
+            if (isOn && isOnline) iconBox.classList.add('icon-glow-on');
+            else iconBox.classList.remove('icon-glow-on');
+        }
+        
+        // Aggiorna toggle button
+        const toggleBtn = cardEl.querySelector('.device-toggle-btn');
+        if (toggleBtn) {
+            if (isOn) {
+                toggleBtn.classList.add('active');
+                toggleBtn.setAttribute('onclick', `event.stopPropagation(); quickToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', true)`);
+            } else {
+                toggleBtn.classList.remove('active');
+                toggleBtn.setAttribute('onclick', `event.stopPropagation(); quickToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', false)`);
+            }
+        }
+        
+        // Gestione Banner Timer Attivo sul Mattoncino
+        const sched = dev.active_schedule;
+        let bannerEl = cardEl.querySelector('.device-card-timer-banner');
+        if (sched) {
+            cardEl.classList.add('device-card-has-timer');
+            const actionIsOn = (sched.action === 'turn_on');
+            const actionClass = actionIsOn ? 'timer-action-on' : 'timer-action-off';
+            const actionText = actionIsOn ? 'ON' : 'OFF';
+            const remText = sched.remaining_label || '';
+            const bannerHtml = `
+                <div class="device-card-timer-info">
+                    <span>⏱️</span>
+                    <span class="device-card-timer-action ${actionClass}">${actionText}</span>
+                    <span class="device-card-timer-countdown">${remText}</span>
+                </div>
+                <button type="button" class="device-card-timer-cancel" title="Annulla questo timer" onclick="event.stopPropagation(); cancelDeviceTimer('${sched.task_id}')">✕</button>
+            `;
+            if (bannerEl) {
+                bannerEl.setAttribute('data-task-id', sched.task_id);
+                bannerEl.setAttribute('data-execute-at', sched.execute_at);
+                bannerEl.innerHTML = bannerHtml;
+            } else {
+                const newBanner = document.createElement('div');
+                newBanner.className = 'device-card-timer-banner';
+                newBanner.setAttribute('data-task-id', sched.task_id);
+                newBanner.setAttribute('data-execute-at', sched.execute_at);
+                newBanner.setAttribute('onclick', 'event.stopPropagation(); openSchedulesModal();');
+                newBanner.setAttribute('title', 'Timer attivo: clicca per gestire');
+                newBanner.innerHTML = bannerHtml;
+                const headerEl = cardEl.querySelector('.device-card-header');
+                if (headerEl && headerEl.nextSibling) {
+                    cardEl.insertBefore(newBanner, headerEl.nextSibling);
+                } else {
+                    cardEl.appendChild(newBanner);
+                }
+            }
+        } else {
+            cardEl.classList.remove('device-card-has-timer');
+            if (bannerEl) {
+                bannerEl.remove();
+            }
+        }
+    });
+}
+
+// Live Countdown Ticker per i Timer (aggiornamento ogni secondo)
+function updateLiveCountdowns() {
+    const banners = document.querySelectorAll('.device-card-timer-banner[data-execute-at]');
+    const now = new Date();
+    let hasExpired = false;
+    
+    banners.forEach(b => {
+        const execAtIso = b.getAttribute('data-execute-at');
+        if (!execAtIso) return;
+        const targetDate = new Date(execAtIso);
+        const remSec = Math.floor((targetDate - now) / 1000);
+        
+        const countEl = b.querySelector('.device-card-timer-countdown');
+        if (!countEl) return;
+        
+        if (remSec <= 0) {
+            countEl.textContent = 'in esecuzione...';
+            hasExpired = true;
+        } else if (remSec < 60) {
+            countEl.textContent = `tra ${remSec}s`;
+        } else if (remSec < 3600) {
+            const m = Math.floor(remSec / 60);
+            const s = remSec % 60;
+            countEl.textContent = `tra ${m}m ${s}s`;
+        } else {
+            countEl.textContent = `tra ${formatDurationItalian(Math.floor(remSec / 60))}`;
+        }
+    });
+    
+    if (hasExpired) {
+        setTimeout(fetchDevicesData, 1500);
+    }
+}
+setInterval(updateLiveCountdowns, 1000);
+
+// Gestione Rinomina Dispositivo
+function toggleModalRenameBox(forceOpen = null) {
+    const box = document.getElementById('modal-rename-box');
+    const input = document.getElementById('modal-rename-input');
+    const hint = document.getElementById('modal-rename-original-hint');
+    const resetBtn = document.getElementById('btn-reset-rename');
+    if (!box || !currentOpenDeviceId) return;
+    
+    const dev = devicesCatalog.find(d => d.id === currentOpenDeviceId);
+    if (!dev) return;
+
+    const isOpen = (forceOpen !== null) ? forceOpen : (box.style.display === 'none');
+    if (isOpen) {
+        box.style.display = 'flex';
+        input.value = dev.name || '';
+        input.focus();
+        input.select();
+        
+        if (dev.original_name && dev.original_name !== dev.name) {
+            hint.textContent = `Default: "${dev.original_name}"`;
+            resetBtn.style.display = 'inline-block';
+        } else {
+            hint.textContent = '';
+            resetBtn.style.display = 'none';
+        }
+    } else {
+        box.style.display = 'none';
+    }
+}
+
+async function submitModalRename() {
+    if (!currentOpenDeviceId) return;
+    const dev = devicesCatalog.find(d => d.id === currentOpenDeviceId);
+    if (!dev) return;
+    
+    const input = document.getElementById('modal-rename-input');
+    const newName = input.value.trim();
+    if (!newName) {
+        showToast('Inserisci un nome valido', 'info');
+        return;
+    }
+    
+    await performDeviceRename(dev.id, dev.raw_id, newName, dev.ecosystem);
+    toggleModalRenameBox(false);
+}
+
+async function resetDeviceName() {
+    if (!currentOpenDeviceId) return;
+    const dev = devicesCatalog.find(d => d.id === currentOpenDeviceId);
+    if (!dev) return;
+    
+    if (!confirm(`Ripristinare il nome originale di fabbrica ("${dev.original_name || 'Default'}")?`)) return;
+    await performDeviceRename(dev.id, dev.raw_id, '', dev.ecosystem);
+    toggleModalRenameBox(false);
+}
+
+async function quickPromptRename(devId, rawId, currentName, ecosystem) {
+    openDeviceDetail(devId);
+    setTimeout(() => toggleModalRenameBox(true), 200);
+}
+
+async function performDeviceRename(devId, rawId, newName, ecosystem) {
+    try {
+        const resp = await fetch('/api/devices/rename', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                device_id: devId,
+                raw_id: rawId,
+                alias: newName,
+                ecosystem: ecosystem
+            })
+        });
+        const data = await resp.json();
+        if (resp.ok && data.status === 'ok') {
+            devicesCatalog = data.devices || devicesCatalog;
+            updateDevicesGridInDOM(devicesCatalog);
+            
+            const updatedDev = devicesCatalog.find(d => d.id === devId || String(d.raw_id) === String(rawId));
+            const finalName = updatedDev ? updatedDev.name : (newName || 'Nome ripristinato');
+            
+            const nameEl = document.getElementById('modal-device-name');
+            if (nameEl) nameEl.textContent = finalName;
+            
+            showToast(`Nome aggiornato: "${finalName}"`, 'success');
+            
+            if (currentOpenDeviceId) {
+                renderModalContent(currentOpenDeviceId);
+            }
+        } else {
+            showToast(data.error || 'Errore durante la ridenominazione', 'danger');
+        }
+    } catch (e) {
+        showToast('Errore di comunicazione: ' + e.message, 'danger');
+    }
+}
+
+// Gestione Modale Dettaglio Dispositivo
+function openDeviceDetail(deviceId) {
+    currentOpenDeviceId = deviceId;
+    const modalBackdrop = document.getElementById('device-modal-backdrop');
+    modalBackdrop.classList.add('show');
+    document.body.style.overflow = 'hidden';
+    renderModalContent(deviceId);
+}
+
+function closeDeviceDetail(e) {
+    if (e && e.target !== document.getElementById('device-modal-backdrop') && !e.target.classList.contains('modal-close-btn') && !e.target.closest('.modal-close-btn') && !e.target.classList.contains('btn-secondary')) {
+        return;
+    }
+    const modalBackdrop = document.getElementById('device-modal-backdrop');
+    modalBackdrop.classList.remove('show');
+    document.body.style.overflow = '';
+    currentOpenDeviceId = null;
+}
+
+async function refreshCurrentDeviceDetail() {
+    if (!currentOpenDeviceId) return;
+    const btn = document.getElementById('modal-refresh-btn');
+    if (btn) btn.classList.add('btn-loading');
+    await fetchDevicesData();
+    if (btn) btn.classList.remove('btn-loading');
+}
+
+// =========================================================================
+// CLASSIFICAZIONE CAPACITA' & MODALITA' DISPOSITIVO UNIFICATA
+// =========================================================================
+function getDeviceType(dev) {
+    if (!dev) return 'generic';
+    const cat = (dev.category || '').toLowerCase();
+    const raw = dev.raw || {};
+    const rawId = (String(dev.raw_id || dev.id || '')).toLowerCase();
+    const name = (dev.name || '').toLowerCase();
+    const origName = (dev.original_name || '').toLowerCase();
+    const devType = (raw.type || raw.device_type || '').toLowerCase();
+
+    // 1. Bilancia Smart & Analisi Composizione Corporea BIA
+    if (dev.id === 'hass_smart_scale' || dev.body_data || dev.type === 'scale' || devType === 'scale' || devType === 'tzc1' || devType === 'tzc' ||
+        name.includes('bilancia') || origName.includes('bilancia') || name.includes('scale') || origName.includes('scale') ||
+        rawId.includes('scale') || rawId.includes('bilancia')) {
+        return 'scale';
+    }
+
+    // 2. Parametri Sanitari & Fitness Tracker (Samsung Health / Health Connect)
+    if (cat === 'health' || dev.id === 'hass_health_samsung' || dev.health_data || name.includes('health') || name.includes('galaxy') || name.includes('watch')) {
+        return 'health';
+    }
+
+    // 3. Sensore Presenza GPS / Wi-Fi Smartphone
+    if (cat === 'presence' || dev.id === 'hass_presence' || devType === 'presence' || rawId.includes('presence') || name.includes('presenza') || origName.includes('presenza')) {
+        return 'presence';
+    }
+
+    // 4. Frigorifero Smart (LG ThinQ / Home Assistant)
+    if (devType === 'device_refrigerator' || dev.id === 'hass_frigorifero' || rawId.includes('frigorifero') || rawId.includes('fridge') || name.includes('frigorifero') || name.includes('fridge')) {
+        return 'refrigerator';
+    }
+
+    // 5. Climatizzatori, Pompe di Calore, Cronotermostati (Climate)
+    if (cat === 'climate' || devType === 'thermostat' || devType === 'device_air_conditioner' || rawId.startsWith('climate.') || dev.ecosystem === 'thinq' || devType === 'wk' || name.includes('clima') || name.includes('termostat') || name.includes('condizionat')) {
+        return 'climate';
+    }
+
+    // 6. Grandi Elettrodomestici (Lavatrice, Lavastoviglie, Asciugatrice)
+    if (cat === 'appliances' || dev.id === 'hass_washer' || dev.id === 'hass_dishwasher' || rawId.includes('washer') || rawId.includes('dishwasher') || rawId.includes('lavatrice') || rawId.includes('lavastoviglie') || name.includes('lavatrice') || name.includes('lavastoviglie')) {
+        return 'appliance';
+    }
+
+    // 7. Persiane, Tapparelle, Tende Motorizzate (Shutters / Curtains / Covers)
+    if (cat === 'shutters' || cat === 'curtains' || devType === 'curtain' || rawId.startsWith('cover.') || ['cl', 'clkg', 'bl', 'cs'].includes(devType) || name.includes('persian') || name.includes('tapparel') || name.includes('tenda')) {
+        return 'shutter';
+    }
+
+    // 8. Irrigazione / Elettrovalvole
+    if (cat === 'irrigation' || devType === 'irrigation' || devType === 'sfkzq' || rawId.startsWith('valve.') || rawId.includes('irrig') || rawId.includes('valvola') || name.includes('irrig') || name.includes('valvola')) {
+        return 'irrigation';
+    }
+
+    // 9. Fotovoltaico & Accumulo Batteria (Aton Solar Hub)
+    if (cat === 'energy' || dev.ecosystem === 'aton' || dev.id === 'aton_storage_hub') {
+        return 'energy';
+    }
+
+    // 10. Luci & Strisce LED
+    if (cat === 'lights' || devType === 'light' || devType === 'dj' || devType === 'dd' || rawId.startsWith('light.') || name.includes('luce') || name.includes('lampada') || name.includes('led') || name.includes('striscia')) {
+        return 'light';
+    }
+
+    // 11. Prese Smart con Misuratore di Potenza
+    if ((cat === 'plugs' || devType === 'plug' || devType === 'cz' || devType === 'pc' || rawId.startsWith('switch.presa') || rawId.startsWith('switch.plug')) && (dev.power_w !== undefined || dev.voltage_v !== undefined || dev.current_a !== undefined)) {
+        return 'plug';
+    }
+
+    // 12. Interruttori Smart / Relè Semplici
+    if (cat === 'switches' || devType === 'switch' || devType === 'jd' || devType === 'kg' || rawId.startsWith('switch.')) {
+        return 'switch';
+    }
+
+    // 13. Sensori Contatto / Porta / Finestra / Movimento
+    if (cat === 'sensors' || devType === 'contact' || devType === 'mc' || devType === 'pir' || rawId.startsWith('binary_sensor.')) {
+        return 'sensor';
+    }
+
+    // 0. Stazione Meteo Ecowitt & Sensori WH57 / WH51
+    if (cat === 'weather' || dev.ecosystem === 'ecowitt' || dev.id.startsWith('ecowitt_')) {
+        return 'weather';
+    }
+
+    return 'generic';
+}
+
+// =========================================================================
+// DISPATCHER PRINCIPALE DEL MODALE DI DETTAGLIO
+// =========================================================================
+function renderModalContent(deviceId) {
+    const dev = devicesCatalog.find(d => d.id === deviceId);
+    if (!dev) return;
+
+    document.getElementById('modal-device-name').textContent = dev.name;
+    document.getElementById('modal-device-meta').textContent = `${dev.category_label || 'Dispositivo Smart'} • ${dev.ecosystem ? dev.ecosystem.toUpperCase() : 'HUB'}`;
+    document.getElementById('modal-icon-badge').textContent = dev.icon || '📱';
+
+    const bodyEl = document.getElementById('modal-device-body');
+    const dtype = getDeviceType(dev);
+    let html = '';
+
+    switch (dtype) {
+        case 'weather':
+            html = renderWeatherDetail(dev);
+            break;
+        case 'scale':
+            html = renderScaleDetail(dev);
+            break;
+        case 'health':
+            html = renderHealthDetail(dev);
+            break;
+        case 'presence':
+            html = renderPresenceDetail(dev);
+            break;
+        case 'refrigerator':
+            html = renderRefrigeratorDetail(dev);
+            break;
+        case 'climate':
+            html = renderClimateDetail(dev);
+            break;
+        case 'appliance':
+            html = renderApplianceDetail(dev);
+            break;
+        case 'shutter':
+            html = renderShutterDetail(dev);
+            break;
+        case 'irrigation':
+            html = renderIrrigationDetail(dev);
+            break;
+        case 'energy':
+            html = renderAtonDetail(dev);
+            break;
+        case 'light':
+            html = renderLightDetail(dev);
+            break;
+        case 'plug':
+            html = renderPlugDetail(dev);
+            break;
+        case 'switch':
+            html = renderSwitchDetail(dev);
+            break;
+        case 'sensor':
+            html = renderSensorDetail(dev);
+            break;
+        default:
+            html = renderGenericDetail(dev);
+            break;
+    }
+
+    // Aggiungi sezione Programmazione & Timer SOLO per dispositivi idonei
+    const schedulableTypes = ['plug', 'switch', 'light', 'climate', 'shutter', 'irrigation'];
+    if (schedulableTypes.includes(dtype) || (dev.can_toggle && !['weather', 'scale', 'health', 'presence', 'energy', 'sensor'].includes(dtype))) {
+        html += renderDeviceScheduleBox(dev);
+    }
+
+    bodyEl.innerHTML = html;
+}
+
+// 0. Stazione Meteo Ecowitt & Sensori Wireless
+function renderWeatherDetail(dev) {
+    const raw = dev.raw || {};
+    const isOnline = dev.is_online !== false;
+    const isStation = dev.id === 'ecowitt_station_gateway';
+    const isLightning = dev.id === 'ecowitt_wh57_lightning';
+    const isSoil = dev.id.startsWith('ecowitt_wh51_');
+
+    let quickStatus = '🟢 Connesso & Funzionante';
+    if (!isOnline) {
+        quickStatus = '🔴 Disconnesso / In attesa';
+    } else if (!dev.is_on) {
+        quickStatus = '🟠 Standby / In ascolto';
+    }
+
+    let specificCards = '';
+    if (isStation) {
+        specificCards = `
+            <div class="telemetry-card">
+                <span class="tel-label">🌡️ Temp. Esterna</span>
+                <span class="tel-val text-accent" style="font-size: 1.2rem;">${dev.temp_out_c !== null && dev.temp_out_c !== undefined ? dev.temp_out_c + ' °C' : '--'}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">🏠 Temp. Interna</span>
+                <span class="tel-val" style="font-size: 1.2rem;">${dev.temp_in_c !== null && dev.temp_in_c !== undefined ? dev.temp_in_c + ' °C' : '--'}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">💧 Umidità Esterna</span>
+                <span class="tel-val">${dev.humidity_out !== null && dev.humidity_out !== undefined ? dev.humidity_out + ' %' : '--'}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">💨 Velocità Vento</span>
+                <span class="tel-val">${dev.wind_speed_kmh !== null && dev.wind_speed_kmh !== undefined ? dev.wind_speed_kmh + ' km/h' : '--'}</span>
+            </div>
+        `;
+    } else if (isLightning) {
+        const dist = dev.lightning_distance_km;
+        const count = dev.lightning_count || 0;
+        const lastTime = dev.lightning_last_time_fmt || (dev.lightning_last_time ? (window.formatLightningTimeIt ? window.formatLightningTimeIt(dev.lightning_last_time) : dev.lightning_last_time) : 'Nessuna recente');
+        specificCards = `
+            <div class="telemetry-card">
+                <span class="tel-label">⚡ Distanza Fulmine</span>
+                <span class="tel-val ${dist !== null ? 'text-warning' : 'text-success'}" style="font-size: 1.2rem;">${dist !== null ? dist + ' km' : 'Nessuno vicino'}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">⚡ Scariche Oggi</span>
+                <span class="tel-val">${count}</span>
+            </div>
+            <div class="telemetry-card" style="grid-column: span 2;">
+                <span class="tel-label">⏱️ Ultima Scarica</span>
+                <span class="tel-val">${lastTime}</span>
+            </div>
+        `;
+    } else if (isSoil) {
+        const moist = dev.soil_moisture_pct;
+        specificCards = `
+            <div class="telemetry-card" style="grid-column: span 2;">
+                <span class="tel-label">🌱 Umidità Rilevata</span>
+                <span class="tel-val text-success" style="font-size: 1.3rem;">${moist !== null && moist !== undefined ? moist + ' %' : '--'}</span>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="modal-quick-state-card ${isOnline && dev.is_on ? 'state-card-on' : (isOnline ? 'state-card-standby' : 'state-card-off')}" style="${isOnline && dev.is_on ? 'background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.4);' : (isOnline ? 'background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.4);' : 'background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.4);')}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${isOnline && dev.is_on ? 'dot-on pulse' : (isOnline ? 'dot-standby' : 'dot-off')}" style="${isOnline && dev.is_on ? 'background: #10b981; box-shadow: 0 0 10px #10b981;' : (isOnline ? 'background: #f59e0b; box-shadow: 0 0 10px #f59e0b;' : 'background: #ef4444; box-shadow: 0 0 10px #ef4444;')}"></span>
+                <span class="state-text">Stato: <strong>${quickStatus}</strong></span>
+            </div>
+            <a href="/" class="btn btn-outline" style="font-size: 0.8rem; text-decoration: none; padding: 4px 10px;">
+                🌦️ Vai alla Dashboard
+            </a>
+        </div>
+
+        <div class="modal-telemetry-grid" style="margin-top: 1rem;">
+            ${specificCards}
+            <div class="telemetry-card" style="grid-column: span 2;">
+                <span class="tel-label">📡 Rete & Gateway</span>
+                <span class="tel-val text-info">${dev.status_text || 'Ecowitt RF / Wi-Fi Gateway'}</span>
+            </div>
+        </div>
+    `;
+}
+
+// 1. Bilancia Smart BIA & Composizione Corporea
+function renderScaleDetail(dev) {
+    const raw = dev.raw || {};
+    const h = dev.health_data || (raw.health_data ? raw.health_data : raw);
+    const b = dev.body_data || (h && h.body ? h.body : {});
+    const cal = (h && h.calories) ? h.calories : {};
+
+    const weight = (b.weight_kg !== null && b.weight_kg !== undefined) ? `${b.weight_kg} kg` : '-- kg';
+    const fat = (b.fat_pct !== null && b.fat_pct !== undefined) ? `${b.fat_pct}%` : '-- %';
+    const lean = (b.lean_mass_kg !== null && b.lean_mass_kg !== undefined) ? `${b.lean_mass_kg} kg` : '-- kg';
+    const water = (b.water_mass_kg !== null && b.water_mass_kg !== undefined) ? `${b.water_mass_kg} kg` : '-- kg';
+    const bone = (b.bone_mass_kg !== null && b.bone_mass_kg !== undefined) ? `${b.bone_mass_kg} kg` : '-- kg';
+    const bmr = cal.basal_kcal ? `${Math.round(cal.basal_kcal)} kcal` : (b.bmr ? `${Math.round(b.bmr)} kcal` : '-- kcal');
+    const src = b.source_label || (dev.ecosystem === 'tuya' ? 'Tuya Smart Life' : 'Samsung Health');
+
+    let bmiVal = '--';
+    if (b.bmi) {
+        bmiVal = `${b.bmi} kg/m²`;
+    } else if (b.weight_kg) {
+        const hM = 1.78;
+        bmiVal = `${(b.weight_kg / (hM * hM)).toFixed(1)} kg/m²`;
+    }
+
+    return `
+        <div class="modal-presence-box" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(16, 185, 129, 0.12) 100%); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 14px; padding: 1.25rem;">
+            <div class="presence-status-large" style="text-align: center;">
+                <span class="presence-icon" style="font-size: 2.2rem; display: block; margin-bottom: 0.35rem;">⚖️</span>
+                <div class="presence-title" style="font-size: 1.15rem; font-weight: 700; color: var(--text);">${escapeHtml(dev.name)}</div>
+                <p class="presence-sub" style="font-size: 0.82rem; color: var(--text-dim); margin-top: 0.25rem;">
+                    Analisi Impedenza Bioelettrica (BIA) • Sincronizzazione ${src}
+                </p>
+            </div>
+            
+            <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+                <div class="telemetry-card" style="background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.3);">
+                    <span class="tel-label">⚖️ Peso Corporeo</span>
+                    <span class="tel-val text-warning" style="font-size: 1.35rem; font-weight: 800;">${weight}</span>
+                </div>
+                <div class="telemetry-card" style="background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.3);">
+                    <span class="tel-label">🥩 Massa Grassa</span>
+                    <span class="tel-val text-danger" style="font-size: 1.35rem; font-weight: 800;">${fat}</span>
+                </div>
+                <div class="telemetry-card" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.3);">
+                    <span class="tel-label">💪 Massa Magra</span>
+                    <span class="tel-val text-accent" style="font-size: 1.15rem; font-weight: 700;">${lean}</span>
+                </div>
+                <div class="telemetry-card" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.3);">
+                    <span class="tel-label">💧 Acqua Corporea</span>
+                    <span class="tel-val" style="color: #38bdf8; font-size: 1.15rem; font-weight: 700;">${water}</span>
+                </div>
+                <div class="telemetry-card" style="background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.3);">
+                    <span class="tel-label">🦴 Massa Ossea</span>
+                    <span class="tel-val text-success" style="font-size: 1.15rem; font-weight: 700;">${bone}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🧬 Metabolismo BMR</span>
+                    <span class="tel-val" style="font-size: 1.15rem; font-weight: 700;">${bmr}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">📐 Indice BMI</span>
+                    <span class="tel-val" style="font-size: 1.15rem; font-weight: 700;">${bmiVal}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🟢 Connessione</span>
+                    <span class="tel-val text-success">${dev.is_online ? 'Sincronizzato 🟢' : 'Offline 🔴'}</span>
+                </div>
+            </div>
+
+            <div style="margin-top: 1.25rem; display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap;">
+                <button type="button" class="btn btn-action-primary" onclick="devSyncHealthLiveMetrics()" style="padding: 8px 18px; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
+                    <span>🔄 Sincronizza Bilancia con Home Assistant</span>
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+// 2. Parametri Sanitari & Fitness Tracker
+function renderHealthDetail(dev) {
+    const raw = dev.raw || {};
+    const h = dev.health_data || raw || {};
+    const steps = h.steps || {};
+    const cal = h.calories || {};
+    const heart = h.heart || {};
+    const sleep = h.sleep || {};
+    const batt = dev.battery_pct !== null && dev.battery_pct !== undefined ? `${dev.battery_pct}%` : (h.battery_pct !== null && h.battery_pct !== undefined ? `${h.battery_pct}%` : 'N/D');
+
+    return `
+        <div class="modal-presence-box" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(56, 189, 248, 0.08) 100%); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 14px; padding: 1.25rem;">
+            <div class="presence-status-large" style="text-align: center;">
+                <span class="presence-icon" style="font-size: 2.2rem; display: block; margin-bottom: 0.35rem;">🩺</span>
+                <div class="presence-title" style="font-size: 1.15rem; font-weight: 700; color: var(--text);">${escapeHtml(dev.name)}</div>
+                <p class="presence-sub" style="font-size: 0.82rem; color: var(--text-dim); margin-top: 0.25rem;">
+                    ${escapeHtml(h.device_name || 'Galaxy S26')} • Sincronizzazione Google Health Connect & Samsung Health
+                </p>
+            </div>
+            <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+                <div class="telemetry-card">
+                    <span class="tel-label">👟 Passi Giornalieri</span>
+                    <span class="tel-val text-accent">${(steps.daily || 0).toLocaleString('it-IT')} / 8.000 (${steps.pct || 0}%)</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">📏 Distanza Percorsa</span>
+                    <span class="tel-val">${steps.distance_km || '--'} km (Piani: ${steps.floors || 0})</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🔥 Calorie Totali</span>
+                    <span class="tel-val text-warning">${cal.total_kcal ? Math.round(cal.total_kcal) + ' kcal' : '--'}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">⚡ Calorie Attive / BMR</span>
+                    <span class="tel-val">${cal.active_kcal || '--'} / ${cal.basal_kcal ? Math.round(cal.basal_kcal) : '--'} kcal</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">❤️ Frequenza Cardiaca</span>
+                    <span class="tel-val text-danger">${heart.rate_bpm || '--'} bpm (${heart.status || 'Normale'})</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🫁 SpO2 / VO2 Max</span>
+                    <span class="tel-val" style="color: #38bdf8;">${heart.spo2_pct ? heart.spo2_pct + '%' : '--'} • VO2: ${heart.vo2_max || '--'}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">😴 Sonno Monitorato</span>
+                    <span class="tel-val text-success">${sleep.duration_formatted || '--'}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🔋 Batteria Dispositivo</span>
+                    <span class="tel-val ${dev.battery_pct && dev.battery_pct < 20 ? 'text-danger' : 'text-success'}">🔋 ${batt}</span>
+                </div>
+            </div>
+            <div style="margin-top: 1.25rem; display: flex; justify-content: center;">
+                <button type="button" class="btn btn-action-primary" onclick="devSyncHealthLiveMetrics()" style="padding: 8px 18px; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
+                    <span>🔄 Forza Sincronizzazione Dati Salute</span>
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+// 3. Sensore Presenza GPS Smartphone
+function renderPresenceDetail(dev) {
+    const raw = dev.raw || {};
+    const isPresent = dev.is_present !== undefined ? dev.is_present : (raw.is_present !== undefined ? raw.is_present : (dev.is_on !== undefined ? dev.is_on : true));
+    const batt = dev.battery_pct !== null && dev.battery_pct !== undefined ? `${dev.battery_pct}%` : (raw.battery_pct !== null && raw.battery_pct !== undefined ? `${raw.battery_pct}%` : 'N/D');
+    const subText = raw.presence_text || dev.status_text || 'Monitoraggio posizione GPS & Wi-Fi';
+    const src = dev.ecosystem === 'smartthings' ? 'SmartThings Cloud 🟢' : 'Home Assistant Companion ⚡';
+
+    return `
+        <div class="modal-presence-box" style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 14px; padding: 1.25rem;">
+            <div class="presence-status-large" style="text-align: center;">
+                <span class="presence-icon" style="font-size: 2.2rem; display: block; margin-bottom: 0.35rem;">${isPresent ? '🟢' : '📍'}</span>
+                <div class="presence-title" style="font-size: 1.15rem; font-weight: 700; color: var(--text);">${isPresent ? 'In Casa / Rilevato' : 'Fuori Casa / Fuori Raggio'}</div>
+                <p class="presence-sub" style="font-size: 0.82rem; color: var(--text-dim); margin-top: 0.25rem;">${subText}</p>
+            </div>
+            <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+                <div class="telemetry-card">
+                    <span class="tel-label">🔋 Batteria Smartphone</span>
+                    <span class="tel-val ${dev.battery_pct && dev.battery_pct < 20 ? 'text-danger' : 'text-success'}">🔋 ${batt}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">📍 Stato Posizione</span>
+                    <span class="tel-val ${isPresent ? 'text-success' : 'text-warning'}">${isPresent ? 'A Casa 🏠' : 'Fuori Zona 🚶'}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">📡 Fonte Telemetria</span>
+                    <span class="tel-val text-success">${src}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🟢 Connessione</span>
+                    <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// 4. Frigorifero Smart LG ThinQ
+function renderRefrigeratorDetail(dev) {
+    const raw = dev.raw || {};
+    const doorOpen = dev.door_open || raw.door_open || false;
+    const expressMode = dev.express_mode || raw.express_mode || false;
+    const targetTemp = dev.temp_set !== null && dev.temp_set !== undefined ? dev.temp_set : (raw.target_temp || 4);
+
+    return `
+        <div class="modal-quick-state-card ${doorOpen ? 'state-card-off' : (expressMode ? 'state-card-on' : 'state-card-off')}" style="${doorOpen ? 'background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4);' : ''}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${doorOpen ? 'dot-off pulse' : (expressMode ? 'dot-on pulse' : 'dot-off')}" style="${doorOpen ? 'background: #ef4444; box-shadow: 0 0 10px #ef4444;' : ''}"></span>
+                <span class="state-text" style="${doorOpen ? 'color: #f87171; font-weight: 700;' : ''}">
+                    ${doorOpen ? '⚠️ PORTA APERTA' : '🟢 Porta Chiusa'} ${expressMode ? '• Express Cool ATTIVO ❄️' : ''}
+                </span>
+            </div>
+            <button type="button" class="btn ${expressMode ? 'btn-danger' : 'btn-primary'}" onclick="toggleThinQFridgeExpress('${dev.raw_id}', ${!expressMode})">
+                ${expressMode ? 'Disattiva Express' : 'Attiva Express Cool ❄️'}
+            </button>
+        </div>
+
+        <div class="clima-dial-wrap" style="margin-top: 1.25rem;">
+            <div class="clima-temps-row" style="justify-content: center;">
+                <div class="clima-temp-box" style="flex: 1 1 220px; max-width: 300px;">
+                    <span class="clima-sub">Temperatura Target Vano Frigo</span>
+                    <div class="clima-target-ctrl">
+                        <button type="button" class="btn-step" onclick="setThinQFridgeTemp('${dev.raw_id}', ${targetTemp - 1})">-</button>
+                        <span class="clima-target-val">${targetTemp}°C</span>
+                        <button type="button" class="btn-step" onclick="setThinQFridgeTemp('${dev.raw_id}', ${targetTemp + 1})">+</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            <div class="telemetry-card">
+                <span class="tel-label">🚪 Sensore Porta</span>
+                <span class="tel-val ${doorOpen ? 'text-danger' : 'text-success'}">${doorOpen ? 'Aperta ⚠️' : 'Chiusa 🟢'}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">❄️ Raffreddamento Rapido</span>
+                <span class="tel-val ${expressMode ? 'text-accent' : ''}">${expressMode ? 'Express ON ❄️' : 'Disattivato'}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">🎯 Range Regolazione</span>
+                <span class="tel-val">0°C - 6°C</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">🧊 Modello Elettrodomestico</span>
+                <span class="tel-val" style="font-size: 0.85rem;">${escapeHtml(raw.model_name || raw.name || dev.name || 'LG Smart Fridge')}</span>
+            </div>
+        </div>
+    `;
+}
+
+// 5. Climatizzatori, Pompe di Calore & Cronotermostati
+function renderClimateDetail(dev) {
+    const raw = dev.raw || {};
+    const isOn = dev.is_on;
+    const curTemp = dev.temp_current !== null && dev.temp_current !== undefined ? `${dev.temp_current}°C` : (raw.temp_current !== null && raw.temp_current !== undefined ? `${raw.temp_current}°C` : '--');
+    const targetTemp = dev.temp_set !== null && dev.temp_set !== undefined ? dev.temp_set : (raw.temp_set !== null && raw.temp_set !== undefined ? raw.temp_set : 24.0);
+    const mode = (dev.job_mode || dev.mode || raw.mode || 'COOL').toUpperCase();
+    const fanSpeed = (dev.fan_speed || raw.fan_speed || 'LOW').toUpperCase();
+
+    const isThermostat = dev.category === 'thermostat' || raw.type === 'thermostat' || dev.type === 'wk';
+
+    if (isThermostat) {
+        return `
+            <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
+                <div class="state-card-info">
+                    <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
+                    <span class="state-text">${isOn ? 'Cronotermostato Attivo' : 'Cronotermostato Spento / Antigelo'}</span>
+                </div>
+                ${dev.can_toggle ? `
+                    <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
+                        ${isOn ? 'Spegni' : 'Accendi'}
+                    </button>
+                ` : ''}
+            </div>
+
+            <div class="thermostat-modal-box" style="margin-top: 1.25rem;">
+                <div class="thermostat-current-display">
+                    <span class="temp-label">Temperatura Rilevata</span>
+                    <span class="temp-large-val">${curTemp}</span>
+                </div>
+                <div class="thermostat-control-dial">
+                    <button type="button" class="btn-dial" onclick="adjustClimateTemp('${dev.ecosystem}', '${dev.raw_id}', ${targetTemp - 0.5})">-</button>
+                    <div class="dial-center">
+                        <span class="dial-label">Target Desiderato</span>
+                        <span class="dial-val">${targetTemp.toFixed(1)}°C</span>
+                    </div>
+                    <button type="button" class="btn-dial" onclick="adjustClimateTemp('${dev.ecosystem}', '${dev.raw_id}', ${targetTemp + 0.5})">+</button>
+                </div>
+            </div>
+
+            <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+                <div class="telemetry-card">
+                    <span class="tel-label">🌡️ Temperatura Ambiente</span>
+                    <span class="tel-val">${curTemp}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🎯 Setpoint Termostato</span>
+                    <span class="tel-val text-accent">${targetTemp.toFixed(1)}°C</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🟢 Stato Connessione</span>
+                    <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
+                <span class="state-text">${isOn ? 'Clima Acceso' : 'Clima Spento'}</span>
+            </div>
+            ${dev.can_toggle ? `
+                <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
+                    ${isOn ? 'Spegni' : 'Accendi'}
+                </button>
+            ` : ''}
+        </div>
+
+        <div class="clima-dial-wrap">
+            <div class="clima-temps-row">
+                <div class="clima-temp-box">
+                    <span class="clima-sub">Temp. Ambiente</span>
+                    <span class="clima-big-val">${curTemp}</span>
+                </div>
+                <div class="clima-temp-box">
+                    <span class="clima-sub">Temp. Target</span>
+                    <div class="clima-target-ctrl">
+                        <button type="button" class="btn-step" onclick="adjustClimateTemp('${dev.ecosystem}', '${dev.raw_id}', ${targetTemp - 1})">-</button>
+                        <span class="clima-target-val">${targetTemp}°C</span>
+                        <button type="button" class="btn-step" onclick="adjustClimateTemp('${dev.ecosystem}', '${dev.raw_id}', ${targetTemp + 1})">+</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="clima-options-section">
+            <span class="section-title">Modalità di Funzionamento</span>
+            <div class="clima-pill-grid">
+                <button class="pill-opt ${mode === 'COOL' ? 'active' : ''}" onclick="setClimateMode('${dev.ecosystem}', '${dev.raw_id}', 'cool')">❄️ Cool</button>
+                <button class="pill-opt ${mode === 'HEAT' ? 'active' : ''}" onclick="setClimateMode('${dev.ecosystem}', '${dev.raw_id}', 'heat')">🔥 Heat</button>
+                <button class="pill-opt ${mode === 'DRY' ? 'active' : ''}" onclick="setClimateMode('${dev.ecosystem}', '${dev.raw_id}', 'dry')">💧 Dry</button>
+                <button class="pill-opt ${mode === 'FAN' || mode === 'FAN_ONLY' ? 'active' : ''}" onclick="setClimateMode('${dev.ecosystem}', '${dev.raw_id}', 'fan')">💨 Fan</button>
+                <button class="pill-opt ${mode === 'AUTO' ? 'active' : ''}" onclick="setClimateMode('${dev.ecosystem}', '${dev.raw_id}', 'auto')">🔄 Auto</button>
+            </div>
+
+            <span class="section-title" style="margin-top: 1rem;">Velocità Ventilazione</span>
+            <div class="clima-pill-grid">
+                <button class="pill-opt ${fanSpeed === 'LOW' ? 'active' : ''}" onclick="setClimateFan('${dev.ecosystem}', '${dev.raw_id}', 'low')">Bassa</button>
+                <button class="pill-opt ${fanSpeed === 'MID' || fanSpeed === 'MEDIUM' ? 'active' : ''}" onclick="setClimateFan('${dev.ecosystem}', '${dev.raw_id}', 'medium')">Media</button>
+                <button class="pill-opt ${fanSpeed === 'HIGH' ? 'active' : ''}" onclick="setClimateFan('${dev.ecosystem}', '${dev.raw_id}', 'high')">Alta</button>
+                <button class="pill-opt ${fanSpeed === 'AUTO' ? 'active' : ''}" onclick="setClimateFan('${dev.ecosystem}', '${dev.raw_id}', 'auto')">Auto</button>
+            </div>
+
+            <span class="section-title" style="margin-top: 1rem;">Oscillazione Alette (Swing)</span>
+            <div class="clima-pill-grid">
+                <button class="pill-opt ${dev.rotate_up_down || (dev.swing_mode && dev.swing_mode.toLowerCase() === 'vertical') ? 'active' : ''}" onclick="setClimateSwing('${dev.ecosystem}', '${dev.raw_id}', 'vertical')">↕️ Verticale</button>
+                <button class="pill-opt ${dev.swing_mode && dev.swing_mode.toLowerCase() === 'horizontal' ? 'active' : ''}" onclick="setClimateSwing('${dev.ecosystem}', '${dev.raw_id}', 'horizontal')">↔️ Orizzontale</button>
+                <button class="pill-opt ${dev.swing_mode && (dev.swing_mode.toLowerCase() === 'both' || dev.swing_mode.toLowerCase() === 'on') ? 'active' : ''}" onclick="setClimateSwing('${dev.ecosystem}', '${dev.raw_id}', 'both')">🔄 Auto / 3D</button>
+                <button class="pill-opt ${!dev.rotate_up_down && (!dev.swing_mode || dev.swing_mode.toLowerCase() === 'off') ? 'active' : ''}" onclick="setClimateSwing('${dev.ecosystem}', '${dev.raw_id}', 'off')">⏹️ Fisso / Off</button>
+            </div>
+        </div>
+
+        ${(dev.power_w !== undefined || dev.voltage_v !== undefined || dev.energy_total_kwh !== undefined) ? `
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            <div class="telemetry-card">
+                <span class="tel-label">⚡ Potenza Istantanea</span>
+                <span class="tel-val ${dev.power_w > 0 ? 'text-accent' : ''}">${dev.power_w ? dev.power_w.toFixed(0) + ' W' : '0 W'}</span>
+            </div>
+            ${dev.voltage_v ? `
+            <div class="telemetry-card">
+                <span class="tel-label">🔌 Tensione Rete</span>
+                <span class="tel-val">${dev.voltage_v.toFixed(1)} V</span>
+            </div>` : ''}
+            ${dev.current_a !== undefined && dev.current_a !== null ? `
+            <div class="telemetry-card">
+                <span class="tel-label">🔋 Corrente Assorbita</span>
+                <span class="tel-val">${dev.current_a.toFixed(2)} A</span>
+            </div>` : ''}
+            ${dev.energy_total_kwh !== undefined && dev.energy_total_kwh !== null ? `
+            <div class="telemetry-card">
+                <span class="tel-label">📊 Consumo Totale</span>
+                <span class="tel-val">${dev.energy_total_kwh} kWh</span>
+            </div>` : (dev.energy_today_wh !== undefined && dev.energy_today_wh !== null ? `
+            <div class="telemetry-card">
+                <span class="tel-label">📊 Consumo Oggi</span>
+                <span class="tel-val">${(dev.energy_today_wh / 1000).toFixed(2)} kWh</span>
+            </div>` : '')}
+            <div class="telemetry-card">
+                <span class="tel-label">🏷️ Modello & Brand</span>
+                <span class="tel-val" style="font-size: 0.85rem;">${dev.model_name || dev.brand || 'Clima Inverter'}</span>
+            </div>
+        </div>` : ''}
+    `;
+}
+
+// 6. Grandi Elettrodomestici (Lavatrice, Lavastoviglie, Asciugatrice)
+function renderApplianceDetail(dev) {
+    const raw = dev.raw || {};
+    const isRunning = dev.is_on || raw.is_running || false;
+    const stateTxt = dev.status_text || raw.job_state_label || (isRunning ? 'In Funzione 🫧' : 'In Standby / Pronto');
+    const cycle = dev.cycle_name || raw.cycle_name || 'Standard';
+    const compTime = dev.completion_time || raw.completion_time || '--';
+    const pW = dev.power_w || 0;
+
+    return `
+        <div class="modal-quick-state-card ${isRunning ? 'state-card-on' : 'state-card-off'}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${isRunning ? 'dot-on pulse' : 'dot-off'}"></span>
+                <span class="state-text">${stateTxt}</span>
+            </div>
+            ${dev.can_toggle ? `
+                <button type="button" class="btn ${dev.is_on ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${dev.is_on ? 'true' : 'false'})">
+                    ${dev.is_on ? 'Spegni' : 'Accendi'}
+                </button>
+            ` : ''}
+        </div>
+
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            <div class="telemetry-card">
+                <span class="tel-label">🧺 Programma / Ciclo</span>
+                <span class="tel-val text-accent">${cycle}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">⏱️ Completamento Stimato</span>
+                <span class="tel-val">${compTime}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">⚡ Potenza Assorbita</span>
+                <span class="tel-val ${pW > 10 ? 'text-accent' : ''}">${pW > 0 ? pW.toFixed(1) + ' W' : '0.0 W'}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">🫧 Stato Ciclo</span>
+                <span class="tel-val">${isRunning ? 'In Funzione 🫧' : 'Pronto / Standby'}</span>
+            </div>
+        </div>
+    `;
+}
+
+// 7. Persiane, Tapparelle & Tende Motorizzate
+function renderShutterDetail(dev) {
+    const raw = dev.raw || {};
+    const entityId = dev.raw_id;
+    const stateStr = (dev.curtain_state || raw.curtain_state || raw.state || 'Pronta 🪟').toUpperCase();
+    const pos = raw.attributes && raw.attributes.current_position !== undefined ? raw.attributes.current_position : (raw.percent_state !== undefined ? raw.percent_state : null);
+    const posLabel = pos !== null ? `${pos}%` : stateStr;
+    const isTuya = dev.ecosystem === 'tuya';
+
+    return `
+        <div class="modal-quick-state-card state-card-on" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.3);">
+            <div class="state-card-info">
+                <span class="state-indicator-dot dot-on" style="background: #38bdf8; box-shadow: 0 0 8px #38bdf8;"></span>
+                <span class="state-text">Persiana / Tenda: <strong>${posLabel}</strong></span>
+            </div>
+            <span class="badge-tag" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; font-size: 0.8rem;">
+                ${isTuya ? 'Cloud Tuya 🟢' : 'HA Locale ⚡'}
+            </span>
+        </div>
+
+        <div class="curtain-controls-box" style="margin-top: 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 14px; padding: 1.25rem; text-align: center;">
+            <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Comandi Rapidi Motorizzazione</div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
+                <button type="button" class="btn btn-action-primary" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px;" onclick="${isTuya ? `devControlTuyaCurtain('${dev.raw_id}', 'open')` : `controlHassCover('${entityId}', 'open_cover')`}">
+                    <span style="font-size: 1.35rem;">🔼</span>
+                    <span>Apri</span>
+                </button>
+                <button type="button" class="btn btn-outline" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px; border-color: #38bdf8; color: #38bdf8;" onclick="${isTuya ? `devControlTuyaCurtain('${dev.raw_id}', 'half')` : `controlHassCover('${entityId}', 'set_cover_position', 50)`}">
+                    <span style="font-size: 1.35rem;">🌓</span>
+                    <span>A Metà (50%)</span>
+                </button>
+                <button type="button" class="btn btn-outline" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px; border-color: rgba(255,255,255,0.2);" onclick="${isTuya ? `devControlTuyaCurtain('${dev.raw_id}', 'stop')` : `controlHassCover('${entityId}', 'stop_cover')`}">
+                    <span style="font-size: 1.35rem;">⏸️</span>
+                    <span>Stop</span>
+                </button>
+                <button type="button" class="btn btn-action-danger" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px;" onclick="${isTuya ? `devControlTuyaCurtain('${dev.raw_id}', 'close')` : `controlHassCover('${entityId}', 'close_cover')`}">
+                    <span style="font-size: 1.35rem;">🔽</span>
+                    <span>Chiudi</span>
+                </button>
+            </div>
+
+            <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06);">
+                <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-dim); margin-bottom: 6px;">
+                    <span>Regolazione Fine Posizione:</span>
+                    <strong id="cover-slider-val-${dev.raw_id}" style="color: #38bdf8;">${pos !== null ? pos : 50}%</strong>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="range" min="0" max="100" value="${pos !== null ? pos : 50}" style="flex: 1; accent-color: #38bdf8;" oninput="document.getElementById('cover-slider-val-${dev.raw_id}').textContent = this.value + '%'" id="cover-slider-${dev.raw_id}">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="setShutterPosition('${dev.ecosystem}', '${dev.raw_id}', parseInt(document.getElementById('cover-slider-${dev.raw_id}').value))">
+                        Imposta
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            <div class="telemetry-card">
+                <span class="tel-label">🪟 Dispositivo</span>
+                <span class="tel-val" style="font-size: 0.9rem;">${escapeHtml(dev.name)}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">🟢 Stato Connessione</span>
+                <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+            </div>
+        </div>
+    `;
+}
+
+// 8. Irrigazione Smart & Elettrovalvole
+function renderIrrigationDetail(dev) {
+    const raw = dev.raw || {};
+    const isOn = dev.is_on;
+    const isWatering = isOn || (raw.work_state === 'watering' || raw.work_state === 'spray' || raw.work_state === 'manual' || raw.work_state === 'auto' || raw.state === 'open' || raw.state === 'opening');
+    const battPct = dev.battery_pct !== null && dev.battery_pct !== undefined ? `${dev.battery_pct}%` : (raw.battery_pct !== null ? `${raw.battery_pct}%` : '--');
+    const wDelay = raw.weather_delay || 'cancel';
+    const isHass = dev.ecosystem === 'homeassistant';
+
+    return `
+        <div class="modal-quick-state-card ${isWatering ? 'state-card-on' : 'state-card-off'}" style="${isWatering ? 'background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.4);' : ''}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${isWatering ? 'dot-on pulse' : 'dot-off'}" style="${isWatering ? 'background: #10b981; box-shadow: 0 0 10px #10b981;' : ''}"></span>
+                <span class="state-text">Valvola: <strong>${isWatering ? 'In Irrigazione 💧' : 'Chiusa / Standby 💤'}</strong></span>
+            </div>
+            ${isWatering ? `
+                <button type="button" class="btn btn-danger" onclick="${isHass ? `controlHassValve('${dev.raw_id}', 'close_valve')` : `stopIrrigation('${dev.raw_id}')`}">
+                    🛑 Chiudi Valvola
+                </button>
+            ` : `
+                <button type="button" class="btn btn-success" onclick="${isHass ? `controlHassValve('${dev.raw_id}', 'open_valve')` : `startIrrigation(2, '${dev.raw_id}')`}">
+                    💧 Avvia Micro-Dose (2 min)
+                </button>
+            `}
+        </div>
+
+        <!-- Box Durate Rapide per Vaso / Test Calibrazione -->
+        <div style="margin-top: 1rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                <span style="font-size: 0.8rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600;">Micro-Dosi & Test Calibrazione Vaso</span>
+                <span style="font-size: 0.75rem; color: #a78bfa;">🧠 Auto-Apprendimento</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
+                <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(1, '${dev.raw_id}')">🧪 1m</button>
+                <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(1.5, '${dev.raw_id}')">🧪 1.5m</button>
+                <button type="button" class="btn btn-action-primary" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(2, '${dev.raw_id}')">💧 2m</button>
+                <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.8rem;" onclick="startIrrigation(3, '${dev.raw_id}')">⏱️ 3m</button>
+            </div>
+        </div>
+
+        <!-- Telemetria & Sensore WH51 -->
+        <div class="modal-telemetry-grid" style="margin-top: 1rem;">
+            <div class="telemetry-card">
+                <span class="tel-label">🔋 Batteria Valvola</span>
+                <span class="tel-val text-success">🔋 ${battPct}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">⏱️ Ritardo Meteo HW</span>
+                <span class="tel-val">${wDelay === 'cancel' ? 'Nessuno' : wDelay}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">🟢 Stato Connessione</span>
+                <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+            </div>
+        </div>
+
+        <!-- Box Automazione Intelligente WH51 -->
+        <div id="irrigation-smart-advice-box" style="margin-top: 1rem; background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 12px; padding: 1rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-weight: 700; font-size: 0.88rem; color: #38bdf8;">🧠 Decisione Agrometeo WH51</span>
+                <span class="badge-tag" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">Smart Active</span>
+            </div>
+            <p id="irrigation-smart-desc" style="font-size: 0.82rem; color: var(--text); margin: 0.5rem 0 0 0; line-height: 1.4;">
+                Caricamento stato sensore terreno e previsioni pioggia...
+            </p>
+        </div>
+
+        <!-- Box Modello Auto-Apprendimento Vaso -->
+        <div id="irrigation-learning-box" style="margin-top: 0.75rem; background: rgba(167, 139, 250, 0.06); border: 1px solid rgba(167, 139, 250, 0.25); border-radius: 12px; padding: 1rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-weight: 700; font-size: 0.88rem; color: #a78bfa;">🪴 Modello di Risposta del Tuo Vaso</span>
+                <span class="badge-tag" style="background: rgba(167, 139, 250, 0.2); color: #a78bfa;">Self-Learning</span>
+            </div>
+            <div id="irrigation-learning-desc" style="font-size: 0.82rem; color: var(--text); margin-top: 0.5rem; line-height: 1.5;">
+                Calibrazione curva di percolazione in corso...
+            </div>
+        </div>
+    `;
+}
+
+// 9. Prese Smart con Misuratore di Potenza
+function renderPlugDetail(dev) {
+    const raw = dev.raw || {};
+    const isOn = dev.is_on;
+    const pW = dev.power_w !== undefined && dev.power_w !== null ? dev.power_w : 0;
+    const vV = dev.voltage_v !== undefined && dev.voltage_v !== null ? dev.voltage_v : (raw.voltage_v || null);
+    const aA = dev.current_a !== undefined && dev.current_a !== null ? dev.current_a : (raw.current_a || null);
+    const protocolLabel = dev.ecosystem === 'homeassistant' ? 'Home Assistant LAN ⚡' : (dev.ecosystem === 'tuya' ? 'Cloud Tuya 🟢' : `${dev.ecosystem ? dev.ecosystem.toUpperCase() : 'HUB'} 🟢`);
+
+    let telemetryCards = `
+        <div class="telemetry-card">
+            <span class="tel-label">⚡ Potenza Istantanea</span>
+            <span class="tel-val ${pW > 0 ? 'text-accent' : ''}" style="font-size: 1.25rem; font-weight: 800;">${pW > 0 ? pW.toFixed(1) : '0.0'} <small>W</small></span>
+        </div>
+    `;
+
+    if (vV !== null && vV !== '--') {
+        telemetryCards += `
+            <div class="telemetry-card">
+                <span class="tel-label">🔌 Tensione di Rete</span>
+                <span class="tel-val">${typeof vV === 'number' ? vV.toFixed(1) : vV} <small>V</small></span>
+            </div>
+        `;
+    }
+    if (aA !== null && aA !== '--') {
+        telemetryCards += `
+            <div class="telemetry-card">
+                <span class="tel-label">⚡ Corrente Assorbita</span>
+                <span class="tel-val">${typeof aA === 'number' ? aA.toFixed(2) : aA} <small>A</small></span>
+            </div>
+        `;
+    }
+
+    telemetryCards += `
+        <div class="telemetry-card">
+            <span class="tel-label">📡 Protocollo / Hub</span>
+            <span class="tel-val text-success">${protocolLabel}</span>
+        </div>
+        <div class="telemetry-card">
+            <span class="tel-label">🟢 Stato Connessione</span>
+            <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+        </div>
+    `;
+
+    return `
+        <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
+                <span class="state-text">${isOn ? 'Presa Accesa' : 'Presa Spenta'}</span>
+            </div>
+            ${dev.can_toggle ? `
+                <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
+                    ${isOn ? 'Spegni' : 'Accendi'}
+                </button>
+            ` : ''}
+        </div>
+
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            ${telemetryCards}
+        </div>
+    `;
+}
+
+// 10. Interruttori Smart / Relè Semplici
+function renderSwitchDetail(dev) {
+    const isOn = dev.is_on;
+    const protocolLabel = dev.ecosystem === 'homeassistant' ? 'Home Assistant ⚡' : (dev.ecosystem === 'tuya' ? 'Cloud Tuya 🟢' : `${dev.ecosystem ? dev.ecosystem.toUpperCase() : 'HUB'} 🟢`);
+
+    return `
+        <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
+                <span class="state-text">${isOn ? 'Interruttore Attivo (ON)' : 'Interruttore Inattivo (OFF)'}</span>
+            </div>
+            ${dev.can_toggle ? `
+                <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
+                    ${isOn ? 'Spegni' : 'Accendi'}
+                </button>
+            ` : ''}
+        </div>
+
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            <div class="telemetry-card">
+                <span class="tel-label">🔘 Stato Relè</span>
+                <span class="tel-val ${isOn ? 'text-success' : 'text-dim'}">${isOn ? 'Chiuso / ON' : 'Aperto / OFF'}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">📡 Ecosistema Hub</span>
+                <span class="tel-val text-success">${protocolLabel}</span>
+            </div>
+            <div class="telemetry-card">
+                <span class="tel-label">🟢 Stato Connessione</span>
+                <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+            </div>
+        </div>
+    `;
+}
+
+// 11. Luci & Strisce LED
+function renderLightDetail(dev) {
+    const raw = dev.raw || {};
+    const isOn = dev.is_on;
+    const brightness = raw.attributes ? raw.attributes.brightness : (raw.brightness || null);
+    const brightPct = brightness !== null ? Math.round((brightness / 255) * 100) : null;
+    const pW = dev.power_w || 0;
+
+    return `
+        <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}" style="${isOn ? 'background: #fbbf24; box-shadow: 0 0 10px #fbbf24;' : ''}"></span>
+                <span class="state-text">${isOn ? 'Luce Accesa 💡' : 'Luce Spenta 🌑'}</span>
+            </div>
+            ${dev.can_toggle ? `
+                <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
+                    ${isOn ? 'Spegni' : 'Accendi'}
+                </button>
+            ` : ''}
+        </div>
+
+        ${brightPct !== null ? `
+            <div style="margin-top: 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 6px;">
+                    <span>Regolazione Luminosità:</span>
+                    <strong style="color: #fbbf24;">${brightPct}%</strong>
+                </div>
+                <input type="range" min="1" max="100" value="${brightPct}" style="width: 100%; accent-color: #fbbf24;" onchange="setLightBrightness('${dev.ecosystem}', '${dev.raw_id}', this.value)" />
+            </div>
+        ` : ''}
+
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            <div class="telemetry-card">
+                <span class="tel-label">💡 Stato Illuminazione</span>
+                <span class="tel-val ${isOn ? 'text-warning' : 'text-dim'}">${isOn ? 'Attiva' : 'Spenta'}</span>
+            </div>
+            ${brightPct !== null ? `
+                <div class="telemetry-card">
+                    <span class="tel-label">🔆 Luminosità</span>
+                    <span class="tel-val text-warning">${brightPct}%</span>
+                </div>
+            ` : ''}
+            ${pW > 0 ? `
+                <div class="telemetry-card">
+                    <span class="tel-label">⚡ Potenza Assorbita</span>
+                    <span class="tel-val text-accent">${pW.toFixed(1)} W</span>
+                </div>
+            ` : ''}
+            <div class="telemetry-card">
+                <span class="tel-label">🟢 Stato Connessione</span>
+                <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+            </div>
+        </div>
+    `;
+}
+
+// 12. Sensori di Contatto / Porta / Finestra / Movimento
+function renderSensorDetail(dev) {
+    const raw = dev.raw || {};
+    const isOpen = dev.is_on || raw.state === 'on' || raw.state === 'open' || raw.door_open || false;
+    const batt = dev.battery_pct !== null && dev.battery_pct !== undefined ? `${dev.battery_pct}%` : 'N/D';
+
+    return `
+        <div class="modal-presence-box" style="background: ${isOpen ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.08)'}; border: 1px solid ${isOpen ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}; border-radius: 14px; padding: 1.25rem;">
+            <div class="presence-status-large" style="text-align: center;">
+                <span class="presence-icon" style="font-size: 2.2rem; display: block; margin-bottom: 0.35rem;">${isOpen ? '🚪⚠️' : '🚪🟢'}</span>
+                <div class="presence-title" style="font-size: 1.15rem; font-weight: 700; color: ${isOpen ? '#f87171' : 'var(--text)'};">
+                    ${isOpen ? 'Aperto / Attivo' : 'Chiuso / Sicuro'}
+                </div>
+                <p class="presence-sub" style="font-size: 0.82rem; color: var(--text-dim); margin-top: 0.25rem;">${dev.status_text || 'Sensore di contatto'}</p>
+            </div>
+            <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+                <div class="telemetry-card">
+                    <span class="tel-label">🚪 Stato Sensore</span>
+                    <span class="tel-val ${isOpen ? 'text-danger' : 'text-success'}">${isOpen ? 'Aperto ⚠️' : 'Chiuso 🟢'}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🔋 Batteria</span>
+                    <span class="tel-val text-success">🔋 ${batt}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🟢 Connessione</span>
+                    <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// 13. Fotovoltaico & Accumulo Batteria Aton
+function renderAtonDetail(dev) {
+    const raw = dev.raw || {};
+    const solar = dev.solar_power_w || 0;
+    const soc = dev.battery_soc_pct || 0;
+    const battP = dev.battery_power_w || 0;
+    const load = dev.house_load_w || 0;
+
+    return `
+        <div class="modal-solar-overview">
+            <div class="modal-telemetry-grid">
+                <div class="telemetry-card">
+                    <span class="tel-label">☀️ Produzione Solare</span>
+                    <span class="tel-val text-accent">☀️ ${Math.round(solar)} <small>W</small></span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🔋 Stato Batteria</span>
+                    <span class="tel-val text-success">🔋 ${Math.round(soc)} <small>%</small></span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">⚡ Flusso Batteria</span>
+                    <span class="tel-val">${battP > 0 ? `Carica (+${Math.round(battP)} W)` : (battP < 0 ? `Scarica (${Math.round(battP)} W)` : 'Inattiva')}</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="tel-label">🏠 Consumo Abitazione</span>
+                    <span class="tel-val">🏠 ${Math.round(load)} <small>W</small></span>
+                </div>
+            </div>
+            <div class="solar-action-footer" style="margin-top:1.25rem; text-align:center;">
+                <a href="/" class="btn btn-outline" style="text-decoration:none;">Vai al Cruscotto Solare Completo 📊</a>
+            </div>
+        </div>
+    `;
+}
+
+// 14. Fallback Generico Pulito
+function renderGenericDetail(dev) {
+    const isOn = dev.is_on;
+    const pW = dev.power_w;
+    const batt = dev.battery_pct;
+
+    let items = `
+        <div class="telemetry-card">
+            <span class="tel-label">Stato Attuale</span>
+            <span class="tel-val">${dev.status_text || (isOn === true ? 'Attivo' : (isOn === false ? 'Non attivo' : 'Standby'))}</span>
+        </div>
+    `;
+
+    if (pW !== undefined && pW !== null && pW > 0) {
+        items += `
+            <div class="telemetry-card">
+                <span class="tel-label">⚡ Potenza Rilevata</span>
+                <span class="tel-val text-accent">${pW.toFixed(1)} W</span>
+            </div>
+        `;
+    }
+
+    if (batt !== undefined && batt !== null) {
+        items += `
+            <div class="telemetry-card">
+                <span class="tel-label">🔋 Batteria</span>
+                <span class="tel-val text-success">🔋 ${batt}%</span>
+            </div>
+        `;
+    }
+
+    items += `
+        <div class="telemetry-card">
+            <span class="tel-label">🟢 Stato Connessione</span>
+            <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
+        </div>
+    `;
+
+    return `
+        ${dev.can_toggle ? `
+            <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
+                <div class="state-card-info">
+                    <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
+                    <span class="state-text">${isOn ? 'Dispositivo Acceso' : 'Dispositivo Spento'}</span>
+                </div>
+                <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
+                    ${isOn ? 'Spegni' : 'Accendi'}
+                </button>
+            </div>
+        ` : ''}
+
+        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
+            ${items}
+        </div>
+    `;
+}
+
+// =========================================================================
+// GESTORI COMANDI UNIVERSALI
+// =========================================================================
+
+async function devSyncHealthLiveMetrics() {
+    try {
+        showToast('Sincronizzazione parametri salute e bilancia in corso... ⏳', 'info');
+        const resp = await fetch('/api/health/sync', { method: 'POST' });
+        if (resp.ok) {
+            showToast('Parametri salute e bilancia sincronizzati con successo! ⚖️', 'success');
+            await fetchDevicesData();
+        } else {
+            showToast('Errore durante la sincronizzazione dati salute', 'danger');
+        }
+    } catch (e) {
+        showToast('Errore comunicazione sincronizzazione: ' + e.message, 'danger');
+    }
+}
+
+async function adjustClimateTemp(ecosystem, rawId, newTemp) {
+    if (newTemp < 10 || newTemp > 35) return;
+    try {
+        if (ecosystem === 'thinq') {
+            await fetch(`/api/thinq/device/${rawId}/control`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({target_temp: newTemp})
+            });
+        } else if (ecosystem === 'homeassistant') {
+            await fetch('/api/homeassistant/service', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    domain: 'climate',
+                    service: 'set_temperature',
+                    entity_id: rawId,
+                    data: { temperature: newTemp }
+                })
+            });
+        } else {
+            await fetch(`/api/tuya/device/${rawId}/command`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({temp_c: newTemp})
+            });
+        }
+        showToast(`Temperatura target impostata a ${newTemp.toFixed(1)}°C`, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore impostazione temperatura clima', 'danger');
+    }
+}
+
+async function setClimateMode(ecosystem, rawId, mode) {
+    try {
+        if (ecosystem === 'thinq') {
+            await fetch(`/api/thinq/device/${rawId}/control`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({mode: mode.toUpperCase()})
+            });
+        } else if (ecosystem === 'homeassistant') {
+            await fetch('/api/homeassistant/service', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    domain: 'climate',
+                    service: 'set_hvac_mode',
+                    entity_id: rawId,
+                    data: { hvac_mode: mode.toLowerCase() }
+                })
+            });
+        } else {
+            await fetch(`/api/tuya/device/${rawId}/command`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({mode: mode})
+            });
+        }
+        showToast(`Modalità clima impostata su ${mode.toUpperCase()}`, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore impostazione modalità clima', 'danger');
+    }
+}
+
+async function setClimateFan(ecosystem, rawId, speed) {
+    try {
+        if (ecosystem === 'thinq') {
+            await fetch(`/api/thinq/device/${rawId}/control`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({fan_speed: speed.toUpperCase()})
+            });
+        } else if (ecosystem === 'homeassistant') {
+            await fetch('/api/homeassistant/service', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    domain: 'climate',
+                    service: 'set_fan_mode',
+                    entity_id: rawId,
+                    data: { fan_mode: speed.toLowerCase() }
+                })
+            });
+        } else {
+            await fetch(`/api/tuya/device/${rawId}/command`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({fan_speed: speed})
+            });
+        }
+        showToast(`Ventola impostata su ${speed.toUpperCase()}`, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore impostazione ventilazione clima', 'danger');
+    }
+}
+
+async function setClimateSwing(ecosystem, rawId, swing) {
+    try {
+        if (ecosystem === 'homeassistant') {
+            await fetch('/api/homeassistant/service', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    domain: 'climate',
+                    service: 'set_swing_mode',
+                    entity_id: rawId,
+                    data: { swing_mode: swing }
+                })
+            });
+        } else if (ecosystem === 'thinq') {
+            await fetch(`/api/thinq/device/${rawId}/control`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({rotate_up_down: swing !== 'off'})
+            });
+        }
+        showToast(`Oscillazione impostata su ${swing}`, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore impostazione oscillazione clima', 'danger');
+    }
+}
+
+
+async function setShutterPosition(ecosystem, rawId, position) {
+    try {
+        if (ecosystem === 'homeassistant') {
+            await controlHassCover(rawId, 'set_cover_position', position);
+        } else {
+            await fetch(`/api/tuya/device/${rawId}/curtain`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({position: position})
+            });
+            showToast(`Persiana impostata al ${position}%`, 'success');
+            setTimeout(fetchDevicesData, 1000);
+        }
+    } catch (e) {
+        showToast('Errore impostazione posizione persiana', 'danger');
+    }
+}
+
+async function setLightBrightness(ecosystem, rawId, brightnessPct) {
+    try {
+        const val = Math.round((parseInt(brightnessPct) / 100) * 255);
+        if (ecosystem === 'homeassistant') {
+            await fetch('/api/homeassistant/service', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    domain: 'light',
+                    service: 'turn_on',
+                    entity_id: rawId,
+                    data: { brightness: val }
+                })
+            });
+        } else {
+            await fetch(`/api/tuya/device/${rawId}/command`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({brightness: parseInt(brightnessPct)})
+            });
+        }
+        showToast(`Luminosità impostata al ${brightnessPct}%`, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore impostazione luminosità', 'danger');
+    }
+}
+
+
+async function adjustThermostatTemp(rawId, newTemp) {
+    try {
+        await fetch(`/api/tuya/device/${rawId}/command`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({temp_c: newTemp})
+        });
+        showToast(`Setpoint termostato impostato a ${newTemp}°C`, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore impostazione temperatura termostato', 'danger');
+    }
+}
+
+async function setThinQTemp(rawId, newTemp) {
+    if (newTemp < 18 || newTemp > 30) return;
+    try {
+        await fetch(`/api/thinq/device/${rawId}/control`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({target_temp: newTemp})
+        });
+        showToast(`Temperatura target impostata a ${newTemp}°C`, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore impostazione temperatura clima', 'danger');
+    }
+}
+
+async function devSetThinQMode(rawId, mode) {
+    try {
+        await fetch(`/api/thinq/device/${rawId}/control`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({mode: mode})
+        });
+        showToast(`Modalità clima impostata su ${mode}`, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore impostazione modalità clima', 'danger');
+    }
+}
+
+async function devSetThinQFan(rawId, speed) {
+    try {
+        await fetch(`/api/thinq/device/${rawId}/control`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({fan_speed: speed})
+        });
+        showToast(`Ventola impostata su ${speed}`, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore impostazione ventilazione clima', 'danger');
+    }
+}
+
+async function toggleThinQFridgeExpress(rawId, newState) {
+    try {
+        const resp = await fetch(`/api/thinq/device/${rawId}/control`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({express_mode: newState})
+        });
+        if (resp.ok) {
+            showToast(newState ? '❄️ Express Cool attivato!' : 'Express Cool disattivato', 'success');
+            setTimeout(fetchDevicesData, 1000);
+        } else {
+            showToast('Errore invio comando frigorifero', 'danger');
+        }
+    } catch (e) {
+        showToast('Errore comunicazione frigorifero: ' + e.message, 'danger');
+    }
+}
+
+async function setThinQFridgeTemp(rawId, newTemp) {
+    if (newTemp < 0 || newTemp > 6) return;
+    try {
+        const resp = await fetch(`/api/thinq/device/${rawId}/control`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({target_temp: newTemp})
+        });
+        if (resp.ok) {
+            showToast(`Temperatura target frigo impostata a ${newTemp}°C`, 'success');
+            setTimeout(fetchDevicesData, 1000);
+        } else {
+            showToast('Errore impostazione temperatura frigo', 'danger');
+        }
+    } catch (e) {
+        showToast('Errore comunicazione frigorifero: ' + e.message, 'danger');
+    }
+}
+
+async function controlHassCover(entityId, service, position = null) {
+    try {
+        let payload = {
+            domain: 'cover',
+            service: service,
+            entity_id: entityId
+        };
+        if (service === 'set_cover_position' && position !== null) {
+            payload.data = { position: parseInt(position) };
+        }
+        const resp = await fetch('/api/homeassistant/service', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const res = await resp.json();
+        if (res.success) {
+            let label = 'Comando persiana inviato 🪟';
+            if (service === 'open_cover') label = 'Apertura persiana 100% avviata 🔼';
+            else if (service === 'close_cover') label = 'Chiusura persiana avviata 🔽';
+            else if (service === 'stop_cover') label = 'Movimento persiana fermato ⏸️';
+            else if (service === 'set_cover_position') label = `Persiana impostata al ${position}% 🌓`;
+            showToast(label, 'success');
+            setTimeout(fetchDevicesData, 1200);
+        } else {
+            showToast('Errore persiana: ' + (res.error || 'Errore HA'), 'danger');
+        }
+    } catch (e) {
+        showToast('Errore comunicazione Home Assistant: ' + e.message, 'danger');
+    }
+}
+
+async function controlHassValve(entityId, service) {
+    try {
+        const resp = await fetch('/api/homeassistant/service', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                domain: 'valve',
+                service: service,
+                entity_id: entityId
+            })
+        });
+        const res = await resp.json();
+        if (res.success) {
+            const label = service === 'open_valve' ? '💧 Elettrovalvola aperta con successo!' : '🛑 Elettrovalvola chiusa';
+            showToast(label, 'success');
+            setTimeout(fetchDevicesData, 1000);
+        } else {
+            showToast('Errore valvola: ' + (res.error || 'Errore HA'), 'danger');
+        }
+    } catch (e) {
+        showToast('Errore comunicazione valvola: ' + e.message, 'danger');
+    }
+}
+
+async function devControlTuyaCurtain(rawId, action) {
+    try {
+        const resp = await fetch(`/api/tuya/device/${rawId}/curtain`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: action})
+        });
+        const res = await resp.json();
+        const actionLabel = action === 'open' ? 'Apertura avviata 🔼' : (action === 'close' ? 'Chiusura avviata 🔽' : 'Persiana fermata ⏸️');
+        showToast(actionLabel, 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore invio comando persiana', 'danger');
+    }
+}
+
+async function devSendTuyaCommand(rawId, commands) {
+    try {
+        await fetch(`/api/tuya/device/${rawId}/command`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({commands: commands})
+        });
+        showToast('Comando inviato con successo', 'success');
+        setTimeout(fetchDevicesData, 1000);
+    } catch (e) {
+        showToast('Errore invio comando', 'danger');
+    }
+}
+
+async function startIrrigation(durationMinutes = 15, rawId = null) {
+    try {
+        const resp = await fetch('/api/irrigation/start', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({duration_minutes: durationMinutes, device_id: rawId})
+        });
+        const res = await resp.json();
+        if (resp.ok) {
+            const durStr = typeof formatDurationItalian === 'function' ? formatDurationItalian(durationMinutes) : `${durationMinutes} min`;
+            showToast(`💧 Irrigazione avviata per ${durStr}`, 'success');
+            setTimeout(fetchDevicesData, 1000);
+        } else {
+            showToast('Errore avvio irrigazione: ' + (res.error || 'Errore server'), 'danger');
+        }
+    } catch (e) {
+        showToast('Errore connessione avvio irrigazione: ' + e.message, 'danger');
+    }
+}
+
+async function stopIrrigation(rawId = null) {
+    try {
+        const resp = await fetch('/api/irrigation/stop', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({device_id: rawId})
+        });
+        const res = await resp.json();
+        if (resp.ok) {
+            showToast('🛑 Irrigazione arrestata', 'info');
+            setTimeout(fetchDevicesData, 1000);
+        } else {
+            showToast('Errore arresto irrigazione: ' + (res.error || 'Errore server'), 'danger');
+        }
+    } catch (e) {
+        showToast('Errore connessione arresto irrigazione: ' + e.message, 'danger');
+    }
+}
+
+async function loadIrrigationSmartStatus(rawId) {
+    try {
+        const resp = await fetch('/api/irrigation/status');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const descEl = document.getElementById('irrigation-smart-desc');
+        if (descEl && data.advice) {
+            const adv = data.advice;
+            const crop = adv.crop_label || (data.config ? data.config.crop_label : 'Grande Vaso (Pomodori & Zucchine) 🪴🍅🥒');
+            const sm = data.soil_moisture_pct !== null ? `${data.soil_moisture_pct}%` : 'N/D';
+            const rf = data.rain_forecast_24h_mm || 0;
+            const et = data.et_mm || 0;
+            const dryThresh = data.config ? data.config.soil_dry_threshold : 48;
+            const targetThresh = data.config ? data.config.soil_target_threshold : 70;
+            descEl.innerHTML = `
+                <div style="font-weight: 700; color: #38bdf8; margin-bottom: 2px;">${adv.icon} ${adv.title}</div>
+                <div style="font-size: 0.82rem; color: #f1f5f9; margin-bottom: 6px;">${adv.desc}</div>
+                <small style="color: var(--text-dim); display: block; line-height: 1.5;">
+                    🪴 Target: <strong style="color: #38bdf8;">${crop}</strong><br>
+                    🌱 Umidità Sonda: <strong>${sm}</strong> (Trigger: &le;${dryThresh}% • Stop Sicuro: &ge;${targetThresh}%) • ☀️ ET: <strong>${et} mm/die</strong> • 🌧️ Pioggia: <strong>${rf} mm</strong>
+                </small>
+            `;
+        }
+
+        const learnEl = document.getElementById('irrigation-learning-desc');
+        if (learnEl && data.learning_summary) {
+            const ls = data.learning_summary;
+            const k = ls.learned_k_efficiency || 12.0;
+            const lag = ls.learned_lag_minutes || 25.0;
+            const cyclesCount = ls.total_cycles_learned || 0;
+            const recPulse = ls.suggested_pulse_minutes || (data.config ? data.config.duration_minutes : 2.0);
+            
+            let recentHtml = '';
+            if (ls.recent_cycles && ls.recent_cycles.length > 0) {
+                const lastC = ls.recent_cycles[0];
+                recentHtml = `
+                    <div style="margin-top: 6px; padding: 6px 8px; background: rgba(0,0,0,0.25); border-radius: 6px; font-size: 0.76rem;">
+                        <strong>Ultimo Test (${lastC.start_time || 'recente'}):</strong> Durata ${lastC.duration_min}m &rarr; 
+                        Umidità: ${lastC.start_moisture}% &rarr; ${lastC.peak_moisture}% (<span style="color: #4ade80;">+${lastC.delta_moisture}%</span>, picco a ${lastC.lag_minutes}m).
+                    </div>
+                `;
+            }
+
+            learnEl.innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 6px;">
+                    <div style="background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 0.72rem; color: var(--text-dim);">Efficienza Assorbimento</div>
+                        <div style="font-size: 0.9rem; font-weight: 700; color: #a78bfa;">+${k}% <small style="font-weight: normal; font-size: 0.7rem;">/ min</small></div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 0.72rem; color: var(--text-dim);">Ritardo Percolazione</div>
+                        <div style="font-size: 0.9rem; font-weight: 700; color: #a78bfa;">~${lag} <small style="font-weight: normal; font-size: 0.7rem;">minuti</small></div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 0.72rem; color: var(--text-dim);">Dose Appresa Ottimale</div>
+                        <div style="font-size: 0.9rem; font-weight: 700; color: #38bdf8;">${recPulse} <small style="font-weight: normal; font-size: 0.7rem;">minuti</small></div>
+                    </div>
+                </div>
+                <div style="font-size: 0.78rem; color: var(--text-dim);">
+                    🧠 <em>Ogni volta che avvii un test o un ciclo, il sistema misura per 60 min la salita dell'umidità nel vaso e affina la durata perfetta. (Cicli appresi: <strong>${cyclesCount}</strong>)</em>
+                </div>
+                ${recentHtml}
+            `;
+        }
+    } catch (e) {
+        console.error('Errore loadIrrigationSmartStatus:', e);
+    }
+}
+
+// =========================================================================
+// GESTIONE PROGRAMMAZIONI & TIMER ACCENSIONE / SPEGNIMENTO
+// =========================================================================
+
+function renderDeviceScheduleBox(dev) {
+    const isOn = dev.is_on;
+    const sched = dev.active_schedule;
+    const safeName = (dev.name || '').replace(/'/g, "\\'");
+    
+    let activeSchedHtml = '';
+    if (sched) {
+        activeSchedHtml = `
+            <div class="active-timer-alert" style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 0.85rem; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-weight: 700; color: #38bdf8; font-size: 0.88rem;">
+                        ⏱️ ${sched.action_label} Programmata (${sched.remaining_label})
+                    </div>
+                    <small style="color: var(--text-dim); font-size: 0.75rem;">Esecuzione prevista alle ore: <strong>${sched.execute_at_local || sched.execute_at}</strong></small>
+                </div>
+                <button type="button" class="btn btn-outline" style="padding: 4px 10px; font-size: 0.75rem; border-color: #ef4444; color: #ef4444;" onclick="cancelDeviceTimer('${sched.task_id}')">
+                    ✕ Annulla
+                </button>
+            </div>
+        `;
+    }
+
+    const actionText = isOn ? 'Spegni' : 'Accendi';
+    const actionVal = isOn ? 'turn_off' : 'turn_on';
+
+    return `
+        <div class="modal-schedule-section" style="margin-top: 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 14px; padding: 1.25rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 1.1rem;">⏱️</span>
+                    <span style="font-size: 0.88rem; font-weight: 700; color: var(--text);">Timer & Programmazione</span>
+                </div>
+                <span class="badge-tag" style="font-size: 0.75rem; color: #38bdf8; background: rgba(56, 189, 248, 0.15);">Auto-Timer</span>
+            </div>
+
+            ${activeSchedHtml}
+
+            <div>
+                <div style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase; font-weight: 600;">
+                    ${actionText} Automaticamente Tra:
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
+                    <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.82rem; font-weight: 600;" onclick="createDeviceTimer('${dev.ecosystem}', '${dev.raw_id}', '${safeName}', '${actionVal}', 30)">⏱️ 30m</button>
+                    <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.82rem; font-weight: 600;" onclick="createDeviceTimer('${dev.ecosystem}', '${dev.raw_id}', '${safeName}', '${actionVal}', 60)">⏱️ 1h</button>
+                    <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.82rem; font-weight: 600;" onclick="createDeviceTimer('${dev.ecosystem}', '${dev.raw_id}', '${safeName}', '${actionVal}', 120)">⏱️ 2h</button>
+                    <button type="button" class="btn btn-outline" style="padding: 0.6rem 0.2rem; font-size: 0.82rem; font-weight: 600;" onclick="createDeviceTimer('${dev.ecosystem}', '${dev.raw_id}', '${safeName}', '${actionVal}', 300)">⏱️ 5h</button>
+                </div>
+            </div>
+
+            <div style="margin-top: 0.85rem; display: flex; gap: 6px; align-items: center;">
+                <input type="number" id="custom-timer-minutes-${dev.raw_id}" placeholder="Minuti personalizzati (es. 45)" min="1" max="1440" style="flex: 1; padding: 0.5rem 0.75rem; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font-size: 0.85rem;" />
+                <button type="button" class="btn btn-secondary" style="padding: 0.5rem 0.85rem; font-size: 0.82rem;" onclick="submitCustomDeviceTimer('${dev.ecosystem}', '${dev.raw_id}', '${safeName}', '${actionVal}')">
+                    ${isOn ? '🛑 Imposta Spegnimento' : '⚡ Imposta Accensione'}
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+// Chiamate API Timer
+async function createDeviceTimer(ecosystem, rawId, deviceName, action, delayMinutes) {
+    try {
+        const resp = await fetch('/api/devices/schedule', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                ecosystem: ecosystem,
+                device_id: rawId,
+                device_name: deviceName,
+                action: action,
+                delay_minutes: delayMinutes
+            })
+        });
+        const data = await resp.json();
+        if (resp.ok && data.status === 'ok') {
+            const actionStr = action === 'turn_on' ? 'Accensione' : 'Spegnimento';
+            const timeStr = typeof formatDurationItalian === 'function' ? formatDurationItalian(delayMinutes) : (delayMinutes >= 60 ? `${(delayMinutes/60).toFixed(1).replace('.0','')}h` : `${delayMinutes} min`);
+            showToast(`⏱️ ${actionStr} di '${deviceName}' programmata tra ${timeStr}`, 'success');
+            await fetchDevicesData();
+        } else {
+            showToast(data.error || 'Errore durante la creazione del timer', 'danger');
+        }
+    } catch (e) {
+        showToast('Errore di comunicazione: ' + e.message, 'danger');
+    }
+}
+
+async function submitCustomDeviceTimer(ecosystem, rawId, deviceName, action) {
+    const input = document.getElementById(`custom-timer-minutes-${rawId}`);
+    if (!input || !input.value) {
+        showToast('Inserisci un numero valido di minuti', 'info');
+        return;
+    }
+    const mins = parseFloat(input.value);
+    if (isNaN(mins) || mins <= 0) {
+        showToast('I minuti devono essere maggiori di 0', 'info');
+        return;
+    }
+    await createDeviceTimer(ecosystem, rawId, deviceName, action, mins);
+    input.value = '';
+}
+
+async function cancelDeviceTimer(taskId) {
+    try {
+        const resp = await fetch(`/api/devices/schedule/${taskId}`, {
+            method: 'DELETE'
+        });
+        const data = await resp.json();
+        if (resp.ok && data.status === 'cancelled') {
+            showToast('⏱️ Timer annullato con successo', 'info');
+            await fetchDevicesData();
+            if (document.getElementById('schedules-modal-backdrop').classList.contains('show')) {
+                renderSchedulesModal();
+            }
+        } else {
+            showToast(data.error || 'Impossibile annullare il timer', 'danger');
+        }
+    } catch (e) {
+        showToast('Errore di cancellazione timer: ' + e.message, 'danger');
+    }
+}
+
+// Modale Generale Timer Attivi
+async function openSchedulesModal() {
+    const modal = document.getElementById('schedules-modal-backdrop');
+    modal.classList.add('show');
+    document.body.style.overflow = 'hidden';
+    await renderSchedulesModal();
+}
+
+function closeSchedulesModal(e) {
+    if (e && e.target !== document.getElementById('schedules-modal-backdrop') && !e.target.classList.contains('modal-close-btn') && !e.target.closest('.modal-close-btn') && !e.target.classList.contains('btn-secondary')) {
+        return;
+    }
+    const modal = document.getElementById('schedules-modal-backdrop');
+    modal.classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+async function renderSchedulesModal() {
+    const bodyEl = document.getElementById('modal-schedules-body');
+    bodyEl.innerHTML = '<div class="modal-loading-placeholder"><div class="spinner"></div><p>Caricamento timer attivi...</p></div>';
+    
+    try {
+        const resp = await fetch('/api/devices/schedules');
+        const data = await resp.json();
+        const scheds = data.schedules || [];
+
+        const badgeEl = document.getElementById('badge-active-schedules-count');
+        if (badgeEl) badgeEl.textContent = scheds.length;
+        const statEl = document.getElementById('stat-schedules');
+        if (statEl) statEl.textContent = scheds.length;
+
+        if (scheds.length === 0) {
+            bodyEl.innerHTML = `
+                <div style="text-align: center; padding: 2rem 1rem; color: var(--text-dim);">
+                    <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">⏱️</div>
+                    <h4 style="color: var(--text); margin-bottom: 0.35rem;">Nessun timer attivo</h4>
+                    <p style="font-size: 0.85rem;">Puoi programmare lo spegnimento o l'accensione di qualsiasi dispositivo aprendo la sua scheda.</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = `<div style="display: flex; flex-direction: column; gap: 0.75rem;">`;
+        for (const s of scheds) {
+            html += `
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                            <span class="badge-tag" style="background: ${s.action === 'turn_on' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}; color: ${s.action === 'turn_on' ? '#10b981' : '#ef4444'}; font-weight: 700;">
+                                ${s.action === 'turn_on' ? '⚡ ACCENSIONE' : '🛑 SPEGNIMENTO'}
+                            </span>
+                            <strong style="color: var(--text); font-size: 0.95rem;">${escapeHtml(s.device_name)}</strong>
+                        </div>
+                        <div style="font-size: 0.82rem; color: #38bdf8;">
+                            Esecuzione <strong>${s.remaining_label}</strong> • Ore ${s.execute_at_local}
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-outline" style="padding: 6px 12px; font-size: 0.8rem; border-color: #ef4444; color: #ef4444;" onclick="cancelDeviceTimer('${s.task_id}')">
+                        ✕ Annulla
+                    </button>
+                </div>
+            `;
+        }
+        html += `</div>`;
+        bodyEl.innerHTML = html;
+    } catch (e) {
+        bodyEl.innerHTML = `<div style="color: #ef4444; padding: 1rem;">Errore caricamento timer: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+// Polling automatico ogni 8 secondi se la pagina è visibile
+setInterval(() => {
+    if (document.visibilityState === 'visible') {
+        fetchDevicesData();
+    }
+}, 8000);
+
+// Toast helper
+// showToast è definita globalmente in base.html
+</script>
+{% endblock %}

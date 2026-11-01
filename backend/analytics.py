@@ -1,7 +1,7 @@
 import math
 from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List, Union
 
 def get_station_tz(tz_name: Optional[str] = None) -> Any:
     """Restituisce il fuso orario configurato (default da settings.get_tz())."""
@@ -12,6 +12,63 @@ def get_station_tz(tz_name: Optional[str] = None) -> Any:
             pass
     from backend.config import settings
     return settings.get_tz()
+
+# ---------------------------------------------------------------------------
+# FORMULE METEOROLOGICHE FONDAMENTALI & CONVERSIONI
+# ---------------------------------------------------------------------------
+
+def calc_dew_point(temp_c: Optional[float], humidity: Optional[float]) -> Optional[float]:
+    """Punto di rugiada (Formula di Magnus-Tetens standard)."""
+    if temp_c is None or humidity is None or humidity <= 0:
+        return None
+    try:
+        a = 17.27
+        b = 237.7
+        alpha = ((a * float(temp_c)) / (b + float(temp_c))) + math.log(float(humidity) / 100.0)
+        dp = (b * alpha) / (a - alpha)
+        return round(dp, 1)
+    except Exception:
+        return None
+
+def calc_apparent_temp(temp_c: Optional[float], humidity: Optional[float], wind_kmh: Optional[float]) -> Optional[float]:
+    """
+    Temperatura Percepita (Sensazione Termica):
+    - Wind Chill (se T <= 10°C e Vento >= 5 km/h)
+    - Heat Index / Umidità (se T >= 26°C)
+    - Altrimenti temperatura reale
+    """
+    if temp_c is None:
+        return None
+    t = float(temp_c)
+    w = float(wind_kmh) if wind_kmh is not None else 0.0
+    h = float(humidity) if humidity is not None else 50.0
+
+    # Wind Chill
+    if t <= 10.0 and w >= 4.8:
+        wc = 13.12 + (0.6215 * t) - (11.37 * (w ** 0.16)) + (0.3965 * t * (w ** 0.16))
+        return round(wc, 1)
+    
+    # Heat Index (Steadman / Rothfusz)
+    if t >= 26.0 and h >= 40.0:
+        tf = (t * 9.0 / 5.0) + 32.0
+        hi = -42.379 + 2.04901523*tf + 10.14333127*h - 0.22475541*tf*h - 0.00683783*tf*tf - 0.05481717*h*h + 0.00122874*tf*tf*h + 0.00085282*tf*h*h - 0.00000199*tf*tf*h*h
+        hi_c = (hi - 32.0) * 5.0 / 9.0
+        return round(hi_c, 1)
+
+    return round(t, 1)
+
+def deg_to_compass(deg: Optional[float]) -> str:
+    """Converte i gradi angolari (0-360°) nella rosa dei venti a 16 punti."""
+    if deg is None:
+        return "--"
+    try:
+        d = float(deg)
+        val = int((d / 22.5) + 0.5)
+        dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+        return f"{int(d)}° ({dirs[val % 16]})"
+    except Exception:
+        return f"{deg}°"
+
 
 # ---------------------------------------------------------------------------
 # 1. ALGORITMO DI ZAMBRETTI (Nowcasting Locale a 6-12 Ore)
@@ -183,10 +240,12 @@ def evaluate_window_ventilation(
     hum_out: Optional[float],
     temp_in: Optional[float],
     hum_in: Optional[float],
-    rain_rate: Optional[float] = 0.0
+    rain_rate: Optional[float] = 0.0,
+    air_quality: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
-    Determina se conviene aprire o chiudere le finestre confrontando clima interno ed esterno.
+    Determina se conviene aprire o chiudere le finestre confrontando clima interno ed esterno
+    e incrociando i dati di Qualità dell'Aria (PM2.5, PM10, AQI) e Pollini.
     """
     if rain_rate and rain_rate > 0.1:
         return {
@@ -197,16 +256,40 @@ def evaluate_window_ventilation(
             "desc": "Pioggia in corso all'esterno."
         }
 
+    # Verifica Qualità dell'Aria (CAMS)
+    aqi_warning = None
+    if air_quality:
+        eaqi_val = air_quality.get("eaqi", {}).get("value", 1)
+        pm25_val = air_quality.get("pollutants", {}).get("pm2_5", {}).get("val")
+        dominant_pollen = air_quality.get("dominant_pollen", {})
+        
+        if pm25_val is not None and pm25_val >= 35.0:
+            aqi_warning = f"Qualità aria scadente all'esterno (PM2.5: {pm25_val} µg/m³): sconsigliato arieggiare o limitare a brevissimo ricambio."
+        elif eaqi_val >= 4:
+            aqi_warning = "Inquinamento atmosferico elevato all'esterno: meglio tenere chiuso o usare purificatore d'aria."
+        elif dominant_pollen.get("severity_score", 0) >= 3:
+            aqi_warning = f"Allerta allergeni: concentrazione elevata di pollini ({dominant_pollen.get('name')})."
+
     if temp_out is None or temp_in is None:
         return {
             "status": "neutral",
             "icon": "🪟",
             "badge_class": "badge-neutral",
             "title": "Aerazione Normale",
-            "desc": "Sensori interni o esterni in attesa di sincronizzazione."
+            "desc": aqi_warning or "Sensori interni o esterni in attesa di sincronizzazione."
         }
 
     diff_temp = round(temp_out - temp_in, 1)
+
+    # Se c'è allerta aria scadente e fuori è più fresco, segnala il trade-off intelligente!
+    if aqi_warning and temp_out < temp_in - 1.0:
+        return {
+            "status": "close_aqi",
+            "icon": "🪟 ⚠️",
+            "badge_class": "badge-warning",
+            "title": "Arieggiare con Cautela",
+            "desc": f"Fuori fa più fresco ({temp_out}°C vs {temp_in}°C), ma {aqi_warning}"
+        }
 
     # ESTATE / AMBIENTE CALDO (> 23°C dentro)
     if temp_in >= 23.0:
@@ -701,6 +784,203 @@ def calc_beaufort_scale(wind_speed_kmh: Optional[float]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# 4.5 ANALISI AVANZATA FULMINI WH57 & TREND TEMPORALI
+# ---------------------------------------------------------------------------
+
+def analyze_lightning_activity(
+    latest_reading: Optional[Dict[str, Any]] = None,
+    recent_events: Optional[List[Dict[str, Any]]] = None,
+    stats: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Analisi approfondita dell'attività elettrica del sensore WH57:
+    - Calcolo cinematico del trend: avvicinamento vs allontanamento vs stazionario
+    - Livello di allerta e minaccia temporalesca
+    - Formattazione orario in italiano naturale
+    - Elenco cronologico ultimi fulmini
+    - Link alle mappe live Blitzortung / LightningMaps centrate sulla stazione
+    """
+    from backend.config import settings
+    from backend.helpers import format_lightning_time_italian
+
+    latest = latest_reading or {}
+
+    dist = latest.get("lightning_distance_km")
+    last_time = latest.get("lightning_last_time")
+    count_today = latest.get("lightning_count") or (stats.get("count_today", 0) if stats else 0) or 0
+
+    if recent_events is None:
+        try:
+            from backend.database import get_recent_lightning_events
+            recent_events = get_recent_lightning_events(limit=8)
+        except Exception:
+            recent_events = []
+
+    if stats is None:
+        try:
+            from backend.database import get_lightning_stats
+            stats = get_lightning_stats()
+        except Exception:
+            stats = {
+                "count_15m": 0, "count_1h": 0, "count_3h": 0, "count_today": count_today,
+                "closest_km_today": dist, "closest_time_today": last_time,
+                "closest_time_formatted": format_lightning_time_italian(last_time, include_relative=False)
+            }
+
+    if dist is None and recent_events:
+        dist = recent_events[0].get("distance_km")
+        if not last_time:
+            last_time = recent_events[0].get("strike_time")
+
+    tz = settings.get_tz()
+    now_local = datetime.now(timezone.utc).astimezone(tz)
+    minutes_ago = None
+    last_time_formatted = format_lightning_time_italian(last_time)
+
+    if last_time:
+        try:
+            if str(last_time).isdigit():
+                dt = datetime.fromtimestamp(int(last_time), tz=timezone.utc).astimezone(tz)
+            else:
+                dt = datetime.fromisoformat(str(last_time).replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.astimezone(tz)
+            diff_sec = max(0, int((now_local - dt).total_seconds()))
+            minutes_ago = diff_sec // 60
+        except Exception:
+            minutes_ago = None
+
+    trend = "idle"
+    trend_label = "Nessun fronte attivo"
+    trend_badge = "badge-neutral"
+    trend_icon = "🟢"
+    trend_arrow = ""
+    trend_desc = "Nessuna attività temporalesca rilevata nelle vicinanze."
+    dist_delta_km = None
+
+    valid_events = [e for e in (recent_events or []) if e.get("distance_km") is not None]
+
+    if len(valid_events) >= 2:
+        d_new = float(valid_events[0]["distance_km"])
+        d_old = float(valid_events[1]["distance_km"])
+        delta = d_new - d_old
+        dist_delta_km = round(delta, 1)
+
+        if delta <= -1.5:
+            trend = "approaching"
+            trend_label = "In avvicinamento ⚠️"
+            trend_badge = "badge-danger"
+            trend_icon = "⚡ ↘️"
+            trend_arrow = "↘️"
+            trend_desc = f"I fulmini si stanno avvicinando alla stazione (da {d_old:.0f} km a {d_new:.0f} km)."
+        elif delta >= 1.5:
+            trend = "moving_away"
+            trend_label = "In allontanamento 🍃"
+            trend_badge = "badge-info"
+            trend_icon = "⚡ ↗️"
+            trend_arrow = "↗️"
+            trend_desc = f"Il fronte temporalesco si sta allontanando (da {d_old:.0f} km a {d_new:.0f} km)."
+        else:
+            trend = "stationary"
+            trend_label = "Stazionario ↔️"
+            trend_badge = "badge-warning"
+            trend_icon = "↔️"
+            trend_arrow = "↔️"
+            trend_desc = f"Scariche attive a distanza approssimativamente costante (~{d_new:.0f} km)."
+    elif len(valid_events) == 1 or (dist is not None and minutes_ago is not None and minutes_ago <= 45):
+        d_val = float(valid_events[0]["distance_km"]) if valid_events else float(dist)
+        if minutes_ago is not None and minutes_ago <= 45:
+            trend = "active"
+            trend_label = "Scarica recente ⚡"
+            trend_badge = "badge-warning"
+            trend_icon = "⚡"
+            trend_desc = f"Ultimo fulmine a {d_val:.0f} km ({minutes_ago} min fa)."
+        else:
+            trend = "idle"
+            trend_label = "Nessun fronte attivo"
+            trend_badge = "badge-neutral"
+            trend_icon = "🟢"
+            trend_desc = "Nessun temporale attivo nell'ultima ora."
+
+    if minutes_ago is not None and minutes_ago > 60:
+        trend = "idle"
+        trend_label = "Nessun fronte attivo"
+        trend_badge = "badge-neutral"
+        trend_icon = "🟢"
+        trend_desc = f"Ultima scarica rilevata {last_time_formatted}."
+
+    threat_level = "clear"
+    threat_label = "Nessun Rischio"
+    threat_badge = "badge-neutral"
+    threat_desc = "Cielo privo di attività elettrica locale."
+
+    if dist is not None and minutes_ago is not None and minutes_ago <= 45:
+        if dist < 6.0 and minutes_ago <= 25:
+            threat_level = "critical"
+            threat_label = "PERICOLO IMMINENTE"
+            threat_badge = "badge-danger"
+            threat_desc = "Fulmini a brevissima distanza (<6 km)! Rimanere al chiuso."
+        elif dist <= 15.0 and minutes_ago <= 35:
+            threat_level = "warning"
+            threat_label = "TEMPORALE VICINO"
+            threat_badge = "badge-danger"
+            threat_desc = f"Cella temporalesca a {dist:.0f} km: tuoni chiaramente udibili e possibili raffiche."
+        elif dist <= 30.0 and minutes_ago <= 45:
+            threat_level = "watch"
+            threat_label = "ATTIVITÀ ELETTRICA"
+            threat_badge = "badge-warning"
+            threat_desc = f"Attività temporalesca nel raggio di {dist:.0f} km."
+
+    is_storm_active = threat_level in ("critical", "warning", "watch")
+
+    lat = settings.LATITUDE
+    lon = settings.LONGITUDE
+    lightning_maps_url = f"https://www.lightningmaps.org/?#m=oss;t=3;s=0;o=0;b=;ts=0;y={lat};x={lon};z=10;d=2;dl=2;dc=0;"
+    blitzortung_url = f"https://www.blitzortung.org/en/live_lightning_maps.php?lat={lat}&lon={lon}&zoom=9"
+
+    formatted_history = []
+    for ev in (recent_events or [])[:6]:
+        formatted_history.append({
+            "distance_km": round(float(ev["distance_km"]), 1) if ev.get("distance_km") is not None else None,
+            "strike_time": ev.get("strike_time"),
+            "time_formatted": ev.get("time_formatted") or format_lightning_time_italian(ev.get("strike_time")),
+            "count": ev.get("count")
+        })
+
+    closest_today_val = stats.get("closest_km_today")
+    closest_today_time_fmt = stats.get("closest_time_formatted")
+
+    return {
+        "current_distance_km": round(float(dist), 1) if dist is not None else None,
+        "last_strike_time": last_time,
+        "last_strike_formatted": last_time_formatted,
+        "minutes_ago": minutes_ago,
+        "count_today": count_today,
+        "count_15m": stats.get("count_15m", 0),
+        "count_1h": stats.get("count_1h", 0),
+        "count_3h": stats.get("count_3h", 0),
+        "closest_km_today": round(float(closest_today_val), 1) if closest_today_val is not None else None,
+        "closest_time_formatted": closest_today_time_fmt,
+        "trend": trend,
+        "trend_label": trend_label,
+        "trend_badge": trend_badge,
+        "trend_icon": trend_icon,
+        "trend_arrow": trend_arrow,
+        "trend_desc": trend_desc,
+        "dist_delta_km": dist_delta_km,
+        "threat_level": threat_level,
+        "threat_label": threat_label,
+        "threat_badge": threat_badge,
+        "threat_desc": threat_desc,
+        "is_storm_active": is_storm_active,
+        "lightning_maps_url": lightning_maps_url,
+        "blitzortung_url": blitzortung_url,
+        "recent_strikes": formatted_history
+    }
+
+
+# ---------------------------------------------------------------------------
 # 5. MOTORE STATO ATMOSFERICO & ANIMAZIONE CIELO IN TEMPO REALE
 # ---------------------------------------------------------------------------
 
@@ -733,17 +1013,23 @@ def calc_current_weather_condition(
 
     z_letter = zambretti.get("letter", "M") if zambretti else "M"
 
-    # 1. Temporale con fulmini
-    if (lightning_dist is not None and lightning_dist <= 25.0) and (r_rate > 0.2 or w_gst >= 35.0):
+    # 1. Temporale con fulmini (attivo entro 15km o pioggia/vento con fulmini entro 25km)
+    if (lightning_dist is not None and lightning_dist <= 15.0) or ((lightning_dist is not None and lightning_dist <= 25.0) and (r_rate > 0.2 or w_gst >= 30.0)):
+        sub_desc = f"Scariche a {lightning_dist} km"
+        if r_rate > 0.2 or w_gst >= 30.0:
+            sub_desc += f" • Rovesci e forti raffiche ({w_gst} km/h)"
+        else:
+            sub_desc += " • Attività elettrica nelle vicinanze"
         return {
             "code": "thunderstorm",
             "title": "Temporale con Attività Elettrica",
             "icon": "⛈️",
-            "desc": f"Scariche a {lightning_dist} km • Rovesci e forti raffiche ({w_gst} km/h)",
+            "desc": sub_desc,
             "sky_theme": "theme-thunderstorm",
             "is_daylight": is_daylight,
             "animation": "storm"
         }
+
 
     # 2. Pioggia Forte / Nubifragio
     if r_rate >= 8.0:
@@ -966,5 +1252,310 @@ def evaluate_indoor_comfort(
             "delta_text": delta_str,
             "diff_c": diff_val
         }
+
+
+# ---------------------------------------------------------------------------
+# 7. EVAPOTRASPIRAZIONE & IRRIGAZIONE INTELLIGENTE WH51
+# ---------------------------------------------------------------------------
+
+def calc_evapotranspiration(
+    temp_c: Optional[float],
+    humidity: Optional[float],
+    solar_rad: Optional[float] = None,
+    wind_kmh: Optional[float] = 5.0,
+    temp_min_c: Optional[float] = None,
+    temp_max_c: Optional[float] = None
+) -> float:
+    """
+    Stima l'Evapotraspirazione di Riferimento Giornaliera (ET₀ in mm/giorno)
+    usando il metodo standard FAO-56 / Hargreaves-Samani e radiazione solare.
+    """
+    if temp_c is None:
+        return 3.0
+    
+    t_mean = float(temp_c)
+    h = float(humidity) if humidity is not None else 50.0
+    w_ms = (float(wind_kmh) if wind_kmh is not None else 5.0) / 3.6
+    
+    # Se abbiamo la radiazione solare istantanea o giornaliera
+    if solar_rad is not None and solar_rad > 0:
+        # Conversione stimata radiazione W/m² in MJ/m²/giorno
+        # Un valore medio diurno di 400 W/m² corrisponde a ~17 MJ/m²/giorno
+        rad_mj = max(5.0, min(32.0, (solar_rad / 25.0)))
+    else:
+        # Metodo Hargreaves con delta termico giornaliero
+        t_max = temp_max_c if temp_max_c is not None else (t_mean + 5.0)
+        t_min = temp_min_c if temp_min_c is not None else (t_mean - 5.0)
+        delta_t = max(2.0, t_max - t_min)
+        # Radiazione extraterrestre stimata per lat ~39°N
+        ra = 30.0
+        rad_mj = 0.16 * math.sqrt(delta_t) * ra
+
+    # Formula Makkink / Priestley-Taylor semplificata per ET0
+    slope = 4098.0 * (0.6108 * math.exp((17.27 * t_mean) / (t_mean + 237.3))) / ((t_mean + 237.3) ** 2)
+    gamma = 0.067
+    
+    et0 = 0.7 * (slope / (slope + gamma)) * (rad_mj / 2.45)
+    
+    # Correzione per vento e deficit igrometrico
+    if h < 45.0:
+        et0 *= 1.15
+    elif h > 75.0:
+        et0 *= 0.85
+        
+    if w_ms > 4.0:
+        et0 *= 1.1
+
+    return round(max(0.5, min(9.5, et0)), 1)
+
+
+def evaluate_smart_irrigation(
+    soil_moisture_pct: Optional[float],
+    temp_c: Optional[float],
+    solar_rad: Optional[float] = None,
+    rain_forecast_24h_mm: float = 0.0,
+    recent_rain_48h_mm: float = 0.0,
+    et_mm: Optional[float] = None,
+    dry_threshold: float = 48.0,
+    target_threshold: float = 70.0,
+    crop_label: str = "Grande Vaso (Pomodori & Zucchine) 🪴🍅🥒"
+) -> Dict[str, Any]:
+    """
+    Sistema decisionale per l'irrigazione intelligente agrometeo (WH51 + Meteo Predittivo):
+    Calibrato per piante in vaso/fioriera ad alto fabbisogno idrico (Pomodori e Zucchine):
+    1. Umidità del suolo WH51 (Soglia secco: 48%, Stop Sicurezza: 70%)
+    2. Evapotraspirazione stimata (mm/giorno)
+    3. Pioggia prevista nelle prossime 24h
+    4. Pioggia caduta nelle ultime 48h
+    """
+    if et_mm is None:
+        et_mm = calc_evapotranspiration(temp_c, 50.0, solar_rad)
+
+    # Se non c'è sensore WH51 collegato, usa stima agrometeo standard
+    has_sensor = soil_moisture_pct is not None
+    sm = float(soil_moisture_pct) if has_sensor else 55.0
+
+    # 1. PIOGGIA PREVISTA IMMINENTE
+    if rain_forecast_24h_mm >= 3.0:
+        return {
+            "has_sensor": has_sensor,
+            "soil_moisture_pct": round(sm, 1) if has_sensor else None,
+            "et_mm": et_mm,
+            "rain_forecast_24h_mm": round(rain_forecast_24h_mm, 1),
+            "crop_label": crop_label,
+            "status": "skip_rain",
+            "icon": "🌧️ 🛑",
+            "badge_class": "badge-info",
+            "title": "Irrigazione Sospesa (Pioggia)",
+            "desc": f"Previsti {rain_forecast_24h_mm:.1f} mm di pioggia nelle 24h: il vaso riceverà acqua naturale a sufficienza.",
+            "liters_sqm_rec": 0.0
+        }
+
+    # 2. PIOGGE RECENTI ABBONDANTI
+    if recent_rain_48h_mm >= 6.0:
+        return {
+            "has_sensor": has_sensor,
+            "soil_moisture_pct": round(sm, 1) if has_sensor else None,
+            "et_mm": et_mm,
+            "rain_forecast_24h_mm": round(rain_forecast_24h_mm, 1),
+            "crop_label": crop_label,
+            "status": "skip_recent",
+            "icon": "💧 🟢",
+            "badge_class": "badge-success",
+            "title": "Vaso Ben Idratato",
+            "desc": f"Accumulo recente di {recent_rain_48h_mm:.1f} mm nelle 48h. Riserva idrica del vaso ottimale.",
+            "liters_sqm_rec": 0.0
+        }
+
+    # 3. TERRENO UMIDO / OTTIMALE (>= dry_threshold)
+    if sm >= dry_threshold:
+        return {
+            "has_sensor": has_sensor,
+            "soil_moisture_pct": round(sm, 1) if has_sensor else None,
+            "et_mm": et_mm,
+            "rain_forecast_24h_mm": round(rain_forecast_24h_mm, 1),
+            "crop_label": crop_label,
+            "status": "optimal",
+            "icon": "🌱 🟢",
+            "badge_class": "badge-success",
+            "title": "Umidità Ideale Vaso",
+            "desc": f"Umidità del vaso ({crop_label}) al {sm:.0f}% (soglia minima: {dry_threshold:.0f}%, target: {target_threshold:.0f}%). Nessuna irrigazione necessaria.",
+            "liters_sqm_rec": 0.0
+        }
+
+    # 4. TERRENO SECCO (< dry_threshold) SENZA PIOGGIA PREVISTA -> CONSIGLIO IRRIGAZIONE
+    rec_liters = round(max(1.0, min(3.0, et_mm * 0.5)), 1)
+    return {
+        "has_sensor": has_sensor,
+        "soil_moisture_pct": round(sm, 1) if has_sensor else None,
+        "et_mm": et_mm,
+        "rain_forecast_24h_mm": round(rain_forecast_24h_mm, 1),
+        "crop_label": crop_label,
+        "status": "water_needed",
+        "icon": "🪴 💧",
+        "badge_class": "badge-warning",
+        "title": "Irrigazione Vaso Consigliata",
+        "desc": f"Umidità vaso al {sm:.0f}% (sotto la soglia del {dry_threshold:.0f}% per {crop_label}). Consiglio: micro-dose di 1.5–2 min (~{rec_liters} L).",
+        "liters_sqm_rec": rec_liters
+    }
+
+
+# ---------------------------------------------------------------------------
+# 8. GENERATORE INTELLIGENZA DINAMICA "COSA DEVO SAPERE ORA" (NOW HIGHLIGHTS)
+# ---------------------------------------------------------------------------
+
+def generate_now_highlights(
+    latest: Dict[str, Any],
+    analytics_ctx: Dict[str, Any],
+    air_quality: Optional[Dict[str, Any]] = None,
+    solar_forecast: Optional[Dict[str, Any]] = None,
+    nowcasting: Optional[Dict[str, Any]] = None,
+    aton_data: Optional[Dict[str, Any]] = None
+) -> List[Dict[str, Any]]:
+    """
+    Genera da 3 a 5 pillole sintetiche, intelligenti e azionabili in primo piano
+    per rispondere subito alla domanda: "Cosa devo sapere adesso?".
+    """
+    highlights = []
+
+    # 0. ALLERTA PRIORITARIA FULMINI & TEMPORALE (WH57)
+    l_info = analytics_ctx.get("lightning") or {}
+    if l_info.get("is_storm_active") or (l_info.get("trend") == "approaching"):
+        l_dist = l_info.get("current_distance_km")
+        l_trend = l_info.get("trend_label", "In avvicinamento")
+        l_c15 = l_info.get("count_15m", 0)
+        l_sub = f"{l_c15} scariche negli ultimi 15 min" if l_c15 > 0 else f"Ultima scarica {l_info.get('last_strike_formatted', '')}"
+        dist_str = f"a {l_dist} km" if l_dist is not None else ""
+        highlights.append({
+            "category": "lightning_alert",
+            "icon": "⚡ ⛈️",
+            "title": f"Temporale {dist_str} ({l_trend})".strip(),
+            "subtitle": f"{l_sub} • {l_info.get('threat_desc', '')}",
+            "badge_class": l_info.get("threat_badge", "badge-danger"),
+            "action_text": "Allerta WH57"
+        })
+
+    # 1. PILLOLA FINESTRE & AERAZIONE (con incrocio AQI)
+    window_info = analytics_ctx.get("comfort", {}).get("window", {})
+
+    w_status = window_info.get("status", "neutral")
+    w_icon = "🪟"
+    
+    if "open" in w_status:
+        highlights.append({
+            "category": "windows",
+            "icon": "🪟 🟢",
+            "title": window_info.get("title", "Apri le finestre"),
+            "subtitle": window_info.get("desc", "Ottimo per rinfrescare casa"),
+            "badge_class": "badge-success",
+            "action_text": "Aerazione"
+        })
+    elif "close" in w_status:
+        highlights.append({
+            "category": "windows",
+            "icon": "🪟 🔴",
+            "title": window_info.get("title", "Tieni le finestre chiuse"),
+            "subtitle": window_info.get("desc", "Mantieni fresco l'interno"),
+            "badge_class": "badge-danger",
+            "action_text": "Isolamento"
+        })
+    else:
+        highlights.append({
+            "category": "windows",
+            "icon": "🪟",
+            "title": "Aerazione Regolare",
+            "subtitle": window_info.get("desc", "Temperature interno/esterno simili"),
+            "badge_class": "badge-neutral",
+            "action_text": "Clima Casa"
+        })
+
+    # 2. PILLOLA NOWCASTING PIOGGIA
+    if nowcasting:
+        highlights.append({
+            "category": "rain_nowcast",
+            "icon": nowcasting.get("icon", "🌧️"),
+            "title": nowcasting.get("headline", "Meteo stabile"),
+            "subtitle": nowcasting.get("desc", "Monitoraggio radar live attivo"),
+            "badge_class": f"badge-{nowcasting.get('status_class', 'info')}",
+            "action_text": "Nowcasting"
+        })
+
+    # 3. PILLOLA ENERGIA & FOTOVOLTAICO / BATTERIA
+    if aton_data and aton_data.get("soc") is not None:
+        soc = int(aton_data.get("soc", 0))
+        p_sol = aton_data.get("p_solare", 0)
+        p_ut = aton_data.get("p_utenze", 0)
+        
+        if p_sol > p_ut and p_sol > 200:
+            e_title = f"⚡ Casa Autosufficiente (Surplus {(p_sol - p_ut):.0f} W)"
+            e_sub = f"Batteria al {soc}%. Ottimo momento per avviare elettrodomestici."
+            e_badge = "badge-success"
+            e_icon = "⚡ 🟢"
+        elif soc <= 20:
+            e_title = f"🔋 Batteria in Riserva ({soc}%)"
+            e_sub = "Prelievo da rete o ricarica minima."
+            e_badge = "badge-warning"
+            e_icon = "🔋 🟡"
+        else:
+            e_title = f"🔋 Batteria Aton al {soc}%"
+            e_sub = f"Produzione FV: {p_sol:.0f} W • Consumo casa: {p_ut:.0f} W."
+            e_badge = "badge-info"
+            e_icon = "🔋"
+
+        highlights.append({
+            "category": "energy",
+            "icon": e_icon,
+            "title": e_title,
+            "subtitle": e_sub,
+            "badge_class": e_badge,
+            "action_text": "Energia"
+        })
+    elif solar_forecast:
+        highlights.append({
+            "category": "energy_forecast",
+            "icon": "☀️ ⚡",
+            "title": f"Previsione FV Domani: {solar_forecast.get('tomorrow_est_kwh', 0)} kWh",
+            "subtitle": f"Finestra elettrodomestici consigliata: {solar_forecast.get('best_appliances_window', '11:00-15:00')}",
+            "badge_class": "badge-info",
+            "action_text": "Solar Forecast"
+        })
+
+    # 4. PILLOLA GIARDINO & IRRIGAZIONE WH51
+    irrigation = analytics_ctx.get("irrigation_advice")
+    if irrigation:
+        highlights.append({
+            "category": "irrigation",
+            "icon": irrigation.get("icon", "🌱"),
+            "title": irrigation.get("title", "Aiuola & Suolo"),
+            "subtitle": irrigation.get("desc", "Gestione idrica del terreno"),
+            "badge_class": irrigation.get("badge_class", "badge-neutral"),
+            "action_text": "Irrigazione"
+        })
+
+    # 5. PILLOLA QUALITÀ DELL'ARIA & POLLINI (se presente allerta o eccellente)
+    if air_quality:
+        eaqi = air_quality.get("eaqi", {})
+        dom_pollen = air_quality.get("dominant_pollen", {})
+        if eaqi.get("value", 1) >= 3:
+            highlights.append({
+                "category": "air_quality",
+                "icon": "🌬️ ⚠️",
+                "title": f"Qualità Aria {eaqi.get('label')}",
+                "subtitle": air_quality.get("window_advice", "Attenzione agli inquinanti"),
+                "badge_class": eaqi.get("badge_class", "badge-warning"),
+                "action_text": "Aria & CAMS"
+            })
+        elif dom_pollen.get("severity_score", 0) >= 3:
+            highlights.append({
+                "category": "pollen",
+                "icon": "🌾 ⚠️",
+                "title": f"Pollini Elevati: {dom_pollen.get('name')}",
+                "subtitle": f"Livello {dom_pollen.get('level')}. Cautela per soggetti allergici.",
+                "badge_class": "badge-warning",
+                "action_text": "Allergeni"
+            })
+
+    return highlights[:5]
+
 
 

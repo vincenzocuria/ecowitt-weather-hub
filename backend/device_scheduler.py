@@ -1,0 +1,235 @@
+"""
+Modulo per la gestione di Timer e Programmazioni per dispositivi Smart Home.
+Supporta ritardi temporizzati relativi (es. tra 30 min, tra 1h, tra 5h) oppure
+orari assoluti (ISO timestamp). Gestisce l'esecuzione automatica, la persistenza
+su SQLite e l'invio di notifiche all'attivazione/spegnimento.
+"""
+
+from __future__ import annotations
+import asyncio
+import logging
+import uuid
+from datetime import datetime, timezone, timedelta
+from typing import Dict, Any, List, Optional
+
+from backend.config import settings
+from backend.database import (
+    claim_scheduled_task,
+    save_scheduled_task,
+    get_due_scheduled_tasks,
+    get_active_scheduled_tasks,
+    get_device_active_schedules,
+    cancel_scheduled_task,
+    mark_scheduled_task_completed,
+    to_local_datetime_str
+)
+from backend.thinq_service import thinq_service
+from backend.homeassistant_service import homeassistant_service
+from backend.notifier import notifier
+
+logger = logging.getLogger("weather_hub.device_scheduler")
+
+def normalize_schedule_time(value: str) -> str:
+    """
+    Converte l'orario richiesto in ISO UTC ('...+00:00').
+    I task vengono confrontati come stringhe nel DB: tutti devono avere lo stesso formato e fuso,
+    altrimenti un orario locale (es. '2026-11-01T20:00' o '+01:00') scatterebbe con 1-2 ore di scarto.
+    Un orario senza fuso è interpretato nel fuso della stazione.
+    """
+    try:
+        dt = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    except ValueError:
+        raise ValueError(f"Orario non valido: '{value}'. Usa il formato AAAA-MM-GGTHH:MM")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=settings.get_tz())
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+class DeviceScheduler:
+    def __init__(self):
+        self._running = False
+        self._check_interval_sec = 5
+
+    def create_schedule(
+        self,
+        ecosystem: str,
+        device_id: str,
+        device_name: str,
+        action: str,
+        delay_minutes: Optional[float] = None,
+        target_time_iso: Optional[str] = None,
+        payload: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Crea e programma un nuovo task per un dispositivo.
+        """
+        now_utc = datetime.now(timezone.utc)
+        
+        if delay_minutes is not None and float(delay_minutes) > 0:
+            exec_dt = now_utc + timedelta(minutes=float(delay_minutes))
+            execute_at_iso = exec_dt.isoformat()
+        elif target_time_iso:
+            execute_at_iso = normalize_schedule_time(target_time_iso)
+        else:
+            raise ValueError("Specificare delay_minutes o target_time_iso")
+
+        task_id = "sched_" + uuid.uuid4().hex[:12]
+        
+        saved = save_scheduled_task(
+            task_id=task_id,
+            ecosystem=ecosystem.lower().strip(),
+            device_id=device_id.strip(),
+            device_name=device_name.strip() or "Dispositivo Smart",
+            action=action.lower().strip(),
+            execute_at=execute_at_iso,
+            payload=payload
+        )
+        
+        logger.info(
+            f"⏱️ [SCHEDULER] Programmata azione '{action}' per '{device_name}' ({ecosystem}) alle {to_local_datetime_str(execute_at_iso)}"
+        )
+        return saved
+
+    def cancel_schedule(self, task_id: str) -> bool:
+        """Annulla un'azione programmata pendente."""
+        success = cancel_scheduled_task(task_id)
+        if success:
+            logger.info(f"🚫 [SCHEDULER] Task {task_id} annullato.")
+        return success
+
+    def get_schedules(self, device_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Restituisce le programmazioni attive generali o filtrate per singolo dispositivo."""
+        if device_id:
+            return get_device_active_schedules(device_id)
+        return get_active_scheduled_tasks()
+
+    async def execute_due_tasks(self) -> int:
+        """Controlla ed esegue tutti i task scaduti."""
+        due_tasks = get_due_scheduled_tasks()
+        if not due_tasks:
+            return 0
+
+        executed_count = 0
+        for task in due_tasks:
+            task_id = task["task_id"]
+            # Prenota il task in modo atomico: se il salvataggio dell'esito fallisse più avanti,
+            # il task non resta 'pending' e non viene rieseguito ogni 5 secondi.
+            if not claim_scheduled_task(task_id):
+                continue
+            ecosystem = task["ecosystem"]
+            device_id = task["device_id"]
+            device_name = task["device_name"]
+            action = task["action"]
+            payload = task.get("payload") or {}
+
+            logger.info(f"🚀 [SCHEDULER] Esecuzione programmata {task_id} -> {device_name} ({action})")
+            
+            target_state = True if action in ("turn_on", "on", "start") else False
+            result = None
+            is_success = False
+            error_msg = None
+
+            try:
+                # Normalizza device_id rimuovendo eventuali prefissi di ecosistema ridondanti
+                clean_dev_id = device_id
+                for pfx in ("tuya_", "thinq_", "st_", "hass_"):
+                    if clean_dev_id.startswith(pfx):
+                        clean_dev_id = clean_dev_id[len(pfx):]
+
+                if ecosystem == "thinq":
+                    ctrl_payload = {"power": target_state}
+                    if "target_temp" in payload:
+                        ctrl_payload["target_temp"] = payload["target_temp"]
+                    if "mode" in payload:
+                        ctrl_payload["mode"] = payload["mode"]
+                    result = await thinq_service.control_device(clean_dev_id, ctrl_payload)
+                    is_success = bool(result.get("success"))
+                    if not is_success:
+                        error_msg = result.get("error") or "Comando LG ThinQ non riuscito"
+
+                else:
+                    # Tutti gli altri ecosistemi (homeassistant, tuya, smartthings) passano direttamente da Home Assistant locale
+                    entity_id = clean_dev_id
+                    if action in ("set_cover_position", "position", "half"):
+                        pos = int(payload.get("position", 50))
+                        res = await homeassistant_service.call_service("cover", "set_cover_position", entity_id, {"position": pos})
+                    elif action in ("open_cover", "open"):
+                        res = await homeassistant_service.call_service("cover", "open_cover", entity_id)
+                    elif action in ("close_cover", "close"):
+                        res = await homeassistant_service.call_service("cover", "close_cover", entity_id)
+                    elif action in ("open_valve", "irrigate"):
+                        res = await homeassistant_service.open_irrigation(entity_id)
+                    elif action in ("close_valve", "stop_irrigation"):
+                        res = await homeassistant_service.close_irrigation(entity_id)
+                    else:
+                        res = await homeassistant_service.toggle_device(entity_id, target_state)
+                    is_success = bool(res.get("success"))
+                    result = res
+                    if not is_success:
+                        error_msg = res.get("error") or "Comando Home Assistant non riuscito"
+
+            except Exception as e:
+                logger.error(f"❌ [SCHEDULER] Errore esecuzione task {task_id}: {e}", exc_info=True)
+                error_msg = str(e)
+                result = {"error": str(e)}
+
+            # Aggiorna stato nel DB
+            final_status = "executed" if is_success else "failed"
+            mark_scheduled_task_completed(task_id, final_status, result)
+            executed_count += 1
+
+            # Invia notifica all'utente
+            if action in ("set_cover_position", "position", "half"):
+                action_desc = f"posizionato al {payload.get('position', 50)}% 🪟"
+            elif action in ("open_cover", "open"):
+                action_desc = "aperto al 100% 🪟"
+            elif action in ("close_cover", "close"):
+                action_desc = "chiuso completamente 🪟"
+            elif action in ("open_valve", "irrigate"):
+                action_desc = "aperto in irrigazione 💧"
+            elif action in ("close_valve", "stop_irrigation"):
+                action_desc = "chiuso 🛑"
+            else:
+                action_desc = "acceso 🟢" if target_state else "spento 🔴"
+
+            if is_success:
+                notifier.send_alert(
+                    alert_type="device_scheduled_action",
+                    title="⏱️ Timer Programmato Eseguito",
+                    message=f"Il dispositivo '{device_name}' è stato {action_desc} come programmato.",
+                    priority="normal",
+                    extra_data={"task_id": task_id, "device_id": device_id, "ecosystem": ecosystem},
+                    force=True
+                )
+            else:
+                notifier.send_alert(
+                    alert_type="device_scheduled_action_failed",
+                    title="⚠️ Errore Timer Programmato",
+                    message=f"Impossibile eseguire l'azione programmata su '{device_name}': {error_msg}",
+                    priority="high",
+                    extra_data={"task_id": task_id, "device_id": device_id, "error": error_msg},
+                    force=True
+                )
+
+        return executed_count
+
+    async def worker_loop(self):
+        """Loop in background per la verifica continua dei timer programmabili."""
+        self._running = True
+        logger.info("⏱️ [SCHEDULER] Avvio worker loop timer & programmazione dispositivi...")
+        
+        while self._running:
+            try:
+                await self.execute_due_tasks()
+            except asyncio.CancelledError:
+                logger.info("⏱️ [SCHEDULER] Worker loop interrotto.")
+                break
+            except Exception as e:
+                logger.error(f"Errore non gestito nello scheduler loop: {e}")
+
+            await asyncio.sleep(self._check_interval_sec)
+
+    def stop(self):
+        self._running = False
+
+device_scheduler = DeviceScheduler()

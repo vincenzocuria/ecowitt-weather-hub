@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="more-page">
+    <h1 class="more-title">Altro</h1>
+
+    <section class="more-group" aria-labelledby="more-meteo">
+        <h2 id="more-meteo" class="more-group-title">Meteo</h2>
+        <div class="more-list">
+            <a href="/radar" class="more-item">
+                <span class="more-icon" aria-hidden="true">🌧️</span>
+                <span class="more-text"><strong>Radar</strong><small>Pioggia e fulmini in tempo reale</small></span>
+                <span class="more-chevron" aria-hidden="true">›</span>
+            </a>
+            <a href="/charts" class="more-item">
+                <span class="more-icon" aria-hidden="true">📈</span>
+                <span class="more-text"><strong>Grafici</strong><small>Andamento 24 ore, settimana, mese, anno</small></span>
+                <span class="more-chevron" aria-hidden="true">›</span>
+            </a>
+            <a href="/records" class="more-item">
+                <span class="more-icon" aria-hidden="true">🏆</span>
+                <span class="more-text"><strong>Record</strong><small>Massimi e minimi storici</small></span>
+                <span class="more-chevron" aria-hidden="true">›</span>
+            </a>
+            <a href="/history" class="more-item">
+                <span class="more-icon" aria-hidden="true">🔍</span>
+                <span class="more-text"><strong>Archivio</strong><small>Cerca i dati di un giorno o di un periodo</small></span>
+                <span class="more-chevron" aria-hidden="true">›</span>
+            </a>
+        </div>
+    </section>
+
+    <section class="more-group" aria-labelledby="more-casa">
+        <h2 id="more-casa" class="more-group-title">Casa</h2>
+        <div class="more-list">
+            <a href="/#energy-home" class="more-item">
+                <span class="more-icon" aria-hidden="true">⚡</span>
+                <span class="more-text"><strong>Energia</strong><small>Fotovoltaico, batteria e consumi</small></span>
+                <span class="more-chevron" aria-hidden="true">›</span>
+            </a>
+            <a href="/kiosk" class="more-item">
+                <span class="more-icon" aria-hidden="true">🖥️</span>
+                <span class="more-text"><strong>Schermo kiosk</strong><small>Vista a tutto schermo per tablet</small></span>
+                <span class="more-chevron" aria-hidden="true">›</span>
+            </a>
+        </div>
+    </section>
+
+    <section class="more-group" aria-labelledby="more-theme">
+        <h2 id="more-theme" class="more-group-title">Aspetto</h2>
+        <div class="more-list theme-picker" role="radiogroup" aria-label="Tema dell'app">
+            <button type="button" class="theme-option" role="radio" data-theme-choice="auto">
+                <span class="more-icon" aria-hidden="true">🌓</span>
+                <span class="more-text"><strong>Automatico</strong><small>Segue l'impostazione del telefono</small></span>
+                <span class="theme-check" aria-hidden="true">✓</span>
+            </button>
+            <button type="button" class="theme-option" role="radio" data-theme-choice="light">
+                <span class="more-icon" aria-hidden="true">☀️</span>
+                <span class="more-text"><strong>Chiaro</strong><small>Sfondo chiaro, sempre</small></span>
+                <span class="theme-check" aria-hidden="true">✓</span>
+            </button>
+            <button type="button" class="theme-option" role="radio" data-theme-choice="dark">
+                <span class="more-icon" aria-hidden="true">🌙</span>
+                <span class="more-text"><strong>Scuro</strong><small>Sfondo scuro, sempre</small></span>
+                <span class="theme-check" aria-hidden="true">✓</span>
+            </button>
+        </div>
+    </section>
+
+    <section class="more-group" aria-labelledby="more-app">
+        <h2 id="more-app" class="more-group-title">App</h2>
+        <div class="more-list">
+            <a href="/settings" class="more-item">
+                <span class="more-icon" aria-hidden="true">⚙️</span>
+                <span class="more-text"><strong>Impostazioni</strong><small>Notifiche, soglie, sensori, backup</small></span>
+                <span class="more-chevron" aria-hidden="true">›</span>
+            </a>
+            <a href="/logout" class="more-item more-item-muted">
+                <span class="more-icon" aria-hidden="true">🚪</span>
+                <span class="more-text"><strong>Esci</strong><small>Disconnetti questo dispositivo</small></span>
+                <span class="more-chevron" aria-hidden="true">›</span>
+            </a>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const current = (window.HubTheme && window.HubTheme.preference) || 'auto';
+    document.querySelectorAll('[data-theme-choice]').forEach(btn => {
+        const selected = btn.dataset.themeChoice === current;
+        btn.setAttribute('aria-checked', selected ? 'true' : 'false');
+        btn.classList.toggle('is-selected', selected);
+        btn.addEventListener('click', () => window.HubTheme && window.HubTheme.set(btn.dataset.themeChoice));
+    });
+})();
+</script>
+{% endblock %}
