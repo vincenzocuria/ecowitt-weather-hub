@@ -70,13 +70,15 @@ class LGThinQService:
 
             if self.api is None:
                 from thinqconnect.thinq_api import ThinQApi
-                self.api = ThinQApi(
+                api = ThinQApi(
                     session=self.session,
                     access_token=settings.LG_THINQ_PAT,
                     country_code=settings.LG_THINQ_COUNTRY,
                     client_id=self.client_id
                 )
-                await self.api.async_init()
+                await api.async_init()
+                # Assegnata solo a init riuscito: altrimenti un'istanza a metà resterebbe in uso fino al riavvio
+                self.api = api
                 logger.info(f"✅ [LG ThinQ] Inizializzata connessione API (Country: {settings.LG_THINQ_COUNTRY})")
             
             return True

@@ -3307,6 +3307,20 @@ def delete_tuya_local_device(device_id: str) -> bool:
     return rows > 0
 
 
+def claim_scheduled_task(task_id: str) -> bool:
+    """Passa un task da 'pending' a 'running'. Restituisce False se un altro ciclo lo ha già preso."""
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            "UPDATE scheduled_device_tasks SET status = 'running' WHERE task_id = ? AND status = 'pending'",
+            (task_id,)
+        )
+        conn.commit()
+        return cursor.rowcount == 1
+    finally:
+        conn.close()
+
+
 def mark_scheduled_task_completed(task_id: str, status: str, result: Any = None) -> bool:
     """Aggiorna lo stato di un task completato (executed o failed)."""
     conn = get_connection()

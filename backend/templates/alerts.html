@@ -22,7 +22,7 @@
 
 <!-- KPI CARDS CRUSCOTTO STATISTICHE -->
 <div class="alerts-kpi-grid">
-    <div class="card alerts-kpi-card" onclick="filterAlerts('all')">
+    <div class="card alerts-kpi-card" onclick="filterAlertsPage('all')">
         <div class="kpi-icon-wrap" style="background: rgba(56, 189, 248, 0.12); color: #38bdf8;">📋</div>
         <div class="kpi-content">
             <div class="kpi-label">Totale Notifiche</div>
@@ -31,7 +31,7 @@
         </div>
     </div>
 
-    <div class="card alerts-kpi-card {% if unread_count > 0 %}kpi-warning-glow{% endif %}" onclick="filterAlerts('unread')">
+    <div class="card alerts-kpi-card {% if unread_count > 0 %}kpi-warning-glow{% endif %}" onclick="filterAlertsPage('unread')">
         <div class="kpi-icon-wrap" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b;">📬</div>
         <div class="kpi-content">
             <div class="kpi-label">Da Leggere</div>
@@ -149,10 +149,10 @@
         <!-- Barra Filtri Chip Categoria & Stato -->
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
             <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;" id="category-filter-chips">
-                <button id="filter-btn-all" class="filter-chip active" onclick="filterAlerts('all')">
+                <button id="filter-btn-all" class="filter-chip active" onclick="filterAlertsPage('all')">
                     Tutte (<span id="total-count-badge">{{ alerts|length }}</span>)
                 </button>
-                <button id="filter-btn-unread" class="filter-chip" onclick="filterAlerts('unread')">
+                <button id="filter-btn-unread" class="filter-chip" onclick="filterAlertsPage('unread')">
                     Non lette (<span id="unread-filter-count">{{ unread_count }}</span>)
                 </button>
                 <button class="filter-chip" data-category="civil_protection" onclick="filterCategory('civil_protection', this)">
@@ -871,7 +871,7 @@ function clearAlertSearch() {
     applyCombinedFilters();
 }
 
-function filterAlerts(mode) {
+function filterAlertsPage(mode) {
     currentFilterMode = mode;
     currentCategoryFilter = null;
     document.querySelectorAll('#category-filter-chips .filter-chip').forEach(btn => btn.classList.remove('active'));
@@ -905,7 +905,7 @@ function filterByToday() {
 
 function resetAllAlertFilters() {
     clearAlertSearch();
-    filterAlerts('all');
+    filterAlertsPage('all');
 }
 
 function applyCombinedFilters() {

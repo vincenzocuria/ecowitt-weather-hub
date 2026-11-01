@@ -156,9 +156,9 @@
                             {% if dev.temp_set %}<span class="metric-tag tag-target">🎯 {{ dev.temp_set }}°C</span>{% endif %}
                         {% elif dev.category in ('shutters', 'curtains') %}
                             <div style="display: flex; gap: 4px; width: 100%; justify-content: space-between;" onclick="event.stopPropagation();">
-                                <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="controlTuyaCurtain('{{ dev.raw_id }}', 'open')">🔼 Apri</button>
-                                <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="controlTuyaCurtain('{{ dev.raw_id }}', 'stop')">⏸️ Stop</button>
-                                <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="controlTuyaCurtain('{{ dev.raw_id }}', 'close')">🔽 Chiudi</button>
+                                <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="devControlTuyaCurtain('{{ dev.raw_id }}', 'open')">🔼 Apri</button>
+                                <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="devControlTuyaCurtain('{{ dev.raw_id }}', 'stop')">⏸️ Stop</button>
+                                <button type="button" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem; flex: 1;" onclick="devControlTuyaCurtain('{{ dev.raw_id }}', 'close')">🔽 Chiudi</button>
                             </div>
                         {% elif dev.category == 'irrigation' %}
                             <div style="display: flex; gap: 6px; width: 100%; align-items: center; justify-content: space-between;" onclick="event.stopPropagation();">
@@ -1143,7 +1143,7 @@ function renderScaleDetail(dev) {
             </div>
 
             <div style="margin-top: 1.25rem; display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap;">
-                <button type="button" class="btn btn-action-primary" onclick="syncHealthLiveMetrics()" style="padding: 8px 18px; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
+                <button type="button" class="btn btn-action-primary" onclick="devSyncHealthLiveMetrics()" style="padding: 8px 18px; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
                     <span>🔄 Sincronizza Bilancia con Home Assistant</span>
                 </button>
             </div>
@@ -1205,7 +1205,7 @@ function renderHealthDetail(dev) {
                 </div>
             </div>
             <div style="margin-top: 1.25rem; display: flex; justify-content: center;">
-                <button type="button" class="btn btn-action-primary" onclick="syncHealthLiveMetrics()" style="padding: 8px 18px; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
+                <button type="button" class="btn btn-action-primary" onclick="devSyncHealthLiveMetrics()" style="padding: 8px 18px; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
                     <span>🔄 Forza Sincronizzazione Dati Salute</span>
                 </button>
             </div>
@@ -1517,19 +1517,19 @@ function renderShutterDetail(dev) {
         <div class="curtain-controls-box" style="margin-top: 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 14px; padding: 1.25rem; text-align: center;">
             <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Comandi Rapidi Motorizzazione</div>
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
-                <button type="button" class="btn btn-action-primary" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px;" onclick="${isTuya ? `controlTuyaCurtain('${dev.raw_id}', 'open')` : `controlHassCover('${entityId}', 'open_cover')`}">
+                <button type="button" class="btn btn-action-primary" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px;" onclick="${isTuya ? `devControlTuyaCurtain('${dev.raw_id}', 'open')` : `controlHassCover('${entityId}', 'open_cover')`}">
                     <span style="font-size: 1.35rem;">🔼</span>
                     <span>Apri</span>
                 </button>
-                <button type="button" class="btn btn-outline" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px; border-color: #38bdf8; color: #38bdf8;" onclick="${isTuya ? `controlTuyaCurtain('${dev.raw_id}', 'half')` : `controlHassCover('${entityId}', 'set_cover_position', 50)`}">
+                <button type="button" class="btn btn-outline" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px; border-color: #38bdf8; color: #38bdf8;" onclick="${isTuya ? `devControlTuyaCurtain('${dev.raw_id}', 'half')` : `controlHassCover('${entityId}', 'set_cover_position', 50)`}">
                     <span style="font-size: 1.35rem;">🌓</span>
                     <span>A Metà (50%)</span>
                 </button>
-                <button type="button" class="btn btn-outline" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px; border-color: rgba(255,255,255,0.2);" onclick="${isTuya ? `controlTuyaCurtain('${dev.raw_id}', 'stop')` : `controlHassCover('${entityId}', 'stop_cover')`}">
+                <button type="button" class="btn btn-outline" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px; border-color: rgba(255,255,255,0.2);" onclick="${isTuya ? `devControlTuyaCurtain('${dev.raw_id}', 'stop')` : `controlHassCover('${entityId}', 'stop_cover')`}">
                     <span style="font-size: 1.35rem;">⏸️</span>
                     <span>Stop</span>
                 </button>
-                <button type="button" class="btn btn-action-danger" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px;" onclick="${isTuya ? `controlTuyaCurtain('${dev.raw_id}', 'close')` : `controlHassCover('${entityId}', 'close_cover')`}">
+                <button type="button" class="btn btn-action-danger" style="padding: 0.85rem 0.25rem; font-size: 0.85rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border-radius: 10px;" onclick="${isTuya ? `devControlTuyaCurtain('${dev.raw_id}', 'close')` : `controlHassCover('${entityId}', 'close_cover')`}">
                     <span style="font-size: 1.35rem;">🔽</span>
                     <span>Chiudi</span>
                 </button>
@@ -1925,7 +1925,7 @@ function renderGenericDetail(dev) {
 // GESTORI COMANDI UNIVERSALI
 // =========================================================================
 
-async function syncHealthLiveMetrics() {
+async function devSyncHealthLiveMetrics() {
     try {
         showToast('Sincronizzazione parametri salute e bilancia in corso... ⏳', 'info');
         const resp = await fetch('/api/health/sync', { method: 'POST' });
@@ -2144,7 +2144,7 @@ async function setThinQTemp(rawId, newTemp) {
     }
 }
 
-async function setThinQMode(rawId, mode) {
+async function devSetThinQMode(rawId, mode) {
     try {
         await fetch(`/api/thinq/device/${rawId}/control`, {
             method: 'POST',
@@ -2158,7 +2158,7 @@ async function setThinQMode(rawId, mode) {
     }
 }
 
-async function setThinQFan(rawId, speed) {
+async function devSetThinQFan(rawId, speed) {
     try {
         await fetch(`/api/thinq/device/${rawId}/control`, {
             method: 'POST',
@@ -2265,7 +2265,7 @@ async function controlHassValve(entityId, service) {
     }
 }
 
-async function controlTuyaCurtain(rawId, action) {
+async function devControlTuyaCurtain(rawId, action) {
     try {
         const resp = await fetch(`/api/tuya/device/${rawId}/curtain`, {
             method: 'POST',
@@ -2281,7 +2281,7 @@ async function controlTuyaCurtain(rawId, action) {
     }
 }
 
-async function sendTuyaCommand(rawId, commands) {
+async function devSendTuyaCommand(rawId, commands) {
     try {
         await fetch(`/api/tuya/device/${rawId}/command`, {
             method: 'POST',

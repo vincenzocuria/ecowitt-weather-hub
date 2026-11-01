@@ -12,7 +12,9 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Optional
 
+from backend.config import settings
 from backend.database import (
+    claim_scheduled_task,
     save_scheduled_task,
     get_due_scheduled_tasks,
     get_active_scheduled_tasks,
@@ -26,6 +28,22 @@ from backend.homeassistant_service import homeassistant_service
 from backend.notifier import notifier
 
 logger = logging.getLogger("weather_hub.device_scheduler")
+
+def normalize_schedule_time(value: str) -> str:
+    """
+    Converte l'orario richiesto in ISO UTC ('...+00:00').
+    I task vengono confrontati come stringhe nel DB: tutti devono avere lo stesso formato e fuso,
+    altrimenti un orario locale (es. '2026-11-01T20:00' o '+01:00') scatterebbe con 1-2 ore di scarto.
+    Un orario senza fuso è interpretato nel fuso della stazione.
+    """
+    try:
+        dt = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    except ValueError:
+        raise ValueError(f"Orario non valido: '{value}'. Usa il formato AAAA-MM-GGTHH:MM")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=settings.get_tz())
+    return dt.astimezone(timezone.utc).isoformat()
+
 
 class DeviceScheduler:
     def __init__(self):
@@ -51,7 +69,7 @@ class DeviceScheduler:
             exec_dt = now_utc + timedelta(minutes=float(delay_minutes))
             execute_at_iso = exec_dt.isoformat()
         elif target_time_iso:
-            execute_at_iso = target_time_iso
+            execute_at_iso = normalize_schedule_time(target_time_iso)
         else:
             raise ValueError("Specificare delay_minutes o target_time_iso")
 
@@ -94,6 +112,10 @@ class DeviceScheduler:
         executed_count = 0
         for task in due_tasks:
             task_id = task["task_id"]
+            # Prenota il task in modo atomico: se il salvataggio dell'esito fallisse più avanti,
+            # il task non resta 'pending' e non viene rieseguito ogni 5 secondi.
+            if not claim_scheduled_task(task_id):
+                continue
             ecosystem = task["ecosystem"]
             device_id = task["device_id"]
             device_name = task["device_name"]

@@ -49,6 +49,10 @@ class SmartThingsService:
         self.refresh_token_str = settings.SMARTTHINGS_REFRESH_TOKEN
         self.client_id = settings.SMARTTHINGS_CLIENT_ID
         self.client_secret = settings.SMARTTHINGS_CLIENT_SECRET
+        # Le richieste in parallelo (sync_all) possono ricevere 401 insieme: un solo rinnovo alla volta,
+        # perché il refresh token SmartThings è a rotazione e un secondo uso lo invaliderebbe.
+        self._refresh_lock = asyncio.Lock()
+        self._last_refresh_at = 0.0
 
         self.enabled = settings.SMARTTHINGS_ENABLED and (bool(self.token) or bool(self.refresh_token_str))
         self.poll_interval = settings.SMARTTHINGS_POLL_INTERVAL_SEC
@@ -110,6 +114,19 @@ class SmartThingsService:
         if not ref_tok or not c_id or not c_sec:
             return False
 
+        async with self._refresh_lock:
+            # Un'altra richiesta ha appena rinnovato il token: basta riprovare con quello nuovo
+            if time.time() - self._last_refresh_at < 30:
+                return True
+            ok = await self._do_refresh_access_token()
+            if ok:
+                self._last_refresh_at = time.time()
+            return ok
+
+    async def _do_refresh_access_token(self) -> bool:
+        ref_tok = self.refresh_token_str or settings.SMARTTHINGS_REFRESH_TOKEN
+        c_id = self.client_id or settings.SMARTTHINGS_CLIENT_ID
+        c_sec = self.client_secret or settings.SMARTTHINGS_CLIENT_SECRET
         try:
             url = "https://api.smartthings.com/oauth/token"
             auth_header = base64.b64encode(f"{c_id}:{c_sec}".encode()).decode()
@@ -123,7 +140,7 @@ class SmartThingsService:
                 "client_id": c_id
             }
 
-            await self.close()
+            # La sessione HTTP resta aperta: chiuderla qui interromperebbe le risposte ancora in lettura
             session = await self.get_session()
 
             async with session.post(url, headers=headers, data=data) as resp:

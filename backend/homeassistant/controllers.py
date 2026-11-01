@@ -33,9 +33,19 @@ class DeviceController:
         if device_id in TUYA_ID_MAP:
             return TUYA_ID_MAP[device_id]
 
-        for ent_id in self.client.entities:
-            if device_id in ent_id:
-                return ent_id
+        entities = list(self.client.entities)
+        # 1. Corrispondenza esatta sul nome entità (parte dopo il dominio)
+        exact = [e for e in entities if e.split(".", 1)[-1] == device_id]
+        if len(exact) == 1:
+            return exact[0]
+        # 2. Corrispondenza parziale solo se univoca e non troppo generica: un ID corto o ambiguo
+        #    (es. "camera") non deve mai comandare un'entità a caso, magari un'elettrovalvola.
+        if len(device_id) >= 6:
+            partial = [e for e in entities if device_id in e]
+            if len(partial) == 1:
+                return partial[0]
+            if len(partial) > 1:
+                logger.warning(f"[HASS] ID '{device_id}' ambiguo ({len(partial)} entità): comando non risolto")
         return None
 
     def resolve_entity_id(self, entity_id: str) -> str:
@@ -49,7 +59,10 @@ class DeviceController:
                 return resolved
             if entity_id == "frigorifero":
                 return "switch.frigorifero_express_mode"
-            return f"switch.{entity_id}"
+            candidate = f"switch.{entity_id}"
+            if self.client.entities and candidate not in self.client.entities:
+                logger.warning(f"[HASS] Entità '{entity_id}' non trovata in Home Assistant")
+            return candidate
         return entity_id
 
     async def toggle_device(self, entity_id: str, target_state: bool) -> Dict[str, Any]:

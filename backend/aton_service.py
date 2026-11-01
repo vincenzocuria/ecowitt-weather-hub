@@ -24,6 +24,9 @@ class AtonService:
         self.is_connected: bool = False
         self.failed_attempts: int = 0
         self._running: bool = False
+        # Pausa crescente dopo login falliti (1, 2, 4... fino a 30 min) per non far bloccare l'account
+        self._login_failures: int = 0
+        self._next_login_at: float = 0.0
 
     def _ensure_session(self) -> bool:
         """Verifica o crea la sessione autenticata su Aton Server."""
@@ -39,6 +42,21 @@ class AtonService:
                 "Content-Type": "application/x-www-form-urlencoded"
             })
 
+        if time.time() < self._next_login_at:
+            return False
+
+        ok = self._login()
+        if ok:
+            self._login_failures = 0
+            self._next_login_at = 0.0
+        else:
+            self._login_failures += 1
+            wait_sec = min(1800, 60 * (2 ** (self._login_failures - 1)))
+            self._next_login_at = time.time() + wait_sec
+            logger.warning(f"[ATON] Prossimo tentativo di login tra {wait_sec // 60} min ({self._login_failures} falliti di fila)")
+        return ok
+
+    def _login(self) -> bool:
         # Test rapido o login
         try:
             # Step 1: Pre-carica login.php per ottenere PHPSESSID se non presente
