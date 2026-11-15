@@ -70,6 +70,92 @@ def deg_to_compass(deg: Optional[float]) -> str:
         return f"{deg}°"
 
 
+# Rosa dei venti tradizionale del Mediterraneo (8 venti principali, settori di 45°)
+WIND_NAMES = [
+    {"name": "Tramontana", "abbr": "N", "deg": 0, "from": "da Nord", "desc": "Freddo e secco, porta cielo terso."},
+    {"name": "Grecale", "abbr": "NE", "deg": 45, "from": "da Nord-Est", "desc": "Freddo e teso, può agitare il mare."},
+    {"name": "Levante", "abbr": "E", "deg": 90, "from": "da Est", "desc": "Umido, spesso porta nubi e mare mosso."},
+    {"name": "Scirocco", "abbr": "SE", "deg": 135, "from": "da Sud-Est", "desc": "Caldo e umido dall'Africa, cielo velato e afa."},
+    {"name": "Ostro", "abbr": "S", "deg": 180, "from": "da Sud", "desc": "Caldo e umido (detto anche Mezzogiorno)."},
+    {"name": "Libeccio", "abbr": "SW", "deg": 225, "from": "da Sud-Ovest", "desc": "Tempestoso, porta mareggiate e piogge."},
+    {"name": "Ponente", "abbr": "W", "deg": 270, "from": "da Ovest", "desc": "Fresco, spesso segue il passaggio di una perturbazione."},
+    {"name": "Maestrale", "abbr": "NW", "deg": 315, "from": "da Nord-Ovest", "desc": "Fresco e teso, rasserena il cielo."},
+]
+WIND_CALM_KMH = 1.0
+
+
+def wind_name(deg: Optional[float], speed_kmh: Optional[float] = None) -> Dict[str, Any]:
+    """Nome tradizionale del vento (Tramontana, Grecale, ...) dalla direzione di provenienza."""
+    if speed_kmh is not None and speed_kmh < WIND_CALM_KMH:
+        return {"name": "Calma", "abbr": "--", "deg": deg, "from": "", "desc": "Aria praticamente ferma.", "calm": True}
+    if deg is None:
+        return {"name": "--", "abbr": "--", "deg": None, "from": "", "desc": "", "calm": False}
+    idx = int(((float(deg) % 360) + 22.5) // 45) % 8
+    return dict(WIND_NAMES[idx], calm=False)
+
+
+def _downsample(items: List[Any], max_items: int) -> List[Any]:
+    """Riduce una lista a max_items elementi equidistanti (mantiene il più recente)."""
+    if len(items) <= max_items:
+        return items
+    step = len(items) / float(max_items)
+    picked = [items[int(i * step)] for i in range(max_items - 1)]
+    return picked + [items[-1]]
+
+
+def calc_wind_rose(samples: List[Dict[str, Any]], trail_minutes: int = 60,
+                   now_utc: Optional[datetime] = None) -> Dict[str, Any]:
+    """
+    Statistiche per la rosa dei venti da campioni {timestamp, wind_dir_deg, wind_speed_kmh, wind_gust_kmh}:
+    frequenza e velocità media per 16 settori, quota di calma e scia delle direzioni recenti.
+    """
+    now_utc = now_utc or datetime.now(timezone.utc)
+    sectors = [{"count": 0, "speed_sum": 0.0, "gust_max": 0.0} for _ in range(16)]
+    calm = valid = 0
+    trail: List[Dict[str, Any]] = []
+    for smp in samples:
+        deg, spd = smp.get("wind_dir_deg"), smp.get("wind_speed_kmh")
+        if deg is None or spd is None:
+            continue
+        valid += 1
+        if spd < WIND_CALM_KMH:
+            calm += 1
+        else:
+            i = int(((float(deg) % 360) + 11.25) // 22.5) % 16
+            sectors[i]["count"] += 1
+            sectors[i]["speed_sum"] += spd
+            sectors[i]["gust_max"] = max(sectors[i]["gust_max"], smp.get("wind_gust_kmh") or 0.0)
+        try:
+            ts = datetime.fromisoformat(str(smp.get("timestamp")).replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            age_min = (now_utc - ts).total_seconds() / 60.0
+            if 0 <= age_min <= trail_minutes and spd >= WIND_CALM_KMH:
+                trail.append({"deg": round(float(deg)), "speed": round(spd, 1), "age_min": round(age_min)})
+        except (TypeError, ValueError):
+            pass
+
+    max_count = max((x["count"] for x in sectors), default=0) or 1
+    out_sectors = []
+    for i, x in enumerate(sectors):
+        out_sectors.append({
+            "deg": i * 22.5,
+            "freq_pct": round(100.0 * x["count"] / valid, 1) if valid else 0.0,
+            "rel": round(x["count"] / max_count, 3),
+            "avg_speed": round(x["speed_sum"] / x["count"], 1) if x["count"] else 0.0,
+            "gust_max": round(x["gust_max"], 1),
+        })
+    dominant = max(range(16), key=lambda i: sectors[i]["count"]) if valid and calm < valid else None
+    return {
+        "sectors": out_sectors,
+        "samples": valid,
+        "calm_pct": round(100.0 * calm / valid, 1) if valid else 0.0,
+        "dominant": wind_name(dominant * 22.5) if dominant is not None else None,
+        "dominant_deg": dominant * 22.5 if dominant is not None else None,
+        "trail": _downsample(sorted(trail, key=lambda t: t["age_min"], reverse=True), 40),
+    }
+
+
 # ---------------------------------------------------------------------------
 # 1. ALGORITMO DI ZAMBRETTI (Nowcasting Locale a 6-12 Ore)
 # ---------------------------------------------------------------------------

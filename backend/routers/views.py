@@ -30,7 +30,7 @@ from backend.database import (
     get_health_stats_summary, get_health_daily_history
 )
 from backend.analytics import (
-    calc_apparent_temp, deg_to_compass, calc_current_weather_condition, calc_sun_ephemeris
+    calc_apparent_temp, deg_to_compass, calc_current_weather_condition, calc_sun_ephemeris, wind_name
 )
 from backend.routers.weather import build_analytics_context
 from backend.routers.devices import build_devices_catalog
@@ -149,6 +149,7 @@ async def dashboard_page(request: Request):
     
     wind_deg = latest.get("wind_dir_deg") if latest.get("wind_dir_deg") is not None else raw.get("winddir")
     wind_dir_text = deg_to_compass(wind_deg)
+    wind_info = wind_name(wind_deg, latest.get("wind_speed_kmh"))
     
     status_info = get_station_status()
     pressure_trend = latest.get("pressure_trend") or get_pressure_trend(latest.get("pressure_rel_hpa"))
@@ -200,6 +201,8 @@ async def dashboard_page(request: Request):
             "station_model": station_model,
             "batt_wh65": batt_wh65,
             "wind_dir_text": wind_dir_text,
+            "wind_info": wind_info,
+            "wind_deg": wind_deg,
             "status_info": status_info,
             "pressure_trend": pressure_trend,
             "apparent_temp": apparent_temp,

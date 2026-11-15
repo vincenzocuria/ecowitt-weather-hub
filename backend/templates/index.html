@@ -144,13 +144,13 @@
                     </div>
                 </div>
 
-                <!-- 2. Vento & Raffica -->
-                <div class="hero-stat-card">
+                <!-- 2. Vento & Raffica (tocca per la rosa dei venti) -->
+                <div class="hero-stat-card hero-stat-clickable" role="button" tabindex="0" onclick="openWindRose()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openWindRose();}" title="Apri la rosa dei venti">
                     <span class="hero-stat-icon">💨</span>
                     <div class="hero-stat-info">
-                        <span class="hero-stat-label">Vento & Raffica</span>
+                        <span class="hero-stat-label">Vento & Raffica <span class="hero-stat-hint">🧭</span></span>
                         <strong class="hero-stat-val" id="hero_wind_val">{{ latest.wind_speed_kmh if latest.wind_speed_kmh is not none else '--' }} <small>km/h</small></strong>
-                        <span class="hero-stat-sub" id="hero_wind_sub"><span id="hero_dir_val">{{ wind_dir_text }}</span> • Max <span id="hero_gust_val">{{ latest.max_daily_gust_kmh or analytics.today_extremes.max_gust or '--' }}</span> km/h</span>
+                        <span class="hero-stat-sub" id="hero_wind_sub"><strong class="hero-wind-name" id="hero_dir_name">{{ wind_info.name if wind_info else '--' }}</strong> <span id="hero_dir_val">{% if wind_deg is not none and not (wind_info and wind_info.calm) %}{{ wind_deg|int }}°{% endif %}</span> • Max <span id="hero_gust_val">{{ latest.max_daily_gust_kmh or analytics.today_extremes.max_gust or '--' }}</span> km/h</span>
                     </div>
                 </div>
 
@@ -1999,6 +1999,38 @@
     </div>
 </div>
 {% endif %}
+
+<!-- MODALE ROSA DEI VENTI (tempo reale) -->
+<div id="wind-rose-backdrop" class="device-modal-backdrop" onclick="closeWindRose(event)">
+    <div class="device-modal-dialog wind-rose-dialog" role="dialog" aria-modal="true" aria-labelledby="wind-rose-title" onclick="event.stopPropagation()">
+        <div class="device-modal-header">
+            <div class="modal-title-group">
+                <div class="modal-icon-badge" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.35); color: #38bdf8;">🧭</div>
+                <div>
+                    <h3 id="wind-rose-title" style="margin: 0; font-size: 1.15rem; font-weight: 700;">Rosa dei venti</h3>
+                    <div class="modal-device-meta" id="wind-rose-meta">Vento in tempo reale dalla stazione</div>
+                </div>
+            </div>
+            <button type="button" class="modal-close-btn" onclick="closeWindRose()" title="Chiudi">&times;</button>
+        </div>
+        <div class="device-modal-body wind-rose-body">
+            <div class="wind-rose-figure">
+                <svg id="wind-rose-svg" viewBox="-160 -160 320 320" role="img" aria-label="Rosa dei venti con direzione e intensità del vento"></svg>
+            </div>
+            <div class="wind-rose-now" id="wind-rose-now">
+                <div class="modal-loading-placeholder"><div class="spinner"></div><p>Lettura del vento in corso...</p></div>
+            </div>
+            <div class="wind-rose-winds" id="wind-rose-winds"></div>
+            <p class="wind-rose-note">I petali mostrano da dove ha soffiato il vento nelle ultime 24 ore (più lunghi = più frequenti, colore = intensità media). I puntini indicano le direzioni dell'ultima ora.</p>
+        </div>
+        <div class="device-modal-footer">
+            <span class="modal-live-ticker"><span class="pulse-dot"></span> <span id="wind-rose-ticker">Live • aggiornamento ogni 5 s</span></span>
+            <div class="modal-footer-btns">
+                <button type="button" class="btn btn-secondary" onclick="closeWindRose()">Chiudi</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- MODALE DI DETTAGLIO CONSUMI CASA (CHI STA CONSUMANDO) -->
 <div id="house-consumption-modal-backdrop" class="device-modal-backdrop" onclick="closeHouseConsumptionModal(event)">

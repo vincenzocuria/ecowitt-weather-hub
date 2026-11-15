@@ -2299,6 +2299,26 @@ class TestHourlyForecast(unittest.TestCase):
         self.assertTrue(t2["sun_path"].startswith("M"))
         self.assertEqual(t2["grid"][-1]["label"], "45°")
 
+    def test_wind_names_and_rose(self):
+        from backend.analytics import wind_name, calc_wind_rose
+        self.assertEqual(wind_name(0, 10)["name"], "Tramontana")
+        self.assertEqual(wind_name(350, 10)["name"], "Tramontana")
+        self.assertEqual(wind_name(135, 10)["name"], "Scirocco")
+        self.assertEqual(wind_name(225, 10)["name"], "Libeccio")
+        self.assertEqual(wind_name(281, 10)["name"], "Ponente")
+        self.assertEqual(wind_name(315, 10)["name"], "Maestrale")
+        self.assertTrue(wind_name(200, 0.3)["calm"])
+        now = datetime.now(timezone.utc)
+        samples = [
+            {"timestamp": (now - timedelta(minutes=k)).isoformat(), "wind_dir_deg": 225, "wind_speed_kmh": 20, "wind_gust_kmh": 35}
+            for k in range(0, 30, 5)
+        ] + [{"timestamp": now.isoformat(), "wind_dir_deg": 90, "wind_speed_kmh": 0.2, "wind_gust_kmh": 1}]
+        rose = calc_wind_rose(samples, now_utc=now)
+        self.assertEqual(rose["dominant"]["name"], "Libeccio")
+        self.assertEqual(rose["sectors"][10]["rel"], 1.0)
+        self.assertAlmostEqual(rose["calm_pct"], 14.3, delta=0.1)
+        self.assertEqual(len(rose["trail"]), 6)
+
     def test_eaqi_scale_conversion(self):
         from backend.forecast_service import ForecastService
         self.assertEqual(ForecastService._eaqi_class(27), 2)

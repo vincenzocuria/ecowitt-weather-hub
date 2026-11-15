@@ -1673,6 +1673,20 @@ def get_yesterday_same_time(current_temp: Optional[float]) -> Dict[str, Any]:
         "text": f"{sign}{diff}°C vs ieri a quest'ora"
     }
 
+def get_wind_samples(hours: int = 24) -> List[Dict[str, Any]]:
+    """Campioni di vento (direzione, velocità, raffica) delle ultime `hours` ore."""
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT timestamp, wind_dir_deg, wind_speed_kmh, wind_gust_kmh FROM weather_records "
+            "WHERE timestamp >= ? ORDER BY timestamp", (since,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 def get_recent_rain_totals() -> Dict[str, float]:
     """
     Calcola gli accumuli pioggia degli ultimi 7 giorni, del mese in corso e dell'anno dal 1° gennaio.

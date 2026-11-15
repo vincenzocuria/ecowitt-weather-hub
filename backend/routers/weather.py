@@ -24,6 +24,7 @@ def _set_cached_analytics(key: str, val: Any):
 from backend.config import settings
 from backend.ecowitt_parser import parse_ecowitt_payload
 from backend.alert_engine import engine
+from backend.database import get_wind_samples
 from backend.database import (
     save_reading, get_latest_reading, get_all_records, get_records_history,
     get_timeseries, search_history, get_history_kpis, get_alert_logs,
@@ -37,6 +38,7 @@ from backend.database import (
 from backend.analytics import (
     calc_zambretti_forecast, abs_to_rel_pressure, evaluate_window_ventilation, evaluate_laundry_index,
     calc_humidex, evaluate_outdoor_activity, calc_sun_ephemeris, calc_moon_phase, calc_sky_tracks,
+    wind_name, calc_wind_rose, WIND_NAMES,
     calc_beaufort_scale, evaluate_indoor_comfort, calc_current_weather_condition,
     calc_evapotranspiration, evaluate_smart_irrigation, generate_now_highlights,
     calc_dew_point, calc_apparent_temp, deg_to_compass, analyze_lightning_activity
@@ -288,6 +290,29 @@ def api_lightning_history(limit: int = 20, hours: int = 48):
         "stats": stats
     }
 
+@router.get("/api/wind/rose")
+def api_wind_rose(hours: int = 24):
+    """Dati per la rosa dei venti: vento attuale con nome tradizionale e statistiche per settore."""
+    hours = max(1, min(hours, 168))
+    latest = get_latest_reading() or {}
+    deg, spd = latest.get("wind_dir_deg"), latest.get("wind_speed_kmh")
+    rose = calc_wind_rose(get_wind_samples(hours))
+    return {
+        "current": {
+            "deg": deg,
+            "speed_kmh": spd,
+            "gust_kmh": latest.get("wind_gust_kmh"),
+            "max_gust_today_kmh": latest.get("max_daily_gust_kmh"),
+            "name": wind_name(deg, spd),
+            "beaufort": calc_beaufort_scale(spd),
+            "timestamp": latest.get("timestamp"),
+        },
+        "hours": hours,
+        "rose": rose,
+        "winds": WIND_NAMES,
+    }
+
+
 @router.get("/api/live")
 def api_live():
     latest = get_latest_reading()
@@ -304,6 +329,7 @@ def api_live():
 
     status_info = get_station_status()
     clean_latest["status_info"] = status_info
+    clean_latest["wind_name"] = wind_name(latest.get("wind_dir_deg"), latest.get("wind_speed_kmh"))
     analytics_ctx = build_analytics_context(latest)
     clean_latest["analytics"] = analytics_ctx
     clean_latest["lightning_last_time_fmt"] = format_lightning_time_italian(latest.get("lightning_last_time"))

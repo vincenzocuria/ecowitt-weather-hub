@@ -169,6 +169,13 @@ function startDashboardPolling() {
                     const heroGust = document.getElementById('hero_gust_val');
                     if (heroGust) heroGust.innerText = d.max_daily_gust_kmh;
                 }
+                if (d.wind_name) {
+                    const nm = document.getElementById('hero_dir_name');
+                    if (nm) nm.innerText = d.wind_name.name;
+                    const dv = document.getElementById('hero_dir_val');
+                    const noDir = d.wind_name.calm || d.wind_dir_deg === null || d.wind_dir_deg === undefined;
+                    if (dv) dv.innerText = noDir ? '' : Math.round(d.wind_dir_deg) + '°';
+                }
                 if (d.wind_dir_deg !== undefined) {
                     const el = document.getElementById('wind_dir');
                     if (el) el.innerText = d.wind_dir_deg + '°';
@@ -3094,3 +3101,217 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
+
+// ============================================================================
+// ROSA DEI VENTI ANIMATA (tempo reale)
+// ============================================================================
+let windRoseTimer = null;
+let windRoseBuilt = false;
+const WIND_SVG_NS = 'http://www.w3.org/2000/svg';
+
+function windSvgEl(tag, attrs, parent) {
+    const el = document.createElementNS(WIND_SVG_NS, tag);
+    Object.entries(attrs || {}).forEach(([k, v]) => el.setAttribute(k, v));
+    if (parent) parent.appendChild(el);
+    return el;
+}
+
+// Punto sulla rosa: 0° = Nord in alto, senso orario
+function windPolar(deg, r) {
+    const a = (deg - 90) * Math.PI / 180;
+    return [r * Math.cos(a), r * Math.sin(a)];
+}
+
+// Colore per intensità (km/h), dalla brezza leggera alla burrasca
+function windSpeedColor(kmh) {
+    if (kmh < 6) return '#7dd3fc';
+    if (kmh < 12) return '#38bdf8';
+    if (kmh < 20) return '#34d399';
+    if (kmh < 29) return '#a3e635';
+    if (kmh < 39) return '#facc15';
+    if (kmh < 50) return '#fb923c';
+    if (kmh < 62) return '#f87171';
+    return '#e879f9';
+}
+
+function windEscape(str) {
+    return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function buildWindRoseSkeleton(winds) {
+    const svg = document.getElementById('wind-rose-svg');
+    if (!svg) return;
+    svg.innerHTML = '';
+    windSvgEl('circle', { r: 104, class: 'wr-ring wr-ring-outer' }, svg);
+    [78, 52, 26].forEach(r => windSvgEl('circle', { r, class: 'wr-ring' }, svg));
+    windSvgEl('g', { id: 'wr-petals' }, svg);
+    for (let i = 0; i < 16; i++) {
+        const deg = i * 22.5;
+        const major = i % 2 === 0;
+        const [x1, y1] = windPolar(deg, major ? 92 : 98);
+        const [x2, y2] = windPolar(deg, 104);
+        windSvgEl('line', { x1, y1, x2, y2, class: major ? 'wr-tick wr-tick-major' : 'wr-tick' }, svg);
+    }
+    // Nomi dei venti e sigle
+    (winds || []).forEach(w => {
+        // Nord e Sud centrati; gli altri allineati verso l'esterno così non toccano l'anello
+        const vertical = w.deg % 180 === 0;
+        const [nx, ny] = windPolar(w.deg, vertical ? 118 : 110);
+        const sinA = Math.sin(w.deg * Math.PI / 180);
+        const anchor = vertical ? 'middle' : (sinA > 0 ? 'start' : 'end');
+        const name = windSvgEl('text', { x: nx, y: ny, class: 'wr-name', 'text-anchor': anchor, 'dominant-baseline': 'central' }, svg);
+        name.textContent = w.name;
+        const [ax, ay] = windPolar(w.deg, 84);
+        const abbr = windSvgEl('text', { x: ax, y: ay, class: 'wr-abbr', 'text-anchor': 'middle', 'dominant-baseline': 'central' }, svg);
+        abbr.textContent = w.abbr;
+    });
+    windSvgEl('g', { id: 'wr-trail' }, svg);
+    // Freccia: entra dal lato di provenienza e attraversa la rosa nel verso del vento
+    const needle = windSvgEl('g', { id: 'wr-needle', class: 'wr-needle' }, svg);
+    const wobble = windSvgEl('g', { id: 'wr-wobble', class: 'wr-wobble' }, needle);
+    // Linea di flusso interrotta al cerchio centrale per non coprire la velocità
+    windSvgEl('line', { x1: 0, y1: -92, x2: 0, y2: -28, class: 'wr-flow' }, wobble);
+    windSvgEl('line', { x1: 0, y1: 28, x2: 0, y2: 86, class: 'wr-flow' }, wobble);
+    windSvgEl('path', { d: 'M0,-82 L-10,-104 L10,-104 Z', class: 'wr-pointer' }, wobble);
+    windSvgEl('path', { d: 'M0,96 L-8,79 L0,84 L8,79 Z', class: 'wr-tail' }, wobble);
+    windSvgEl('circle', { r: 25, class: 'wr-center' }, svg);
+    const spd = windSvgEl('text', { id: 'wr-speed', y: -3, class: 'wr-speed', 'text-anchor': 'middle', 'dominant-baseline': 'central' }, svg);
+    spd.textContent = '--';
+    const unit = windSvgEl('text', { y: 14, class: 'wr-unit', 'text-anchor': 'middle' }, svg);
+    unit.textContent = 'km/h';
+    windRoseBuilt = true;
+}
+
+function renderWindRose(data) {
+    if (!data) return;
+    if (!windRoseBuilt) buildWindRoseSkeleton(data.winds);
+    const cur = data.current || {};
+    const rose = data.rose || {};
+    const name = cur.name || {};
+    const spd = Number(cur.speed_kmh || 0);
+    const gust = Number(cur.gust_kmh || 0);
+    const calm = !!name.calm || cur.deg === null || cur.deg === undefined;
+
+    // Petali: da dove ha soffiato il vento nelle ultime 24 ore
+    const petals = document.getElementById('wr-petals');
+    if (petals && rose.sectors) {
+        petals.innerHTML = '';
+        rose.sectors.forEach(sec => {
+            if (!sec.rel || sec.freq_pct < 1) return;   // direzioni sporadiche: non disegnate
+            // Spicchio ad anello: parte dal bordo del cerchio centrale (r=27)
+            const r0 = 27, len = r0 + 6 + sec.rel * 48;
+            const [x1, y1] = windPolar(sec.deg - 9, len);
+            const [x2, y2] = windPolar(sec.deg + 9, len);
+            const [x3, y3] = windPolar(sec.deg + 9, r0);
+            const [x4, y4] = windPolar(sec.deg - 9, r0);
+            const f = v => v.toFixed(1);
+            const petal = windSvgEl('path', {
+                d: `M${f(x4)},${f(y4)} L${f(x1)},${f(y1)} A${f(len)},${f(len)} 0 0,1 ${f(x2)},${f(y2)} L${f(x3)},${f(y3)} A${r0},${r0} 0 0,0 ${f(x4)},${f(y4)} Z`,
+                class: 'wr-petal', style: `fill:${windSpeedColor(sec.avg_speed)}`
+            }, petals);
+            windSvgEl('title', {}, petal).textContent =
+                `${sec.freq_pct}% del tempo • media ${sec.avg_speed} km/h • raffica max ${sec.gust_max} km/h`;
+        });
+    }
+
+    // Scia dell'ultima ora
+    const trail = document.getElementById('wr-trail');
+    if (trail && rose.trail) {
+        trail.innerHTML = '';
+        rose.trail.forEach(t => {
+            const [x, y] = windPolar(t.deg, 98);
+            windSvgEl('circle', {
+                cx: x.toFixed(1), cy: y.toFixed(1), r: 3.2, class: 'wr-trail-dot',
+                style: `opacity:${(1 - Math.min(60, t.age_min) / 75).toFixed(2)}`
+            }, trail);
+        });
+    }
+
+    // Freccia animata: rotazione fluida (percorso più breve), oscillazione proporzionale
+    // alle raffiche, flusso più veloce quando il vento è forte
+    const needle = document.getElementById('wr-needle');
+    const wobble = document.getElementById('wr-wobble');
+    if (needle) {
+        needle.classList.toggle('wr-calm', calm);
+        if (!calm) {
+            const prev = needle.dataset.deg !== undefined ? Number(needle.dataset.deg) : Number(cur.deg);
+            const delta = ((Number(cur.deg) - prev) % 360 + 540) % 360 - 180;
+            const target = prev + delta;
+            needle.dataset.deg = target;
+            needle.style.transform = `rotate(${target}deg)`;
+        }
+    }
+    if (wobble) {
+        const amp = Math.max(1.5, Math.min(14, (gust - spd) * 0.8));
+        wobble.style.setProperty('--wr-amp', amp + 'deg');
+        wobble.style.setProperty('--wr-flow-speed', Math.max(0.35, 2.2 - spd / 25).toFixed(2) + 's');
+    }
+    const speedEl = document.getElementById('wr-speed');
+    if (speedEl) speedEl.textContent = calm ? '0' : String(Math.round(spd * 10) / 10);
+
+    document.querySelectorAll('#wind-rose-svg .wr-name').forEach(el => {
+        el.classList.toggle('wr-name-active', !calm && el.textContent === name.name);
+    });
+
+    const bf = cur.beaufort || {};
+    const now = document.getElementById('wind-rose-now');
+    if (now) {
+        const dom = rose.dominant ? rose.dominant.name : '--';
+        const title = calm ? '🍃 Calma' : windEscape(name.name);
+        const sub = calm ? '' : `${windEscape(name.from)} • ${Math.round(cur.deg)}°`;
+        now.innerHTML = `
+            <div class="wr-now-name">${title}<span>${sub}</span></div>
+            <div class="wr-now-desc">${windEscape(name.desc)}</div>
+            <div class="wr-now-stats">
+                <div><span>Vento</span><strong>${calm ? 0 : spd} km/h</strong></div>
+                <div><span>Raffica</span><strong>${gust || '--'} km/h</strong></div>
+                <div><span>Max oggi</span><strong>${cur.max_gust_today_kmh ?? '--'} km/h</strong></div>
+                <div><span>Beaufort</span><strong>${bf.grade ?? '--'} • ${windEscape(bf.label || '')}</strong></div>
+            </div>
+            <div class="wr-now-24h">Ultime 24 ore: prevalente <strong>${windEscape(dom)}</strong> • calma ${rose.calm_pct ?? 0}% del tempo</div>`;
+    }
+    const list = document.getElementById('wind-rose-winds');
+    if (list && data.winds) {
+        list.innerHTML = data.winds.map(w =>
+            `<span class="wr-chip ${!calm && w.name === name.name ? 'active' : ''}" title="${windEscape(w.desc)}"><b>${w.abbr}</b> ${windEscape(w.name)}</span>`
+        ).join('');
+    }
+    const ticker = document.getElementById('wind-rose-ticker');
+    if (ticker && cur.timestamp) {
+        const t = new Date(cur.timestamp);
+        if (!isNaN(t)) ticker.textContent = 'Live • ultimo dato alle ' + t.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+}
+
+async function refreshWindRose() {
+    try {
+        const res = await fetch('/api/wind/rose?hours=24', { credentials: 'include' });
+        if (!res.ok) return;
+        renderWindRose(await res.json());
+    } catch (e) {
+        console.warn('Rosa dei venti non aggiornata:', e);
+    }
+}
+
+function openWindRose() {
+    const backdrop = document.getElementById('wind-rose-backdrop');
+    if (!backdrop) return;
+    backdrop.classList.add('show');
+    document.body.style.overflow = 'hidden';
+    refreshWindRose();
+    if (windRoseTimer) clearInterval(windRoseTimer);
+    windRoseTimer = setInterval(refreshWindRose, 5000);
+}
+
+function closeWindRose(e) {
+    if (e && e.target !== document.getElementById('wind-rose-backdrop')) return;
+    const backdrop = document.getElementById('wind-rose-backdrop');
+    if (backdrop) backdrop.classList.remove('show');
+    document.body.style.overflow = '';
+    if (windRoseTimer) { clearInterval(windRoseTimer); windRoseTimer = null; }
+}
+
+document.addEventListener('keydown', (ev) => {
+    const bd = document.getElementById('wind-rose-backdrop');
+    if (ev.key === 'Escape' && bd && bd.classList.contains('show')) closeWindRose();
+});
