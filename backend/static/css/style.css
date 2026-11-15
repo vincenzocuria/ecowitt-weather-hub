@@ -8862,3 +8862,37 @@ html[data-theme="light"] .leaflet-control-attribution a {
     .tv-dpad .dpad-up, .tv-dpad .dpad-down { margin-left: -28px; }
     .tv-dpad .dpad-left, .tv-dpad .dpad-right { margin-top: -28px; }
 }
+
+/* Kiosk: colonne che si restringono davvero (1fr da solo non scende sotto la larghezza del contenuto:
+   con schermi stretti o testo del telefono ingrandito le tile uscivano dallo schermo) */
+.kiosk-main-grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, 2fr); }
+.kiosk-tiles-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.kiosk-forecast-bar { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.kiosk-next-hours { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.kiosk-card, .kiosk-tile, .kiosk-nh, .kiosk-fc-item, .kiosk-hero-top, .kiosk-temp-wrap { min-width: 0; }
+.kiosk-tile-hdr { min-width: 0; }
+.kiosk-tile-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kiosk-tile-val { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 768px) {
+    .kiosk-main-grid { grid-template-columns: minmax(0, 1fr); }
+    .kiosk-tiles-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kiosk-next-hours { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .kiosk-forecast-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kiosk-temp-val { font-size: clamp(2.4rem, 13vw, 3.8rem); }
+    .kiosk-weather-icon { font-size: clamp(2.6rem, 13vw, 4.2rem); }
+    .kiosk-tile-val { font-size: clamp(1.15rem, 6.5vw, 1.6rem); }
+    .kiosk-tile { padding: 9px 10px; }
+    .kiosk-tile-hdr { font-size: 0.7rem; }
+    .kiosk-tile-sub { font-size: 0.72rem; }
+}
+.kiosk-brand > div { min-width: 0; }
+.kiosk-station-name, .kiosk-location-name span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kiosk-location-name { min-width: 0; }
+@media (max-width: 768px) {
+    /* Su telefono titoli e righe secondarie vanno a capo invece di essere troncati */
+    .kiosk-tile-hdr { align-items: flex-start; }
+    .kiosk-tile-title { white-space: normal; overflow: visible; text-transform: none; font-size: 0.78rem; line-height: 1.2; overflow-wrap: anywhere; }
+    .kiosk-wind-name { display: block; margin-left: 0; }
+    .kiosk-tile-sub { white-space: normal; overflow: visible; line-height: 1.3; }
+    .kiosk-tile { gap: 4px; justify-content: flex-start; }
+}
