@@ -28,7 +28,8 @@ scp -O -i $sshKey -P $qnapPort -r "$scriptDir/backend" "$qnapUser@${qnapIp}:$rem
 scp -O -i $sshKey -P $qnapPort "$scriptDir/docker-compose.yml" "$qnapUser@${qnapIp}:$remotePath/"
 scp -O -i $sshKey -P $qnapPort "$scriptDir/.env" "$qnapUser@${qnapIp}:$remotePath/"
 
-Write-Host "3. Riavvio container..." -ForegroundColor Yellow
-ssh -i $sshKey -p $qnapPort "$qnapUser@$qnapIp" "cd $remotePath && $composeBin up -d --force-recreate"
+# Solo l'app meteo: Home Assistant e il tunnel Cloudflare restano attivi (--no-deps)
+Write-Host "3. Riavvio dell'app meteo (ecowitt-hub)..." -ForegroundColor Yellow
+ssh -i $sshKey -p $qnapPort "$qnapUser@$qnapIp" "cd $remotePath && $composeBin up -d --force-recreate --no-deps ecowitt-hub"
 
 Write-Host "DEPLOY COMPLETATO!" -ForegroundColor Green
