@@ -10,7 +10,7 @@
                 <h1>💡 Dispositivi Smart</h1>
                 <p class="devices-subtitle">Centrale di controllo domotica integrata in tempo reale</p>
             </div>
-            <div class="devices-header-actions" style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+            <div class="devices-header-actions">
                 <button type="button" class="btn btn-action-secondary" id="btn-open-schedules" onclick="openSchedulesModal()" title="Visualizza e gestisci tutti i timer attivi della casa">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                     <span>Timer (<strong id="badge-active-schedules-count">{{ active_schedules|length if active_schedules else 0 }}</strong>)</span>
@@ -165,7 +165,7 @@
                                 <span class="metric-tag {% if dev.is_on %}tag-power{% else %}tag-dim{% endif %}">
                                     {% if dev.is_on %}💧 Irrigazione ON{% else %}💤 In Standby{% endif %}
                                 </span>
-                                {% if dev.battery_pct is not none %}
+                                {% if dev.battery_pct is number %}
                                     <span class="metric-tag tag-batt">🔋 {{ dev.battery_pct }}%</span>
                                 {% endif %}
                                 {% if dev.is_on %}
@@ -188,7 +188,7 @@
                                 <span class="metric-tag tag-temp">❤️ {{ dev.health_data.heart.rate_bpm if dev.health_data and dev.health_data.heart else '--' }} bpm</span>
                                 <span class="metric-tag tag-solar">🔥 {{ dev.health_data.calories.total_kcal|int if dev.health_data and dev.health_data.calories and dev.health_data.calories.total_kcal else '--' }} kcal</span>
                             {% endif %}
-                        {% elif dev.category == 'presence' and dev.battery_pct is not none %}
+                        {% elif dev.category == 'presence' and dev.battery_pct is number %}
                             <span class="metric-tag tag-batt">🔋 {{ dev.battery_pct }}%</span>
                         {% else %}
                             <span class="metric-tag tag-dim">{{ dev.status_text }}</span>

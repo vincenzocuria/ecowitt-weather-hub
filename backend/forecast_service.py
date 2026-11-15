@@ -91,6 +91,22 @@ TEMP_BIAS_DECAY_H = 6.0
 STALE_FORECAST_SECONDS = 3 * 3600
 
 
+def rain_intensity_label(mm_per_hour: Optional[float]) -> str:
+    """Descrizione a parole dell'intensità di pioggia oraria (mm/h)."""
+    mm = mm_per_hour or 0.0
+    if mm < 0.1:
+        return "asciutto"
+    if mm < 0.5:
+        return "qualche goccia"
+    if mm < 2.0:
+        return "pioggia debole"
+    if mm < 6.0:
+        return "pioggia moderata"
+    if mm < 15.0:
+        return "pioggia forte"
+    return "nubifragio"
+
+
 def _val(seq: List[Any], idx: int) -> Optional[Any]:
     """Elemento idx di una serie Open-Meteo, oppure None se mancante o nullo."""
     return seq[idx] if idx < len(seq) else None
@@ -413,6 +429,7 @@ class ForecastService:
                 "humidity": round(hum) if hum is not None else None,
                 "rain_mm": rain_mm,
                 "rain_mm_max": rain_mm_max,
+                "rain_label": rain_intensity_label(rain_mm),
                 "rain_prob_pct": prob_pct,
                 # I modelli divergono: uno vede pioggia, un altro (quasi) niente
                 "models_disagree": rain_mm_max >= 0.5 and rain_mm_min < 0.1,
@@ -528,11 +545,13 @@ class ForecastService:
                 h["icon"] = w_info["icon"]
                 h["condition"] = f"{w_info['text']} in corso (stazione)"
                 h["observed_rain"] = True
+                h["rain_label"] = rain_intensity_label(rate)
         else:
             # Adesso non piove: la casella "Ora" lo dice, le ore successive restano previsione.
             now_h["rain_prob_pct"] = 0
             now_h["rain_mm"] = 0.0
             now_h["observed_dry"] = True
+            now_h["rain_label"] = "asciutto"
             if now_h.get("weather_code") is not None and now_h["weather_code"] >= 51:
                 clouds = now_h.get("cloudcover_pct")
                 code = 3 if clouds is None or clouds >= 85 else (2 if clouds >= 40 else 1)
@@ -827,6 +846,7 @@ class ForecastService:
         max_prob_6h = 0
         total_rain_6h = 0.0
         first_rain_hour: Optional[Dict[str, Any]] = None
+        peak_hour: Optional[Dict[str, Any]] = None
 
         for h in hourly:
             try:
@@ -838,6 +858,8 @@ class ForecastService:
                     if prob > max_prob_6h:
                         max_prob_6h = prob
                     total_rain_6h += r_mm
+                    if prob >= 30 and (peak_hour is None or r_mm > peak_hour.get("rain_mm", 0.0)):
+                        peak_hour = h
                     if r_mm >= 0.3 and prob >= 40 and first_rain_hour is None:
                         first_rain_hour = h
             except Exception:
@@ -911,8 +933,9 @@ class ForecastService:
                     status_class = "danger"
                     icon = "⛈️"
                 else:
-                    headline = f"🌧️ Pioggia prevista nella tua zona {when_str}"
-                    desc = f"Inizio precipitazioni stimato {period_str} (accumulo stimato: {first_rain_hour['rain_mm']} mm)."
+                    label = rain_intensity_label(first_rain_hour["rain_mm"])
+                    headline = f"🌧️ {label.capitalize()} prevista {when_str}"
+                    desc = f"Inizio stimato {period_str}: circa {first_rain_hour['rain_mm']} mm (probabilità {first_rain_hour['rain_prob_pct']}%)."
                     status_class = "warning"
                     icon = "🌧️"
 
@@ -929,9 +952,15 @@ class ForecastService:
             except Exception:
                 pass
 
-        if max_prob_6h >= 30 and total_rain_6h > 0.1:
-            headline = f"⛅ Possibilità di isolati piovaschi nelle prossime 6 ore ({max_prob_6h}%)"
-            desc = "Bassa probabilità di fenomeni isolati o locali."
+        if max_prob_6h >= 30 and total_rain_6h > 0.1 and peak_hour is not None:
+            label = rain_intensity_label(peak_hour.get("rain_mm"))
+            if label == "asciutto":
+                label = "qualche goccia"
+            headline = f"🌦️ Possibile {label} nelle prossime ore"
+            desc = (f"Al massimo {peak_hour.get('rain_mm', 0.0)} mm tra le {peak_hour.get('rain_period_start_label', '')} "
+                    f"e le {peak_hour.get('hour_label', '')}, in tutto ~{round(total_rain_6h, 1)} mm in 6 ore "
+                    f"(probabilità fino al {max_prob_6h}%)"
+                    + (": niente di significativo." if total_rain_6h < 1.0 else "."))
             status_class = "info"
             icon = "🌦️"
         else:

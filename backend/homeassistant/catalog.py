@@ -6,6 +6,21 @@ Effettua il binding automatico tra entità commutabili (switch, light, valve, cl
 import logging
 from typing import Dict, Any, List
 
+_HA_STATE_LABELS = {
+    "on": "Acceso", "off": "Spento", "unavailable": "Non disponibile", "unknown": "Sconosciuto",
+    "open": "Aperta", "closed": "Chiusa", "opening": "In apertura", "closing": "In chiusura",
+    "playing": "In riproduzione", "paused": "In pausa", "idle": "Inattivo", "standby": "Standby",
+    "buffering": "Caricamento",
+}
+
+
+def ha_state_label(state) -> str:
+    """Stato Home Assistant in italiano (es. "unavailable" -> "Non disponibile")."""
+    if state is None:
+        return "N/D"
+    return _HA_STATE_LABELS.get(str(state).lower(), str(state).upper())
+
+
 from .parsers.appliances import parse_washer_data, parse_dishwasher_data, parse_fridge_data
 from .parsers.presence import parse_presence_data
 from .parsers.health import parse_health_data
@@ -355,37 +370,37 @@ class CatalogHelper:
                 is_on = state_str in ("open", "on")
                 icon = "🪟"
                 cat_label = "Persiana / Tenda"
-                status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
+                status_text = f"Stato: {ha_state_label(state_obj.get('state'))}"
             elif is_irrigation:
                 cat = "irrigation"
                 is_on = state_str in ("open", "on")
                 icon = "💧"
                 cat_label = "Elettrovalvola / Irrigazione"
-                status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
+                status_text = f"Stato: {ha_state_label(state_obj.get('state'))}"
             elif domain == "light" or dev_class == "light":
                 cat = "plugs"
                 is_on = state_str in ("on", "open") if is_online else None
                 icon = "💡"
                 cat_label = "Luce Smart"
-                status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
+                status_text = f"Stato: {ha_state_label(state_obj.get('state'))}"
             elif domain == "switch":
                 cat = "plugs"
                 is_on = state_str in ("on", "open") if is_online else None
                 icon = "🔌"
                 cat_label = "Presa Smart"
-                status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
+                status_text = f"Stato: {ha_state_label(state_obj.get('state'))}"
             elif domain == "media_player":
                 cat = "appliances"
                 is_on = state_str in ("on", "playing", "idle") if is_online else None
                 icon = "📺"
                 cat_label = "Smart TV / Media"
-                status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
+                status_text = f"Stato: {ha_state_label(state_obj.get('state'))}"
             else:
                 cat = "generic"
                 is_on = state_str in ("on", "open") if is_online else None
                 icon = "📱"
                 cat_label = "Dispositivo Smart"
-                status_text = f"Stato: {state_obj.get('state', 'N/D').upper()}"
+                status_text = f"Stato: {ha_state_label(state_obj.get('state'))}"
 
             if power_w > 0 and domain != "climate":
                 status_text += f" • {power_w:.1f} W"

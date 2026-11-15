@@ -2071,10 +2071,16 @@ body {
     border-color: rgba(56, 189, 248, 0.3);
 }
 
+/* Le caselle orarie hanno sempre sfondo scuro: colori testo fissi, leggibili anche col tema chiaro */
 .hourly-time {
     font-weight: 700;
-    color: var(--text-dim);
+    color: #cbd5e1;
     font-size: 0.75rem;
+}
+
+.hourly-rain-dry {
+    font-size: 0.68rem;
+    color: #94a3b8;
 }
 
 .hourly-icon {
@@ -2092,6 +2098,14 @@ body {
     font-size: 0.68rem;
     color: #38bdf8;
     font-weight: 600;
+}
+
+.hourly-rain-label {
+    font-size: 0.6rem;
+    line-height: 1.1;
+    color: #94a3b8;
+    text-align: center;
+    max-width: 64px;
 }
 
 /* ==========================================================================
@@ -3548,7 +3562,8 @@ body {
     padding: 4px 10px;
     border-radius: 8px;
     backdrop-filter: blur(8px);
-    z-index: 5;
+    /* Sopra al sole/luna: vicino ad alba e tramonto l'astro passa dietro l'etichetta */
+    z-index: 12;
 }
 
 .horizon-marker.marker-left { left: 10px; }
@@ -8184,4 +8199,86 @@ html[data-theme="light"] .leaflet-control-attribution a {
     font-weight: 600;
     color: var(--text-dim);
     margin-left: 4px;
+}
+
+
+/* ==========================================================================
+   SCHEDA CASA: allineamenti mobile
+   ========================================================================== */
+.devices-header-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: stretch;
+}
+.devices-header-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+@media (max-width: 768px) {
+    /* Tre azioni sulla stessa riga, stessa altezza */
+    .devices-header-top {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .devices-header-actions {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        width: 100%;
+    }
+    .devices-header-actions .btn {
+        padding: 0.55rem 0.4rem;
+        font-size: 0.8rem;
+        min-height: 42px;
+        white-space: nowrap;
+    }
+
+    /* Statistiche: 2 colonne, l'ultima (dispari) occupa tutta la riga */
+    .devices-stats-row {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .devices-stats-row .stat-pill:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+    }
+
+    /* Intestazione card: icona, stato e interruttore devono stare nella card */
+    .device-card-header {
+        gap: 0.35rem;
+        min-width: 0;
+    }
+    .device-card-header .device-icon-box {
+        width: 30px;
+        height: 30px;
+        flex-shrink: 0;
+    }
+    .device-card-header .device-status-badge {
+        padding: 2px 6px;
+        font-size: 0.6rem;
+        gap: 4px;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+    }
+    .device-card-header .device-status-badge .status-dot {
+        display: none;
+    }
+    /* Rinomina disponibile nel dettaglio del dispositivo */
+    .device-card-header .card-rename-trigger {
+        display: none;
+    }
+    .device-card-header .device-toggle-btn {
+        width: 34px;
+        height: 20px;
+        flex-shrink: 0;
+    }
+    .device-name {
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
 }
