@@ -4,6 +4,7 @@ import csv
 import time
 import logging
 from typing import Optional, Dict, Any, List, Tuple
+from datetime import datetime
 from fastapi import APIRouter, Request, BackgroundTasks, Query
 from fastapi.responses import JSONResponse, Response
 
@@ -230,11 +231,27 @@ async def ingest_ecowitt(request: Request, bg: BackgroundTasks):
 def api_forecast():
     latest = get_latest_reading() or {}
     forecast_data = forecast_service.apply_station_observation(forecast_service.fetch_open_meteo(), latest)
+    if forecast_data:
+        # Le ore di tutti i 7 giorni si leggono da /api/forecast/day (risposta più leggera)
+        forecast_data = {k: v for k, v in forecast_data.items() if k != "hourly_all"}
     cross_check = forecast_service.build_cross_check_summary(latest)
     return {
         "forecast": forecast_data,
         "cross_check": cross_check
     }
+
+@router.get("/api/forecast/day")
+def api_forecast_day(date: Optional[str] = None):
+    """Dettaglio orario di un giorno (YYYY-MM-DD, default oggi) per la finestra stile app meteo."""
+    if date is not None:
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            return JSONResponse({"available": False, "message": "Data non valida (atteso YYYY-MM-DD)"}, status_code=400)
+    detail = forecast_service.get_day_detail(date, get_latest_reading() or {})
+    if detail is None:
+        return JSONResponse({"available": False, "message": "Previsione non disponibile per questo giorno"}, status_code=404)
+    return dict(detail, available=True)
 
 @router.get("/api/civil-protection")
 @router.get("/api/civil_protection")

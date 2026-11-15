@@ -3452,3 +3452,221 @@ document.addEventListener('keydown', (ev) => {
     const bd = document.getElementById('sea-modal-backdrop');
     if (ev.key === 'Escape' && bd && bd.classList.contains('show')) closeSeaModal();
 });
+
+// ============================================================================
+// PREVISIONE DI UN GIORNO ORA PER ORA (finestra stile app meteo + striscia oraria in Home)
+// ============================================================================
+const dayForecastCache = {};
+let dayForecastSelected = null;
+let hourlyStripOriginal = null;
+
+function dayEsc(str) {
+    return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function dayNum(v, d) {
+    if (v === null || v === undefined || isNaN(Number(v))) return '--';
+    return Number(v).toFixed(d === undefined ? 0 : d).replace('.', ',');
+}
+
+async function loadDayForecast(date) {
+    if (dayForecastCache[date] && Date.now() - dayForecastCache[date].t < 5 * 60 * 1000) return dayForecastCache[date].d;
+    const res = await fetch('/api/forecast/day?date=' + encodeURIComponent(date), { credentials: 'include' });
+    const data = await res.json();
+    if (!res.ok || data.available === false) throw new Error(data.message || 'Previsione non disponibile');
+    dayForecastCache[date] = { t: Date.now(), d: data };
+    return data;
+}
+
+// Casella oraria della Home (stessa struttura del template)
+function hourlyPillHtml(h, label) {
+    let rain;
+    if (h.observed_rain) {
+        rain = `<span class="hourly-rain" style="font-weight: 700;">💧 in corso</span><span class="hourly-rain-label">${dayEsc(h.rain_label)}</span>`;
+    } else if (h.observed_dry) {
+        rain = '<span class="hourly-rain-dry">asciutto</span>';
+    } else if (h.rain_prob_pct >= 20 || h.rain_mm >= 0.2) {
+        rain = `<span class="hourly-rain">💧 ${h.rain_prob_pct}%${h.models_disagree ? '?' : ''}</span>` +
+            (h.rain_mm >= 0.1 ? `<span class="hourly-rain-label">${dayEsc(h.rain_label)}</span>` : '');
+    } else {
+        rain = `<span class="hourly-rain-dry">💧 ${h.rain_prob_pct}%</span>`;
+    }
+    const title = `${h.condition} • Pioggia ${h.rain_period_start_label}-${h.hour_label}: ${h.rain_prob_pct}% (${h.rain_mm} mm) • Vento ${h.wind_dir_name} ${h.wind_kmh} km/h`;
+    return `<div class="hourly-pill" title="${dayEsc(title)}">
+        <span class="hourly-time">${dayEsc(label || h.hour_label)}</span>
+        <span class="hourly-icon">${h.icon}</span>
+        <span class="hourly-temp">${h.temp_c}°C</span>${rain}</div>`;
+}
+
+function showHourlyForDay(detail) {
+    const box = document.getElementById('hourly_scroll_container');
+    const label = document.getElementById('hourly_strip_label');
+    const reset = document.getElementById('hourly_reset_btn');
+    if (!box || !detail) return;
+    if (hourlyStripOriginal === null) hourlyStripOriginal = { html: box.innerHTML, label: label ? label.innerHTML : '' };
+    const isToday = detail.days && detail.days[0] && detail.days[0].date === detail.date;
+    if (isToday) { resetHourlyStrip(); return; }
+    box.innerHTML = detail.hours.map(h => hourlyPillHtml(h)).join('');
+    box.scrollLeft = 0;
+    if (label) label.innerHTML = `🕒 ${dayEsc(detail.day.day_name)} ${dayEsc(detail.day.formatted_date)} • ora per ora`;
+    if (reset) reset.hidden = false;
+}
+
+function resetHourlyStrip() {
+    const box = document.getElementById('hourly_scroll_container');
+    const label = document.getElementById('hourly_strip_label');
+    const reset = document.getElementById('hourly_reset_btn');
+    if (hourlyStripOriginal && box) {
+        box.innerHTML = hourlyStripOriginal.html;
+        if (label) label.innerHTML = hourlyStripOriginal.label;
+    }
+    if (reset) reset.hidden = true;
+    const first = document.querySelector('#forecast_7day_grid .forecast-day-card');
+    if (first) markSelectedDay(first.dataset.date);
+}
+
+function markSelectedDay(date) {
+    dayForecastSelected = date;
+    document.querySelectorAll('#forecast_7day_grid .forecast-day-card').forEach(c => c.classList.toggle('is-selected', c.dataset.date === date));
+    document.querySelectorAll('#day-modal-tabs .day-tab').forEach(t => {
+        const on = t.dataset.date === date;
+        t.classList.toggle('active', on);
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        if (on) t.scrollIntoView({ block: 'nearest', inline: 'center' });
+    });
+}
+
+// Grafico stile app meteo: icone, curva della temperatura, barre della pioggia, vento
+function dayChartSvg(hours) {
+    const n = hours.length;
+    if (!n) return '';
+    // Righe: ora (14), icona (38), temperatura (62-118), pioggia (146-176, % a 189), vento (etichetta 205, valore 218, freccia 230)
+    const colW = 34, W = n * colW, H = 240;
+    const tTop = 62, tBot = 118, rTop = 146, rBot = 176;
+    const temps = hours.map(h => h.temp_c).filter(v => v !== null && v !== undefined);
+    const tMax = Math.max(...temps), tMin = Math.min(...temps);
+    const span = Math.max(4, tMax - tMin);
+    const ty = v => tBot - ((v - tMin) / span) * (tBot - tTop);
+    const cx = i => i * colW + colW / 2;
+    const rainMax = Math.max(2, ...hours.map(h => h.rain_mm || 0));
+
+    let pts = hours.map((h, i) => [cx(i), ty(h.temp_c)]);
+    let line = 'M' + pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L');
+    let area = line + ` L${cx(n - 1)},${tBot + 8} L${cx(0)},${tBot + 8} Z`;
+    let out = `<svg class="day-chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Temperatura e pioggia ora per ora">`;
+    out += `<defs><linearGradient id="dayTempFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" class="day-temp-stop-top"/><stop offset="100%" class="day-temp-stop-bottom"/></linearGradient></defs>`;
+    // colonne: passato oscurato, ora attuale evidenziata
+    hours.forEach((h, i) => {
+        if (h.is_now) out += `<rect class="day-now-col" x="${i * colW}" y="0" width="${colW}" height="${H}" rx="8"/>`;
+        else if (h.past) out += `<rect class="day-past-col" x="${i * colW}" y="0" width="${colW}" height="${H}"/>`;
+    });
+    out += `<path class="day-temp-area" d="${area}"/><path class="day-temp-line" d="${line}"/>`;
+    hours.forEach((h, i) => {
+        const x = cx(i);
+        out += `<text class="day-hour" x="${x}" y="14" text-anchor="middle">${h.is_now ? 'Ora' : h.hour_label.slice(0, 2)}</text>`;
+        out += `<text class="day-icon" x="${x}" y="38" text-anchor="middle" dominant-baseline="central">${h.icon}</text>`;
+        out += `<circle class="day-temp-dot" cx="${x}" cy="${ty(h.temp_c).toFixed(1)}" r="2.6"/>`;
+        out += `<text class="day-temp-txt" x="${x}" y="${(ty(h.temp_c) - 8).toFixed(1)}" text-anchor="middle">${Math.round(h.temp_c)}°</text>`;
+        // pioggia: barra proporzionale ai mm, percentuale sotto
+        const rh = Math.min(1, (h.rain_mm || 0) / rainMax) * (rBot - rTop);
+        out += `<rect class="day-rain-track" x="${x - 6}" y="${rTop}" width="12" height="${rBot - rTop}" rx="3"/>`;
+        if (rh > 0) out += `<rect class="day-rain-bar" x="${x - 6}" y="${(rBot - rh).toFixed(1)}" width="12" height="${rh.toFixed(1)}" rx="3"/>`;
+        out += `<text class="day-rain-txt${h.rain_prob_pct >= 30 ? ' strong' : ''}" x="${x}" y="${rBot + 13}" text-anchor="middle">${h.rain_prob_pct}%</text>`;
+        // vento: freccia nel verso in cui soffia + velocità
+        if (h.wind_dir_deg !== null && h.wind_dir_deg !== undefined) {
+            out += `<g transform="translate(${x},230) rotate(${(h.wind_dir_deg + 180) % 360})"><path class="day-wind-arrow" d="M0,-5 L3.5,3 L0,1.2 L-3.5,3 Z"/></g>`;
+        }
+        out += `<text class="day-wind-txt" x="${x}" y="218" text-anchor="middle">${Math.round(h.wind_kmh)}</text>`;
+    });
+    out += `<text class="day-row-label" x="4" y="${rTop - 4}">Pioggia</text>`;
+    out += `<text class="day-row-label" x="4" y="205">Vento km/h</text>`;
+    out += '</svg>';
+    return out;
+}
+
+function renderDayForecast(d) {
+    const body = document.getElementById('day-modal-body');
+    if (!body) return;
+    const day = d.day, st = d.stats || {};
+    document.getElementById('day-modal-title').textContent = `${day.day_name} ${day.formatted_date}`;
+    document.getElementById('day-modal-meta').textContent = day.condition;
+    document.getElementById('day-modal-icon').textContent = day.icon;
+    const tabs = document.getElementById('day-modal-tabs');
+    if (tabs) {
+        tabs.innerHTML = d.days.map(x => `<button type="button" role="tab" class="day-tab" data-date="${x.date}" onclick="openDayForecast('${x.date}', true)">
+            <span>${dayEsc(x.day_name.length > 7 ? x.day_name.slice(0, 3) : x.day_name)}</span><b>${x.icon}</b><small>${Math.round(x.temp_max)}° <i>${Math.round(x.temp_min)}°</i></small></button>`).join('');
+    }
+    const list = d.hours.filter(h => !h.past).map(h => `
+        <div class="day-row${h.is_now ? ' now' : ''}">
+            <span class="day-row-hour">${h.is_now ? 'Ora' : h.hour_label}</span>
+            <span class="day-row-icon">${h.icon}</span>
+            <span class="day-row-temp">${dayNum(h.temp_c)}°<small>perc. ${dayNum(h.apparent_temp_c)}°</small></span>
+            <span class="day-row-rain">${h.observed_rain ? '💧 in corso' : (h.observed_dry ? 'asciutto' : `💧 ${h.rain_prob_pct}%`)}<small>${h.rain_mm >= 0.1 ? dayNum(h.rain_mm, 1) + ' mm • ' + dayEsc(h.rain_label) : (h.observed_dry ? 'stazione' : 'asciutto')}</small></span>
+            <span class="day-row-wind">${dayEsc(h.wind_dir_name)}<small>${dayNum(h.wind_kmh)}${h.wind_gust_kmh ? '–' + dayNum(h.wind_gust_kmh) : ''} km/h</small></span>
+        </div>`).join('');
+    body.innerHTML = `
+        <div class="day-head">
+            <div class="day-head-icon">${day.icon}</div>
+            <div class="day-head-temps"><strong>${dayNum(day.temp_max)}°</strong><span>${dayNum(day.temp_min)}°</span></div>
+            <p class="day-summary">${dayEsc(d.summary)}</p>
+        </div>
+        <div class="day-chart-scroll">${dayChartSvg(d.hours)}</div>
+        <div class="day-stats">
+            <div><span>🌅 Alba</span><strong>${dayEsc(st.sunrise)}</strong></div>
+            <div><span>🌇 Tramonto</span><strong>${dayEsc(st.sunset)}</strong></div>
+            <div><span>💧 Pioggia</span><strong>${dayNum(st.rain_total_mm, 1)} mm</strong><small>max ${st.rain_prob_max}%</small></div>
+            <div><span>💨 Raffica max</span><strong>${st.gust_max ? dayNum(st.gust_max.value) + ' km/h' : '--'}</strong><small>${st.gust_max ? dayEsc(st.gust_max.dir) + ' alle ' + st.gust_max.at : ''}</small></div>
+            <div><span>🌡️ Max / Min</span><strong>${st.temp_max ? dayNum(st.temp_max.value, 1) : '--'}° / ${st.temp_min ? dayNum(st.temp_min.value, 1) : '--'}°</strong><small>${st.temp_max ? 'alle ' + st.temp_max.at : ''}</small></div>
+            <div><span>💦 Umidità</span><strong>${st.humidity_min ?? '--'}–${st.humidity_max ?? '--'}%</strong></div>
+        </div>
+        <h4 class="day-section-title">Ora per ora</h4>
+        <div class="day-list">${list || '<p class="day-empty">Nessuna ora rimanente per oggi.</p>'}</div>`;
+    const sc = body.querySelector('.day-chart-scroll');
+    const nowIdx = d.hours.findIndex(h => h.is_now);
+    if (sc && nowIdx > 0) sc.scrollLeft = Math.max(0, nowIdx * 34 - 40);
+    body.scrollTop = 0;
+    const ticker = document.getElementById('day-modal-ticker');
+    if (ticker) ticker.textContent = (d.source || 'Previsione') + (d.fetched_at ? ' • aggiornata ' + d.fetched_at.slice(11, 16) : '');
+}
+
+async function openDayForecast(date, fromTabs) {
+    const backdrop = document.getElementById('day-modal-backdrop');
+    if (!backdrop || !date) return;
+    if (!backdrop.classList.contains('show')) {
+        backdrop.classList.add('show');
+        document.body.style.overflow = 'hidden';
+    }
+    markSelectedDay(date);
+    if (!dayForecastCache[date]) {
+        const body = document.getElementById('day-modal-body');
+        if (body && !fromTabs) body.innerHTML = '<div class="modal-loading-placeholder"><div class="spinner"></div><p>Carico la previsione ora per ora...</p></div>';
+    }
+    try {
+        const d = await loadDayForecast(date);
+        if (dayForecastSelected !== date) return;   // nel frattempo è stato scelto un altro giorno
+        renderDayForecast(d);
+        markSelectedDay(date);
+        showHourlyForDay(d);
+    } catch (e) {
+        const body = document.getElementById('day-modal-body');
+        if (body) body.innerHTML = `<p style="padding:1rem;">${dayEsc(e.message)}</p>`;
+    }
+}
+
+function closeDayForecast(e) {
+    if (e && e.target !== document.getElementById('day-modal-backdrop')) return;
+    const backdrop = document.getElementById('day-modal-backdrop');
+    if (backdrop) backdrop.classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', (ev) => {
+    const bd = document.getElementById('day-modal-backdrop');
+    if (!bd || !bd.classList.contains('show')) return;
+    if (ev.key === 'Escape') closeDayForecast();
+    if (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') {
+        const tabs = [...document.querySelectorAll('#day-modal-tabs .day-tab')];
+        const i = tabs.findIndex(t => t.dataset.date === dayForecastSelected);
+        const next = tabs[i + (ev.key === 'ArrowRight' ? 1 : -1)];
+        if (next) openDayForecast(next.dataset.date, true);
+    }
+});

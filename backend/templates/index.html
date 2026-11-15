@@ -272,7 +272,9 @@
         {% if forecast and forecast.daily %}
         <div class="forecast-7day-grid" id="forecast_7day_grid">
             {% for day in forecast.daily %}
-            <div class="forecast-day-card {% if loop.first %}is-today{% endif %}">
+            <div class="forecast-day-card {% if loop.first %}is-today is-selected{% endif %}" data-date="{{ day.date }}" role="button" tabindex="0"
+                 onclick="openDayForecast('{{ day.date }}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openDayForecast('{{ day.date }}');}"
+                 title="Dettaglio ora per ora di {{ day.day_name|lower }}">
                 <span class="forecast-day-name">{{ day.day_name }}</span>
                 <span class="forecast-day-date">{{ day.formatted_date }}</span>
                 <span class="forecast-day-icon">{{ day.icon }}</span>
@@ -301,7 +303,8 @@
 
         <!-- ORE PROSSIME 24H -->
         {% if forecast and forecast.hourly_next_36h %}
-        <div class="hourly-strip-title">🕒 Previsione Dettagliata Prossime Ore
+        <div class="hourly-strip-title"><span id="hourly_strip_label">🕒 Previsione Dettagliata Prossime Ore</span>
+            <button type="button" class="hourly-reset-btn" id="hourly_reset_btn" hidden onclick="resetHourlyStrip()">↺ Prossime ore</button>
             {% if forecast.is_stale %}<span style="font-size: 0.7rem; color: var(--warning, #f59e0b);"> ⚠️ non aggiornata (ultimo dato {{ forecast.fetched_at }})</span>{% endif %}
         </div>
         <div class="hourly-scroll-container" id="hourly_scroll_container">
@@ -2031,6 +2034,32 @@
     </div>
 </div>
 {% endif %}
+
+<!-- MODALE PREVISIONE GIORNALIERA ORA PER ORA (stile app meteo) -->
+<div id="day-modal-backdrop" class="device-modal-backdrop" onclick="closeDayForecast(event)">
+    <div class="device-modal-dialog day-dialog" role="dialog" aria-modal="true" aria-labelledby="day-modal-title" onclick="event.stopPropagation()">
+        <div class="device-modal-header">
+            <div class="modal-title-group">
+                <div class="modal-icon-badge" id="day-modal-icon" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.35);">🌤️</div>
+                <div>
+                    <h3 id="day-modal-title" style="margin: 0; font-size: 1.15rem; font-weight: 700;">Previsione</h3>
+                    <div class="modal-device-meta" id="day-modal-meta">Ora per ora</div>
+                </div>
+            </div>
+            <button type="button" class="modal-close-btn" onclick="closeDayForecast()" title="Chiudi">&times;</button>
+        </div>
+        <div class="day-tabs" id="day-modal-tabs" role="tablist" aria-label="Scegli il giorno"></div>
+        <div class="device-modal-body day-body" id="day-modal-body">
+            <div class="modal-loading-placeholder"><div class="spinner"></div><p>Carico la previsione ora per ora...</p></div>
+        </div>
+        <div class="device-modal-footer">
+            <span class="modal-live-ticker"><span class="pulse-dot"></span> <span id="day-modal-ticker">Previsione Open-Meteo</span></span>
+            <div class="modal-footer-btns">
+                <button type="button" class="btn btn-secondary" onclick="closeDayForecast()">Chiudi</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- MODALE MARE -->
 <div id="sea-modal-backdrop" class="device-modal-backdrop" onclick="closeSeaModal(event)">

@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, List
 import requests
 
 from backend.config import settings
+from backend.analytics import wind_name, calc_sun_ephemeris
 from backend.helpers import (
     ITALIAN_WEEKDAYS as ITALIAN_DAYS,
     ITALIAN_SHORT_MONTHS as ITALIAN_MONTHS,
@@ -383,6 +384,7 @@ class ForecastService:
         hourly_rains_min = hourly_raw.get("precipitation_min", [])
 
         hours_list: List[Dict[str, Any]] = []
+        all_hours: List[Dict[str, Any]] = []   # tutte le ore dei 7 giorni (dettaglio per giorno)
         rain_24h_sum = 0.0
         for j, t_str in enumerate(hourly_times):
             try:
@@ -390,15 +392,13 @@ class ForecastService:
             except (TypeError, ValueError):
                 continue
             diff_hours = (t_dt - window_start).total_seconds() / 3600.0
-            if not (0.0 <= diff_hours <= 48.0):
-                continue
 
             code = _val(hourly_codes, j)
             prob_pct = int(_val(hourly_probs, j) or 0)
             rain_mm = _rounded(hourly_rains, j, 1, 0.0)
 
             # Open-Meteo: la pioggia delle HH:00 è l'accumulo dell'ora PRECEDENTE.
-            if (t_dt - now_dt).total_seconds() > 0 and diff_hours <= 24.0:
+            if (t_dt - now_dt).total_seconds() > 0 and 0.0 <= diff_hours <= 24.0:
                 rain_24h_sum += rain_mm
 
             if code in DOWNGRADABLE_RAIN_CODES and prob_pct < 20 and rain_mm < 0.2:
@@ -419,7 +419,7 @@ class ForecastService:
             rain_mm_max = _rounded(hourly_rains_max, j, 1, rain_mm)
             rain_mm_min = _rounded(hourly_rains_min, j, 1, rain_mm)
 
-            hours_list.append({
+            hour = {
                 "iso_time": t_str,
                 "hour_label": t_dt.strftime("%H:%M"),
                 # Inizio del periodo a cui si riferiscono pioggia e probabilità
@@ -438,12 +438,16 @@ class ForecastService:
                 "wind_kmh": _rounded(hourly_winds, j, 1, 0.0),
                 "wind_gust_kmh": _rounded(hourly_gusts, j, 1),
                 "wind_dir_deg": round(wind_dir) if wind_dir is not None else None,
+                "wind_dir_name": wind_name(wind_dir)["name"] if wind_dir is not None else "--",
                 "solar_irradiance_w_m2": round(dir_r + dif_r, 1),
                 "weather_code": code,
                 "is_day": is_day,
                 "icon": icon,
                 "condition": w_info["text"]
-            })
+            }
+            all_hours.append(hour)
+            if 0.0 <= diff_hours <= 48.0:
+                hours_list.append(hour)
 
         age_s = max(0.0, time.time() - self._last_success_time) if self._last_success_time else None
         fetched_at = (
@@ -459,7 +463,105 @@ class ForecastService:
             "daily": days_list,
             # Nome storico: contiene le prossime 48 ore a partire dall'ora corrente.
             "hourly_next_36h": hours_list,
+            # Tutte le ore dei 7 giorni: usate dal dettaglio per giorno (non inviate da /api/forecast)
+            "hourly_all": all_hours,
             "rain_24h_sum": round(rain_24h_sum, 1),
+        }
+
+    def get_day_detail(self, date_str: Optional[str] = None,
+                       reading: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        """
+        Dettaglio orario di un giorno (stile app meteo): 24 ore con temperatura, pioggia, vento,
+        UV; riepilogo con estremi, alba/tramonto e una frase di sintesi.
+        Per oggi le ore passate sono marcate "past" e la prima ora usa i dati della stazione.
+        """
+        forecast = self.apply_station_observation(self.fetch_open_meteo(), reading)
+        if not forecast:
+            return None
+        daily = forecast.get("daily") or []
+        if not daily:
+            return None
+        date_str = date_str or daily[0]["date"]
+        day = next((d for d in daily if d["date"] == date_str), None)
+        if day is None:
+            return None
+
+        now_dt = settings.now_local().replace(tzinfo=None)
+        window_start = now_dt.replace(minute=0, second=0, microsecond=0)
+        hours = []
+        for h in forecast.get("hourly_all") or []:
+            if not h["iso_time"].startswith(date_str):
+                continue
+            t_dt = datetime.strptime(h["iso_time"], "%Y-%m-%dT%H:%M")
+            hours.append(dict(h, past=t_dt < window_start, is_now=t_dt == window_start))
+        if not hours:
+            return None
+
+        def extreme(key, fn):
+            vals = [h for h in hours if h.get(key) is not None]
+            return fn(vals, key=lambda h: h[key]) if vals else None
+
+        t_max, t_min = extreme("temp_c", max), extreme("temp_c", min)
+        wind_max, gust_max = extreme("wind_kmh", max), extreme("wind_gust_kmh", max)
+        rain_total = round(sum(h["rain_mm"] for h in hours), 1)
+
+        # Fasce di pioggia (ore consecutive con almeno 0.2 mm)
+        spells, cur = [], None
+        for h in hours:
+            if h["rain_mm"] >= 0.2:
+                if cur is None:
+                    cur = {"start": h["rain_period_start_label"], "end": h["hour_label"], "max": h["rain_mm"]}
+                else:
+                    cur["end"], cur["max"] = h["hour_label"], max(cur["max"], h["rain_mm"])
+            elif cur is not None:
+                spells.append(cur)
+                cur = None
+        if cur is not None:
+            spells.append(cur)
+
+        parts = []
+        if spells:
+            s0 = spells[0]
+            more = f" e altre {len(spells) - 1} fasce" if len(spells) > 1 else ""
+            parts.append(f"{rain_intensity_label(max(s['max'] for s in spells)).capitalize()} tra le "
+                         f"{s0['start']} e le {s0['end']}{more} (in tutto ~{rain_total} mm)")
+        elif day.get("rain_prob_pct", 0) >= 30:
+            parts.append(f"Possibile qualche goccia (probabilità fino al {day['rain_prob_pct']}%)")
+        else:
+            parts.append("Niente pioggia prevista")
+        if gust_max and (gust_max.get("wind_gust_kmh") or 0) >= 30:
+            parts.append(f"raffiche di {gust_max['wind_dir_name']} fino a {round(gust_max['wind_gust_kmh'])} km/h")
+        elif wind_max:
+            parts.append(f"vento di {wind_max['wind_dir_name']} fino a {round(wind_max['wind_kmh'])} km/h")
+        if t_max and t_min:
+            parts.append(f"temperature tra {round(t_min['temp_c'])}° e {round(t_max['temp_c'])}°")
+        summary = ", ".join(parts) + "."
+
+        noon = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=12, tzinfo=settings.get_tz())
+        sun = calc_sun_ephemeris(settings.LATITUDE, settings.LONGITUDE, current_dt=noon, tz_name=settings.TIMEZONE)
+
+        return {
+            "date": date_str,
+            "day": day,
+            "days": [{"date": d["date"], "day_name": d["day_name"], "formatted_date": d["formatted_date"],
+                      "icon": d["icon"], "temp_max": d["temp_max"], "temp_min": d["temp_min"]} for d in daily],
+            "summary": summary,
+            "hours": hours,
+            "stats": {
+                "temp_max": t_max and {"value": t_max["temp_c"], "at": t_max["hour_label"]},
+                "temp_min": t_min and {"value": t_min["temp_c"], "at": t_min["hour_label"]},
+                "rain_total_mm": rain_total,
+                "rain_prob_max": max((h["rain_prob_pct"] for h in hours), default=0),
+                "wind_max": wind_max and {"value": wind_max["wind_kmh"], "dir": wind_max["wind_dir_name"], "at": wind_max["hour_label"]},
+                "gust_max": gust_max and {"value": gust_max["wind_gust_kmh"], "dir": gust_max["wind_dir_name"], "at": gust_max["hour_label"]},
+                "humidity_min": min((h["humidity"] for h in hours if h["humidity"] is not None), default=None),
+                "humidity_max": max((h["humidity"] for h in hours if h["humidity"] is not None), default=None),
+                "sunrise": sun.get("sunrise"),
+                "sunset": sun.get("sunset"),
+                "daylight": sun.get("daylight_duration"),
+            },
+            "source": forecast.get("source"),
+            "fetched_at": forecast.get("fetched_at"),
         }
 
     @staticmethod

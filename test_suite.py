@@ -2364,6 +2364,24 @@ class TestHourlyForecast(unittest.TestCase):
         self.assertEqual(ForecastService._eaqi_class(10), 1)
         self.assertEqual(ForecastService._eaqi_class(95), 5)
 
+    def test_day_detail_hours_and_summary(self):
+        from unittest.mock import patch
+        day0 = self.now.replace(hour=0, minute=0, second=0, microsecond=0)
+        raw = self._raw(day0, hours=72, icon_rain=0.0, ecmwf_rain=1.0, icon_prob=10, ecmwf_prob=80)
+        raw["daily"] = {"time": [(day0 + timedelta(days=k)).strftime("%Y-%m-%d") for k in range(3)]}
+        processed = self.fs._process_open_meteo_payload(raw)
+        self.assertEqual(len(processed["hourly_all"]), 72)
+        tomorrow = (day0 + timedelta(days=1)).strftime("%Y-%m-%d")
+        with patch.object(self.fs, "fetch_open_meteo", return_value=processed):
+            d = self.fs.get_day_detail(tomorrow, {})
+            today = self.fs.get_day_detail(None, {})
+        self.assertEqual(len(d["hours"]), 24)
+        self.assertFalse(any(h["past"] for h in d["hours"]))
+        self.assertEqual(d["stats"]["rain_total_mm"], 12.0)
+        self.assertIn("tra le", d["summary"])
+        self.assertEqual(len(d["days"]), 3)
+        self.assertEqual(sum(1 for h in today["hours"] if h["is_now"]), 1)
+
     def test_air_quality_failure_falls_back(self):
         from unittest.mock import patch
         from backend.forecast_service import ForecastService
