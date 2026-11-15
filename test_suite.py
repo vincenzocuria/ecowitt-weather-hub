@@ -2282,6 +2282,23 @@ class TestHourlyForecast(unittest.TestCase):
         self.assertLess(hours[24]["temp_c"], 15.2)
         self.assertGreater(hours[1]["temp_c"], hours[6]["temp_c"])
 
+    def test_sky_tracks_sun_and_moon(self):
+        from zoneinfo import ZoneInfo
+        from backend.analytics import calc_sky_tracks, calc_sun_ephemeris
+        tz = ZoneInfo("Europe/Rome")
+        lat, lon = 39.623928, 16.504933
+        # 24/11/2026 luna piena: sorge circa al tramonto del sole
+        dt = datetime(2026, 11, 24, 12, 0, tzinfo=tz)
+        t = calc_sky_tracks(lat, lon, current_dt=dt)
+        sunset = calc_sun_ephemeris(lat, lon, current_dt=dt)["sunset"]
+        to_min = lambda hhmm: int(hhmm[:2]) * 60 + int(hhmm[3:])
+        self.assertLess(abs(to_min(t["moonrise"]) - to_min(sunset)), 60)
+        # Culmine del sole a metà novembre: 90 - lat - 18.6° ~ 31.8°
+        t2 = calc_sky_tracks(lat, lon, current_dt=datetime(2026, 11, 15, 12, 0, tzinfo=tz))
+        self.assertAlmostEqual(t2["sun_max_alt"], 31.8, delta=0.6)
+        self.assertTrue(t2["sun_path"].startswith("M"))
+        self.assertEqual(t2["grid"][-1]["label"], "45°")
+
     def test_eaqi_scale_conversion(self):
         from backend.forecast_service import ForecastService
         self.assertEqual(ForecastService._eaqi_class(27), 2)

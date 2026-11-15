@@ -36,7 +36,7 @@ from backend.database import (
 )
 from backend.analytics import (
     calc_zambretti_forecast, abs_to_rel_pressure, evaluate_window_ventilation, evaluate_laundry_index,
-    calc_humidex, evaluate_outdoor_activity, calc_sun_ephemeris, calc_moon_phase,
+    calc_humidex, evaluate_outdoor_activity, calc_sun_ephemeris, calc_moon_phase, calc_sky_tracks,
     calc_beaufort_scale, evaluate_indoor_comfort, calc_current_weather_condition,
     calc_evapotranspiration, evaluate_smart_irrigation, generate_now_highlights,
     calc_dew_point, calc_apparent_temp, deg_to_compass, analyze_lightning_activity
@@ -133,6 +133,11 @@ def build_analytics_context(latest: dict) -> dict:
 
     sun_info = calc_sun_ephemeris(settings.LATITUDE, settings.LONGITUDE)
     moon_info = calc_moon_phase()
+    try:
+        sky_tracks = calc_sky_tracks(settings.LATITUDE, settings.LONGITUDE, tz_name=settings.TIMEZONE)
+    except Exception as e:
+        logger.warning(f"Calcolo traiettorie sole/luna non riuscito: {e}")
+        sky_tracks = None
     cross_check = forecast_service.build_cross_check_summary(latest)
     beaufort = calc_beaufort_scale(wind_spd)
     
@@ -180,6 +185,7 @@ def build_analytics_context(latest: dict) -> dict:
         "rain_nowcast": rain_nowcast,
         "sun_ephemeris": sun_info,
         "moon_phase": moon_info,
+        "sky_tracks": sky_tracks,
         "dew_point_c": dew_point,
         "dew_point_in_c": dew_point_in,
         "cross_check": cross_check,

@@ -726,6 +726,135 @@ def calc_moon_phase(target_date: Optional[date] = None, tz_name: Optional[str] =
     }
 
 
+def _julian_day(dt_utc: datetime) -> float:
+    return dt_utc.timestamp() / 86400.0 + 2440587.5
+
+
+def _alt_from_equatorial(ra_deg: float, dec_deg: float, jd: float, lat: float, lon: float) -> float:
+    """Altezza sull'orizzonte (gradi) da ascensione retta/declinazione."""
+    d = jd - 2451545.0
+    gmst = (280.46061837 + 360.98564736629 * d) % 360.0
+    ha = math.radians((gmst + lon - ra_deg) % 360.0)
+    lat_r, dec_r = math.radians(lat), math.radians(dec_deg)
+    sin_alt = math.sin(lat_r) * math.sin(dec_r) + math.cos(lat_r) * math.cos(dec_r) * math.cos(ha)
+    return math.degrees(math.asin(max(-1.0, min(1.0, sin_alt))))
+
+
+def _ecliptic_to_equatorial(lon_deg: float, lat_deg: float, d: float) -> Tuple[float, float]:
+    eps = math.radians(23.439 - 0.0000004 * d)
+    lam, beta = math.radians(lon_deg), math.radians(lat_deg)
+    ra = math.degrees(math.atan2(math.sin(lam) * math.cos(eps) - math.tan(beta) * math.sin(eps), math.cos(lam))) % 360.0
+    dec = math.degrees(math.asin(math.sin(beta) * math.cos(eps) + math.cos(beta) * math.sin(eps) * math.sin(lam)))
+    return ra, dec
+
+
+def sun_altitude(dt_utc: datetime, lat: float, lon: float) -> float:
+    """Altezza del sole (gradi), formule a bassa precisione dell'Astronomical Almanac (~0.01°)."""
+    jd = _julian_day(dt_utc)
+    d = jd - 2451545.0
+    g = math.radians((357.529 + 0.98560028 * d) % 360.0)
+    q = (280.459 + 0.98564736 * d) % 360.0
+    lam = q + 1.915 * math.sin(g) + 0.020 * math.sin(2 * g)
+    ra, dec = _ecliptic_to_equatorial(lam, 0.0, d)
+    return _alt_from_equatorial(ra, dec, jd, lat, lon)
+
+
+def moon_altitude(dt_utc: datetime, lat: float, lon: float) -> float:
+    """
+    Altezza topocentrica della luna (gradi). Teoria lunare troncata ai termini principali
+    (errore tipico < 0.5°, sufficiente per orari di sorgere/tramonto entro pochi minuti).
+    """
+    jd = _julian_day(dt_utc)
+    d = jd - 2451545.0
+    L = 218.316 + 13.176396 * d          # longitudine media
+    M = math.radians(134.963 + 13.064993 * d)   # anomalia media luna
+    Ms = math.radians(357.529 + 0.98560028 * d)  # anomalia media sole
+    D = math.radians(297.850 + 12.190749 * d)    # elongazione media
+    F = math.radians(93.272 + 13.229350 * d)     # argomento di latitudine
+    lam = (L + 6.289 * math.sin(M) - 1.274 * math.sin(M - 2 * D) + 0.658 * math.sin(2 * D)
+           + 0.214 * math.sin(2 * M) - 0.186 * math.sin(Ms) - 0.114 * math.sin(2 * F))
+    beta = (5.128 * math.sin(F) + 0.281 * math.sin(M + F) + 0.278 * math.sin(M - F)
+            + 0.173 * math.sin(2 * D - F))
+    ra, dec = _ecliptic_to_equatorial(lam % 360.0, beta, d)
+    alt = _alt_from_equatorial(ra, dec, jd, lat, lon)
+    # Parallasse orizzontale (~0.95°): la luna vista dalla superficie appare più bassa
+    return alt - 0.9507 * math.cos(math.radians(alt))
+
+
+def calc_sky_tracks(lat: float, lon: float, current_dt: Optional[datetime] = None,
+                    tz_name: Optional[str] = None, step_min: int = 10) -> Dict[str, Any]:
+    """
+    Andamento di sole e luna nelle 24 ore del giorno locale: altezza sull'orizzonte ogni
+    step_min minuti, posizione attuale, culmine del sole e orari di sorgere/tramonto della luna.
+    """
+    tz = get_station_tz(tz_name)
+    now = current_dt.astimezone(tz) if current_dt and current_dt.tzinfo else (
+        current_dt.replace(tzinfo=tz) if current_dt else datetime.now(tz))
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    sun_pts: List[Tuple[int, float]] = []
+    moon_pts: List[Tuple[int, float]] = []
+    for minute in range(0, 1441, step_min):
+        t_utc = (day_start + timedelta(minutes=minute)).astimezone(timezone.utc)
+        sun_pts.append((minute, round(sun_altitude(t_utc, lat, lon), 2)))
+        moon_pts.append((minute, round(moon_altitude(t_utc, lat, lon), 2)))
+
+    def crossings(pts: List[Tuple[int, float]], threshold: float) -> Tuple[Optional[str], Optional[str]]:
+        rise = set_ = None
+        for (m0, a0), (m1, a1) in zip(pts, pts[1:]):
+            if (a0 - threshold) * (a1 - threshold) < 0 or (a0 < threshold <= a1):
+                frac = (threshold - a0) / (a1 - a0) if a1 != a0 else 0.0
+                m = int(round(m0 + frac * (m1 - m0))) % 1440
+                label = f"{m // 60:02d}:{m % 60:02d}"
+                if a1 > a0 and rise is None:
+                    rise = label
+                elif a1 < a0 and set_ is None:
+                    set_ = label
+        return rise, set_
+
+    moonrise, moonset = crossings(moon_pts, -0.833)
+    sun_max = max(sun_pts, key=lambda p: p[1])
+    moon_max = max(moon_pts, key=lambda p: p[1])
+    now_utc = now.astimezone(timezone.utc)
+    now_min = now.hour * 60 + now.minute
+    sun_now = sun_altitude(now_utc, lat, lon)
+    moon_now = moon_altitude(now_utc, lat, lon)
+
+    # Coordinate per il grafico SVG (viewBox 0 0 360 160, orizzonte a y=105, cima a y=12).
+    # Scala verticale adattiva: d'inverno il sole sale poco, quindi si "zooma" (es. 0-45°).
+    top_alt = float(min(90, max(30, math.ceil((max(sun_max[1], moon_max[1]) + 6.0) / 15.0) * 15)))
+    scale = 93.0 / top_alt
+
+    def to_xy(minute: float, alt: float) -> Tuple[float, float]:
+        x = 14.0 + minute / 1440.0 * 332.0
+        y = min(140.0, 105.0 - min(top_alt, alt) * scale)
+        return round(x, 1), round(y, 1)
+
+    grid_step = 15 if top_alt <= 45 else 30
+    grid = [{"label": f"{a}°", "y": to_xy(0, a)[1]} for a in range(grid_step, int(top_alt) + 1, grid_step)]
+
+    def path(pts: List[Tuple[int, float]]) -> str:
+        return " ".join(("M" if i == 0 else "L") + "{},{}".format(*to_xy(m, a)) for i, (m, a) in enumerate(pts))
+
+    sun_xy, moon_xy = to_xy(now_min, sun_now), to_xy(now_min, moon_now)
+    return {
+        "sun_path": path(sun_pts),
+        "moon_path": path(moon_pts),
+        "horizon_y": 105.0,
+        "now_x": sun_xy[0],
+        "sun_now": {"alt": round(sun_now, 1), "x": sun_xy[0], "y": sun_xy[1], "visible": sun_now > -0.833},
+        "moon_now": {"alt": round(moon_now, 1), "x": moon_xy[0], "y": moon_xy[1], "visible": moon_now > -0.833},
+        "sun_max_alt": round(sun_max[1], 1),
+        "sun_max_time": f"{sun_max[0] // 60:02d}:{sun_max[0] % 60:02d}",
+        "moon_max_alt": round(moon_max[1], 1),
+        "moon_max_time": f"{moon_max[0] // 60:02d}:{moon_max[0] % 60:02d}",
+        "moonrise": moonrise,
+        "moonset": moonset,
+        "grid": grid,
+        "hour_ticks": [{"label": f"{h:02d}", "x": to_xy(h * 60, 0)[0]} for h in (0, 6, 12, 18, 24)],
+    }
+
+
 def calc_vpd(temp_c: Optional[float], humidity: Optional[float]) -> Optional[float]:
     """
     Calcola il VPD (Vapor Pressure Deficit / Deficit di Pressione di Vapore) in kPa.

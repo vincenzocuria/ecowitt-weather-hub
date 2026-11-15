@@ -352,86 +352,52 @@
             </div>
         </div>
 
-        <!-- CUPOLA / ARCO CELESTE DINAMICO CON SOLE/LUNA ANIMATI -->
+        <!-- ANDAMENTO DI SOLE E LUNA NELLE 24 ORE (altezza sull'orizzonte, calcolata per la stazione) -->
+        {% set sky = analytics.sky_tracks if analytics and analytics.sky_tracks else none %}
         <div class="celestial-dome-container">
-            <div class="celestial-sky-backdrop {% if analytics and analytics.sun_ephemeris.is_daylight %}sky-is-day{% else %}sky-is-night{% endif %}">
-                <!-- Sfondo Stelle (per la notte) -->
-                <div class="celestial-stars">
-                    <span class="c-star s1">✦</span>
-                    <span class="c-star s2">★</span>
-                    <span class="c-star s3">✦</span>
-                    <span class="c-star s4">★</span>
-                    <span class="c-star s5">✦</span>
-                    <span class="c-star s6">★</span>
-                </div>
-
-                <!-- Arco Celeste SVG Guida -->
-                <svg class="celestial-arc-svg" viewBox="0 0 800 200" preserveAspectRatio="none">
+            <div class="sky-chart-wrap {% if analytics and analytics.sun_ephemeris.is_daylight %}sky-is-day{% else %}sky-is-night{% endif %}">
+                {% if sky %}
+                <svg class="sky-chart" viewBox="0 0 360 160" role="img" aria-label="Altezza di sole e luna sull'orizzonte nelle 24 ore di oggi">
                     <defs>
-                        <linearGradient id="arcGlowGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.3"/>
-                            <stop offset="50%" stop-color="#fbbf24" stop-opacity="0.9"/>
-                            <stop offset="100%" stop-color="#f97316" stop-opacity="0.3"/>
+                        <linearGradient id="skySunFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" class="sky-sun-fill-top"/>
+                            <stop offset="100%" class="sky-sun-fill-bottom"/>
                         </linearGradient>
-                        <linearGradient id="arcFillGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stop-color="rgba(245, 158, 11, 0.15)"/>
-                            <stop offset="100%" stop-color="rgba(245, 158, 11, 0.0)"/>
-                        </linearGradient>
+                        <clipPath id="skyAbove"><rect x="0" y="0" width="360" height="{{ sky.horizon_y }}"/></clipPath>
+                        <clipPath id="skyBelow"><rect x="0" y="{{ sky.horizon_y }}" width="360" height="60"/></clipPath>
                     </defs>
-                    <!-- Tracciato Curvo dell'Arco Solare (Formula Parabolica Calibrata) -->
-                    <path d="M 40 180 Q 400 -110 760 180" fill="url(#arcFillGradient)" stroke="url(#arcGlowGradient)" stroke-width="3" />
-                    <!-- Linea dell'Orizzonte -->
-                    <line x1="20" y1="180" x2="780" y2="180" stroke="rgba(255, 255, 255, 0.18)" stroke-width="2" stroke-dasharray="4,4" />
+                    <!-- griglia altezze (scala adattiva alla stagione) -->
+                    {% for g in sky.grid %}
+                    <line class="sky-grid" x1="14" y1="{{ g.y }}" x2="346" y2="{{ g.y }}"/>
+                    <text class="sky-axis" x="346" y="{{ g.y - 3 }}" text-anchor="end">{{ g.label }}</text>
+                    {% endfor %}
+
+                    <!-- sole: area e linea sopra l'orizzonte, tratto tenue sotto -->
+                    <path class="sky-sun-area" d="{{ sky.sun_path }} L346,{{ sky.horizon_y }} L14,{{ sky.horizon_y }} Z" clip-path="url(#skyAbove)"/>
+                    <path class="sky-sun-line" d="{{ sky.sun_path }}" clip-path="url(#skyAbove)"/>
+                    <path class="sky-sun-line sky-below" d="{{ sky.sun_path }}" clip-path="url(#skyBelow)"/>
+                    <!-- luna -->
+                    <path class="sky-moon-line" d="{{ sky.moon_path }}" clip-path="url(#skyAbove)"/>
+                    <path class="sky-moon-line sky-below" d="{{ sky.moon_path }}" clip-path="url(#skyBelow)"/>
+
+                    <!-- orizzonte e ora attuale -->
+                    <line class="sky-horizon" x1="14" y1="{{ sky.horizon_y }}" x2="346" y2="{{ sky.horizon_y }}"/>
+                    <line class="sky-now" id="sky_now_line" x1="{{ sky.now_x }}" y1="8" x2="{{ sky.now_x }}" y2="{{ sky.horizon_y }}"/>
+
+                    <!-- posizioni attuali -->
+                    <circle class="sky-sun-dot {% if not sky.sun_now.visible %}sky-hidden{% endif %}" id="sky_sun_dot" cx="{{ sky.sun_now.x }}" cy="{{ sky.sun_now.y }}" r="7"/>
+                    <text class="sky-moon-dot {% if not sky.moon_now.visible %}sky-hidden{% endif %}" id="sky_moon_dot" x="{{ sky.moon_now.x }}" y="{{ sky.moon_now.y }}" text-anchor="middle" dominant-baseline="central">{{ analytics.moon_phase.icon if analytics else '🌙' }}</text>
+
+                    {% for t in sky.hour_ticks %}
+                    <text class="sky-axis" x="{{ t.x }}" y="{{ sky.horizon_y + 50 }}" text-anchor="middle">{{ t.label }}</text>
+                    {% endfor %}
                 </svg>
-
-                <!-- Astro Viaggiante (Sole o Luna Animati su Traiettoria Esatta) -->
-                {% set p_raw = analytics.sun_ephemeris.sun_progress_pct if analytics and analytics.sun_ephemeris and analytics.sun_ephemeris.sun_progress_pct is defined else 0 %}
-                {% set t_prog = (p_raw | float) / 100.0 %}
-                {% set orb_x = 5.0 + 90.0 * t_prog %}
-                {% set orb_b = 10.0 + 290.0 * t_prog * (1.0 - t_prog) %}
-                <div class="celestial-orb-traveler" id="celestial_orb" style="left: {{ "%.2f"|format(orb_x) }}%; bottom: {{ "%.2f"|format(orb_b) }}%;">
-                    {% if analytics and analytics.sun_ephemeris.is_daylight %}
-                    <div class="sun-orb-body">
-                        <div class="sun-orb-aura"></div>
-                        <div class="sun-orb-core">☀️</div>
-                    </div>
-                    {% else %}
-                    <div class="moon-orb-body">
-                        <div class="moon-orb-aura"></div>
-                        <div class="moon-orb-core">{{ analytics.moon_phase.icon if analytics else '🌙' }}</div>
-                    </div>
-                    {% endif %}
+                <div class="sky-legend">
+                    <span class="sky-legend-item"><span class="sky-key sky-key-sun"></span>Sole: culmine {{ sky.sun_max_alt }}° alle {{ sky.sun_max_time }}</span>
+                    <span class="sky-legend-item"><span class="sky-key sky-key-moon"></span>Luna{% if sky.moonrise %}: sorge {{ sky.moonrise }}{% endif %}{% if sky.moonset %} · tramonta {{ sky.moonset }}{% endif %}{% if not sky.moonrise and not sky.moonset %}: {{ "sempre sopra l'orizzonte" if sky.moon_max_alt > 0 else "sotto l'orizzonte tutto il giorno" }}{% endif %}</span>
+                    <span class="sky-legend-item" id="sky_moon_now_txt">{{ analytics.moon_phase.icon if analytics else '🌙' }} ora {% if sky.moon_now.visible %}a {{ sky.moon_now.alt }}° sull'orizzonte{% else %}sotto l'orizzonte{% endif %}</span>
                 </div>
-
-                <!-- Indicatori di Alba & Tramonto sull'Orizzonte -->
-                <div class="horizon-marker marker-left">
-                    <span class="horizon-icon">🌅</span>
-                    <div class="horizon-text">
-                        <span class="horizon-label">Alba</span>
-                        <strong class="horizon-val" id="sunrise_time">{{ analytics.sun_ephemeris.sunrise if analytics else '--:--' }}</strong>
-                    </div>
-                </div>
-
-                <div class="horizon-marker marker-noon">
-                    <span class="horizon-icon">☀️</span>
-                    <div class="horizon-text">
-                        <span class="horizon-label">Mezzodì Solare</span>
-                        <strong class="horizon-val" id="solar_noon_time">{{ analytics.sun_ephemeris.solar_noon if analytics else '13:00' }}</strong>
-                    </div>
-                </div>
-
-                <div class="horizon-marker marker-right">
-                    <span class="horizon-icon">🌇</span>
-                    <div class="horizon-text">
-                        <span class="horizon-label">Tramonto</span>
-                        <strong class="horizon-val" id="sunset_time">{{ analytics.sun_ephemeris.sunset if analytics else '--:--' }}</strong>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Barra di Progresso Giornaliera Integrata -->
-            <div class="sun-day-progress-bar">
-                <div class="sun-day-progress-fill" id="sun_arc_progress" style="width: {{ analytics.sun_ephemeris.sun_progress_pct if analytics else 0 }}%;"></div>
+                {% endif %}
             </div>
         </div>
 

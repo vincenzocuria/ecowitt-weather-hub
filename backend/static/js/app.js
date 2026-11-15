@@ -587,6 +587,27 @@ function startDashboardPolling() {
                             orb.style.bottom = yBottomPct.toFixed(2) + '%';
                         }
                     }
+                    // Grafico sole/luna: aggiorna posizioni attuali e linea "adesso"
+                    if (a.sky_tracks) {
+                        const st = a.sky_tracks;
+                        const sunDot = document.getElementById('sky_sun_dot');
+                        const moonDot = document.getElementById('sky_moon_dot');
+                        const nowLine = document.getElementById('sky_now_line');
+                        if (sunDot && st.sun_now) {
+                            sunDot.setAttribute('cx', st.sun_now.x);
+                            sunDot.setAttribute('cy', st.sun_now.y);
+                            sunDot.classList.toggle('sky-hidden', !st.sun_now.visible);
+                        }
+                        if (moonDot && st.moon_now) {
+                            moonDot.setAttribute('x', st.moon_now.x);
+                            moonDot.setAttribute('y', st.moon_now.y);
+                            moonDot.classList.toggle('sky-hidden', !st.moon_now.visible);
+                        }
+                        if (nowLine) {
+                            nowLine.setAttribute('x1', st.now_x);
+                            nowLine.setAttribute('x2', st.now_x);
+                        }
+                    }
                     if (a.moon_phase) {
                         const mIcon = document.getElementById('moon_icon');
                         const mPhase = document.getElementById('moon_name');
