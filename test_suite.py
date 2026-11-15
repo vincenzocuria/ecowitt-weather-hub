@@ -2373,6 +2373,9 @@ class TestHourlyForecast(unittest.TestCase):
         self.assertEqual((f["source"], f["volume_pct"], f["full_control"]), ("Netflix", 14, True))
         self.assertFalse(supports_turn_on(webos))
         self.assertFalse(f["can_turn_on"])
+        ents["button.wake_on_lan_d0_cd_bf_c6_55_b1"] = {"state": "unknown", "attributes": {"friendly_name": "Wake on LAN d0:cd:bf:c6:55:b1"}}
+        self.assertEqual(find_wake_button(ents), "button.wake_on_lan_d0_cd_bf_c6_55_b1")
+        self.assertTrue(tv_fields("media_player.soggiorno_tv", webos, ents)["can_turn_on"])
         ents["button.accendi_tv_wol"] = {"state": "unknown", "attributes": {"friendly_name": "Accendi TV"}}
         self.assertEqual(find_wake_button(ents), "button.accendi_tv_wol")
 

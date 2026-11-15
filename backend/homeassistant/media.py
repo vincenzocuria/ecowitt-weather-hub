@@ -44,12 +44,20 @@ def find_wake_button(entities: Dict[str, Dict[str, Any]]) -> Optional[str]:
     configured = (settings.HASS_TV_WAKE_BUTTON or "").strip()
     if configured:
         return configured if configured in entities or not entities else None
+    wol_buttons = []
     for eid, st in entities.items():
         if not eid.startswith("button."):
             continue
         text = (eid + " " + str((st.get("attributes") or {}).get("friendly_name") or "")).lower()
-        if any(k in text for k in ("wake", "wol", "accendi", "accensione")) and "tv" in text:
+        is_wake = any(k in text for k in ("wake", "wol", "accendi", "accensione"))
+        if is_wake and "tv" in text:
             return eid
+        if is_wake:
+            wol_buttons.append(eid)
+    # L'integrazione Wake on LAN nomina il pulsante col MAC ("Wake on LAN d0:cd:..."):
+    # se ce n'è uno solo, è quello della TV.
+    if len(wol_buttons) == 1:
+        return wol_buttons[0]
     return None
 
 
