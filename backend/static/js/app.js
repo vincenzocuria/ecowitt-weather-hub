@@ -3315,3 +3315,140 @@ document.addEventListener('keydown', (ev) => {
     const bd = document.getElementById('wind-rose-backdrop');
     if (ev.key === 'Escape' && bd && bd.classList.contains('show')) closeWindRose();
 });
+
+// ============================================================================
+// MARE: finestra di dettaglio (onde, mare lungo, acqua, previsione 72 ore)
+// ============================================================================
+let seaModalTimer = null;
+
+function seaEscape(str) {
+    return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function seaFmt(v, digits, unit) {
+    if (v === null || v === undefined || isNaN(Number(v))) return '--';
+    return Number(v).toFixed(digits).replace('.', ',') + (unit ? ' ' + unit : '');
+}
+
+// Colore per stato del mare (scala Douglas)
+function seaGradeColor(grade) {
+    return ['#38bdf8', '#38bdf8', '#22c55e', '#eab308', '#f97316', '#ef4444', '#dc2626', '#a21caf', '#7e22ce', '#581c87'][Math.max(0, Math.min(9, grade || 0))];
+}
+
+function seaChartSvg(hours) {
+    if (!hours || !hours.length) return '';
+    const W = 340, H = 150, top = 12, base = 118, left = 26, right = 6;
+    const maxWave = Math.max(1.0, ...hours.map(h => h.wave_m)) * 1.1;
+    const n = hours.length;
+    const bw = (W - left - right) / n;
+    const y = v => base - (v / maxWave) * (base - top);
+    let out = `<svg class="sea-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Altezza delle onde nelle prossime 72 ore">`;
+    // griglia
+    const step = maxWave > 3 ? 1 : 0.5;
+    for (let v = step; v < maxWave; v += step) {
+        out += `<line class="sea-grid" x1="${left}" x2="${W - right}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/>`;
+        out += `<text class="sea-axis" x="${left - 4}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end">${String(v).replace('.', ',')}</text>`;
+    }
+    out += `<text class="sea-axis" x="${left - 4}" y="${top - 2}" text-anchor="end">m</text>`;
+    // barre colorate per stato del mare
+    hours.forEach((h, i) => {
+        const x = left + i * bw;
+        const yy = y(h.wave_m);
+        const g = h.wave_m <= 0.1 ? 1 : h.wave_m <= 0.5 ? 2 : h.wave_m <= 1.25 ? 3 : h.wave_m <= 2.5 ? 4 : h.wave_m <= 4 ? 5 : 6;
+        out += `<rect x="${(x + 0.3).toFixed(1)}" y="${yy.toFixed(1)}" width="${Math.max(0.8, bw - 0.6).toFixed(1)}" height="${(base - yy).toFixed(1)}" style="fill:${seaGradeColor(g)}" class="sea-bar"><title>${seaEscape(h.day_short)} ${h.hour_label}: ${seaFmt(h.wave_m, 2, 'm')}</title></rect>`;
+        // separatore di giorno e etichetta
+        if (h.hour_label === '00:00' || i === 0) {
+            if (i > 0) out += `<line class="sea-day-sep" x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${top}" y2="${base + 4}"/>`;
+            out += `<text class="sea-axis sea-day" x="${(x + 3).toFixed(1)}" y="${base + 16}">${seaEscape(h.day_short)}</text>`;
+        }
+        if (h.hour_label === '12:00') {
+            out += `<text class="sea-axis" x="${(x + bw / 2).toFixed(1)}" y="${base + 30}" text-anchor="middle">12</text>`;
+        }
+    });
+    out += `<line class="sea-base" x1="${left}" x2="${W - right}" y1="${base}" y2="${base}"/>`;
+    out += '</svg>';
+    return out;
+}
+
+function renderSeaModal(d) {
+    const body = document.getElementById('sea-modal-body');
+    if (!body) return;
+    if (!d || d.available === false) {
+        body.innerHTML = '<p style="padding:1rem;">Dati del mare non disponibili in questo momento.</p>';
+        return;
+    }
+    const c = d.current || {};
+    const st = c.state || {};
+    const adv = d.advice || {};
+    const meta = document.getElementById('sea-modal-meta');
+    if (meta) meta.textContent = d.name || 'Mare';
+    const lvl = l => ({ ok: '🟢', attenzione: '🟡', freddo: '🔵', no: '🔴' }[l] || '⚪');
+    const sw = d.station_wind;
+    const days = (d.daily || []).map(x => `
+        <div class="sea-day-card">
+            <span class="sea-day-name">${seaEscape(x.day)}</span>
+            <strong style="color:${seaGradeColor(x.state.grade)}">${seaFmt(x.wave_max, 1, 'm')}</strong>
+            <span>${seaEscape(x.state.label)}</span>
+            <small>da ${seaEscape(x.dir_name)}</small>
+        </div>`).join('');
+
+    body.innerHTML = `
+        <div class="sea-hero" style="--sea-color:${seaGradeColor(st.grade)}">
+            <div class="sea-hero-state">
+                <span class="sea-hero-grade">Douglas ${st.grade ?? '--'}</span>
+                <strong>${seaEscape(st.label)}</strong>
+                <span>${seaEscape(st.desc)}</span>
+            </div>
+            <div class="sea-hero-wave">${seaFmt(c.wave_m, 1)}<small> m</small></div>
+        </div>
+        <div class="sea-metrics">
+            <div><span>Onde da</span><strong>${seaEscape(c.wave_from)}</strong><small>${c.wave_dir != null ? Math.round(c.wave_dir) + '°' : ''}</small></div>
+            <div><span>Periodo</span><strong>${seaFmt(c.wave_period_s, 1, 's')}</strong><small>tra un'onda e l'altra</small></div>
+            <div><span>Mare lungo</span><strong>${seaFmt(c.swell_m, 1, 'm')}</strong><small>da ${seaEscape(c.swell_from)}</small></div>
+            <div><span>Acqua</span><strong>${seaFmt(c.sst_c, 1, '°C')}</strong><small>superficie</small></div>
+            <div><span>Vento ora</span><strong>${sw ? seaEscape(sw.name) : '--'}</strong><small>dalla tua stazione</small></div>
+            <div><span>Picco 72 h</span><strong>${seaFmt(d.peak && d.peak.wave_m, 1, 'm')}</strong><small>${seaEscape(d.peak && d.peak.when)}</small></div>
+        </div>
+        <div class="sea-advice">
+            <div>${lvl(adv.boat_level)} <b>Barca:</b> ${seaEscape(adv.boat)}</div>
+            <div>${lvl(adv.swim_level)} <b>Bagno:</b> ${seaEscape(adv.swim)}</div>
+        </div>
+        <h4 class="sea-section-title">Altezza delle onde, prossime 72 ore</h4>
+        ${seaChartSvg(d.hourly)}
+        <div class="sea-days">${days}</div>
+        <p class="sea-note">Dati del modello marino ${seaEscape(d.source)}${d.grid_distance_km != null ? ` (punto di calcolo a circa ${seaFmt(d.grid_distance_km, 0, 'km')} dalla stazione)` : ''}: valori indicativi, vicino a riva le onde possono essere diverse. Il "mare lungo" è l'onda arrivata da lontano, non generata dal vento locale.</p>`;
+    const ticker = document.getElementById('sea-modal-ticker');
+    if (ticker && d.fetched_at) ticker.textContent = 'Modello marino aggiornato alle ' + d.fetched_at;
+}
+
+async function refreshSeaModal() {
+    try {
+        const res = await fetch('/api/marine', { credentials: 'include' });
+        renderSeaModal(await res.json());
+    } catch (e) {
+        console.warn('Dati del mare non aggiornati:', e);
+    }
+}
+
+function openSeaModal() {
+    const backdrop = document.getElementById('sea-modal-backdrop');
+    if (!backdrop) return;
+    backdrop.classList.add('show');
+    document.body.style.overflow = 'hidden';
+    refreshSeaModal();
+    if (seaModalTimer) clearInterval(seaModalTimer);
+    seaModalTimer = setInterval(refreshSeaModal, 5 * 60 * 1000);
+}
+
+function closeSeaModal(e) {
+    if (e && e.target !== document.getElementById('sea-modal-backdrop')) return;
+    const backdrop = document.getElementById('sea-modal-backdrop');
+    if (backdrop) backdrop.classList.remove('show');
+    document.body.style.overflow = '';
+    if (seaModalTimer) { clearInterval(seaModalTimer); seaModalTimer = null; }
+}
+
+document.addEventListener('keydown', (ev) => {
+    const bd = document.getElementById('sea-modal-backdrop');
+    if (ev.key === 'Escape' && bd && bd.classList.contains('show')) closeSeaModal();
+});

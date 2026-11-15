@@ -74,6 +74,12 @@ class Settings:
     # Con più modelli: probabilità pioggia = massimo, valori numerici = media.
     FORECAST_MODELS: str = os.getenv("FORECAST_MODELS", "icon_seamless,ecmwf_ifs025")
 
+    # Condizioni del mare (Open-Meteo Marine). Coordinate del punto di mare: di default la stazione,
+    # Open-Meteo usa poi la cella di mare più vicina.
+    MARINE_ENABLED: bool = os.getenv("MARINE_ENABLED", "true").lower() in ("true", "1", "yes")
+    MARINE_LATITUDE: float = float(os.getenv("MARINE_LATITUDE", os.getenv("LATITUDE", "39.623928")))
+    MARINE_LONGITUDE: float = float(os.getenv("MARINE_LONGITUDE", os.getenv("LONGITUDE", "16.504933")))
+
     def get_tz(self):
         """Restituisce l'oggetto ZoneInfo del fuso orario configurato."""
         from zoneinfo import ZoneInfo

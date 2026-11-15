@@ -162,6 +162,8 @@ async def dashboard_page(request: Request):
     analytics = build_analytics_context(latest)
     forecast_data = await asyncio.to_thread(forecast_service.fetch_open_meteo)
     forecast_data = forecast_service.apply_station_observation(forecast_data, latest)
+    from backend.marine_service import marine_service
+    marine_data = await asyncio.to_thread(marine_service.fetch, False, latest)
     cross_check = forecast_service.build_cross_check_summary(latest)
 
     # Dati Energetici Aton Storage
@@ -202,6 +204,7 @@ async def dashboard_page(request: Request):
             "batt_wh65": batt_wh65,
             "wind_dir_text": wind_dir_text,
             "wind_info": wind_info,
+            "marine": marine_data,
             "wind_deg": wind_deg,
             "status_info": status_info,
             "pressure_trend": pressure_trend,

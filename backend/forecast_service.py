@@ -328,7 +328,7 @@ class ForecastService:
                 else:
                     day_name = ITALIAN_DAYS.get(d_obj.weekday(), d_obj.strftime("%a"))
                 
-                formatted_date = f"{d_obj.day} {ITALIAN_MONTHS.get(d_obj.month, '')}"
+                formatted_date = f"{d_obj.day} {ITALIAN_MONTHS.get(f'{d_obj.month:02d}', '')}"
             except Exception:
                 day_name = d_str
                 formatted_date = d_str

@@ -328,6 +328,38 @@
     </div>
 
 
+    <!-- 🌊 MARE: stato del mare davanti alla stazione (tocca per il dettaglio) -->
+    {% if marine %}
+    {% set mc = marine.current %}
+    <div class="card sea-card" role="button" tabindex="0" onclick="openSeaModal()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openSeaModal();}" title="Apri il dettaglio del mare" style="--sea-amp: {{ [[mc.wave_m * 10, 2]|max, 14]|min }}px;">
+        <div class="sea-card-waves" aria-hidden="true">
+            <svg viewBox="0 0 1200 60" preserveAspectRatio="none"><path class="sea-wave sea-wave-1" d="M0,30 C150,10 300,50 450,30 C600,10 750,50 900,30 C1050,10 1200,50 1350,30 L1350,60 L0,60 Z"/></svg>
+            <svg viewBox="0 0 1200 60" preserveAspectRatio="none"><path class="sea-wave sea-wave-2" d="M0,34 C150,18 300,50 450,34 C600,18 750,50 900,34 C1050,18 1200,50 1350,34 L1350,60 L0,60 Z"/></svg>
+        </div>
+        <div class="sea-card-head">
+            <span class="sea-card-icon">🌊</span>
+            <div class="sea-card-title">
+                <h2>Mare</h2>
+                <span>{{ marine.name }}</span>
+            </div>
+            <span class="sea-state-badge sea-grade-{{ mc.state.grade if mc.state.grade is not none else 'na' }}">{{ mc.state.label }}</span>
+        </div>
+        <div class="sea-card-metrics">
+            <div><span>Onde</span><strong>{{ "%.1f"|format(mc.wave_m) }} m</strong><small>da {{ mc.wave_from }}</small></div>
+            <div><span>Acqua</span><strong>{{ "%.1f"|format(mc.sst_c) if mc.sst_c is not none else '--' }} °C</strong><small>superficie</small></div>
+            <div><span>Periodo</span><strong>{{ "%.0f"|format(mc.wave_period_s) if mc.wave_period_s is not none else '--' }} s</strong><small>tra le onde</small></div>
+        </div>
+        <svg class="sea-spark" viewBox="0 0 300 44" preserveAspectRatio="none" aria-hidden="true">
+            <path class="sea-spark-area" d="{{ marine.spark_area }}"/>
+            <path class="sea-spark-line" d="{{ marine.spark_line }}"/>
+        </svg>
+        <div class="sea-card-foot">
+            <span>Prossime 72 h: picco {{ "%.1f"|format(marine.peak.wave_m) }} m ({{ marine.peak.state.label|lower }}) {{ marine.peak.when }}</span>
+            <span class="sea-card-more">Dettagli ›</span>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- OROLOGIO SOLARE & EFFEMERIDI ASTRONOMICHE ODRIERNE -->
     <div class="sun-ephemeris-hero" id="sun_ephemeris_section">
         <div class="sun-ephemeris-header">
@@ -1999,6 +2031,31 @@
     </div>
 </div>
 {% endif %}
+
+<!-- MODALE MARE -->
+<div id="sea-modal-backdrop" class="device-modal-backdrop" onclick="closeSeaModal(event)">
+    <div class="device-modal-dialog sea-dialog" role="dialog" aria-modal="true" aria-labelledby="sea-modal-title" onclick="event.stopPropagation()">
+        <div class="device-modal-header">
+            <div class="modal-title-group">
+                <div class="modal-icon-badge" style="background: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.35); color: #0ea5e9;">🌊</div>
+                <div>
+                    <h3 id="sea-modal-title" style="margin: 0; font-size: 1.15rem; font-weight: 700;">Mare</h3>
+                    <div class="modal-device-meta" id="sea-modal-meta">Onde, mare lungo e temperatura dell'acqua</div>
+                </div>
+            </div>
+            <button type="button" class="modal-close-btn" onclick="closeSeaModal()" title="Chiudi">&times;</button>
+        </div>
+        <div class="device-modal-body sea-body" id="sea-modal-body">
+            <div class="modal-loading-placeholder"><div class="spinner"></div><p>Lettura delle condizioni del mare...</p></div>
+        </div>
+        <div class="device-modal-footer">
+            <span class="modal-live-ticker"><span class="pulse-dot"></span> <span id="sea-modal-ticker">Modello marino aggiornato ogni ora</span></span>
+            <div class="modal-footer-btns">
+                <button type="button" class="btn btn-secondary" onclick="closeSeaModal()">Chiudi</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- MODALE ROSA DEI VENTI (tempo reale) -->
 <div id="wind-rose-backdrop" class="device-modal-backdrop" onclick="closeWindRose(event)">

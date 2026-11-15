@@ -2319,6 +2319,45 @@ class TestHourlyForecast(unittest.TestCase):
         self.assertAlmostEqual(rose["calm_pct"], 14.3, delta=0.1)
         self.assertEqual(len(rose["trail"]), 6)
 
+    def test_marine_service(self):
+        from backend.marine_service import MarineService, douglas_state, sea_advice
+        self.assertEqual(douglas_state(0.05)["label"], "Quasi calmo")
+        self.assertEqual(douglas_state(0.34)["label"], "Poco mosso")
+        self.assertEqual(douglas_state(1.0)["label"], "Mosso")
+        self.assertEqual(douglas_state(2.0)["label"], "Molto mosso")
+        self.assertEqual(douglas_state(3.0)["label"], "Agitato")
+        self.assertEqual(sea_advice(1.5, 10, 15, 20)["boat_level"], "no")
+        self.assertEqual(sea_advice(0.2, 5, 8, 22)["swim_level"], "ok")
+        self.assertEqual(sea_advice(0.2, 5, 8, 15)["swim_level"], "freddo")
+
+        now = settings.now_local().replace(tzinfo=None, minute=0, second=0, microsecond=0)
+        times = [(now + timedelta(hours=k)).strftime("%Y-%m-%dT%H:%M") for k in range(80)]
+        n = len(times)
+        raw = {"latitude": 39.65, "longitude": 16.6, "hourly": {
+            "time": times,
+            # EWAM fino a 60 h, poi solo il modello di riserva
+            "wave_height_ewam": [0.3] * 10 + [1.4] * 50 + [None] * (n - 60),
+            "wave_height_marine_best_match": [0.9] * n,
+            "wave_direction_ewam": [135] * 60 + [None] * (n - 60),
+            "wave_direction_marine_best_match": [270] * n,
+            "wave_period_ewam": [4.0] * n,
+            "swell_wave_height_ewam": [0.1] * n,
+            "swell_wave_direction_ewam": [180] * n,
+            "sea_surface_temperature_ewam": [None] * n,
+            "sea_surface_temperature_marine_best_match": [20.4] * n,
+        }}
+        ms = MarineService.__new__(MarineService)
+        ms._last_success = time.time()
+        out = ms.process(raw, {"wind_speed_kmh": 5, "wind_gust_kmh": 9, "wind_dir_deg": 330}, now_dt=now)
+        self.assertEqual(out["current"]["wave_m"], 0.3)
+        self.assertEqual(out["current"]["wave_from"], "Scirocco")
+        self.assertEqual(out["current"]["sst_c"], 20.4)
+        self.assertEqual(out["peak"]["wave_m"], 1.4)
+        self.assertEqual(out["hourly"][65]["wave_m"], 0.9)      # oltre EWAM: riserva
+        self.assertEqual(len(out["hourly"]), 73)
+        self.assertEqual(out["station_wind"]["name"], "Maestrale")
+        self.assertTrue(out["spark_line"].startswith("M0"))
+
     def test_eaqi_scale_conversion(self):
         from backend.forecast_service import ForecastService
         self.assertEqual(ForecastService._eaqi_class(27), 2)

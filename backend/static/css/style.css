@@ -8355,6 +8355,7 @@ html[data-theme="light"] .leaflet-control-attribution a {
 
 .wind-rose-dialog { max-width: 520px; }
 .wind-rose-body { display: flex; flex-direction: column; gap: 0.9rem; }
+.wind-rose-body > * { flex-shrink: 0; }
 .wind-rose-figure {
     border-radius: var(--radius-md);
     background: radial-gradient(circle at 50% 45%, #13233f 0%, #0b1426 75%);
@@ -8440,4 +8441,110 @@ html[data-theme="light"] .leaflet-control-attribution a {
 @media (prefers-reduced-motion: reduce) {
     .wr-wobble, .wr-flow { animation: none; }
     .wr-needle { transition: none; }
+}
+
+/* ==========================================================================
+   MARE: card in Home e finestra di dettaglio
+   ========================================================================== */
+.sea-card {
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    background: linear-gradient(160deg, #0c2440 0%, #0a1a30 100%);
+    border: 1px solid rgba(14, 165, 233, 0.25);
+    padding: 1.1rem 1.2rem 1rem;
+    margin-bottom: 1.5rem;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.sea-card:hover, .sea-card:focus-visible { transform: translateY(-1px); border-color: rgba(14, 165, 233, 0.6); outline: none; }
+.sea-card > *:not(.sea-card-waves) { position: relative; z-index: 1; }
+
+/* Onde animate sul fondo: l'ampiezza cresce con l'altezza reale del mare (--sea-amp) */
+/* trasparenza in fill-opacity: theme.js rende opachi i colori rgba usati come "fill" */
+.sea-card-waves { position: absolute; left: 0; right: 0; bottom: 0; height: 56px; z-index: 0; pointer-events: none; }
+.sea-card-waves svg { position: absolute; left: 0; bottom: 0; width: 200%; height: 100%; }
+.sea-wave { transform-box: fill-box; }
+.sea-wave-1 { fill: #0ea5e9; fill-opacity: 0.13; animation: sea-drift 9s linear infinite, sea-swell 3.2s ease-in-out infinite alternate; }
+.sea-wave-2 { fill: #38bdf8; fill-opacity: 0.09; animation: sea-drift 13s linear infinite reverse, sea-swell 4.1s ease-in-out infinite alternate; }
+@keyframes sea-drift { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes sea-swell { from { translate: 0 calc(var(--sea-amp, 4px) * -0.5); } to { translate: 0 calc(var(--sea-amp, 4px) * 0.5); } }
+
+.sea-card-head { display: flex; align-items: center; gap: 0.75rem; }
+.sea-card-icon { font-size: 1.6rem; }
+.sea-card-title { flex: 1; min-width: 0; }
+.sea-card-title h2 { margin: 0; font-size: 1.15rem; }
+.sea-card-title span { font-size: 0.78rem; color: var(--text-dim); }
+.sea-state-badge {
+    font-size: 0.78rem; font-weight: 700; padding: 0.3rem 0.7rem; border-radius: 999px;
+    background: rgba(56, 189, 248, 0.15); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.35); white-space: nowrap;
+}
+.sea-grade-2 { background: rgba(34, 197, 94, 0.15); color: #4ade80; border-color: rgba(34, 197, 94, 0.35); }
+.sea-grade-3 { background: rgba(234, 179, 8, 0.15); color: #facc15; border-color: rgba(234, 179, 8, 0.35); }
+.sea-grade-4 { background: rgba(249, 115, 22, 0.15); color: #fb923c; border-color: rgba(249, 115, 22, 0.35); }
+.sea-grade-5, .sea-grade-6, .sea-grade-7, .sea-grade-8, .sea-grade-9 { background: rgba(239, 68, 68, 0.15); color: #f87171; border-color: rgba(239, 68, 68, 0.4); }
+
+.sea-card-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.9rem; }
+.sea-card-metrics div { display: flex; flex-direction: column; gap: 1px; }
+.sea-card-metrics span { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.sea-card-metrics strong { font-size: 1.25rem; font-weight: 800; }
+.sea-card-metrics small { font-size: 0.72rem; color: var(--text-dim); }
+.sea-spark { display: block; width: 100%; height: 40px; margin-top: 0.6rem; }
+.sea-spark-area { fill: #38bdf8; fill-opacity: 0.18; }
+.sea-spark-line { fill: none; stroke: #38bdf8; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.sea-card-foot { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.4rem; font-size: 0.78rem; color: var(--text-dim); }
+.sea-card-more { color: #38bdf8; font-weight: 700; white-space: nowrap; }
+
+.sea-dialog { max-width: 560px; }
+.sea-body { display: flex; flex-direction: column; gap: 0.85rem; }
+.sea-hero {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: 0.9rem 1rem; border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: 4px solid var(--sea-color, #38bdf8);
+}
+.sea-hero-state { display: flex; flex-direction: column; gap: 2px; }
+.sea-hero-state strong { font-size: 1.35rem; }
+.sea-hero-state span { font-size: 0.82rem; color: var(--text-dim); }
+.sea-hero-grade { font-size: 0.7rem !important; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted) !important; }
+.sea-hero-wave { font-size: 2.2rem; font-weight: 800; white-space: nowrap; }
+.sea-hero-wave small { font-size: 1rem; font-weight: 600; color: var(--text-dim); }
+.sea-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+.sea-metrics div {
+    display: flex; flex-direction: column; gap: 1px; padding: 0.5rem 0.6rem; border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.sea-metrics span { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.sea-metrics strong { font-size: 0.98rem; }
+.sea-metrics small { font-size: 0.7rem; color: var(--text-dim); }
+.sea-advice { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.86rem; }
+.sea-section-title { margin: 0.2rem 0 0; font-size: 0.9rem; }
+.sea-body > * { flex-shrink: 0; }   /* la finestra scorre: niente elementi compressi */
+.sea-chart { display: block; width: 100%; height: auto; aspect-ratio: 340 / 150; }
+.sea-grid { stroke: rgba(148, 163, 184, 0.18); stroke-width: 1; stroke-dasharray: 3 4; }
+.sea-base { stroke: rgba(148, 163, 184, 0.5); stroke-width: 1; }
+.sea-day-sep { stroke: rgba(148, 163, 184, 0.35); stroke-width: 1; }
+.sea-axis { fill: #94a3b8; font-size: 10px; font-weight: 600; }
+.sea-day { fill: #cbd5e1; font-weight: 700; }
+.sea-bar { opacity: 0.85; }
+.sea-days { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
+.sea-day-card {
+    display: flex; flex-direction: column; align-items: center; gap: 1px; text-align: center;
+    padding: 0.5rem 0.3rem; border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.sea-day-name { font-size: 0.75rem; font-weight: 700; }
+.sea-day-card strong { font-size: 1.05rem; }
+.sea-day-card span:not(.sea-day-name) { font-size: 0.7rem; color: var(--text-dim); }
+.sea-day-card small { font-size: 0.66rem; color: var(--text-muted); }
+.sea-note { font-size: 0.72rem; color: var(--text-muted); margin: 0; }
+
+@media (max-width: 600px) {
+    .sea-card { padding: 1rem 0.9rem 0.9rem; }
+    .sea-card-metrics strong { font-size: 1.1rem; }
+    .sea-metrics { grid-template-columns: repeat(2, 1fr); }
+    .sea-days { grid-template-columns: repeat(2, 1fr); }
+    .sea-card-foot { flex-direction: column; gap: 0.15rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .sea-wave-1, .sea-wave-2 { animation: none; }
 }

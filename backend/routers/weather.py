@@ -290,6 +290,16 @@ def api_lightning_history(limit: int = 20, hours: int = 48):
         "stats": stats
     }
 
+@router.get("/api/marine")
+def api_marine(refresh: bool = False):
+    """Condizioni del mare davanti alla stazione: onde, mare lungo, temperatura acqua, previsione 72 h."""
+    from backend.marine_service import marine_service
+    data = marine_service.fetch(force=refresh, reading=get_latest_reading() or {})
+    if data is None:
+        return JSONResponse({"available": False, "message": "Dati del mare non disponibili"}, status_code=503)
+    return dict(data, available=True)
+
+
 @router.get("/api/wind/rose")
 def api_wind_rose(hours: int = 24):
     """Dati per la rosa dei venti: vento attuale con nome tradizionale e statistiche per settore."""
