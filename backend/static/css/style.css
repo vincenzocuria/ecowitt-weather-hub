@@ -8669,3 +8669,28 @@ html[data-theme="light"] .leaflet-control-attribution a {
     width: 100%; padding: 0.55rem 0.7rem; border-radius: var(--radius-sm); font-family: inherit; font-size: 0.85rem;
     background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12); color: var(--text);
 }
+
+/* Pulsante power della TV (stile telecomando) */
+.tv-power-card {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: 0.9rem 1rem; border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.tv-power-card.is-on { border-color: rgba(16, 185, 129, 0.45); background: rgba(16, 185, 129, 0.08); }
+.tv-power-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.tv-power-state { font-size: 1.05rem; font-weight: 800; }
+.tv-power-sub { font-size: 0.78rem; color: var(--text-dim); }
+.tv-power-btn {
+    flex-shrink: 0; width: 64px; height: 64px; border-radius: 50%; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #1e293b; color: #94a3b8; border: 2px solid rgba(148, 163, 184, 0.45);
+    transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+.tv-power-card.is-on .tv-power-btn { background: #059669; color: #ffffff; border-color: #34d399; box-shadow: 0 0 18px rgba(16, 185, 129, 0.55); }
+.tv-power-card.is-off .tv-power-btn:not(:disabled) { color: #f87171; border-color: rgba(248, 113, 113, 0.6); }
+.tv-power-btn:active:not(:disabled) { transform: scale(0.94); }
+.tv-power-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.tv-power-btn.is-busy { animation: tv-power-pulse 1s ease-in-out infinite; }
+@keyframes tv-power-pulse { 50% { box-shadow: 0 0 0 8px rgba(56, 189, 248, 0.25); } }
+@media (prefers-reduced-motion: reduce) { .tv-power-btn.is-busy { animation: none; } }
+.pwr-icon { display: inline-flex; align-items: center; vertical-align: -2px; }

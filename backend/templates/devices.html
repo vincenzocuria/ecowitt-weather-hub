@@ -1894,19 +1894,27 @@ function renderTvDetail(dev) {
     const vol = dev.volume_pct;
     const sources = Array.isArray(dev.source_list) ? dev.source_list : [];
     const favs = TV_FAVORITE_SOURCES.filter(s => sources.includes(s));
-    const powerBtn = !online ? '' : (isOn
-        ? `<button type="button" class="btn btn-danger" onclick="modalToggleDevice(this, 'homeassistant', '${rawId}', true)">⏻ Spegni</button>`
-        : (dev.can_turn_on
-            ? `<button type="button" class="btn btn-success" onclick="modalToggleDevice(this, 'homeassistant', '${rawId}', false)">⏻ Accendi</button>`
-            : `<span class="tv-hint">Per accenderla da qui serve il Wake on LAN in Home Assistant</span>`));
+    // Pulsante power unico (stile telecomando): accende o spegne la TV direttamente.
+    // Icona in SVG: il simbolo ⏻ manca in molti font (su Android compariva come un quadratino).
+    const canPress = online && (isOn || dev.can_turn_on);
+    const stateTxt = !online ? 'Non raggiungibile' : (isOn ? `Accesa${dev.source ? ' • ' + tvEsc(dev.source) : ''}` : 'Spenta');
+    const subTxt = !online ? 'Home Assistant non la vede in rete'
+        : (isOn ? 'Tocca per spegnere'
+            : (dev.can_turn_on ? 'Tocca per accendere' : 'Accensione non disponibile: serve il Wake on LAN in Home Assistant'));
 
     let html = `
-        <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
-            <div class="state-card-info">
-                <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
-                <span class="state-text">${!online ? 'Non raggiungibile' : (isOn ? `Accesa${dev.source ? ' • ' + tvEsc(dev.source) : ''}` : 'Spenta')}</span>
+        <div class="tv-power-card ${isOn ? 'is-on' : 'is-off'}">
+            <div class="tv-power-info">
+                <span class="tv-power-state">${stateTxt}</span>
+                <span class="tv-power-sub" id="tv-power-sub">${subTxt}</span>
             </div>
-            ${powerBtn}
+            <button type="button" class="tv-power-btn" ${canPress ? '' : 'disabled'}
+                    onclick="tvPower(this, '${rawId}', ${isOn ? 'true' : 'false'})"
+                    aria-label="${isOn ? 'Spegni la TV' : 'Accendi la TV'}" title="${isOn ? 'Spegni la TV' : 'Accendi la TV'}">
+                <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 2.5v9"/><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+                </svg>
+            </button>
         </div>`;
 
     if (!dev.full_control) {
@@ -1946,6 +1954,17 @@ function renderTvDetail(dev) {
         </div>`;
     }
     return html;
+}
+
+// Accende/spegne la TV e ricontrolla lo stato mentre si avvia o si spegne
+async function tvPower(btn, rawId, isOn) {
+    const sub = document.getElementById('tv-power-sub');
+    if (sub) sub.textContent = isOn ? 'Spegnimento in corso…' : 'Accensione in corso… (qualche secondo)';
+    btn.classList.add('is-busy');
+    await performDeviceToggle('homeassistant', rawId, !isOn, btn);
+    [4000, 10000, 20000].forEach(ms => setTimeout(() => {
+        if (typeof refreshCurrentDeviceDetail === 'function') refreshCurrentDeviceDetail();
+    }, ms));
 }
 
 async function tvService(rawId, service, data) {

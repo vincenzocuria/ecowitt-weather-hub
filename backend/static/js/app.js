@@ -985,11 +985,11 @@ function updateSingleACUI(dev) {
     if (pwrBtn) {
         if (dev.is_on) {
             pwrBtn.className = 'climate-power-btn btn-on';
-            pwrBtn.innerHTML = `<span class="pwr-icon">⏻</span> <span class="pwr-text">ACCESO</span>`;
+            pwrBtn.innerHTML = `<span class="pwr-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 2.5v9"/><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/></svg></span> <span class="pwr-text">ACCESO</span>`;
             pwrBtn.setAttribute('onclick', `toggleThinQPower('${id}', false)`);
         } else {
             pwrBtn.className = 'climate-power-btn btn-off';
-            pwrBtn.innerHTML = `<span class="pwr-icon">⏻</span> <span class="pwr-text">SPENTO</span>`;
+            pwrBtn.innerHTML = `<span class="pwr-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 2.5v9"/><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/></svg></span> <span class="pwr-text">SPENTO</span>`;
             pwrBtn.setAttribute('onclick', `toggleThinQPower('${id}', true)`);
         }
     }
