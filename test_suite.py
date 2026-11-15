@@ -1,10 +1,11 @@
 import os
 import sys
 import unittest
+import time
 import tempfile
 import atexit
 import shutil
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 # Isolate test suite database in an isolated temporary directory to NEVER pollute production DB
 _test_dir = tempfile.mkdtemp(prefix="ecowitt_test_")
@@ -1188,7 +1189,7 @@ class TestEcowittHub(unittest.TestCase):
 
         mock_raw = {
             "current": {
-                "european_aqi": 2,
+                "european_aqi": 30,
                 "pm2_5": 14.5,
                 "pm10": 22.0,
                 "nitrogen_dioxide": 18.0,
@@ -1842,10 +1843,16 @@ class TestEcowittHub(unittest.TestCase):
 
         # 3. Test preavviso Notte Tropicale nel bilancio serale delle 21:00
         ae = AlertEngine()
+        _now_l = settings.now_local().replace(tzinfo=None)
+        _night0 = _now_l.replace(hour=22, minute=0, second=0, microsecond=0)
+        if _now_l.hour < 8:
+            _night0 -= timedelta(days=1)
         mock_forecast = {
             "hourly_next_36h": [
-                {"temp_c": 26.5}, {"temp_c": 25.2}, {"temp_c": 24.8},
-                {"temp_c": 23.5}, {"temp_c": 22.0}, {"temp_c": 21.5}
+                {"iso_time": t, "temp_c": v} for t, v in zip(
+                    [(_night0 + timedelta(hours=k)).strftime("%Y-%m-%dT%H:%M") for k in range(-1, 6)],
+                    [12.0, 26.5, 25.2, 24.8, 23.5, 22.0, 21.5]
+                )
             ]
         }
         with patch("backend.forecast_service.forecast_service.fetch_open_meteo", return_value=mock_forecast), \
@@ -2206,6 +2213,92 @@ class TestEcowittHub(unittest.TestCase):
         stats = get_lightning_stats()
         self.assertIsNotNone(stats["closest_km_today"])
         self.assertLessEqual(stats["closest_km_today"], 8.5)
+
+class TestHourlyForecast(unittest.TestCase):
+    """Previsione oraria: finestra relativa all'ora corrente, multi-modello, stazione."""
+
+    def _raw(self, start_dt, hours=60, icon_rain=0.0, ecmwf_rain=0.0, icon_prob=0, ecmwf_prob=0):
+        times = [(start_dt + timedelta(hours=k)).strftime("%Y-%m-%dT%H:%M") for k in range(hours)]
+        hourly = {"time": times}
+        for m, rain, prob in (("icon_seamless", icon_rain, icon_prob), ("ecmwf_ifs025", ecmwf_rain, ecmwf_prob)):
+            hourly[f"temperature_2m_{m}"] = [15.0] * hours
+            hourly[f"precipitation_{m}"] = [rain] * hours
+            hourly[f"precipitation_probability_{m}"] = [prob] * hours
+            hourly[f"weathercode_{m}"] = [63 if rain >= 0.2 else 3] * hours
+            hourly[f"is_day_{m}"] = [1] * hours
+        hourly["precipitation_ecmwf_ifs025"][2] = None  # valore nullo: l'ora non deve sparire
+        return {"hourly": hourly, "daily": {"time": []}}
+
+    def setUp(self):
+        from backend.forecast_service import ForecastService
+        self.fs = ForecastService.__new__(ForecastService)
+        self.fs._last_success_time = time.time()
+        self.now = settings.now_local().replace(tzinfo=None)
+
+    def test_window_starts_at_current_hour_even_with_old_payload(self):
+        old_start = self.now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=10)
+        res = self.fs._process_open_meteo_payload(self._raw(old_start))
+        first = datetime.strptime(res["hourly_next_36h"][0]["iso_time"], "%Y-%m-%dT%H:%M")
+        self.assertEqual(first, self.now.replace(minute=0, second=0, microsecond=0))
+
+    def test_rain_probability_takes_max_across_models(self):
+        start = self.now.replace(minute=0, second=0, microsecond=0)
+        res = self.fs._process_open_meteo_payload(self._raw(start, icon_rain=0.0, ecmwf_rain=1.8, icon_prob=5, ecmwf_prob=90))
+        h = res["hourly_next_36h"][1]
+        self.assertEqual(h["rain_prob_pct"], 90)
+        self.assertEqual(h["rain_mm"], 0.9)
+        self.assertEqual(h["rain_mm_max"], 1.8)
+        self.assertTrue(h["models_disagree"])
+        self.assertEqual(h["weather_code"], 63)
+        self.assertGreater(res["rain_24h_sum"], 10.0)
+        self.assertEqual(len(res["hourly_next_36h"]), 49)
+
+    def test_station_rain_overrides_model(self):
+        start = self.now.replace(minute=0, second=0, microsecond=0)
+        res = self.fs._process_open_meteo_payload(self._raw(start))
+        reading = {"rain_rate_mm_hr": 6.0, "timestamp": datetime.now(timezone.utc).isoformat()}
+        res = self.fs.apply_station_observation(res, reading)
+        self.assertEqual(res["hourly_next_36h"][0]["rain_prob_pct"], 100)
+        self.assertTrue(res["hourly_next_36h"][0]["observed_rain"])
+        stale = {"rain_rate_mm_hr": 6.0, "timestamp": "2020-01-01T00:00:00+00:00"}
+        res2 = self.fs._process_open_meteo_payload(self._raw(start))
+        self.assertEqual(self.fs.apply_station_observation(res2, stale)["hourly_next_36h"][0]["rain_prob_pct"], 0)
+
+    def test_station_refines_now_and_temperature(self):
+        start = self.now.replace(minute=0, second=0, microsecond=0)
+        res = self.fs._process_open_meteo_payload(self._raw(start, icon_rain=1.0, ecmwf_rain=1.0, icon_prob=90, ecmwf_prob=90))
+        reading = {"rain_rate_mm_hr": 0.0, "temp_c": 18.0, "humidity": 70,
+                   "timestamp": datetime.now(timezone.utc).isoformat()}
+        res = self.fs.apply_station_observation(res, reading)
+        hours = res["hourly_next_36h"]
+        # "Ora": misurato (asciutto, 18°C) anche se il modello dice pioggia
+        self.assertTrue(hours[0]["observed_dry"])
+        self.assertEqual(hours[0]["rain_prob_pct"], 0)
+        self.assertEqual(hours[0]["temp_c"], 18.0)
+        # Ore successive: restano previsione, temperatura corretta con scarto che si attenua
+        self.assertEqual(hours[1]["rain_prob_pct"], 90)
+        self.assertEqual(res["temp_bias_c"], 3.0)
+        self.assertGreater(hours[1]["temp_c"], 17.0)
+        self.assertLess(hours[24]["temp_c"], 15.2)
+        self.assertGreater(hours[1]["temp_c"], hours[6]["temp_c"])
+
+    def test_eaqi_scale_conversion(self):
+        from backend.forecast_service import ForecastService
+        self.assertEqual(ForecastService._eaqi_class(27), 2)
+        self.assertEqual(ForecastService._eaqi_class(10), 1)
+        self.assertEqual(ForecastService._eaqi_class(95), 5)
+
+    def test_air_quality_failure_falls_back(self):
+        from unittest.mock import patch
+        from backend.forecast_service import ForecastService
+        fs = ForecastService.__new__(ForecastService)
+        fs.cache_ttl = 3600
+        fs._cached_aqi = None
+        fs._last_aqi_fetch = 0.0
+        with patch("backend.forecast_service.requests.get", side_effect=RuntimeError("offline")):
+            res = fs.fetch_air_quality(force=True)
+        self.assertEqual(res["source"], "Stima Locale")
+
 
 if __name__ == "__main__":
     unittest.main()

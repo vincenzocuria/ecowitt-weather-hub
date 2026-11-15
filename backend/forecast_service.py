@@ -57,11 +57,58 @@ EAQI_INFO = {
 }
 
 
+# Codici WMO "cielo sereno/poco nuvoloso" per cui di notte si mostra un'icona notturna.
+NIGHT_ICON_OVERRIDES = {0: "🌙", 1: "🌙", 2: "☁️"}
+
+# Codici WMO di pioviggine/pioggia che vengono declassati a "parzialmente nuvoloso"
+# quando probabilità e accumulo sono trascurabili.
+DOWNGRADABLE_RAIN_CODES = (51, 53, 55, 56, 57, 61, 63, 65, 80, 81)
+
+DAILY_VARS = [
+    "weathercode", "temperature_2m_max", "temperature_2m_min", "precipitation_sum",
+    "precipitation_probability_max", "windspeed_10m_max", "uv_index_max",
+    "shortwave_radiation_sum", "sunshine_duration",
+]
+HOURLY_VARS = [
+    "temperature_2m", "apparent_temperature", "relativehumidity_2m", "precipitation",
+    "precipitation_probability", "weathercode", "cloudcover", "windspeed_10m",
+    "windgusts_10m", "winddirection_10m", "direct_radiation", "diffuse_radiation",
+    "shortwave_radiation_instant", "is_day",
+]
+
+MODEL_LABELS = {
+    "icon_seamless": "DWD ICON",
+    "ecmwf_ifs025": "ECMWF IFS",
+    "best_match": "best match",
+    "italia_meteo_arpae_icon_2i": "ItaliaMeteo ICON-2I",
+}
+
+# Correzione locale temperatura: scarto massimo applicato e costante di attenuazione (ore)
+TEMP_BIAS_MAX_C = 6.0
+TEMP_BIAS_DECAY_H = 6.0
+
+# Oltre questa età (secondi) la previsione in cache viene segnalata come non aggiornata.
+STALE_FORECAST_SECONDS = 3 * 3600
+
+
+def _val(seq: List[Any], idx: int) -> Optional[Any]:
+    """Elemento idx di una serie Open-Meteo, oppure None se mancante o nullo."""
+    return seq[idx] if idx < len(seq) else None
+
+
+def _rounded(seq: List[Any], idx: int, digits: int = 1, default: Optional[float] = None) -> Optional[float]:
+    v = _val(seq, idx)
+    return round(v, digits) if v is not None else default
+
+
 class ForecastService:
     def __init__(self, cache_ttl_seconds: int = 3600):
         self.cache_ttl = cache_ttl_seconds
-        self._cached_data: Optional[Dict[str, Any]] = None
+        # Si conserva il payload grezzo: la finestra oraria e le etichette Oggi/Domani
+        # vengono ricalcolate a ogni lettura, così non invecchiano insieme alla cache.
+        self._cached_raw: Optional[Dict[str, Any]] = None
         self._last_fetch_time: float = 0.0
+        self._last_success_time: float = 0.0
         self._cache_file = os.path.join(settings.DATA_DIR, "forecast_cache.json")
 
         self._cached_aqi: Optional[Dict[str, Any]] = None
@@ -76,8 +123,11 @@ class ForecastService:
             try:
                 with open(self._cache_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    self._cached_data = data.get("data")
+                # Il vecchio formato (dati già elaborati in "data") non è riutilizzabile.
+                if isinstance(data.get("raw"), dict):
+                    self._cached_raw = data["raw"]
                     self._last_fetch_time = data.get("fetched_at", 0.0)
+                    self._last_success_time = self._last_fetch_time
                     logger.info("Caricata cache previsioni meteo da disco")
             except Exception as e:
                 logger.warning(f"Impossibile leggere forecast cache da disco: {e}")
@@ -93,14 +143,14 @@ class ForecastService:
                 logger.warning(f"Impossibile leggere AQI cache da disco: {e}")
 
     def _save_disk_cache(self):
-        """Salva la cache in formato JSON su disco per persistenza ai riavvii."""
+        """Salva il payload grezzo su disco per persistenza ai riavvii."""
         try:
             os.makedirs(settings.DATA_DIR, exist_ok=True)
             with open(self._cache_file, "w", encoding="utf-8") as f:
                 json.dump({
-                    "fetched_at": self._last_fetch_time,
-                    "data": self._cached_data
-                }, f, ensure_ascii=False, indent=2)
+                    "fetched_at": self._last_success_time,
+                    "raw": self._cached_raw
+                }, f, ensure_ascii=False)
         except Exception as e:
             logger.warning(f"Errore nel salvataggio forecast cache su disco: {e}")
 
@@ -125,12 +175,80 @@ class ForecastService:
     def fetch_open_meteo(self, force: bool = False) -> Optional[Dict[str, Any]]:
         """
         Scarica le previsioni meteo ad alta risoluzione e parametri solari da Open-Meteo.
-        Implementa caching in memoria e su disco.
+        Il payload grezzo è in cache (memoria + disco); l'elaborazione relativa all'ora
+        corrente viene rifatta a ogni chiamata.
         """
         now = time.time()
-        if not force and self._cached_data and (now - self._last_fetch_time < self.cache_ttl):
-            return self._cached_data
+        if force or not self._cached_raw or (now - self._last_fetch_time >= self.cache_ttl):
+            self._download_open_meteo(now)
 
+        if not self._cached_raw:
+            return None
+        return self._process_open_meteo_payload(self._cached_raw)
+
+    @staticmethod
+    def _models() -> List[str]:
+        return [m.strip() for m in (settings.FORECAST_MODELS or "").split(",") if m.strip()] or ["best_match"]
+
+    @staticmethod
+    def _merge_models(section: Dict[str, Any], variables: List[str], models: List[str],
+                      precip_var: str, prob_vars: List[str]) -> Dict[str, Any]:
+        """
+        Combina in un'unica serie le variabili restituite da Open-Meteo per più modelli
+        (chiavi "<variabile>_<modello>"). Regole:
+        - probabilità di pioggia: massimo tra i modelli (un modello che prevede pioggia
+          non deve essere annullato da uno che non la vede);
+        - weathercode: quello del modello più piovoso se piove (>= 0.2 mm), altrimenti
+          quello del primo modello;
+        - is_day / direzione vento: primo valore disponibile;
+        - altre variabili: media dei modelli disponibili.
+        Aggiunge "<precip_var>_max"/"_min" (estremi tra i modelli) e "models_used".
+        """
+        def series(var: str) -> List[List[Any]]:
+            if var in section:
+                return [section[var]]
+            return [section[f"{var}_{m}"] for m in models if f"{var}_{m}" in section]
+
+        merged: Dict[str, Any] = {"time": section.get("time", [])}
+        n = len(merged["time"])
+        precip_series = series(precip_var)
+
+        for var in variables:
+            ss = series(var)
+            if not ss:
+                continue
+            out: List[Any] = []
+            for i in range(n):
+                vals = [s[i] for s in ss if i < len(s) and s[i] is not None]
+                if not vals:
+                    out.append(None)
+                elif var in prob_vars:
+                    out.append(max(vals))
+                elif var == "weathercode":
+                    precs = [(s[i] if i < len(s) and s[i] is not None else -1.0) for s in precip_series]
+                    if len(precs) == len(ss) and precs and max(precs) >= 0.2:
+                        code = ss[precs.index(max(precs))][i]
+                        out.append(code if code is not None else vals[0])
+                    else:
+                        out.append(vals[0])
+                elif var in ("is_day", "winddirection_10m"):
+                    out.append(vals[0])
+                else:
+                    out.append(sum(vals) / len(vals))
+            merged[var] = out
+
+        merged[f"{precip_var}_max"] = [
+            max((s[i] for s in precip_series if i < len(s) and s[i] is not None), default=None)
+            for i in range(n)
+        ]
+        merged[f"{precip_var}_min"] = [
+            min((s[i] for s in precip_series if i < len(s) and s[i] is not None), default=None)
+            for i in range(n)
+        ]
+        merged["models_used"] = len(precip_series)
+        return merged
+
+    def _download_open_meteo(self, now: float) -> None:
         lat = settings.LATITUDE
         lon = settings.LONGITUDE
         elev = settings.ELEVATION
@@ -138,10 +256,9 @@ class ForecastService:
         url = (
             f"https://api.open-meteo.com/v1/forecast"
             f"?latitude={lat}&longitude={lon}&elevation={elev}"
-            f"&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,"
-            f"precipitation_probability_max,windspeed_10m_max,uv_index_max,shortwave_radiation_sum,sunshine_duration"
-            f"&hourly=temperature_2m,relativehumidity_2m,precipitation,precipitation_probability,"
-            f"weathercode,windspeed_10m,direct_radiation,diffuse_radiation,shortwave_radiation_instant"
+            f"&daily={','.join(DAILY_VARS)}"
+            f"&hourly={','.join(HOURLY_VARS)}"
+            f"&models={','.join(self._models())}"
             f"&timezone=auto&forecast_days=7"
         )
 
@@ -149,26 +266,25 @@ class ForecastService:
             logger.info(f"Scaricamento previsioni Open-Meteo per lat={lat}, lon={lon}, elev={elev}m...")
             resp = requests.get(url, timeout=8, headers={"User-Agent": "WeatherHub/1.0"})
             if resp.status_code == 200:
-                raw_json = resp.json()
-                processed = self._process_open_meteo_payload(raw_json)
-                self._cached_data = processed
+                self._cached_raw = resp.json()
                 self._last_fetch_time = now
+                self._last_success_time = now
                 self._save_disk_cache()
                 logger.info("Previsioni Open-Meteo aggiornate con successo")
-                return self._cached_data
-            else:
-                logger.error(f"Errore HTTP da Open-Meteo API ({resp.status_code}): {resp.text[:200]}")
-                self._last_fetch_time = now - self.cache_ttl + 300
+                return
+            logger.error(f"Errore HTTP da Open-Meteo API ({resp.status_code}): {resp.text[:200]}")
         except Exception as e:
             logger.error(f"Eccezione durante la richiesta a Open-Meteo: {e}")
-            self._last_fetch_time = now - self.cache_ttl + 300
-
-        return self._cached_data
+        # Nuovo tentativo tra 5 minuti
+        self._last_fetch_time = now - self.cache_ttl + 300
 
     def _process_open_meteo_payload(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         """Elabora e formatta il payload di Open-Meteo in una struttura pulita per frontend e API."""
-        daily_raw = raw.get("daily", {})
-        hourly_raw = raw.get("hourly", {})
+        models = self._models()
+        daily_raw = self._merge_models(raw.get("daily", {}), DAILY_VARS, models,
+                                       "precipitation_sum", ["precipitation_probability_max"])
+        hourly_raw = self._merge_models(raw.get("hourly", {}), HOURLY_VARS, models,
+                                        "precipitation", ["precipitation_probability"])
 
         daily_times = daily_raw.get("time", [])
         daily_codes = daily_raw.get("weathercode", [])
@@ -205,7 +321,7 @@ class ForecastService:
             prob_pct = int(daily_prob[i]) if i < len(daily_prob) and daily_prob[i] is not None else 0
             rain_mm = round(daily_precip[i], 1) if i < len(daily_precip) and daily_precip[i] is not None else 0.0
 
-            if code in (51, 53, 55, 56, 57, 61, 63, 65, 80, 81) and prob_pct < 20 and rain_mm < 0.2:
+            if code in DOWNGRADABLE_RAIN_CODES and prob_pct < 20 and rain_mm < 0.2:
                 code = 2
 
             w_info = self.get_wmo_info(code)
@@ -231,6 +347,8 @@ class ForecastService:
             })
 
         now_dt = settings.now_local().replace(tzinfo=None)
+        # Prima ora mostrata = ora corrente (es. alle 14:35 si parte dalle 14:00)
+        window_start = now_dt.replace(minute=0, second=0, microsecond=0)
         hourly_times = hourly_raw.get("time", [])
         hourly_temps = hourly_raw.get("temperature_2m", [])
         hourly_hums = hourly_raw.get("relativehumidity_2m", [])
@@ -240,50 +358,206 @@ class ForecastService:
         hourly_winds = hourly_raw.get("windspeed_10m", [])
         hourly_direct_rad = hourly_raw.get("direct_radiation", [])
         hourly_diffuse_rad = hourly_raw.get("diffuse_radiation", [])
+        hourly_is_day = hourly_raw.get("is_day", [])
+        hourly_apparent = hourly_raw.get("apparent_temperature", [])
+        hourly_gusts = hourly_raw.get("windgusts_10m", [])
+        hourly_wind_dir = hourly_raw.get("winddirection_10m", [])
+        hourly_clouds = hourly_raw.get("cloudcover", [])
+        hourly_rains_max = hourly_raw.get("precipitation_max", [])
+        hourly_rains_min = hourly_raw.get("precipitation_min", [])
 
         hours_list: List[Dict[str, Any]] = []
-        for j in range(len(hourly_times)):
-            t_str = hourly_times[j]
+        rain_24h_sum = 0.0
+        for j, t_str in enumerate(hourly_times):
             try:
                 t_dt = datetime.strptime(t_str, "%Y-%m-%dT%H:%M")
-                diff_hours = (t_dt - now_dt).total_seconds() / 3600.0
-                if -1.0 <= diff_hours <= 48.0:
-                    code = hourly_codes[j] if j < len(hourly_codes) else None
-                    prob_pct = int(hourly_probs[j]) if j < len(hourly_probs) and hourly_probs[j] is not None else 0
-                    rain_mm = round(hourly_rains[j], 1) if j < len(hourly_rains) else 0.0
-
-                    if code in (51, 53, 55, 56, 57, 61, 63, 65, 80, 81) and prob_pct < 20 and rain_mm < 0.2:
-                        code = 2
-
-                    w_info = self.get_wmo_info(code)
-                    dir_r = hourly_direct_rad[j] if j < len(hourly_direct_rad) and hourly_direct_rad[j] is not None else 0.0
-                    dif_r = hourly_diffuse_rad[j] if j < len(hourly_diffuse_rad) and hourly_diffuse_rad[j] is not None else 0.0
-                    total_rad_w = round(dir_r + dif_r, 1)
-
-                    hours_list.append({
-                        "iso_time": t_str,
-                        "hour_label": t_dt.strftime("%H:%M"),
-                        "day_short": ITALIAN_DAYS.get(t_dt.weekday(), "")[:3],
-                        "temp_c": round(hourly_temps[j], 1) if j < len(hourly_temps) else None,
-                        "humidity": round(hourly_hums[j], 0) if j < len(hourly_hums) else None,
-                        "rain_mm": rain_mm,
-                        "rain_prob_pct": prob_pct,
-                        "wind_kmh": round(hourly_winds[j], 1) if j < len(hourly_winds) else 0.0,
-                        "solar_irradiance_w_m2": total_rad_w,
-                        "weather_code": code,
-                        "icon": w_info["icon"],
-                        "condition": w_info["text"]
-                    })
-            except Exception:
+            except (TypeError, ValueError):
+                continue
+            diff_hours = (t_dt - window_start).total_seconds() / 3600.0
+            if not (0.0 <= diff_hours <= 48.0):
                 continue
 
+            code = _val(hourly_codes, j)
+            prob_pct = int(_val(hourly_probs, j) or 0)
+            rain_mm = _rounded(hourly_rains, j, 1, 0.0)
+
+            # Open-Meteo: la pioggia delle HH:00 è l'accumulo dell'ora PRECEDENTE.
+            if (t_dt - now_dt).total_seconds() > 0 and diff_hours <= 24.0:
+                rain_24h_sum += rain_mm
+
+            if code in DOWNGRADABLE_RAIN_CODES and prob_pct < 20 and rain_mm < 0.2:
+                code = 2
+
+            w_info = self.get_wmo_info(code)
+            is_day_val = _val(hourly_is_day, j)
+            is_day = True if is_day_val is None else bool(is_day_val)
+            icon = w_info["icon"]
+            if not is_day and code in NIGHT_ICON_OVERRIDES:
+                icon = NIGHT_ICON_OVERRIDES[code]
+
+            dir_r = _val(hourly_direct_rad, j) or 0.0
+            dif_r = _val(hourly_diffuse_rad, j) or 0.0
+            hum = _val(hourly_hums, j)
+            clouds = _val(hourly_clouds, j)
+            wind_dir = _val(hourly_wind_dir, j)
+            rain_mm_max = _rounded(hourly_rains_max, j, 1, rain_mm)
+            rain_mm_min = _rounded(hourly_rains_min, j, 1, rain_mm)
+
+            hours_list.append({
+                "iso_time": t_str,
+                "hour_label": t_dt.strftime("%H:%M"),
+                # Inizio del periodo a cui si riferiscono pioggia e probabilità
+                "rain_period_start_label": (t_dt - timedelta(hours=1)).strftime("%H:%M"),
+                "day_short": ITALIAN_DAYS.get(t_dt.weekday(), "")[:3],
+                "temp_c": _rounded(hourly_temps, j, 1),
+                "humidity": round(hum) if hum is not None else None,
+                "rain_mm": rain_mm,
+                "rain_mm_max": rain_mm_max,
+                "rain_prob_pct": prob_pct,
+                # I modelli divergono: uno vede pioggia, un altro (quasi) niente
+                "models_disagree": rain_mm_max >= 0.5 and rain_mm_min < 0.1,
+                "apparent_temp_c": _rounded(hourly_apparent, j, 1),
+                "cloudcover_pct": round(clouds) if clouds is not None else None,
+                "wind_kmh": _rounded(hourly_winds, j, 1, 0.0),
+                "wind_gust_kmh": _rounded(hourly_gusts, j, 1),
+                "wind_dir_deg": round(wind_dir) if wind_dir is not None else None,
+                "solar_irradiance_w_m2": round(dir_r + dif_r, 1),
+                "weather_code": code,
+                "is_day": is_day,
+                "icon": icon,
+                "condition": w_info["text"]
+            })
+
+        age_s = max(0.0, time.time() - self._last_success_time) if self._last_success_time else None
+        fetched_at = (
+            datetime.fromtimestamp(self._last_success_time, settings.get_tz()).strftime("%Y-%m-%d %H:%M:%S")
+            if self._last_success_time else None
+        )
+
         return {
-            "source": "Open-Meteo (ECMWF IFS & ICON-EU)",
-            "updated_at": settings.now_local().strftime("%Y-%m-%d %H:%M:%S"),
+            "source": f"Open-Meteo ({', '.join(MODEL_LABELS.get(m, m) for m in self._models())})",
+            "updated_at": fetched_at or settings.now_local().strftime("%Y-%m-%d %H:%M:%S"),
+            "fetched_at": fetched_at,
+            "is_stale": age_s is not None and age_s > STALE_FORECAST_SECONDS,
             "daily": days_list,
+            # Nome storico: contiene le prossime 48 ore a partire dall'ora corrente.
             "hourly_next_36h": hours_list,
-            "raw_hourly": hourly_raw
+            "rain_24h_sum": round(rain_24h_sum, 1),
         }
+
+    @staticmethod
+    def _reading_is_fresh(reading: Dict[str, Any], max_age_s: int = 900) -> bool:
+        ts = reading.get("timestamp")
+        if not ts:
+            return False
+        try:
+            last_dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - last_dt).total_seconds() <= max_age_s
+        except (TypeError, ValueError):
+            return False
+
+    def apply_station_observation(self, forecast: Optional[Dict[str, Any]],
+                                  reading: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Affina la previsione oraria con i dati reali della stazione (se recenti):
+        - casella "Ora": temperatura, umidità e pioggia misurate al posto di quelle del modello;
+        - pioggia in corso: 100% anche sull'ora il cui periodo contiene "adesso";
+        - temperatura delle ore successive corretta con lo scarto stazione-modello misurato
+          ora, che si attenua col passare delle ore (dimezzato dopo ~4 ore).
+        """
+        if not forecast or not reading or not self._reading_is_fresh(reading):
+            return forecast
+        hours = forecast.get("hourly_next_36h") or []
+        if not hours:
+            return forecast
+
+        now_dt = settings.now_local().replace(tzinfo=None)
+        rate = reading.get("rain_rate_mm_hr") or 0.0
+        raining = rate > 0.2
+
+        # --- Correzione locale temperatura (bias stazione - modello) ---
+        station_t = reading.get("temp_c")
+        model_now = self._model_temp_at(hours, now_dt)
+        bias = None
+        if station_t is not None and model_now is not None:
+            bias = max(-TEMP_BIAS_MAX_C, min(TEMP_BIAS_MAX_C, station_t - model_now))
+            forecast["temp_bias_c"] = round(bias, 1)
+            for h in hours[1:]:
+                try:
+                    lead_h = (datetime.strptime(h["iso_time"], "%Y-%m-%dT%H:%M") - now_dt).total_seconds() / 3600.0
+                except (KeyError, ValueError):
+                    continue
+                corr = bias * math.exp(-max(0.0, lead_h) / TEMP_BIAS_DECAY_H)
+                if abs(corr) < 0.05:
+                    continue
+                for key in ("temp_c", "apparent_temp_c"):
+                    if h.get(key) is not None:
+                        h[f"{key}_model"] = h[key]
+                        h[key] = round(h[key] + corr, 1)
+                h["temp_corrected"] = True
+
+        # --- Casella "Ora": valori misurati ---
+        now_h = hours[0]
+        now_h["observed"] = True
+        if station_t is not None:
+            now_h["temp_c_model"] = now_h.get("temp_c")
+            now_h["temp_c"] = round(station_t, 1)
+        if reading.get("humidity") is not None:
+            now_h["humidity"] = round(reading["humidity"])
+        if reading.get("apparent_temp_c") is not None:
+            now_h["apparent_temp_c"] = round(reading["apparent_temp_c"], 1)
+
+        if raining:
+            code = 82 if rate >= 15.0 else (65 if rate >= 4.0 else 61)
+            w_info = self.get_wmo_info(code)
+            targets = [now_h]
+            # Anche l'ora il cui periodo di accumulo contiene "adesso" (HH:00 successivo)
+            for h in hours[1:3]:
+                try:
+                    if datetime.strptime(h["iso_time"], "%Y-%m-%dT%H:%M") > now_dt:
+                        targets.append(h)
+                        break
+                except (KeyError, ValueError):
+                    continue
+            for h in targets:
+                h["rain_prob_pct"] = 100
+                h["rain_mm"] = max(h.get("rain_mm") or 0.0, round(rate, 1))
+                h["weather_code"] = code
+                h["icon"] = w_info["icon"]
+                h["condition"] = f"{w_info['text']} in corso (stazione)"
+                h["observed_rain"] = True
+        else:
+            # Adesso non piove: la casella "Ora" lo dice, le ore successive restano previsione.
+            now_h["rain_prob_pct"] = 0
+            now_h["rain_mm"] = 0.0
+            now_h["observed_dry"] = True
+            if now_h.get("weather_code") is not None and now_h["weather_code"] >= 51:
+                clouds = now_h.get("cloudcover_pct")
+                code = 3 if clouds is None or clouds >= 85 else (2 if clouds >= 40 else 1)
+                w_info = self.get_wmo_info(code)
+                now_h["weather_code"] = code
+                now_h["icon"] = NIGHT_ICON_OVERRIDES.get(code, w_info["icon"]) if not now_h.get("is_day", True) else w_info["icon"]
+                now_h["condition"] = f"{w_info['text']}, asciutto (stazione)"
+        return forecast
+
+    @staticmethod
+    def _model_temp_at(hours: List[Dict[str, Any]], at_dt: datetime) -> Optional[float]:
+        """Temperatura del modello interpolata linearmente all'istante at_dt."""
+        pts = []
+        for h in hours[:3]:
+            try:
+                pts.append((datetime.strptime(h["iso_time"], "%Y-%m-%dT%H:%M"), h.get("temp_c")))
+            except (KeyError, ValueError):
+                continue
+        for (t0, v0), (t1, v1) in zip(pts, pts[1:]):
+            if v0 is None or v1 is None:
+                continue
+            if t0 <= at_dt <= t1:
+                frac = (at_dt - t0).total_seconds() / max(1.0, (t1 - t0).total_seconds())
+                return v0 + (v1 - v0) * frac
+        return pts[0][1] if pts else None
 
     # ----------------- 4. QUALITÀ DELL'ARIA & POLLINI (COPERNICUS CAMS) -----------------
 
@@ -321,10 +595,10 @@ class ForecastService:
                 return self._cached_aqi
             else:
                 logger.error(f"Errore HTTP da Air Quality API ({resp.status_code}): {resp.text[:200]}")
-                self._last_aqi_fetch = now - self.cache_aqi_ttl + 300
+                self._last_aqi_fetch = now - self.cache_ttl + 300
         except Exception as e:
             logger.error(f"Eccezione durante richiesta qualità dell'aria: {e}")
-            self._last_aqi_fetch = now - self.cache_aqi_ttl + 300
+            self._last_aqi_fetch = now - self.cache_ttl + 300
 
         if self._cached_aqi:
             return self._cached_aqi
@@ -335,11 +609,11 @@ class ForecastService:
         """Elabora e struttura i dati di inquinanti e pollini per l'Hub."""
         curr = raw.get("current", {})
         
-        eaqi_val = curr.get("european_aqi")
-        if eaqi_val is None or eaqi_val <= 0:
-            eaqi_val = 1
-        elif eaqi_val > 5:
-            eaqi_val = 5
+        # Open-Meteo restituisce l'indice europeo su scala continua (0-20 buona, 20-40 discreta,
+        # 40-60 moderata, 60-80 scadente, 80-100 molto scadente, >100 estremamente scadente):
+        # lo si converte nelle 5 classi usate dall'app.
+        eaqi_index = curr.get("european_aqi")
+        eaqi_val = self._eaqi_class(eaqi_index)
 
         eaqi_meta = EAQI_INFO.get(int(eaqi_val), EAQI_INFO[1])
 
@@ -380,6 +654,7 @@ class ForecastService:
             "updated_at": settings.now_local().strftime("%Y-%m-%d %H:%M"),
             "eaqi": {
                 "value": int(eaqi_val),
+                "index": round(eaqi_index) if eaqi_index is not None else None,
                 "label": eaqi_meta["label"],
                 "badge_class": eaqi_meta["badge_class"],
                 "color": eaqi_meta["color"],
@@ -399,6 +674,18 @@ class ForecastService:
             "window_advice": window_advice,
             "window_status": window_status
         }
+
+    @staticmethod
+    def _eaqi_class(index: Optional[float]) -> int:
+        if index is None or index <= 20:
+            return 1
+        if index <= 40:
+            return 2
+        if index <= 60:
+            return 3
+        if index <= 80:
+            return 4
+        return 5
 
     def _classify_pollen(self, name: str, val: Optional[float], thresholds: List[float]) -> Dict[str, Any]:
         """Classifica i pollini in Assente, Basso, Medio, Alto, Molto Alto."""
@@ -607,20 +894,25 @@ class ForecastService:
         if first_rain_hour is not None:
             try:
                 first_dt = datetime.strptime(first_rain_hour["iso_time"], "%Y-%m-%dT%H:%M")
-                min_until = max(15, int((first_dt - now_dt).total_seconds() / 60.0))
-                if min_until >= 60:
-                    time_range_str = format_duration_italian(min_until)
+                # La pioggia delle HH:00 cade nell'ora precedente: l'inizio è HH-1:00.
+                start_dt = first_dt - timedelta(hours=1)
+                min_until = int((start_dt - now_dt).total_seconds() / 60.0)
+                if min_until <= 0:
+                    when_str = "entro un'ora"
+                elif min_until >= 60:
+                    when_str = f"tra circa {format_duration_italian(min_until)}"
                 else:
-                    time_range_str = f"{max(15, min_until - 15)}-{min_until + 15} minuti"
+                    when_str = f"tra circa {max(5, min_until - 15)}-{min_until + 15} minuti"
+                period_str = f"tra le {start_dt.strftime('%H:%M')} e le {first_rain_hour['hour_label']}"
 
                 if first_rain_hour.get("weather_code") in (95, 96, 99, 82):
-                    headline = f"⛈️ Temporale / Cella in avvicinamento (tra ~{time_range_str})"
-                    desc = f"Attività convettiva o rovesci previsti intorno alle {first_rain_hour['hour_label']} (probabilità {first_rain_hour['rain_prob_pct']}%)."
+                    headline = f"⛈️ Temporale / Cella in avvicinamento ({when_str})"
+                    desc = f"Attività convettiva o rovesci previsti {period_str} (probabilità {first_rain_hour['rain_prob_pct']}%)."
                     status_class = "danger"
                     icon = "⛈️"
                 else:
-                    headline = f"🌧️ Pioggia prevista nella tua zona tra circa {time_range_str}"
-                    desc = f"Inizio precipitazioni stimato intorno alle {first_rain_hour['hour_label']} (accumulo stimato: {first_rain_hour['rain_mm']} mm)."
+                    headline = f"🌧️ Pioggia prevista nella tua zona {when_str}"
+                    desc = f"Inizio precipitazioni stimato {period_str} (accumulo stimato: {first_rain_hour['rain_mm']} mm)."
                     status_class = "warning"
                     icon = "🌧️"
 
@@ -714,11 +1006,11 @@ class ForecastService:
         if abs(delta_t) <= 0.8:
             accuracy_status = "Ottimo accordo col modello"
             badge_class = "badge-success"
-            accuracy_desc = f"Stazione ({station_temp}°C) in ottimo accordo col modello ECMWF ({model_temp}°C, scarto {sign}{delta_t}°C)."
+            accuracy_desc = f"Stazione ({station_temp}°C) in ottimo accordo col modello ({model_temp}°C, scarto {sign}{delta_t}°C)."
         elif abs(delta_t) <= 2.0:
             accuracy_status = "Buon accordo col modello"
             badge_class = "badge-info"
-            accuracy_desc = f"Stazione ({station_temp}°C) vs Modello ECMWF ({model_temp}°C, scarto {sign}{delta_t}°C)."
+            accuracy_desc = f"Stazione ({station_temp}°C) vs Modello ({model_temp}°C, scarto {sign}{delta_t}°C)."
         else:
             accuracy_status = "Scostamento locale"
             badge_class = "badge-warning"

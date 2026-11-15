@@ -301,17 +301,23 @@
 
         <!-- ORE PROSSIME 24H -->
         {% if forecast and forecast.hourly_next_36h %}
-        <div class="hourly-strip-title">🕒 Previsione Dettagliata Prossime Ore</div>
+        <div class="hourly-strip-title">🕒 Previsione Dettagliata Prossime Ore
+            {% if forecast.is_stale %}<span style="font-size: 0.7rem; color: var(--warning, #f59e0b);"> ⚠️ non aggiornata (ultimo dato {{ forecast.fetched_at }})</span>{% endif %}
+        </div>
         <div class="hourly-scroll-container" id="hourly_scroll_container">
             {% for h in forecast.hourly_next_36h[:18] %}
-            <div class="hourly-pill" title="{{ h.condition }} • Prob. Pioggia: {{ h.rain_prob_pct }}% • Vento: {{ h.wind_kmh }} km/h">
-                <span class="hourly-time">{{ h.hour_label }}</span>
+            <div class="hourly-pill" title="{% if h.observed %}Dati misurati dalla stazione • {% elif h.temp_corrected %}Temperatura corretta con la stazione (modello {{ h.temp_c_model }}°C) • {% endif %}{{ h.condition }} • Pioggia {{ h.rain_period_start_label }}-{{ h.hour_label }}: {{ h.rain_prob_pct }}% ({{ h.rain_mm }} mm{% if h.models_disagree %}, fino a {{ h.rain_mm_max }} mm secondo un modello{% endif %}) • Vento: {{ h.wind_kmh }} km/h{% if h.wind_gust_kmh %}, raffiche {{ h.wind_gust_kmh }} km/h{% endif %}{% if h.apparent_temp_c is not none %} • Percepita {{ h.apparent_temp_c }}°C{% endif %}{% if h.cloudcover_pct is not none %} • Nuvole {{ h.cloudcover_pct }}%{% endif %}">
+                <span class="hourly-time">{% if loop.first %}Ora{% if h.observed %} 📡{% endif %}{% else %}{{ h.hour_label }}{% endif %}</span>
                 <span class="hourly-icon">{{ h.icon }}</span>
                 <span class="hourly-temp">{{ h.temp_c }}°C</span>
-                {% if h.rain_prob_pct >= 20 or h.rain_mm >= 0.2 %}
-                <span class="hourly-rain">💧 {{ h.rain_prob_pct }}%</span>
+                {% if h.observed_rain %}
+                <span class="hourly-rain" style="font-weight: 700;">💧 in corso</span>
+                {% elif h.observed_dry %}
+                <span class="hourly-rain" style="color: var(--text-dim); font-size: 0.68rem;">asciutto</span>
+                {% elif h.rain_prob_pct >= 20 or h.rain_mm >= 0.2 %}
+                <span class="hourly-rain">💧 {{ h.rain_prob_pct }}%{% if h.models_disagree %}?{% endif %}</span>
                 {% else %}
-                <span class="hourly-rain" style="color: var(--text-dim); font-size: 0.68rem; opacity: 0.7;">💧 0%</span>
+                <span class="hourly-rain" style="color: var(--text-dim); font-size: 0.68rem; opacity: 0.7;">💧 {{ h.rain_prob_pct }}%</span>
                 {% endif %}
             </div>
             {% endfor %}

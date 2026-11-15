@@ -70,6 +70,10 @@ class Settings:
     ELEVATION: float = float(os.getenv("ELEVATION", "68.0"))
     TIMEZONE: str = os.getenv("TIMEZONE", os.getenv("TZ", "Europe/Rome"))
 
+    # Modelli Open-Meteo combinati per le previsioni (separati da virgola).
+    # Con più modelli: probabilità pioggia = massimo, valori numerici = media.
+    FORECAST_MODELS: str = os.getenv("FORECAST_MODELS", "icon_seamless,ecmwf_ifs025")
+
     def get_tz(self):
         """Restituisce l'oggetto ZoneInfo del fuso orario configurato."""
         from zoneinfo import ZoneInfo

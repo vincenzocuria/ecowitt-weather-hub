@@ -160,6 +160,7 @@ async def dashboard_page(request: Request):
     # Analisi avanzate & Nowcasting
     analytics = build_analytics_context(latest)
     forecast_data = await asyncio.to_thread(forecast_service.fetch_open_meteo)
+    forecast_data = forecast_service.apply_station_observation(forecast_data, latest)
     cross_check = forecast_service.build_cross_check_summary(latest)
 
     # Dati Energetici Aton Storage

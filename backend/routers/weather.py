@@ -221,7 +221,7 @@ async def ingest_ecowitt(request: Request, bg: BackgroundTasks):
 @router.get("/api/forecast")
 def api_forecast():
     latest = get_latest_reading() or {}
-    forecast_data = forecast_service.fetch_open_meteo()
+    forecast_data = forecast_service.apply_station_observation(forecast_service.fetch_open_meteo(), latest)
     cross_check = forecast_service.build_cross_check_summary(latest)
     return {
         "forecast": forecast_data,

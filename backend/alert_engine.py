@@ -638,8 +638,8 @@ class AlertEngine:
         try:
             fc = forecast_service.fetch_open_meteo()
             if fc and "hourly_next_36h" in fc:
-                # Controlla le prossime 6-8 ore
-                upcoming_hours = fc["hourly_next_36h"][:8]
+                # Controlla le prossime 8 ore (la lista parte dall'ora corrente)
+                upcoming_hours = fc["hourly_next_36h"][1:9]
                 max_prob = max((h.get("rain_prob_pct", 0) for h in upcoming_hours), default=0)
                 sum_rain = sum((h.get("rain_mm", 0.0) for h in upcoming_hours))
                 
@@ -919,7 +919,9 @@ class AlertEngine:
                         prob = h.get("rain_prob_pct", 0)
                         mm = h.get("rain_mm", 0.0)
 
-                        if prob >= settings.RAIN_FORECAST_PROB_THRESHOLD or (mm >= 0.5 and prob >= 40):
+                        # Probabilità = massimo tra i modelli: si richiede anche un accumulo medio
+                        # minimo, così un solo modello "piovoso" non basta a far partire l'avviso.
+                        if (prob >= settings.RAIN_FORECAST_PROB_THRESHOLD and mm >= 0.2) or (mm >= 0.5 and prob >= 40):
                             self.last_rain_forecast_alert = now
                             self._save_state()
                             hour_label = h.get("hour_label", f"{h_dt.hour:02d}:00")
@@ -927,7 +929,7 @@ class AlertEngine:
                             notifier.send_alert(
                                 alert_type="rain_forecast",
                                 title="☔ Pioggia Prevista a Breve!",
-                                message=f"I modelli meteo indicano {cond_text.lower()} in arrivo verso le {hour_label} (probabilità {prob}%, stima {mm} mm). Attenzione a finestre e bucato!",
+                                message=f"I modelli meteo indicano {cond_text.lower()} in arrivo tra le {h.get('rain_period_start_label', hour_label)} e le {hour_label} (probabilità {prob}%, stima {mm} mm). Attenzione a finestre e bucato!",
                                 priority="normal",
                                 extra_data={"prob": str(prob), "rain_mm": str(mm), "time": hour_label}
                             )
@@ -1300,8 +1302,20 @@ class AlertEngine:
             from backend.forecast_service import forecast_service
             fc = forecast_service.fetch_open_meteo()
             if fc and "hourly_next_36h" in fc:
-                # Isola le prossime 10 ore notturne (dalle 22:00 alle 08:00 di domani)
-                night_hours = fc["hourly_next_36h"][:11]
+                # Isola le ore notturne dalle 22:00 alle 08:00 della notte entrante
+                now_l = settings.now_local().replace(tzinfo=None)
+                night_start = now_l.replace(hour=22, minute=0, second=0, microsecond=0)
+                if now_l.hour < 8:
+                    night_start -= timedelta(days=1)
+                night_end = night_start + timedelta(hours=10)
+                night_hours = []
+                for h in fc["hourly_next_36h"]:
+                    try:
+                        h_dt = datetime.strptime(h["iso_time"], "%Y-%m-%dT%H:%M")
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if night_start <= h_dt <= night_end:
+                        night_hours.append(h)
                 night_temps = [h.get("temp_c") for h in night_hours if h.get("temp_c") is not None]
                 if night_temps:
                     min_night = min(night_temps)
