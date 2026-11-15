@@ -2415,6 +2415,28 @@ class TestHourlyForecast(unittest.TestCase):
         self.assertEqual(res["source"], "Stima Locale")
 
 
+    def test_device_favorites_and_casa_page(self):
+        from backend.main import app
+        from fastapi.testclient import TestClient
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+        self.assertEqual(client.post("/api/devices/favorites", json={}).status_code, 400)
+        r = client.post("/api/devices/favorites", json={"device_id": "hass_media_player.soggiorno_tv", "favorite": True})
+        self.assertEqual(r.json()["favorites"], ["hass_media_player.soggiorno_tv"])
+        client.post("/api/devices/favorites", json={"device_id": "tuya_presa1", "favorite": True})
+        client.post("/api/devices/favorites", json={"device_id": "tuya_presa1", "favorite": True})  # idempotente
+        self.assertEqual(client.get("/api/devices/favorites").json()["favorites"],
+                         ["hass_media_player.soggiorno_tv", "tuya_presa1"])
+        r = client.post("/api/devices/favorites", json={"device_id": "hass_media_player.soggiorno_tv", "favorite": False})
+        self.assertEqual(r.json()["favorites"], ["tuya_presa1"])
+        page = client.get("/devices")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('id="devices-search-input"', page.text)
+        self.assertIn('data-filter="favorites"', page.text)
+        self.assertNotIn("Centrale di controllo domotica", page.text)
+        self.assertIn('let deviceFavorites = ["tuya_presa1"]', page.text)
+        client.post("/api/devices/favorites", json={"device_id": "tuya_presa1", "favorite": False})
+
+
 if __name__ == "__main__":
     unittest.main()
 

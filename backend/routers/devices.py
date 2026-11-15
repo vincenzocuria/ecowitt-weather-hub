@@ -16,6 +16,7 @@ from backend.database import (
     get_irrigation_learning_summary, log_irrigation_cycle_start,
     get_sensor_aliases, save_sensor_alias,
     get_device_aliases, save_device_alias, delete_device_alias,
+    get_device_favorites, set_device_favorite,
     get_latest_reading, get_latest_energy, get_recent_rain_totals,
     get_station_status, get_soil_moisture_summary,
     get_tuya_local_devices, get_tuya_local_device, save_tuya_local_device, delete_tuya_local_device,
@@ -556,6 +557,23 @@ def api_devices_all():
 def api_get_device_aliases():
     """Restituisce la mappa di tutti gli alias personalizzati assegnati ai dispositivi."""
     return {"aliases": get_device_aliases()}
+
+@router.get("/api/devices/favorites")
+def api_get_device_favorites():
+    """Dispositivi preferiti della pagina Casa (condivisi tra telefono e computer)."""
+    return {"favorites": get_device_favorites()}
+
+@router.post("/api/devices/favorites")
+async def api_set_device_favorite(request: Request):
+    """Aggiunge o toglie un dispositivo dai preferiti: {"device_id": "...", "favorite": true}."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    target_id = str(payload.get("device_id") or "").strip()
+    if not target_id or len(target_id) > 200:
+        return JSONResponse({"error": "ID dispositivo mancante"}, status_code=400)
+    return {"favorites": set_device_favorite(target_id, bool(payload.get("favorite", True)))}
 
 @router.post("/api/devices/rename")
 @router.post("/api/devices/{device_id}/rename")

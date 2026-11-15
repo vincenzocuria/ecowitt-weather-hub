@@ -327,6 +327,15 @@ def init_db():
         )
     """)
 
+    # 14b. Dispositivi preferiti nella pagina Casa (ordinati come aggiunti)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS device_favorites (
+            device_id TEXT PRIMARY KEY,
+            position INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        )
+    """)
+
     # 15. Riepiloghi Mensili Consolidati
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS monthly_summaries (
@@ -2106,6 +2115,33 @@ def delete_device_alias(device_id: str) -> bool:
     conn.commit()
     conn.close()
     return rows > 0
+
+def get_device_favorites() -> List[str]:
+    """ID dei dispositivi preferiti, nell'ordine in cui sono stati aggiunti."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT device_id FROM device_favorites ORDER BY position, created_at")
+    rows = cursor.fetchall()
+    conn.close()
+    return [r["device_id"] for r in rows]
+
+def set_device_favorite(device_id: str, favorite: bool) -> List[str]:
+    """Aggiunge o toglie un dispositivo dai preferiti e restituisce l'elenco aggiornato."""
+    device_id_clean = str(device_id).strip()
+    conn = get_connection()
+    cursor = conn.cursor()
+    if favorite:
+        cursor.execute("SELECT COALESCE(MAX(position), 0) + 1 AS pos FROM device_favorites")
+        pos = cursor.fetchone()["pos"]
+        cursor.execute(
+            "INSERT OR IGNORE INTO device_favorites (device_id, position, created_at) VALUES (?, ?, ?)",
+            (device_id_clean, pos, datetime.now(timezone.utc).isoformat()),
+        )
+    else:
+        cursor.execute("DELETE FROM device_favorites WHERE device_id = ?", (device_id_clean,))
+    conn.commit()
+    conn.close()
+    return get_device_favorites()
 
 # ----------------- GESTIONE DISPOSITIVI TUYA / SMART LIFE -----------------
 

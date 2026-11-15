@@ -8,7 +8,6 @@
         <div class="devices-header-top">
             <div class="devices-header-title">
                 <h1>💡 Dispositivi Smart</h1>
-                <p class="devices-subtitle">Centrale di controllo domotica integrata in tempo reale</p>
             </div>
             <div class="devices-header-actions">
                 <button type="button" class="btn btn-action-secondary" id="btn-open-schedules" onclick="openSchedulesModal()" title="Visualizza e gestisci tutti i timer attivi della casa">
@@ -26,28 +25,11 @@
             </div>
         </div>
 
-        <!-- STATISTICHE COMPATTE -->
-        <div class="devices-stats-row">
-            <div class="stat-pill">
-                <span class="stat-pill-label">Dispositivi</span>
-                <span class="stat-pill-val" id="stat-total">{{ stats.total or devices|length }}</span>
-            </div>
-            <div class="stat-pill stat-pill-active">
-                <span class="stat-pill-label">Accesi / Attivi</span>
-                <span class="stat-pill-val" id="stat-active">{{ stats.active or 0 }}</span>
-            </div>
-            <div class="stat-pill stat-pill-power">
-                <span class="stat-pill-label">Carico Prese</span>
-                <span class="stat-pill-val" id="stat-power">{{ stats.total_power_w or 0 }} W</span>
-            </div>
-            <div class="stat-pill stat-pill-online">
-                <span class="stat-pill-label">Online</span>
-                <span class="stat-pill-val" id="stat-online">{{ stats.online if stats.online is not none else devices|length }}</span>
-            </div>
-            <div class="stat-pill stat-pill-timer" onclick="openSchedulesModal()" style="cursor: pointer;" title="Clicca per visualizzare i timer programmati">
-                <span class="stat-pill-label">⏱️ Timer Attivi</span>
-                <span class="stat-pill-val" id="stat-schedules">{{ stats.scheduled_tasks_count or (active_schedules|length if active_schedules else 0) }}</span>
-            </div>
+        <!-- RICERCA -->
+        <div class="devices-search">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input type="search" id="devices-search-input" placeholder="Cerca dispositivo, stanza o tipo…" autocomplete="off" aria-label="Cerca dispositivo">
+            <button type="button" class="devices-search-clear" id="devices-search-clear" aria-label="Cancella ricerca" hidden>&times;</button>
         </div>
     </section>
 
@@ -56,6 +38,10 @@
         <button class="filter-chip active" data-filter="all">
             <span>Tutti</span>
             <span class="filter-badge" id="badge-count-all">{{ devices|length }}</span>
+        </button>
+        <button class="filter-chip filter-chip-fav" data-filter="favorites">
+            <span>⭐ Preferiti</span>
+            <span class="filter-badge" id="badge-count-fav">{{ favorites|length }}</span>
         </button>
         <button class="filter-chip" data-filter="weather">
             <span>🌦️ Stazione & Meteo</span>
@@ -90,6 +76,7 @@
     </div>
 
     <!-- GRIGLIA A MATTONCINI DEI DISPOSITIVI -->
+    <div class="devices-no-results" id="devices-no-results" hidden></div>
     <div class="devices-grid" id="devices-container">
         {% if devices %}
             {% for dev in devices %}
@@ -145,8 +132,13 @@
                 {% endif %}
 
                 <div class="device-card-body">
-                    <div class="device-name" title="{{ dev.name }}">{{ dev.name }}</div>
-                    <div class="device-sub">{{ dev.category_label }}</div>
+                    <div class="device-card-body-text">
+                        <div class="device-name" title="{{ dev.name }}">{{ dev.name }}</div>
+                        <div class="device-sub">{{ dev.category_label }}</div>
+                    </div>
+                    <button type="button" class="card-fav-btn {% if dev.id in favorites %}is-fav{% endif %}" aria-pressed="{{ 'true' if dev.id in favorites else 'false' }}" title="Preferito" aria-label="Aggiungi ai preferiti" onclick="event.stopPropagation(); toggleFavorite({{ dev.id|js }})">
+                        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M12 2.8l2.85 5.78 6.38.93-4.62 4.5 1.09 6.35L12 17.36l-5.7 3 1.09-6.35-4.62-4.5 6.38-.93z"/></svg>
+                    </button>
                 </div>
 
                 <div class="device-card-footer">
@@ -309,30 +301,125 @@
 let devicesCatalog = {{ devices|tojson|safe }};
 let currentOpenDeviceId = null;
 
-// Gestione Filtri Categoria
+// Filtri: categoria (chip) + ricerca testuale + preferiti
+let deviceFavorites = {{ (favorites or [])|tojson }};
+let currentDeviceFilter = 'all';
+let currentDeviceSearch = '';
+
 document.querySelectorAll('.filter-chip').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        const filter = btn.getAttribute('data-filter');
-        filterDevicesGrid(filter);
+        currentDeviceFilter = btn.getAttribute('data-filter');
+        applyDeviceFilters();
     });
 });
 
 function filterDevicesGrid(filter) {
-    const cards = document.querySelectorAll('.device-card');
-    cards.forEach(card => {
+    currentDeviceFilter = filter;
+    applyDeviceFilters();
+}
+
+function normalizeSearch(str) {
+    return String(str || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+}
+
+function deviceSearchText(card) {
+    const dev = devicesCatalog.find(d => String(d.id) === card.getAttribute('data-id')) || {};
+    return normalizeSearch([
+        dev.name, dev.category_label, dev.status_text, dev.source, dev.ecosystem, dev.room, dev.area,
+        card.querySelector('.device-name')?.textContent, card.querySelector('.device-sub')?.textContent
+    ].filter(Boolean).join(' '));
+}
+
+function applyDeviceFilters() {
+    const terms = normalizeSearch(currentDeviceSearch).split(/\s+/).filter(Boolean);
+    const filter = currentDeviceFilter;
+    let visible = 0;
+    document.querySelectorAll('.device-card').forEach(card => {
         const cat = card.getAttribute('data-category');
-        const isMatch = (filter === 'all' || cat === filter || 
-            ((filter === 'shutters' || filter === 'curtains') && (cat === 'shutters' || cat === 'curtains'))
-        );
-        if (isMatch) {
-            card.style.display = 'flex';
-        } else {
-            card.style.display = 'none';
+        const id = card.getAttribute('data-id');
+        let match = filter === 'all' || cat === filter ||
+            (filter === 'favorites' && deviceFavorites.includes(id)) ||
+            ((filter === 'shutters' || filter === 'curtains') && (cat === 'shutters' || cat === 'curtains'));
+        if (match && terms.length) {
+            const text = deviceSearchText(card);
+            match = terms.every(t => text.includes(t));
+        }
+        card.style.display = match ? 'flex' : 'none';
+        if (match) visible++;
+    });
+    const empty = document.getElementById('devices-no-results');
+    if (empty) {
+        const show = visible === 0 && document.querySelectorAll('.device-card').length > 0;
+        empty.hidden = !show;
+        if (show) {
+            empty.innerHTML = filter === 'favorites' && !terms.length
+                ? '<span>⭐</span><p>Nessun preferito ancora. Tocca la stella su un dispositivo per averlo sempre in cima.</p>'
+                : '<span>🔍</span><p>Nessun dispositivo trovato' + (terms.length ? ' per “' + tvEsc(currentDeviceSearch.trim()) + '”' : '') + '.</p>';
+        }
+    }
+}
+
+// Preferiti: stella sulla card, sempre in cima alla griglia, salvati sul server (uguali su telefono e PC)
+function applyFavoritesToGrid() {
+    document.querySelectorAll('.device-card').forEach(card => {
+        const idx = deviceFavorites.indexOf(card.getAttribute('data-id'));
+        const isFav = idx !== -1;
+        card.classList.toggle('device-card-fav', isFav);
+        card.style.order = isFav ? String(idx - deviceFavorites.length) : '';
+        const btn = card.querySelector('.card-fav-btn');
+        if (btn) {
+            btn.classList.toggle('is-fav', isFav);
+            btn.setAttribute('aria-pressed', isFav ? 'true' : 'false');
+            btn.setAttribute('aria-label', isFav ? 'Togli dai preferiti' : 'Aggiungi ai preferiti');
+            btn.title = isFav ? 'Togli dai preferiti' : 'Aggiungi ai preferiti';
         }
     });
+    const badge = document.getElementById('badge-count-fav');
+    if (badge) badge.textContent = deviceFavorites.length;
 }
+
+async function toggleFavorite(deviceId) {
+    const id = String(deviceId);
+    const makeFav = !deviceFavorites.includes(id);
+    const previous = deviceFavorites.slice();
+    deviceFavorites = makeFav ? deviceFavorites.concat(id) : deviceFavorites.filter(f => f !== id);
+    applyFavoritesToGrid();
+    applyDeviceFilters();
+    try {
+        const resp = await fetch('/api/devices/favorites', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ device_id: id, favorite: makeFav })
+        });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        if (Array.isArray(data.favorites)) deviceFavorites = data.favorites;
+    } catch (e) {
+        deviceFavorites = previous;
+        showToast('Preferito non salvato: riprova', 'danger');
+    }
+    applyFavoritesToGrid();
+    applyDeviceFilters();
+}
+
+(function initDeviceSearch() {
+    const input = document.getElementById('devices-search-input');
+    const clear = document.getElementById('devices-search-clear');
+    if (input) {
+        input.addEventListener('input', () => {
+            currentDeviceSearch = input.value;
+            if (clear) clear.hidden = !input.value;
+            applyDeviceFilters();
+        });
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Escape') { input.value = ''; input.dispatchEvent(new Event('input')); }
+        });
+    }
+    if (clear && input) clear.addEventListener('click', () => { input.value = ''; input.dispatchEvent(new Event('input')); input.focus(); });
+    applyFavoritesToGrid();
+})();
 
 // Toggle Rapido o da Modale ON/OFF Unificato
 async function performDeviceToggle(ecosystem, rawId, targetState, sourceBtn = null) {

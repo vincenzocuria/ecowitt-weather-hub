@@ -8694,3 +8694,55 @@ html[data-theme="light"] .leaflet-control-attribution a {
 @keyframes tv-power-pulse { 50% { box-shadow: 0 0 0 8px rgba(56, 189, 248, 0.25); } }
 @media (prefers-reduced-motion: reduce) { .tv-power-btn.is-busy { animation: none; } }
 .pwr-icon { display: inline-flex; align-items: center; vertical-align: -2px; }
+
+/* ==========================================================================
+   CASA: RICERCA E PREFERITI
+   ========================================================================== */
+.devices-search {
+    position: relative; display: flex; align-items: center;
+    border-top: 1px solid rgba(255, 255, 255, 0.06); padding-top: 0.85rem;
+}
+.devices-search > svg { position: absolute; left: 0.8rem; color: var(--text-dim); pointer-events: none; }
+.devices-search input {
+    width: 100%; font: inherit; font-size: 0.95rem; color: var(--text);
+    padding: 0.65rem 2.4rem 0.65rem 2.4rem; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04); border: 1px solid var(--card-border);
+    -webkit-appearance: none; appearance: none; outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.devices-search input::-webkit-search-cancel-button { display: none; }
+.devices-search input::placeholder { color: var(--text-muted); }
+.devices-search input:focus { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18); }
+.devices-search-clear {
+    position: absolute; right: 0.45rem; width: 28px; height: 28px; border-radius: 50%;
+    border: none; cursor: pointer; font-size: 1.15rem; line-height: 1;
+    background: rgba(255, 255, 255, 0.08); color: var(--text-dim);
+}
+.devices-search-clear[hidden] { display: none; }
+
+.device-card .device-card-body { flex-direction: row; align-items: flex-start; gap: 0.35rem; }
+.device-card-body-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.card-fav-btn {
+    flex-shrink: 0; margin: -4px -4px 0 0;
+    background: none; border: none; cursor: pointer; padding: 3px; line-height: 0;
+    color: var(--text-dim); opacity: 0.55; transition: transform 0.15s ease, opacity 0.2s ease, color 0.2s ease;
+}
+.card-fav-btn svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.device-card:hover .card-fav-btn { opacity: 0.9; }
+.card-fav-btn:active { transform: scale(0.85); }
+.card-fav-btn.is-fav { color: #fbbf24; opacity: 1; }
+.card-fav-btn.is-fav svg { fill: #fbbf24; stroke: #f59e0b; }
+.device-card-fav { border-color: rgba(251, 191, 36, 0.35); }
+
+.devices-no-results {
+    display: flex; flex-direction: column; align-items: center; gap: 0.4rem; text-align: center;
+    padding: 2rem 1.25rem; color: var(--text-dim); border: 1px dashed var(--card-border); border-radius: var(--radius-lg);
+}
+.devices-no-results[hidden] { display: none; }
+.devices-no-results span { font-size: 2rem; }
+.devices-no-results p { margin: 0; font-size: 0.9rem; }
+
+@media (max-width: 600px) {
+    .devices-search { padding-top: 0.7rem; }
+    .card-fav-btn { opacity: 0.8; margin: -4px -6px 0 0; }
+}

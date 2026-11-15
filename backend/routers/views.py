@@ -18,7 +18,7 @@ from backend.aton_service import aton_service
 from backend.thinq_service import thinq_service
 from backend.homeassistant_service import homeassistant_service
 from backend.database import (
-    get_latest_reading, get_station_status, get_pressure_trend,
+    get_latest_reading, get_station_status, get_pressure_trend, get_device_favorites,
     get_all_records, get_records_history, get_today_extremes,
     get_tropical_nights_stats, get_soil_moisture_summary,
     get_climate_comparisons, search_history, get_history_kpis,
@@ -249,6 +249,7 @@ def devices_page(request: Request):
             "devices": catalog.get("devices", []),
             "stats": catalog.get("stats", {}),
             "active_schedules": catalog.get("active_schedules", []),
+            "favorites": get_device_favorites(),
             "tuya_enabled": settings.TUYA_ENABLED,
             "thinq_enabled": settings.LG_THINQ_ENABLED,
             "smartthings_enabled": settings.SMARTTHINGS_ENABLED,
