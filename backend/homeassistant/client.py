@@ -99,9 +99,13 @@ class HomeAssistantClient:
         domain: str,
         service: str,
         entity_id: Optional[str] = None,
-        data: Optional[Dict[str, Any]] = None
+        data: Optional[Dict[str, Any]] = None,
+        refresh: bool = True
     ) -> Dict[str, Any]:
-        """Chiama un servizio su Home Assistant (es. switch/turn_on, climate/set_temperature, notify/mobile_app_xxx)."""
+        """Chiama un servizio su Home Assistant (es. switch/turn_on, climate/set_temperature, notify/mobile_app_xxx).
+
+        refresh=False salta la rilettura di tutti gli stati dopo il comando (tasti del telecomando:
+        devono essere immediati e non cambiano lo stato mostrato)."""
         if not self.enabled:
             return {"success": False, "error": "Home Assistant non configurato o disabilitato"}
 
@@ -119,7 +123,8 @@ class HomeAssistantClient:
                     res_json = await resp.json()
                     target_desc = f" su {entity_id}" if entity_id else ""
                     logger.info("✅ [HASS] Servizio %s.%s eseguito%s", domain, service, target_desc)
-                    await self.fetch_states()
+                    if refresh:
+                        await self.fetch_states()
                     return {"success": True, "result": res_json}
                 else:
                     err_txt = await resp.text()

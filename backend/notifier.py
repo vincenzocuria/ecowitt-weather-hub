@@ -32,6 +32,18 @@ EMERGENCY_ALERT_TYPES = {
     "freeze",                  # Allerta gelata
 }
 
+# Le notifiche con priorità "urgent" (nubifragio, perdita d'acqua, valvola bloccata aperta...)
+# svegliano anche di notte, tranne queste che possono aspettare il mattino.
+URGENT_BUT_DEFERRABLE_AT_NIGHT = {"offline"}
+
+
+def wakes_at_night(alert_type: str, priority: str = "high") -> bool:
+    """True se la notifica suona anche durante il filtro notturno."""
+    return alert_type in EMERGENCY_ALERT_TYPES or (
+        priority == "urgent" and alert_type not in URGENT_BUT_DEFERRABLE_AT_NIGHT
+    )
+
+
 _DELIVERY_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="notify")
 
 
@@ -170,7 +182,7 @@ class NotificationService:
         is_test = force or alert_type.startswith("test") or (extra_data and (extra_data.get("is_test") == "true" or extra_data.get("scenario")))
         is_manual_action = alert_type in ("device_scheduled_action", "irrigation_manual_start", "irrigation_manual_stop")
 
-        if not is_test and not is_manual_action and settings.is_in_quiet_hours() and alert_type not in EMERGENCY_ALERT_TYPES:
+        if not is_test and not is_manual_action and settings.is_in_quiet_hours() and not wakes_at_night(alert_type, priority):
             logger.info(f"[QUIET-HOURS] Notifica push silenziata per orario notturno ({settings.QUIET_HOURS_START}:00-{settings.QUIET_HOURS_END}:00): [{alert_type}] {title}")
             with self._deferred_lock:
                 self._deferred.append({"alert_type": alert_type, "title": title})

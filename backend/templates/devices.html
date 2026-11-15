@@ -2014,16 +2014,15 @@ function renderTvDetail(dev) {
     }
 
     if (isOn) {
+        html += renderTvRemote(rawId);
         html += `
         <div class="tv-panel">
             <div class="tv-volume">
                 <span class="tv-label">🔊 Volume <b id="tv-vol-val">${vol ?? '--'}%</b>${dev.is_muted ? ' <span class="tv-muted">muto</span>' : ''}</span>
                 <div class="tv-volume-row">
-                    <button type="button" class="btn btn-outline tv-btn" onclick="tvService('${rawId}', 'volume_down')" aria-label="Abbassa volume">−</button>
                     <input type="range" min="0" max="100" step="1" value="${vol ?? 0}" class="tv-vol-slider" aria-label="Volume"
                            oninput="document.getElementById('tv-vol-val').textContent=this.value+'%'"
                            onchange="tvService('${rawId}', 'volume_set', {volume_level: this.value/100})">
-                    <button type="button" class="btn btn-outline tv-btn" onclick="tvService('${rawId}', 'volume_up')" aria-label="Alza volume">+</button>
                     <button type="button" class="btn btn-outline tv-btn ${dev.is_muted ? 'active' : ''}" onclick="tvService('${rawId}', 'volume_mute', {is_volume_muted: ${dev.is_muted ? 'false' : 'true'}})" aria-label="Muto">${dev.is_muted ? '🔇' : '🔈'}</button>
                 </div>
             </div>
@@ -2045,6 +2044,82 @@ function renderTvDetail(dev) {
         </div>`;
     }
     return html;
+}
+
+// Telecomando LG webOS: frecce, OK, Indietro/Home, volume, canali e tastierino numerico.
+// I tasti partono subito (senza ricaricare la finestra) e vibrano leggermente sul telefono.
+let tvKeypadOpen = false;
+
+function renderTvRemote(rawId) {
+    const k = (button, label, extra = '', cls = '') =>
+        `<button type="button" class="tv-key ${cls}" data-tv-key="${button}" onclick="tvKey(this, '${rawId}', '${button}')" aria-label="${label}" title="${label}" ${extra}>`;
+    const arrow = d => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+    const digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+    return `
+        <div class="tv-remote">
+            <div class="tv-remote-top">
+                ${k('BACK', 'Indietro')}<span>↩︎</span><small>Indietro</small></button>
+                ${k('HOME', 'Home')}<span>⌂</span><small>Home</small></button>
+                ${k('MENU', 'Impostazioni TV')}<span>⚙</span><small>Menu</small></button>
+                ${k('EXIT', 'Esci')}<span>✕</span><small>Esci</small></button>
+            </div>
+            <div class="tv-dpad" role="group" aria-label="Frecce">
+                ${k('UP', 'Su', '', 'dpad-up')}${arrow('M6 15l6-6 6 6')}</button>
+                ${k('LEFT', 'Sinistra', '', 'dpad-left')}${arrow('M15 6l-6 6 6 6')}</button>
+                ${k('ENTER', 'OK', '', 'dpad-ok')}OK</button>
+                ${k('RIGHT', 'Destra', '', 'dpad-right')}${arrow('M9 6l6 6-6 6')}</button>
+                ${k('DOWN', 'Giù', '', 'dpad-down')}${arrow('M6 9l6 6 6-6')}</button>
+            </div>
+            <div class="tv-rockers">
+                <div class="tv-rocker">
+                    ${k('VOLUMEUP', 'Alza volume')}+</button>
+                    <span class="tv-rocker-label">VOL</span>
+                    ${k('VOLUMEDOWN', 'Abbassa volume')}−</button>
+                </div>
+                <div class="tv-rocker-mid">
+                    ${k('MUTE', 'Muto', '', 'tv-key-round')}🔇</button>
+                    <button type="button" class="tv-key tv-key-round ${tvKeypadOpen ? 'active' : ''}" onclick="toggleTvKeypad(this)" aria-expanded="${tvKeypadOpen}" aria-label="Tastierino numerico" title="Tastierino numerico">123</button>
+                </div>
+                <div class="tv-rocker">
+                    ${k('CHANNELUP', 'Canale successivo')}+</button>
+                    <span class="tv-rocker-label">CH</span>
+                    ${k('CHANNELDOWN', 'Canale precedente')}−</button>
+                </div>
+            </div>
+            <div class="tv-keypad" id="tv-keypad" ${tvKeypadOpen ? '' : 'hidden'}>
+                ${digits.map(d => `${k(d, 'Tasto ' + d)}${d}</button>`).join('')}
+                ${k('INFO', 'Informazioni')}ℹ︎</button>
+                ${k('0', 'Tasto 0')}0</button>
+                ${k('GUIDE', 'Guida TV')}<small>Guida</small></button>
+            </div>
+        </div>`;
+}
+
+function toggleTvKeypad(btn) {
+    tvKeypadOpen = !tvKeypadOpen;
+    const pad = document.getElementById('tv-keypad');
+    if (pad) pad.hidden = !tvKeypadOpen;
+    btn.classList.toggle('active', tvKeypadOpen);
+    btn.setAttribute('aria-expanded', String(tvKeypadOpen));
+}
+
+async function tvKey(btn, rawId, button) {
+    if (navigator.vibrate) navigator.vibrate(12);
+    btn.classList.add('is-pressed');
+    setTimeout(() => btn.classList.remove('is-pressed'), 180);
+    try {
+        const resp = await fetch('/api/homeassistant/tv/button', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ entity_id: rawId, button })
+        });
+        const res = await resp.json().catch(() => ({}));
+        if (!resp.ok || res.success === false) {
+            showToast(res.error || 'La TV non ha ricevuto il tasto', 'danger');
+        }
+    } catch (e) {
+        showToast('Errore di comunicazione: ' + (e.message || e), 'danger');
+    }
 }
 
 // Accende/spegne la TV e ricontrolla lo stato mentre si avvia o si spegne

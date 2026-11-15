@@ -10,6 +10,7 @@ from backend.config import settings
 from backend.alert_engine import engine
 from backend.notifier import notifier
 from backend.thinq_service import thinq_service
+from backend.homeassistant.media import is_full_tv
 from backend.database import (
     get_climate_automations_config, save_climate_automations_config,
     get_irrigation_automations_config, save_irrigation_automations_config,
@@ -814,6 +815,32 @@ HASS_SERVICE_DATA_KEYS = {
     "volume_level", "is_volume_muted", "source",
 }
 _HASS_ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
+
+# Tasti del telecomando LG webOS (servizio webostv.button di Home Assistant)
+TV_REMOTE_BUTTONS = {
+    "UP", "DOWN", "LEFT", "RIGHT", "ENTER", "BACK", "HOME", "MENU", "EXIT", "INFO", "GUIDE",
+    "CHANNELUP", "CHANNELDOWN", "VOLUMEUP", "VOLUMEDOWN", "MUTE", "PLAY", "PAUSE",
+    "RED", "GREEN", "YELLOW", "BLUE", "DASH", "ASTERISK", "CC",
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+}
+
+@router.post("/api/homeassistant/tv/button")
+async def api_tv_remote_button(request: Request):
+    """Invia un tasto del telecomando a una TV LG webOS: {"entity_id": "media_player.x", "button": "UP"}."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    entity_id = str(body.get("entity_id") or "").strip()
+    button = str(body.get("button") or "").strip().upper()
+    if button not in TV_REMOTE_BUTTONS:
+        return JSONResponse({"success": False, "error": "Tasto non valido"}, status_code=400)
+    if not _HASS_ENTITY_RE.match(entity_id) or not entity_id.startswith("media_player."):
+        return JSONResponse({"success": False, "error": "entity_id non valido"}, status_code=400)
+    state = (homeassistant_service.entities or {}).get(entity_id)
+    if state is not None and not is_full_tv(state):
+        return JSONResponse({"success": False, "error": "Questa TV non supporta il telecomando da Home Assistant"}, status_code=400)
+    return await homeassistant_service.call_service("webostv", "button", entity_id, {"button": button}, refresh=False)
 
 @router.post("/api/homeassistant/service")
 async def api_homeassistant_call_service(request: Request):

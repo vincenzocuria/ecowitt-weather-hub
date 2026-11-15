@@ -126,8 +126,9 @@ class HomeAssistantService:
         return self._catalog_helper.get_catalog_devices(self.client.entities, self.enabled)
 
     # Controllo comandi
-    async def call_service(self, domain: str, service: str, entity_id: Optional[str] = None, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return await self.client.call_service(domain, service, entity_id, data)
+    async def call_service(self, domain: str, service: str, entity_id: Optional[str] = None,
+                           data: Optional[Dict[str, Any]] = None, refresh: bool = True) -> Dict[str, Any]:
+        return await self.client.call_service(domain, service, entity_id, data, refresh=refresh)
 
     async def request_mobile_sensor_update(self) -> List[str]:
         """Invia un comando silenzioso di aggiornamento sensori ai dispositivi mobili noti (S26, Galaxy Watch)."""

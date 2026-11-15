@@ -4,15 +4,15 @@
 <!-- HEADER CARD -->
 <div class="header-card">
     <div class="header-title">
-        <h1>⚙️ Impostazioni & Centro di Controllo</h1>
-        <p>Configura notifiche push, catalogo allarmi, sensori extra, domotica Smart Life e manutenzione del sistema.</p>
+        <h1>⚙️ Impostazioni</h1>
+        <p class="settings-header-sub">Notifiche, allarmi, nomi dei sensori, dispositivi di casa e manutenzione.</p>
     </div>
-    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+    <div class="settings-header-actions">
         <a href="/api/system/backup" class="btn btn-gold" style="padding: 0.6rem 1.15rem; text-decoration: none;" download title="Scarica una copia di backup dell'intero database SQLite">
-            💾 Scarica Backup DB
+            💾 Backup
         </a>
         <a href="/alerts-page" class="btn btn-outline" style="padding: 0.6rem 1.15rem; text-decoration: none;" title="Vai al registro storico delle notifiche">
-            🔔 Registro Notifiche
+            🔔 Registro notifiche
         </a>
     </div>
 </div>
@@ -36,7 +36,7 @@
     </button>
     <button type="button" class="settings-tab-btn" data-tab="tuya" onclick="switchSettingsTab('tuya', this)" role="tab" aria-selected="false">
         <span class="settings-tab-icon">🔌</span>
-        <span>Smart Life & Tuya</span>
+        <span>Dispositivi</span>
         {% if tuya_summary and tuya_summary.enabled_devices_count %}
         <span class="settings-tab-badge badge-tuya">{{ tuya_summary.enabled_devices_count }}</span>
         {% endif %}
@@ -51,7 +51,7 @@
     <button type="button" class="settings-tab-btn" data-tab="homeassistant" onclick="switchSettingsTab('homeassistant', this)" role="tab" aria-selected="false">
         <span class="settings-tab-icon">🏠</span>
         <span>Home Assistant</span>
-        <span class="settings-tab-badge" style="background: rgba(34, 197, 94, 0.25); color: #4ade80;">LAN ⚡</span>
+        <span class="settings-tab-badge tab-badge-optional" style="background: rgba(34, 197, 94, 0.25); color: #4ade80;">LAN ⚡</span>
     </button>
     <button type="button" class="settings-tab-btn" data-tab="database" onclick="switchSettingsTab('database', this)" role="tab" aria-selected="false">
         <span class="settings-tab-icon">🗄️</span>
@@ -59,7 +59,7 @@
     </button>
     <button type="button" class="settings-tab-btn" data-tab="system" onclick="switchSettingsTab('system', this)" role="tab" aria-selected="false">
         <span class="settings-tab-icon">📡</span>
-        <span>Diagnostica & Sistema</span>
+        <span>Diagnostica</span>
     </button>
 </div>
 
@@ -125,49 +125,39 @@
         </div>
     </div>
 
-    <!-- SEZIONE MODALITÀ NON DISTURBARE NOTTURNO (QUIET HOURS) -->
-    <div class="card" style="margin-top: 1.5rem; border: 1px solid rgba(168, 85, 247, 0.35); background: linear-gradient(145deg, rgba(168, 85, 247, 0.06), var(--card-bg));">
-        <div class="card-header" style="border-bottom: 1px solid rgba(168, 85, 247, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between;">
+    <!-- FILTRO NOTTURNO: generato da alert_catalog (orari e regole reali) -->
+    <div class="card quiet-card">
+        <div class="card-header quiet-card-header">
             <div style="display: flex; align-items: center; gap: 10px;">
                 <span style="font-size: 1.25rem;">🌙</span>
-                <strong>Filtro Notturno Intelligente (Quiet Hours 23:00 - 07:00)</strong>
+                <strong>Filtro notturno {{ quiet_hours.start }}–{{ quiet_hours.end }}</strong>
             </div>
-            <span class="status-pill" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3);">
-                Attivo • Nessun Disturbo Notturno
-            </span>
+            {% if quiet_hours.enabled %}
+            <span class="status-pill quiet-pill">Attivo</span>
+            {% else %}
+            <span class="status-pill quiet-pill quiet-pill-off">Disattivato</span>
+            {% endif %}
         </div>
         <div style="display: flex; flex-direction: column; gap: 1rem; padding: 0.75rem 0;">
-            <p style="color: var(--text); font-size: 0.92rem; line-height: 1.55; margin: 0;">
-                Per proteggere il tuo sonno ed evitare notifiche rumorose nel cuore della notte, il sistema applica una distinzione automatica intelligente tra emergenze reali ed eventi ordinari:
+            <p class="quiet-intro">
+                {% if quiet_hours.enabled %}
+                Di notte suonano solo le emergenze. Gli altri avvisi restano nel registro e arrivano in un unico riepilogo alle {{ quiet_hours.end }}.
+                {% else %}
+                Il filtro è disattivato (QUIET_HOURS_ENABLED=false): tutte le notifiche suonano anche di notte.
+                {% endif %}
             </p>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
-                <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 10px; padding: 0.85rem;">
-                    <div style="color: #f87171; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 6px;">
-                        🚨 Emergenze Reali (Svegliano SEMPRE):
-                    </div>
-                    <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.84rem; color: var(--text-dim); line-height: 1.5;">
-                        <li><strong>Allagamento:</strong> sensori perdite d'acqua</li>
-                        <li><strong>Sovraccarico Rete:</strong> prelievo ≥ 4.9 kW (anti-blackout)</li>
-                        <li><strong>Grandine & Nubifragio:</strong> pioggia estrema ≥ 25 mm/h</li>
-                        <li><strong>Burrasca Violenta:</strong> crollo barometrico rapido</li>
-                        <li><strong>Fulmini Vicini:</strong> scariche entro 30 km</li>
-                        <li><strong>Protezione Civile:</strong> codici Arancione o Rosso</li>
+            <div class="quiet-grid">
+                <div class="quiet-box quiet-box-wake">
+                    <div class="quiet-box-title">🚨 Ti svegliano sempre</div>
+                    <ul>
+                        {% for g in alert_catalog %}{% for a in g['items'] if a.wakes_at_night %}
+                        <li><strong>{{ a.title }}</strong>: {{ a.condition }}</li>
+                        {% endfor %}{% endfor %}
                     </ul>
                 </div>
-                <div style="background: rgba(100, 116, 139, 0.1); border: 1px solid rgba(100, 116, 139, 0.2); border-radius: 10px; padding: 0.85rem;">
-                    <div style="color: #94a3b8; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 6px;">
-                        💤 Eventi Ordinari (Silenziati di Notte):
-                    </div>
-                    <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.84rem; color: var(--text-dim); line-height: 1.5;">
-                        <li><strong>Batteria Aton:</strong> esaurimento carica al 15% alle 03:00</li>
-                        <li><strong>Terreno Secco:</strong> promemoria annaffiatura WH51</li>
-                        <li><strong>Pile Sensori:</strong> avviso batterie scariche</li>
-                        <li><strong>Previsione Pioggia:</strong> modelli pioggia oraria debole</li>
-                        <li><strong>Consumo Generico:</strong> assorbimenti elettrodomestici</li>
-                    </ul>
-                    <div style="font-size: 0.76rem; color: #a855f7; margin-top: 0.4rem;">
-                        * Registrati nel DB e riassunti alle ore 08:00 nel "Buongiorno Meteo".
-                    </div>
+                <div class="quiet-box quiet-box-silent">
+                    <div class="quiet-box-title">💤 Silenziati di notte</div>
+                    <p>Tutti gli altri allarmi del catalogo (pioggia in arrivo, terreno secco, pile scariche, clima, lavatrice…). Anche "Stazione offline" aspetta il mattino.</p>
                 </div>
             </div>
         </div>
@@ -207,11 +197,11 @@
             <div style="display: flex; align-items: center; gap: 8px;">
                 <span style="font-size: 1.25rem;">📋</span>
                 <div>
-                    <strong>Catalogo Allarmi & Soglie di Scatto del Sistema</strong>
-                    <div style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Tutte le condizioni meteorologiche monitorate in background con protezione anti-spam debounced</div>
+                    <strong>Catalogo allarmi e soglie</strong>
+                    <div style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Quando scatta ogni avviso, con quale priorità e se suona di notte. Le soglie sono quelle configurate sul server.</div>
                 </div>
             </div>
-            <span class="sub-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--accent);">16 Regole Attive</span>
+            <span class="sub-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--accent);">{{ alert_catalog_count }} allarmi</span>
         </div>
 
         <!-- BARRA DI RICERCA REGOLE -->
@@ -233,119 +223,28 @@
         </div>
 
         <div class="table-responsive" style="width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;">
-            <table class="weather-table" id="alarms-rules-table" style="min-width: 520px;">
+            <table class="weather-table alarms-table" id="alarms-rules-table">
                 <thead>
                     <tr>
-                        <th style="width: 250px;">Evento Allarme</th>
-                        <th style="width: 60px; text-align: center;">Icona</th>
-                        <th>Condizione di Scatto Automatica</th>
-                        <th style="width: 110px;">Priorità</th>
+                        <th>Allarme</th>
+                        <th>Quando scatta</th>
+                        <th>Priorità</th>
+                        <th title="Suona anche durante il filtro notturno">Di notte</th>
                     </tr>
                 </thead>
-                <tbody>
+                {% for g in alert_catalog %}
+                <tbody class="alarm-group">
+                    <tr class="alarm-group-row"><th colspan="4">{{ g.name }}</th></tr>
+                    {% for a in g['items'] %}
                     <tr class="alarm-rule-row">
-                        <td><strong>🛡️ Allerta Protezione Civile</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🛡️</span></td>
-                        <td>Bollettino di Criticità DPC/ARPACAL con Codice Giallo, Arancione o Rosso per la zona locale</td>
-                        <td><span class="badge-tag urgent">Urgente</span></td>
+                        <td data-label="Allarme"><strong>{{ a.icon }} {{ a.title }}</strong></td>
+                        <td data-label="Quando scatta">{{ a.condition }}</td>
+                        <td data-label="Priorità"><span class="alarm-prio prio-{{ a.priority }}">{{ a.priority_label }}</span></td>
+                        <td data-label="Di notte">{% if not quiet_hours.enabled or a.wakes_at_night %}🔔 Suona{% else %}💤 Al mattino{% endif %}</td>
                     </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>⚡ Temporale / Fulmini</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">⚡</span></td>
-                        <td>Fulmine rilevato a meno di 30 km dalla stazione</td>
-                        <td><span class="badge-tag urgent">Alta</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>⚠️ Burrasca / Crollo Pressione</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">⚠️ ↘️</span></td>
-                        <td>Calo barometrico ≥ 2.0 hPa in 3 ore (forte peggioramento)</td>
-                        <td><span class="badge-tag urgent">Urgente</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>🌧️ Nubifragio / Bomba d'Acqua</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌧️</span></td>
-                        <td>Intensità di pioggia estrema ≥ 25.0 mm/h</td>
-                        <td><span class="badge-tag urgent">Urgente</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>☔ Pioggia Prevista a Breve</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">☔</span></td>
-                        <td>Previsione oraria Open-Meteo: probabilità pioggia ≥ 60% o ≥ 0.5 mm nelle prossime 1-2 ore</td>
-                        <td><span class="badge-tag">Normale</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>🌧️ Ha Iniziato a Piovere</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌧️💧</span></td>
-                        <td>Rilevamento prime gocce / inizio precipitazioni dalla stazione</td>
-                        <td><span class="badge-tag urgent">Alta</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>🌧️ Pioggia Intensa</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌧️</span></td>
-                        <td>Rovescio moderato/forte ≥ 5.0 mm/h</td>
-                        <td><span class="badge-tag">Normale</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>💨 Raffica di Vento Anomala</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">💨</span></td>
-                        <td>Raffica improvvisa (Wind Spike) ≥ 45.0 km/h</td>
-                        <td><span class="badge-tag urgent">Alta</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>❄️ Allerta Gelo</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">❄️</span></td>
-                        <td>Temperatura scesa a ≤ 1.0°C (rischio ghiaccio/piante)</td>
-                        <td><span class="badge-tag urgent">Alta</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>🔥 Caldo Estremo</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🔥</span></td>
-                        <td>Temperatura salita a ≥ 38.0°C</td>
-                        <td><span class="badge-tag">Normale</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>🌡️ Sbalzo Termico Repentino</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌡️</span></td>
-                        <td>Crollo o impennata anomala ≥ 5.5°C in 1h (con filtro intelligente ciclo solare alba/tramonto)</td>
-                        <td><span class="badge-tag">Normale</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>☀️ Indice UV Pericoloso</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">☀️</span></td>
-                        <td>Indice UV ≥ 8 (rischio scottature in pochi minuti)</td>
-                        <td><span class="badge-tag">Normale</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>🌱 Terreno Secco</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🌱</span></td>
-                        <td>Umidità suolo sensore WH51 ≤ 25.0% (promemoria annaffiatura)</td>
-                        <td><span class="badge-tag">Normale</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>🏆 Record Storico Infranto</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🏆</span></td>
-                        <td>Battuto un nuovo record assoluto significativo (Temp ≥0.5°C, Raffica ≥5 km/h)</td>
-                        <td><span class="badge-tag urgent">Alta</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>☕ Buongiorno Meteo</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">☕</span></td>
-                        <td>Ogni giorno alle 08:00 (Previsione, Minima, Sole, Asciugatura bucato)</td>
-                        <td><span class="badge-tag">Digest</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>🔴 Stazione Offline / Riconnessa</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">📡</span></td>
-                        <td>Watchdog: assenza segnale per oltre 10 minuti</td>
-                        <td><span class="badge-tag urgent">Urgente</span></td>
-                    </tr>
-                    <tr class="alarm-rule-row">
-                        <td><strong>🪫 Batteria Sensori Bassa</strong></td>
-                        <td style="text-align: center;"><span style="font-size: 1.2rem;">🪫</span></td>
-                        <td>Pile sensori in esaurimento (WH65 7-in-1, WH57, WH51, WH31)</td>
-                        <td><span class="badge-tag urgent">Alta</span></td>
-                    </tr>
+                    {% endfor %}
                 </tbody>
+                {% endfor %}
             </table>
         </div>
     </div>
@@ -1044,7 +943,7 @@
                 <div class="item-list">
                     <div class="item"><span>Climatizzazione Smart:</span> <strong>{% if thinq_enabled %}🟢 LG ThinQ Attivo{% else %}⚪ LG ThinQ Disattivato{% endif %}</strong></div>
                     <div class="item"><span>Domotica Elettrodomestici:</span> <strong>{% if smartthings_enabled %}🟢 Samsung SmartThings Attivo{% else %}⚪ SmartThings Disattivato{% endif %}</strong></div>
-                    <div class="item"><span>Modelli Previsionali:</span> <strong>ECMWF IFS 9km / ICON-EU</strong></div>
+                    <div class="item"><span>Modelli Previsionali:</span> <strong>{{ forecast_models_label }}</strong></div>
                 </div>
             </div>
             <div style="display: flex; gap: 0.6rem; margin-top: 1rem; flex-wrap: wrap;">
@@ -1137,6 +1036,53 @@
     background: rgba(168, 85, 247, 0.25);
     color: #c084fc;
 }
+.settings-header-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.quiet-card { margin-top: 1.5rem; border: 1px solid rgba(168, 85, 247, 0.35); background: linear-gradient(145deg, rgba(168, 85, 247, 0.06), var(--card-bg)); }
+.quiet-card-header { border-bottom: 1px solid rgba(168, 85, 247, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; }
+.quiet-pill { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+.quiet-pill-off { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border-color: rgba(148, 163, 184, 0.3); }
+.quiet-intro { color: var(--text); font-size: 0.92rem; line-height: 1.55; margin: 0; }
+.quiet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+.quiet-box { border-radius: 10px; padding: 0.85rem; font-size: 0.84rem; color: var(--text-dim); line-height: 1.5; }
+.quiet-box ul { margin: 0; padding-left: 1.2rem; }
+.quiet-box p { margin: 0; }
+.quiet-box-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 0.4rem; }
+.quiet-box-wake { background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); }
+.quiet-box-wake .quiet-box-title { color: #f87171; }
+.quiet-box-silent { background: rgba(100, 116, 139, 0.1); border: 1px solid rgba(100, 116, 139, 0.2); }
+.quiet-box-silent .quiet-box-title { color: #94a3b8; }
+
+.alarms-table { width: 100%; }
+.alarms-table .alarm-group-row th {
+    text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--accent); padding-top: 1rem; background: transparent;
+}
+.alarm-prio { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; white-space: nowrap; }
+.prio-urgent { background: rgba(239, 68, 68, 0.18); color: #f87171; }
+.prio-high { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
+.prio-normal { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
+.prio-low { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
+
+@media (max-width: 640px) {
+    .header-card .header-title h1 { font-size: 1.35rem; }
+    .settings-header-sub { font-size: 0.82rem; }
+    .settings-header-actions .btn { padding: 0.45rem 0.8rem !important; font-size: 0.82rem; }
+    /* Tutte le 8 schede visibili: due colonne invece della barra a scorrimento */
+    .settings-tab-bar { display: grid; grid-template-columns: 1fr 1fr; overflow: visible; gap: 4px; }
+    .settings-tab-btn { justify-content: flex-start; padding: 0.55rem 0.6rem; font-size: 0.8rem; gap: 5px; min-width: 0; }
+    .settings-tab-btn > span:not(.settings-tab-icon):not(.settings-tab-badge) { overflow: hidden; text-overflow: ellipsis; }
+    .settings-tab-badge { margin-left: auto; font-size: 0.66rem; padding: 1px 5px; }
+    .tab-badge-optional { display: none; }
+    /* Tabella allarmi come elenco di schede */
+    .alarms-table, .alarms-table tbody, .alarms-table tr, .alarms-table td { display: block; width: 100%; }
+    .alarms-table thead { display: none; }
+    .alarms-table .alarm-group-row { display: block; }
+    .alarms-table .alarm-group-row th { display: block; padding: 0.9rem 0.2rem 0.3rem; }
+    .alarms-table .alarm-rule-row { border: 1px solid var(--card-border); border-radius: 10px; padding: 0.55rem 0.7rem; margin-bottom: 0.5rem; }
+    .alarms-table td { border: none !important; padding: 0.12rem 0 !important; font-size: 0.84rem; }
+    .alarms-table td[data-label="Priorità"], .alarms-table td[data-label="Di notte"] { display: inline-block; width: auto; margin-right: 0.6rem; font-size: 0.78rem; }
+}
+
 .settings-tab-pane {
     display: none;
     animation: fadeInTab 0.22s ease-in-out;
@@ -1493,6 +1439,12 @@ function filterAlarmsTable(query) {
     rows.forEach(r => {
         const text = r.textContent.toLowerCase();
         r.style.display = (!q || text.includes(q)) ? '' : 'none';
+    });
+    // Nasconde il titolo di un gruppo senza risultati
+    document.querySelectorAll('#alarms-rules-table .alarm-group').forEach(g => {
+        const any = [...g.querySelectorAll('.alarm-rule-row')].some(r => r.style.display !== 'none');
+        const head = g.querySelector('.alarm-group-row');
+        if (head) head.style.display = any ? '' : 'none';
     });
 }
 

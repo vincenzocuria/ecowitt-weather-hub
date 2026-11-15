@@ -17,6 +17,7 @@ from backend.civil_protection_service import civil_protection_service
 from backend.aton_service import aton_service
 from backend.thinq_service import thinq_service
 from backend.homeassistant_service import homeassistant_service
+from backend.alert_catalog import build_alert_catalog, quiet_hours_info
 from backend.database import (
     get_latest_reading, get_station_status, get_pressure_trend, get_device_favorites,
     get_all_records, get_records_history, get_today_extremes,
@@ -56,6 +57,9 @@ templates.env.filters["localdt"] = lambda v, fmt="%d/%m/%Y %H:%M:%S": to_local_d
 templates.env.filters["local_dt"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M:%S")
 templates.env.filters["local_dt_short"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M")
 templates.env.filters["local_date"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y")
+# Versione unica di CSS/JS per tutte le pagine (base, login, kiosk): cambiarla forza il ricaricamento
+ASSET_VERSION = "6.0"
+templates.env.globals["asset_version"] = ASSET_VERSION
 templates.env.filters["local_time"] = lambda val: to_local_datetime_str(val, "%H:%M")
 templates.env.filters["duration_it"] = lambda val: format_duration_italian(val) if val is not None else "--"
 templates.env.filters["lightning_time_it"] = lambda val: format_lightning_time_italian(val)
@@ -327,12 +331,11 @@ def radar_page(request: Request):
 def kiosk_page(request: Request):
     latest = get_latest_reading() or {}
     analytics = build_analytics_context(latest)
-    forecast_data = forecast_service.fetch_open_meteo()
+    forecast_data = forecast_service.apply_station_observation(forecast_service.fetch_open_meteo(), latest)
     pressure_trend = latest.get("pressure_trend") or get_pressure_trend(latest.get("pressure_rel_hpa"))
     apparent_temp = latest.get("apparent_temp_c") or calc_apparent_temp(latest.get("temp_c"), latest.get("humidity"), latest.get("wind_speed_kmh"))
-    energy_latest = aton_service.latest_data or get_latest_energy() or {}
-    status_info = get_station_status()
     today_ext = analytics.get("today_extremes") or get_today_extremes()
+    kiosk_wind = wind_name(latest.get("wind_dir_deg"), latest.get("wind_speed_kmh")) if latest else None
 
     return templates.TemplateResponse(
         request=request,
@@ -348,8 +351,7 @@ def kiosk_page(request: Request):
             "analytics": analytics,
             "today_extremes": today_ext,
             "forecast": forecast_data,
-            "energy_latest": energy_latest,
-            "status_info": status_info,
+            "wind_name": (kiosk_wind or {}).get("name") if isinstance(kiosk_wind, dict) else kiosk_wind,
             "lat": settings.LATITUDE,
             "lon": settings.LONGITUDE
         }
@@ -537,6 +539,13 @@ def more_page(request: Request):
         }
     )
 
+def forecast_models_label() -> str:
+    """Nomi leggibili dei modelli di previsione configurati (es. "DWD ICON + ECMWF IFS 0,25°")."""
+    from backend.forecast_service import MODEL_LABELS
+    models = [m.strip() for m in str(getattr(settings, "FORECAST_MODELS", "") or "").split(",") if m.strip()]
+    return " + ".join(MODEL_LABELS.get(m, m) for m in models) or "Open-Meteo"
+
+
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
     latest = get_latest_reading() or {}
@@ -555,6 +564,7 @@ def settings_page(request: Request):
     climate_cfg = get_climate_automations_config()
     climate_devs = thinq_service.get_cached_devices() if settings.LG_THINQ_ENABLED else []
     tuya_local_devs = get_tuya_local_devices()
+    alert_catalog = build_alert_catalog()
     return templates.TemplateResponse(
         request=request,
         name="settings.html",
@@ -580,6 +590,10 @@ def settings_page(request: Request):
             "sensor_aliases": aliases,
             "detected_sensors": detected_sensors,
             "db_stats": get_database_stats(),
-            "ntfy_topic": settings.NTFY_TOPIC
+            "ntfy_topic": settings.NTFY_TOPIC,
+            "alert_catalog": alert_catalog,
+            "alert_catalog_count": sum(len(g["items"]) for g in alert_catalog),
+            "quiet_hours": quiet_hours_info(),
+            "forecast_models_label": forecast_models_label(),
         }
     )

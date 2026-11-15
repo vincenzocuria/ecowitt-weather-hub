@@ -467,7 +467,11 @@ class TestEcowittHub(unittest.TestCase):
 
         res_set = client.get("/settings")
         self.assertEqual(res_set.status_code, 200)
-        self.assertIn("Impostazioni & Centro di Controllo", res_set.text)
+        self.assertIn("⚙️ Impostazioni</h1>", res_set.text)
+        self.assertNotIn("16 Regole Attive", res_set.text)
+        self.assertIn("Filtro notturno 23:00–07:00", res_set.text)
+        self.assertIn("Nubifragio in corso", res_set.text)
+        self.assertNotIn("ECMWF IFS 9km", res_set.text)
         self.assertIn("Database SQLite", res_set.text)
         self.assertIn("Personalizzazione Nomi Sensori", res_set.text)
         self.assertIn("Notifiche Push", res_set.text)
@@ -2414,6 +2418,39 @@ class TestHourlyForecast(unittest.TestCase):
             res = fs.fetch_air_quality(force=True)
         self.assertEqual(res["source"], "Stima Locale")
 
+
+    def test_night_rules_and_kiosk(self):
+        from backend.notifier import wakes_at_night
+        self.assertTrue(wakes_at_night("rain", "urgent"))       # nubifragio: sveglia
+        self.assertFalse(wakes_at_night("rain", "normal"))      # pioggia intensa: al mattino
+        self.assertFalse(wakes_at_night("offline", "urgent"))   # stazione offline: al mattino
+        self.assertTrue(wakes_at_night("freeze", "high"))
+        from backend.alert_catalog import build_alert_catalog
+        keys = [a["key"] for g in build_alert_catalog() for a in g["items"]]
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertIn("fridge_door_open", keys)
+        from backend.main import app
+        from fastapi.testclient import TestClient
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+        page = client.get("/kiosk")
+        self.assertEqual(page.status_code, 200)
+        self.assertNotIn("temp_min.val", page.text)
+        self.assertIn('id="kiosk-next-hours"', page.text)
+        self.assertIn("style.css?v=", page.text)
+
+    def test_tv_remote_button_endpoint(self):
+        from unittest.mock import AsyncMock, patch
+        from backend.main import app
+        from backend.homeassistant_service import homeassistant_service
+        from fastapi.testclient import TestClient
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+        url = "/api/homeassistant/tv/button"
+        self.assertEqual(client.post(url, json={"entity_id": "media_player.tv", "button": "REBOOT"}).status_code, 400)
+        self.assertEqual(client.post(url, json={"entity_id": "switch.presa", "button": "UP"}).status_code, 400)
+        with patch.object(homeassistant_service, "call_service", new=AsyncMock(return_value={"success": True})) as m:
+            r = client.post(url, json={"entity_id": "media_player.soggiorno_tv", "button": "up"})
+            self.assertEqual(r.status_code, 200)
+            m.assert_awaited_once_with("webostv", "button", "media_player.soggiorno_tv", {"button": "UP"}, refresh=False)
 
     def test_device_favorites_and_casa_page(self):
         from backend.main import app
