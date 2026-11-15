@@ -522,7 +522,8 @@ class ForecastService:
         parts = []
         if spells:
             s0 = spells[0]
-            more = f" e altre {len(spells) - 1} fasce" if len(spells) > 1 else ""
+            extra = len(spells) - 1
+            more = "" if extra == 0 else (" e un'altra fascia" if extra == 1 else f" e altre {extra} fasce")
             parts.append(f"{rain_intensity_label(max(s['max'] for s in spells)).capitalize()} tra le "
                          f"{s0['start']} e le {s0['end']}{more} (in tutto ~{rain_total} mm)")
         elif day.get("rain_prob_pct", 0) >= 30:
