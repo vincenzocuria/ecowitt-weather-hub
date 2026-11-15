@@ -76,6 +76,9 @@ class Settings:
 
     # Condizioni del mare (Open-Meteo Marine). Coordinate del punto di mare: di default la stazione,
     # Open-Meteo usa poi la cella di mare più vicina.
+    # Pulsante Home Assistant (es. integrazione Wake on LAN) che accende la TV; vuoto = ricerca automatica
+    HASS_TV_WAKE_BUTTON: str = os.getenv("HASS_TV_WAKE_BUTTON", "")
+
     MARINE_ENABLED: bool = os.getenv("MARINE_ENABLED", "true").lower() in ("true", "1", "yes")
     MARINE_LATITUDE: float = float(os.getenv("MARINE_LATITUDE", os.getenv("LATITUDE", "39.623928")))
     MARINE_LONGITUDE: float = float(os.getenv("MARINE_LONGITUDE", os.getenv("LONGITUDE", "16.504933")))

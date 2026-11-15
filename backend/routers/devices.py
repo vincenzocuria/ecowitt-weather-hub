@@ -786,10 +786,14 @@ HASS_SERVICE_ALLOWLIST = {
     "fan": ("turn_on", "turn_off", "set_percentage"),
     "cover": ("open_cover", "close_cover", "stop_cover", "set_cover_position"),
     "valve": ("open_valve", "close_valve"),
+    "media_player": ("turn_off", "turn_on", "volume_set", "volume_mute", "volume_up", "volume_down",
+                     "select_source", "media_play_pause", "media_next_track", "media_previous_track"),
+    "button": ("press",),
 }
 HASS_SERVICE_DATA_KEYS = {
     "temperature", "hvac_mode", "fan_mode", "swing_mode",
     "brightness", "brightness_pct", "position", "percentage",
+    "volume_level", "is_volume_muted", "source",
 }
 _HASS_ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 

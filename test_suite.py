@@ -2358,6 +2358,24 @@ class TestHourlyForecast(unittest.TestCase):
         self.assertEqual(out["station_wind"]["name"], "Maestrale")
         self.assertTrue(out["spark_line"].startswith("M0"))
 
+    def test_tv_media_players(self):
+        from backend.homeassistant.media import is_cast_duplicate, display_name, tv_fields, find_wake_button, supports_turn_on
+        webos = {"state": "playing", "attributes": {"friendly_name": "TV", "device_class": "tv", "source": "Netflix",
+                                                     "source_list": ["Netflix", "YouTube"], "volume_level": 0.14,
+                                                     "is_volume_muted": False, "supported_features": 24381}}
+        cast = {"state": "off", "attributes": {"friendly_name": "[LG] webOS TV OLED55G64LW", "supported_features": 152461}}
+        ents = {"media_player.soggiorno_tv": webos, "media_player.oled55g64lw_x": cast}
+        self.assertTrue(is_cast_duplicate("media_player.oled55g64lw_x", cast, ents))
+        self.assertFalse(is_cast_duplicate("media_player.soggiorno_tv", webos, ents))
+        self.assertFalse(is_cast_duplicate("media_player.oled55g64lw_x", cast, {"media_player.oled55g64lw_x": cast}))
+        self.assertEqual(display_name("media_player.soggiorno_tv", "TV"), "Soggiorno TV")
+        f = tv_fields("media_player.soggiorno_tv", webos, ents)
+        self.assertEqual((f["source"], f["volume_pct"], f["full_control"]), ("Netflix", 14, True))
+        self.assertFalse(supports_turn_on(webos))
+        self.assertFalse(f["can_turn_on"])
+        ents["button.accendi_tv_wol"] = {"state": "unknown", "attributes": {"friendly_name": "Accendi TV"}}
+        self.assertEqual(find_wake_button(ents), "button.accendi_tv_wol")
+
     def test_eaqi_scale_conversion(self):
         from backend.forecast_service import ForecastService
         self.assertEqual(ForecastService._eaqi_class(27), 2)

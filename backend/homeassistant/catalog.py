@@ -21,6 +21,7 @@ def ha_state_label(state) -> str:
     return _HA_STATE_LABELS.get(str(state).lower(), str(state).upper())
 
 
+from .media import is_cast_duplicate, is_full_tv, tv_fields, display_name as media_display_name, ON_STATES as MEDIA_ON_STATES
 from .parsers.appliances import parse_washer_data, parse_dishwasher_data, parse_fridge_data
 from .parsers.presence import parse_presence_data
 from .parsers.health import parse_health_data
@@ -265,8 +266,14 @@ class CatalogHelper:
             )):
                 continue
 
+            # TV LG già presente tramite "LG webOS TV": nasconde il doppione di Google Cast
+            if domain == "media_player" and is_cast_duplicate(entity_id, state_obj, entities):
+                continue
+
             attributes = state_obj.get("attributes", {})
             friendly_name = attributes.get("friendly_name") or entity_id
+            if domain == "media_player":
+                friendly_name = media_display_name(entity_id, friendly_name)
             state_str = (state_obj.get("state") or "").lower()
             is_online = state_str not in ("unavailable", "unknown")
 
@@ -390,11 +397,20 @@ class CatalogHelper:
                 cat_label = "Presa Smart"
                 status_text = f"Stato: {ha_state_label(state_obj.get('state'))}"
             elif domain == "media_player":
-                cat = "appliances"
-                is_on = state_str in ("on", "playing", "idle") if is_online else None
-                icon = "📺"
-                cat_label = "Smart TV / Media"
-                status_text = f"Stato: {ha_state_label(state_obj.get('state'))}"
+                cat = "media"
+                is_on = state_str in MEDIA_ON_STATES if is_online else None
+                full_tv = is_full_tv(state_obj)
+                is_tv_like = full_tv or dev_class == "tv" or "tv" in name_lower or "tv" in ent_lower
+                icon = "📺" if is_tv_like else "🔊"
+                cat_label = "Smart TV" if full_tv else ("TV (Google Cast)" if is_tv_like else "Speaker / Media")
+                extra_fields.update(tv_fields(entity_id, state_obj, entities))
+                if is_on and extra_fields.get("source"):
+                    vol = extra_fields.get("volume_pct")
+                    status_text = f"{extra_fields['source']}" + (f" • Vol {vol}%" if vol is not None else "")
+                    if extra_fields.get("is_muted"):
+                        status_text += " (muto)"
+                else:
+                    status_text = f"Stato: {ha_state_label(state_obj.get('state'))}"
             else:
                 cat = "generic"
                 is_on = state_str in ("on", "open") if is_online else None

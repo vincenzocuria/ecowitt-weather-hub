@@ -69,6 +69,9 @@
         <button class="filter-chip" data-filter="shutters">
             <span>🪟 Persiane & Tende</span>
         </button>
+        <button class="filter-chip" data-filter="media">
+            <span>📺 TV & Media</span>
+        </button>
         <button class="filter-chip" data-filter="appliances">
             <span>🫧 Elettrodomestici</span>
         </button>
@@ -176,6 +179,13 @@
                             </div>
                         {% elif dev.category == 'appliances' %}
                             <span class="metric-tag tag-info">{{ dev.status_text }}</span>
+                        {% elif dev.category == 'media' %}
+                            {% if dev.is_on and dev.source %}
+                                <span class="metric-tag tag-info">▶ {{ dev.source }}</span>
+                                {% if dev.volume_pct is number %}<span class="metric-tag tag-dim">{{ '🔇' if dev.is_muted else '🔊' }} {{ dev.volume_pct }}%</span>{% endif %}
+                            {% else %}
+                                <span class="metric-tag tag-dim">{{ dev.status_text }}</span>
+                            {% endif %}
                         {% elif dev.category == 'energy' %}
                             <span class="metric-tag tag-solar">☀️ {{ dev.solar_power_w|int }} W</span>
                             <span class="metric-tag tag-batt">🔋 {{ dev.battery_soc_pct|int }}%</span>
@@ -866,6 +876,11 @@ function getDeviceType(dev) {
         return 'climate';
     }
 
+    // 5b. Smart TV e media player
+    if (cat === 'media' || rawId.startsWith('media_player.')) {
+        return 'tv';
+    }
+
     // 6. Grandi Elettrodomestici (Lavatrice, Lavastoviglie, Asciugatrice)
     if (cat === 'appliances' || dev.id === 'hass_washer' || dev.id === 'hass_dishwasher' || rawId.includes('washer') || rawId.includes('dishwasher') || rawId.includes('lavatrice') || rawId.includes('lavastoviglie') || name.includes('lavatrice') || name.includes('lavastoviglie')) {
         return 'appliance';
@@ -950,6 +965,9 @@ function renderModalContent(deviceId) {
             break;
         case 'appliance':
             html = renderApplianceDetail(dev);
+            break;
+        case 'tv':
+            html = renderTvDetail(dev);
             break;
         case 'shutter':
             html = renderShutterDetail(dev);
@@ -1861,6 +1879,94 @@ function renderAtonDetail(dev) {
 }
 
 // 14. Fallback Generico Pulito
+// 14. Smart TV e media player (LG webOS, Google Cast, SmartThings)
+function tvEsc(str) {
+    return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Sorgenti mostrate per prime come scorciatoie (le altre restano nell'elenco completo)
+const TV_FAVORITE_SOURCES = ['Netflix', 'YouTube', 'Prime Video', 'Disney+', 'RaiPlay', 'NOW', 'Canali TV', 'HDMI 1', 'PS5 Console giochi', 'Spotify - Musica e podcast'];
+
+function renderTvDetail(dev) {
+    const isOn = dev.is_on === true;
+    const online = dev.is_online;
+    const rawId = tvEsc(dev.raw_id);
+    const vol = dev.volume_pct;
+    const sources = Array.isArray(dev.source_list) ? dev.source_list : [];
+    const favs = TV_FAVORITE_SOURCES.filter(s => sources.includes(s));
+    const powerBtn = !online ? '' : (isOn
+        ? `<button type="button" class="btn btn-danger" onclick="modalToggleDevice(this, 'homeassistant', '${rawId}', true)">⏻ Spegni</button>`
+        : (dev.can_turn_on
+            ? `<button type="button" class="btn btn-success" onclick="modalToggleDevice(this, 'homeassistant', '${rawId}', false)">⏻ Accendi</button>`
+            : `<span class="tv-hint">Per accenderla da qui serve il Wake on LAN in Home Assistant</span>`));
+
+    let html = `
+        <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
+            <div class="state-card-info">
+                <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
+                <span class="state-text">${!online ? 'Non raggiungibile' : (isOn ? `Accesa${dev.source ? ' • ' + tvEsc(dev.source) : ''}` : 'Spenta')}</span>
+            </div>
+            ${powerBtn}
+        </div>`;
+
+    if (!dev.full_control) {
+        html += `<p class="tv-hint" style="margin-top:1rem;">Questa voce arriva da ${tvEsc(dev.category_label || 'un\'integrazione')} di Home Assistant: mostra solo cosa si sta trasmettendo, senza controllo completo.</p>`;
+        return html;
+    }
+
+    if (isOn) {
+        html += `
+        <div class="tv-panel">
+            <div class="tv-volume">
+                <span class="tv-label">🔊 Volume <b id="tv-vol-val">${vol ?? '--'}%</b>${dev.is_muted ? ' <span class="tv-muted">muto</span>' : ''}</span>
+                <div class="tv-volume-row">
+                    <button type="button" class="btn btn-outline tv-btn" onclick="tvService('${rawId}', 'volume_down')" aria-label="Abbassa volume">−</button>
+                    <input type="range" min="0" max="100" step="1" value="${vol ?? 0}" class="tv-vol-slider" aria-label="Volume"
+                           oninput="document.getElementById('tv-vol-val').textContent=this.value+'%'"
+                           onchange="tvService('${rawId}', 'volume_set', {volume_level: this.value/100})">
+                    <button type="button" class="btn btn-outline tv-btn" onclick="tvService('${rawId}', 'volume_up')" aria-label="Alza volume">+</button>
+                    <button type="button" class="btn btn-outline tv-btn ${dev.is_muted ? 'active' : ''}" onclick="tvService('${rawId}', 'volume_mute', {is_volume_muted: ${dev.is_muted ? 'false' : 'true'}})" aria-label="Muto">${dev.is_muted ? '🔇' : '🔈'}</button>
+                </div>
+            </div>
+            <div class="tv-media-row">
+                <button type="button" class="btn btn-outline tv-btn" onclick="tvService('${rawId}', 'media_previous_track')" aria-label="Precedente">⏮</button>
+                <button type="button" class="btn btn-outline tv-btn" onclick="tvService('${rawId}', 'media_play_pause')" aria-label="Play/Pausa">⏯</button>
+                <button type="button" class="btn btn-outline tv-btn" onclick="tvService('${rawId}', 'media_next_track')" aria-label="Successivo">⏭</button>
+            </div>
+            <div class="tv-sources">
+                <span class="tv-label">📺 App e sorgenti</span>
+                <div class="tv-source-chips">
+                    ${favs.map(s => `<button type="button" class="tv-chip ${s === dev.source ? 'active' : ''}" onclick="tvService('${rawId}', 'select_source', {source: ${tvEsc(JSON.stringify(s))}})">${tvEsc(s)}</button>`).join('')}
+                </div>
+                <select class="tv-source-select" aria-label="Tutte le sorgenti" onchange="if(this.value) tvService('${rawId}', 'select_source', {source: this.value})">
+                    <option value="">Tutte le sorgenti (${sources.length})…</option>
+                    ${sources.map(s => `<option value="${tvEsc(s)}" ${s === dev.source ? 'selected' : ''}>${tvEsc(s)}</option>`).join('')}
+                </select>
+            </div>
+        </div>`;
+    }
+    return html;
+}
+
+async function tvService(rawId, service, data) {
+    try {
+        const resp = await fetch('/api/homeassistant/service', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ domain: 'media_player', service, entity_id: rawId, data: data || {} })
+        });
+        const res = await resp.json().catch(() => ({}));
+        if (!resp.ok || res.success === false) {
+            showToast(res.error || 'Comando non eseguito dalla TV', 'danger');
+            return;
+        }
+        // La TV aggiorna lo stato in Home Assistant dopo un attimo
+        setTimeout(() => { if (typeof refreshCurrentDeviceDetail === 'function') refreshCurrentDeviceDetail(); }, 1200);
+    } catch (e) {
+        showToast('Errore di comunicazione: ' + (e.message || e), 'danger');
+    }
+}
+
 function renderGenericDetail(dev) {
     const isOn = dev.is_on;
     const pW = dev.power_w;

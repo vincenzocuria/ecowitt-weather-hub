@@ -22,6 +22,9 @@ TUYA_ID_MAP = {
 }
 
 
+from .media import find_wake_button, supports_turn_on
+
+
 class DeviceController:
     """Controller per l'esecuzione di comandi su entità Home Assistant."""
 
@@ -86,8 +89,17 @@ class DeviceController:
             else:
                 return await self.client.call_service("climate", "set_hvac_mode", clean_id, {"hvac_mode": "cool"})
         elif domain == "media_player":
-            service = "turn_on" if target_state else "turn_off"
-            return await self.client.call_service(domain, service, clean_id)
+            if not target_state:
+                return await self.client.call_service(domain, "turn_off", clean_id)
+            state_obj = (self.client.entities or {}).get(clean_id) or {}
+            if supports_turn_on(state_obj):
+                return await self.client.call_service(domain, "turn_on", clean_id)
+            # TV spenta senza accensione nativa: si "sveglia" con il pulsante Wake on LAN di HA
+            wake = find_wake_button(self.client.entities or {})
+            if wake:
+                return await self.client.call_service("button", "press", wake)
+            return {"success": False, "error": "Accensione non configurata: aggiungi in Home Assistant "
+                                               "l'integrazione Wake on LAN per la TV (o un'automazione di accensione)."}
 
         return {"success": False, "error": f"Dominio {domain} non supporta toggle diretto"}
 
