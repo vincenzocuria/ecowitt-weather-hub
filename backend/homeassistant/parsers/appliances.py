@@ -225,6 +225,49 @@ def parse_dishwasher_data(entities: Dict[str, Dict[str, Any]]) -> Optional[Dict[
     }
 
 
+# Il sensore porta del frigo LG in Home Assistant si aggiorna solo con gli eventi che il frigo
+# invia al cloud LG: l'apertura arriva quasi sempre, la chiusura a volte no, e lo stato resta
+# "aperta" per ore. Il cloud LG interrogato direttamente non riporta la porta. Oltre questa
+# soglia un "aperta" senza aggiornamenti non viene mostrato come allarme (il frigo, se fosse
+# davvero aperto, suonerebbe dopo un paio di minuti).
+FRIDGE_DOOR_STALE_MIN = 10
+
+
+def fridge_door_state(door_ent: Optional[Dict[str, Any]], now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Stato porta: "open", "closed" o "unknown" (aperta non confermata o sensore assente)."""
+    if not door_ent:
+        return {"state": "unknown", "label": "Porta: n/d", "note": None}
+    state = door_ent.get("state")
+    if state == "off":
+        return {"state": "closed", "label": "🟢 Porta Chiusa", "note": None}
+    if state != "on":
+        return {"state": "unknown", "label": "Porta: n/d",
+                "note": "Il sensore porta non è disponibile in Home Assistant."}
+    changed = None
+    try:
+        changed = datetime.fromisoformat(str(door_ent.get("last_changed")).replace("Z", "+00:00"))
+        if changed.tzinfo is None:
+            changed = changed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        pass
+    now = now or datetime.now(timezone.utc)
+    if changed is None or (now - changed).total_seconds() < FRIDGE_DOOR_STALE_MIN * 60:
+        return {"state": "open", "label": "🔴 Porta Aperta ⚠️", "note": None}
+    try:
+        from backend.config import settings
+        when = changed.astimezone(settings.get_tz()).strftime("%H:%M")
+        if changed.astimezone(settings.get_tz()).date() != now.astimezone(settings.get_tz()).date():
+            when = changed.astimezone(settings.get_tz()).strftime("%d/%m %H:%M")
+    except Exception:
+        when = changed.strftime("%H:%M")
+    return {
+        "state": "unknown",
+        "label": "🟡 Porta non confermata",
+        "note": (f"Il frigo ha segnalato l'apertura alle {when} ma non la chiusura: LG non sempre la "
+                 "invia. Se il frigo non suona, la porta è chiusa."),
+    }
+
+
 def parse_fridge_data(entities: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """Estrae e struttura lo stato del Frigorifero Smart (LG ThinQ) da Home Assistant."""
     if not entities:
@@ -237,7 +280,8 @@ def parse_fridge_data(entities: Dict[str, Dict[str, Any]]) -> Optional[Dict[str,
     if not door_ent and not temp_ent and not express_ent:
         return None
 
-    door_open = (door_ent.get("state") == "on") if door_ent else False
+    door = fridge_door_state(door_ent)
+    door_open = door["state"] == "open"
     express_mode = (express_ent.get("state") == "on") if express_ent else False
 
     target_temp = 4
@@ -247,12 +291,7 @@ def parse_fridge_data(entities: Dict[str, Dict[str, Any]]) -> Optional[Dict[str,
         except (ValueError, TypeError):
             target_temp = 4
 
-    status_parts = []
-    if door_open:
-        status_parts.append("🔴 Porta Aperta ⚠️")
-    else:
-        status_parts.append("🟢 Porta Chiusa")
-    status_parts.append(f"Set: {target_temp}°C")
+    status_parts = [door["label"], f"Set: {target_temp}°C"]
     if express_mode:
         status_parts.append("Express Cool ❄️")
 
@@ -265,6 +304,8 @@ def parse_fridge_data(entities: Dict[str, Dict[str, Any]]) -> Optional[Dict[str,
         "can_toggle": True,
         "is_online": True,
         "door_open": door_open,
+        "door_state": door["state"],
+        "door_note": door["note"],
         "express_mode": express_mode,
         "target_temp": target_temp,
         "temp_set": target_temp,

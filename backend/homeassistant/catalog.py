@@ -164,6 +164,8 @@ class CatalogHelper:
                 "power_w": fridge.get("power_w", 0.0),
                 "temp_set": fridge.get("target_temp"),
                 "door_open": fridge.get("door_open", False),
+                "door_state": fridge.get("door_state"),
+                "door_note": fridge.get("door_note"),
                 "express_mode": fridge.get("express_mode", False),
                 "raw": fridge
             })

@@ -2437,6 +2437,22 @@ class TestHourlyForecast(unittest.TestCase):
         client.post("/api/devices/favorites", json={"device_id": "tuya_presa1", "favorite": False})
 
 
+    def test_fridge_door_stale_open(self):
+        from backend.homeassistant.parsers.appliances import fridge_door_state, parse_fridge_data
+        now = datetime(2026, 11, 15, 18, 40, tzinfo=timezone.utc)
+        fresh = {"state": "on", "last_changed": "2026-11-15T18:35:00+00:00"}
+        stale = {"state": "on", "last_changed": "2026-11-15T17:46:52.864527+00:00"}
+        self.assertEqual(fridge_door_state(fresh, now)["state"], "open")
+        st = fridge_door_state(stale, now)
+        self.assertEqual(st["state"], "unknown")
+        self.assertIn("18:46", st["note"])          # ora locale (Europe/Rome)
+        self.assertEqual(fridge_door_state({"state": "off"}, now)["state"], "closed")
+        self.assertEqual(fridge_door_state({"state": "unavailable"}, now)["state"], "unknown")
+        fr = parse_fridge_data({"binary_sensor.frigorifero_porta": dict(stale, attributes={})})
+        self.assertFalse(fr["door_open"])
+        self.assertIn("non confermata", fr["status_text"])
+
+
 if __name__ == "__main__":
     unittest.main()
 

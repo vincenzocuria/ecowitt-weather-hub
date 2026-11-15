@@ -1355,6 +1355,9 @@ function renderPresenceDetail(dev) {
 function renderRefrigeratorDetail(dev) {
     const raw = dev.raw || {};
     const doorOpen = dev.door_open || raw.door_open || false;
+    const doorUnknown = !doorOpen && (dev.door_state || raw.door_state) === 'unknown';
+    const doorNote = dev.door_note || raw.door_note || '';
+    const doorText = doorOpen ? '⚠️ PORTA APERTA' : (doorUnknown ? '🟡 Porta non confermata' : '🟢 Porta Chiusa');
     const expressMode = dev.express_mode || raw.express_mode || false;
     const targetTemp = dev.temp_set !== null && dev.temp_set !== undefined ? dev.temp_set : (raw.target_temp || 4);
 
@@ -1363,13 +1366,14 @@ function renderRefrigeratorDetail(dev) {
             <div class="state-card-info">
                 <span class="state-indicator-dot ${doorOpen ? 'dot-off pulse' : (expressMode ? 'dot-on pulse' : 'dot-off')}" style="${doorOpen ? 'background: #ef4444; box-shadow: 0 0 10px #ef4444;' : ''}"></span>
                 <span class="state-text" style="${doorOpen ? 'color: #f87171; font-weight: 700;' : ''}">
-                    ${doorOpen ? '⚠️ PORTA APERTA' : '🟢 Porta Chiusa'} ${expressMode ? '• Express Cool ATTIVO ❄️' : ''}
+                    ${doorText} ${expressMode ? '• Express Cool ATTIVO ❄️' : ''}
                 </span>
             </div>
             <button type="button" class="btn ${expressMode ? 'btn-danger' : 'btn-primary'}" onclick="toggleThinQFridgeExpress('${dev.raw_id}', ${!expressMode})">
                 ${expressMode ? 'Disattiva Express' : 'Attiva Express Cool ❄️'}
             </button>
         </div>
+        ${doorNote ? `<p class="tv-hint" style="margin-top:0.6rem;">${tvEsc(doorNote)}</p>` : ''}
 
         <div class="clima-dial-wrap" style="margin-top: 1.25rem;">
             <div class="clima-temps-row" style="justify-content: center;">
@@ -1387,7 +1391,7 @@ function renderRefrigeratorDetail(dev) {
         <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
             <div class="telemetry-card">
                 <span class="tel-label">🚪 Sensore Porta</span>
-                <span class="tel-val ${doorOpen ? 'text-danger' : 'text-success'}">${doorOpen ? 'Aperta ⚠️' : 'Chiusa 🟢'}</span>
+                <span class="tel-val ${doorOpen ? 'text-danger' : (doorUnknown ? '' : 'text-success')}">${doorOpen ? 'Aperta ⚠️' : (doorUnknown ? 'Non confermata 🟡' : 'Chiusa 🟢')}</span>
             </div>
             <div class="telemetry-card">
                 <span class="tel-label">❄️ Raffreddamento Rapido</span>
