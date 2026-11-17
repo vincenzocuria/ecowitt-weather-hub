@@ -61,7 +61,7 @@ class Settings:
     SOLAR_INSTALLED_KWP: float = float(os.getenv("SOLAR_INSTALLED_KWP", "6.0"))
     
     # Nome Stazione & Località
-    STATION_NAME: str = os.getenv("STATION_NAME", "Ecowitt Weather Hub")
+    STATION_NAME: str = os.getenv("STATION_NAME", "Stazione Meteo")
     LOCATION_NAME: str = os.getenv("LOCATION_NAME", "Corigliano-Rossano")
     
     # Coordinate Geografiche e Altitudine (Lat/Lon decimali ed Elevazione in metri s.l.m.)

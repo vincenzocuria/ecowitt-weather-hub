@@ -110,7 +110,7 @@ def api_test_alert(alert_type: str = Query("record")):
         tags = ["warning", "rotating_light"]
         priority = "urgent"
     else:
-        title = "🔔 Test Notifiche Domus Hub"
+        title = "🔔 Test Notifiche Domus"
         message = "Se leggi questo messaggio, le Notifiche Push PWA (iOS/Android/PC) e ntfy funzionano alla perfezione!"
         tags = ["bell"]
         priority = "high"

@@ -67,8 +67,8 @@
         dlg.setAttribute('aria-labelledby', 'install-dialog-title');
         dlg.innerHTML =
             '<div class="install-dialog">' +
-            '<img src="/static/icons/icon-192.png?v=2" alt="" width="64" height="64" class="install-dialog-icon">' +
-            '<h2 id="install-dialog-title">Installa Domus Hub</h2>' +
+            '<img src="/static/icons/icon-192.png?v=3" alt="" width="64" height="64" class="install-dialog-icon">' +
+            '<h2 id="install-dialog-title">Installa Domus</h2>' +
             instructionsHtml() +
             '<button type="button" class="btn btn-primary install-dialog-close">Ho capito</button>' +
             '</div>';

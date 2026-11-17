@@ -58,7 +58,7 @@ templates.env.filters["local_dt"] = lambda val: to_local_datetime_str(val, "%d/%
 templates.env.filters["local_dt_short"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M")
 templates.env.filters["local_date"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y")
 # Versione unica di CSS/JS per tutte le pagine (base, login, kiosk): cambiarla forza il ricaricamento
-ASSET_VERSION = "6.2"
+ASSET_VERSION = "6.3"
 templates.env.globals["asset_version"] = ASSET_VERSION
 templates.env.filters["local_time"] = lambda val: to_local_datetime_str(val, "%H:%M")
 templates.env.filters["duration_it"] = lambda val: format_duration_italian(val) if val is not None else "--"
@@ -202,7 +202,7 @@ async def dashboard_page(request: Request):
         name="index.html",
         context={
             "active_page": "dashboard",
-            "title": "Domus Hub",
+            "title": "Domus",
             "latest": latest,
             "station_model": station_model,
             "batt_wh65": batt_wh65,
@@ -249,7 +249,7 @@ def devices_page(request: Request):
         name="devices.html",
         context={
             "active_page": "devices",
-            "title": "Dispositivi & Smart Home • Domus Hub",
+            "title": "Dispositivi & Smart Home • Domus",
             "devices": catalog.get("devices", []),
             "stats": catalog.get("stats", {}),
             "active_schedules": catalog.get("active_schedules", []),
@@ -267,7 +267,7 @@ def remote_page(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="telecomando.html",
-        context={"active_page": "devices", "title": "Telecomando • Domus Hub"},
+        context={"active_page": "devices", "title": "Telecomando • Domus"},
     )
 
 @router.get("/records", response_class=HTMLResponse)
@@ -286,7 +286,7 @@ def records_page(request: Request):
         name="records.html",
         context={
             "active_page": "records",
-            "title": "Albo dei Record • Domus Hub",
+            "title": "Albo dei Record • Domus",
             "records": records,
             "history": history,
             "tropical_stats": tropical_stats,
@@ -322,7 +322,7 @@ def radar_page(request: Request):
         name="radar.html",
         context={
             "active_page": "radar",
-            "title": f"Radar Pioggia Live • {settings.STATION_NAME}",
+            "title": "Radar Pioggia Live • Domus",
             "lat": settings.LATITUDE,
             "lon": settings.LONGITUDE,
             "station_name": settings.STATION_NAME,
@@ -351,7 +351,7 @@ def kiosk_page(request: Request):
         name="kiosk.html",
         context={
             "active_page": "kiosk",
-            "title": f"Meteo Display Kiosk • {settings.STATION_NAME}",
+            "title": "Kiosk meteo • Domus",
             "latest": latest,
             "station_name": settings.STATION_NAME,
             "location_name": settings.LOCATION_NAME,
@@ -373,7 +373,7 @@ def charts_page(request: Request):
         name="charts.html",
         context={
             "active_page": "charts",
-            "title": "Grafici & Trend • Domus Hub"
+            "title": "Grafici & Trend • Domus"
         }
     )
 
@@ -390,7 +390,7 @@ def history_page(request: Request, start_date: Optional[str] = None, end_date: O
         name="history.html",
         context={
             "active_page": "history",
-            "title": "Archivio & Ricerche • Domus Hub",
+            "title": "Archivio & Ricerche • Domus",
             "records": records,
             "total_count": total_count,
             "page": page,
@@ -414,7 +414,7 @@ def alerts_page(request: Request):
         name="alerts.html",
         context={
             "active_page": "alerts",
-            "title": "Centro Notifiche • Domus Hub",
+            "title": "Centro Notifiche • Domus",
             "alerts": alerts,
             "recent_alerts": recent_alerts,
             "archive_alerts": archive_alerts,
@@ -543,7 +543,7 @@ def more_page(request: Request):
         name="more.html",
         context={
             "active_page": "more",
-            "title": "Altro • Domus Hub",
+            "title": "Altro • Domus",
             "station_name": settings.STATION_NAME,
         }
     )
@@ -579,7 +579,7 @@ def settings_page(request: Request):
         name="settings.html",
         context={
             "active_page": "settings",
-            "title": "Impostazioni & Sistema • Domus Hub",
+            "title": "Impostazioni & Sistema • Domus",
             "station_model": station_model,
             "batt_wh65": batt_wh65,
             "aton_sn": settings.ATON_SN,

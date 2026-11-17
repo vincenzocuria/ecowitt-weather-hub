@@ -2461,7 +2461,7 @@ class TestHourlyForecast(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn('id="remote-root"', page.text)
         self.assertIn("/static/js/tv-remote.js", page.text)
-        self.assertIn("<title>Telecomando • Domus Hub</title>", page.text)
+        self.assertIn("<title>Telecomando • Domus</title>", page.text)
         # Il codice del telecomando sta in un file condiviso, non più dentro la pagina Casa
         casa = client.get("/devices").text
         self.assertIn("/static/js/tv-remote.js", casa)
@@ -2470,7 +2470,7 @@ class TestHourlyForecast(unittest.TestCase):
         for fn in ("function renderTvDetail", "function renderTvRemote", "function tvKey", "function tvPower", "function tvService"):
             self.assertIn(fn, js)
         manifest = _json.loads(client.get("/manifest.json").text)
-        self.assertEqual(manifest["name"], "Domus Hub")
+        self.assertEqual(manifest["name"], "Domus")
         self.assertEqual(manifest["shortcuts"][0]["url"], "/telecomando")
 
     def test_device_favorites_and_casa_page(self):
