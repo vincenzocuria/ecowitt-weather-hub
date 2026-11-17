@@ -58,7 +58,7 @@ templates.env.filters["local_dt"] = lambda val: to_local_datetime_str(val, "%d/%
 templates.env.filters["local_dt_short"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M")
 templates.env.filters["local_date"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y")
 # Versione unica di CSS/JS per tutte le pagine (base, login, kiosk): cambiarla forza il ricaricamento
-ASSET_VERSION = "6.1"
+ASSET_VERSION = "6.2"
 templates.env.globals["asset_version"] = ASSET_VERSION
 templates.env.filters["local_time"] = lambda val: to_local_datetime_str(val, "%H:%M")
 templates.env.filters["duration_it"] = lambda val: format_duration_italian(val) if val is not None else "--"
@@ -202,7 +202,7 @@ async def dashboard_page(request: Request):
         name="index.html",
         context={
             "active_page": "dashboard",
-            "title": "Ecowitt & Sainlogic Weather Hub",
+            "title": "Domus Hub",
             "latest": latest,
             "station_model": station_model,
             "batt_wh65": batt_wh65,
@@ -249,7 +249,7 @@ def devices_page(request: Request):
         name="devices.html",
         context={
             "active_page": "devices",
-            "title": "Dispositivi & Smart Home • Weather Hub",
+            "title": "Dispositivi & Smart Home • Domus Hub",
             "devices": catalog.get("devices", []),
             "stats": catalog.get("stats", {}),
             "active_schedules": catalog.get("active_schedules", []),
@@ -259,6 +259,15 @@ def devices_page(request: Request):
             "smartthings_enabled": settings.SMARTTHINGS_ENABLED,
             "aton_enabled": settings.ATON_ENABLED
         }
+    )
+
+@router.get("/telecomando", response_class=HTMLResponse)
+def remote_page(request: Request):
+    """Telecomando della TV a schermo intero (scorciatoia dall'icona dell'app)."""
+    return templates.TemplateResponse(
+        request=request,
+        name="telecomando.html",
+        context={"active_page": "devices", "title": "Telecomando • Domus Hub"},
     )
 
 @router.get("/records", response_class=HTMLResponse)
@@ -277,7 +286,7 @@ def records_page(request: Request):
         name="records.html",
         context={
             "active_page": "records",
-            "title": "Albo dei Record • Weather Hub",
+            "title": "Albo dei Record • Domus Hub",
             "records": records,
             "history": history,
             "tropical_stats": tropical_stats,
@@ -364,7 +373,7 @@ def charts_page(request: Request):
         name="charts.html",
         context={
             "active_page": "charts",
-            "title": "Grafici & Trend • Weather Hub"
+            "title": "Grafici & Trend • Domus Hub"
         }
     )
 
@@ -381,7 +390,7 @@ def history_page(request: Request, start_date: Optional[str] = None, end_date: O
         name="history.html",
         context={
             "active_page": "history",
-            "title": "Archivio & Ricerche • Weather Hub",
+            "title": "Archivio & Ricerche • Domus Hub",
             "records": records,
             "total_count": total_count,
             "page": page,
@@ -405,7 +414,7 @@ def alerts_page(request: Request):
         name="alerts.html",
         context={
             "active_page": "alerts",
-            "title": "Centro Notifiche • Weather Hub",
+            "title": "Centro Notifiche • Domus Hub",
             "alerts": alerts,
             "recent_alerts": recent_alerts,
             "archive_alerts": archive_alerts,
@@ -534,7 +543,7 @@ def more_page(request: Request):
         name="more.html",
         context={
             "active_page": "more",
-            "title": "Altro • Weather Hub",
+            "title": "Altro • Domus Hub",
             "station_name": settings.STATION_NAME,
         }
     )
@@ -570,7 +579,7 @@ def settings_page(request: Request):
         name="settings.html",
         context={
             "active_page": "settings",
-            "title": "Impostazioni & Sistema • Weather Hub",
+            "title": "Impostazioni & Sistema • Domus Hub",
             "station_model": station_model,
             "batt_wh65": batt_wh65,
             "aton_sn": settings.ATON_SN,

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="remote-page">
+    <div class="remote-page-head">
+        <h1 id="remote-title">📺 Telecomando</h1>
+        <button type="button" class="btn btn-outline remote-refresh" onclick="loadRemote(true)" aria-label="Aggiorna stato TV" title="Aggiorna stato TV">⟳</button>
+    </div>
+    <div id="remote-tv-picker" class="tv-source-chips" hidden></div>
+    <div id="remote-root" class="remote-root" aria-live="polite">
+        <p class="tv-hint">Caricamento della TV…</p>
+    </div>
+</div>
+
+<script src="/static/js/tv-remote.js?v={{ asset_version }}"></script>
+<script>
+let remoteTvs = [];
+let remoteTvId = null;
+try { remoteTvId = localStorage.getItem('remote_tv_id'); } catch (e) {}
+
+function pickTv(id) {
+    remoteTvId = id;
+    try { localStorage.setItem('remote_tv_id', id); } catch (e) {}
+    renderRemote();
+}
+
+function renderRemote() {
+    const root = document.getElementById('remote-root');
+    const picker = document.getElementById('remote-tv-picker');
+    if (!remoteTvs.length) {
+        root.innerHTML = '<p class="tv-hint">Nessuna TV trovata in Home Assistant.</p>';
+        picker.hidden = true;
+        return;
+    }
+    let dev = remoteTvs.find(t => t.raw_id === remoteTvId) || remoteTvs[0];
+    picker.hidden = remoteTvs.length < 2;
+    picker.innerHTML = remoteTvs.map(t =>
+        `<button type="button" class="tv-chip ${t.raw_id === dev.raw_id ? 'active' : ''}" onclick="pickTv(${tvEsc(JSON.stringify(t.raw_id))})">${tvEsc(t.name)}</button>`).join('');
+    document.getElementById('remote-title').textContent = '📺 ' + (dev.name || 'Telecomando');
+    // Non ridisegnare mentre si trascina il volume
+    if (document.activeElement && document.activeElement.classList.contains('tv-vol-slider')) return;
+    root.innerHTML = renderTvDetail(dev);
+}
+
+async function loadRemote(manual = false) {
+    const btn = document.querySelector('.remote-refresh');
+    if (manual && btn) btn.classList.add('btn-loading');
+    try {
+        const resp = await fetch('/api/devices/all');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        const tvs = (data.devices || []).filter(d => d.is_tv);
+        // Solo le TV con controllo completo (webOS), prima quelle raggiungibili e accese;
+        // gli altri media player (es. casse Nest) compaiono solo se non c'è nessuna TV vera.
+        const full = tvs.filter(d => d.full_control);
+        const score = d => (d.is_online ? 2 : 0) + (d.is_on ? 1 : 0);
+        remoteTvs = (full.length ? full : tvs).sort((x, y) => score(y) - score(x));
+        renderRemote();
+    } catch (e) {
+        if (!remoteTvs.length) {
+            document.getElementById('remote-root').innerHTML = '<p class="tv-hint">Non riesco a leggere lo stato della TV. Riprova tra poco.</p>';
+        }
+    } finally {
+        if (btn) btn.classList.remove('btn-loading');
+    }
+}
+
+// Chiamata da tv-remote.js dopo accensione, spegnimento e comandi
+function refreshCurrentDeviceDetail() { return loadRemote(); }
+
+document.addEventListener('visibilitychange', () => { if (!document.hidden) loadRemote(); });
+loadRemote();
+</script>
+{% endblock %}

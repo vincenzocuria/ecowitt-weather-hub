@@ -2452,6 +2452,27 @@ class TestHourlyForecast(unittest.TestCase):
             self.assertEqual(r.status_code, 200)
             m.assert_awaited_once_with("webostv", "button", "media_player.soggiorno_tv", {"button": "UP"}, refresh=False)
 
+    def test_remote_page_and_app_name(self):
+        import json as _json
+        from backend.main import app
+        from fastapi.testclient import TestClient
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+        page = client.get("/telecomando")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('id="remote-root"', page.text)
+        self.assertIn("/static/js/tv-remote.js", page.text)
+        self.assertIn("<title>Telecomando • Domus Hub</title>", page.text)
+        # Il codice del telecomando sta in un file condiviso, non più dentro la pagina Casa
+        casa = client.get("/devices").text
+        self.assertIn("/static/js/tv-remote.js", casa)
+        self.assertNotIn("function renderTvRemote", casa)
+        js = client.get("/static/js/tv-remote.js").text
+        for fn in ("function renderTvDetail", "function renderTvRemote", "function tvKey", "function tvPower", "function tvService"):
+            self.assertIn(fn, js)
+        manifest = _json.loads(client.get("/manifest.json").text)
+        self.assertEqual(manifest["name"], "Domus Hub")
+        self.assertEqual(manifest["shortcuts"][0]["url"], "/telecomando")
+
     def test_device_favorites_and_casa_page(self):
         from backend.main import app
         from fastapi.testclient import TestClient

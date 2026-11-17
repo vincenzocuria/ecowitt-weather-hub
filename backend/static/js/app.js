@@ -1271,7 +1271,7 @@ async function subscribeToPush() {
         if (res.ok) {
             // Mostra notifica di benvenuto
             if (Notification.permission === 'granted') {
-                reg.showNotification('🌤️ Weather Hub Notifiche Attive', {
+                reg.showNotification('🏠 Domus Hub: notifiche attive', {
                     body: 'Le notifiche push sono state collegate con successo alla tua stazione meteo!',
                     icon: '/static/icons/icon.svg',
                     tag: 'welcome-alert'

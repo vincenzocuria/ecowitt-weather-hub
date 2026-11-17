@@ -1,7 +1,7 @@
 {
-  "name": "Ecowitt & Sainlogic Weather Hub",
-  "short_name": "Meteo Hub",
-  "description": "Stazione Meteo Personale & Assistente Domestico Smart",
+  "name": "Domus Hub",
+  "short_name": "Domus Hub",
+  "description": "La casa in un'unica app: meteo, dispositivi, energia e telecomando della TV",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0b0f19",
@@ -36,6 +36,17 @@
   "id": "/",
   "scope": "/",
   "shortcuts": [
+    {
+      "name": "Telecomando TV",
+      "short_name": "Telecomando",
+      "url": "/telecomando",
+      "icons": [
+        {
+          "src": "/static/icons/icon-192.png?v=2",
+          "sizes": "192x192"
+        }
+      ]
+    },
     {
       "name": "Radar pioggia",
       "short_name": "Radar",
