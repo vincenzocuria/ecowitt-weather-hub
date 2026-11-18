@@ -59,7 +59,7 @@ templates.env.filters["local_dt"] = lambda val: to_local_datetime_str(val, "%d/%
 templates.env.filters["local_dt_short"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M")
 templates.env.filters["local_date"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y")
 # Versione unica di CSS/JS per tutte le pagine (base, login, kiosk): cambiarla forza il ricaricamento
-ASSET_VERSION = "6.4"
+ASSET_VERSION = "6.5"
 templates.env.globals["asset_version"] = ASSET_VERSION
 templates.env.filters["local_time"] = lambda val: to_local_datetime_str(val, "%H:%M")
 templates.env.filters["duration_it"] = lambda val: format_duration_italian(val) if val is not None else "--"
@@ -139,6 +139,20 @@ def logout():
 
 # ----------------- HTML PAGE ROUTES -----------------
 
+def build_climate_comparison(analytics: dict, forecast_data: Optional[dict]) -> Optional[dict]:
+    """Oggi, mese e anno rispetto alle medie 1991–2020 (None finché le medie non sono scaricate)."""
+    from backend.climate_service import climate_service, station_month_days, station_data_since
+    try:
+        rain = (analytics or {}).get("rain_totals") or {}
+        today_fc = ((forecast_data or {}).get("daily") or [None])[0]
+        return climate_service.build_comparison(
+            (analytics or {}).get("today_extremes") or {}, today_fc, station_month_days(),
+            rain.get("month_rain_mm"), rain.get("year_rain_mm"), station_data_since())
+    except Exception as e:
+        logger.warning(f"Confronto con la media non disponibile: {e}")
+        return None
+
+
 @router.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
     latest = get_latest_reading() or {}
@@ -170,6 +184,7 @@ async def dashboard_page(request: Request):
     from backend.marine_service import marine_service
     marine_data = await asyncio.to_thread(marine_service.fetch, False, latest)
     cross_check = forecast_service.build_cross_check_summary(latest)
+    climate_cmp = await asyncio.to_thread(build_climate_comparison, analytics, forecast_data)
 
     # Dati Energetici Aton Storage
     energy_latest = aton_service.latest_data or get_latest_energy() or {}
@@ -240,6 +255,7 @@ async def dashboard_page(request: Request):
             "civil_protection_enabled": settings.CIVIL_PROTECTION_ENABLED,
             "ntfy_topic": settings.NTFY_TOPIC,
             "weather_guide": build_weather_guide(),
+            "climate_cmp": climate_cmp,
         }
     )
 

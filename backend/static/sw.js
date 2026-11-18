@@ -1,5 +1,5 @@
 // Service Worker con supporto PWA e Web Push Nativo (iOS 16.4+, Android, Desktop)
-const CACHE_NAME = 'meteo-hub-v32';
+const CACHE_NAME = 'meteo-hub-v33';
 const OFFLINE_URL = '/static/offline.html';
 const PRECACHE_URLS = [
     OFFLINE_URL,

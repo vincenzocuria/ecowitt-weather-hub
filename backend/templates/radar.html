@@ -79,6 +79,16 @@
                         <input type="range" id="radar-opacity-slider" min="20" max="100" value="80" step="5" class="radar-mini-slider" oninput="changeOpacity(this.value)">
                     </div>
 
+                    <!-- NUVOLE DAL SATELLITE METEOSAT -->
+                    <div class="radar-color-control">
+                        <select id="radar-satellite" class="radar-select" onchange="setSatellite(this.value)" aria-label="Nuvole dal satellite">
+                            <option value="off">☁️ Nuvole: spente</option>
+                            <option value="ir">☁️ Nuvole: infrarosso (giorno e notte)</option>
+                            <option value="color">☁️ Nuvole: colori reali</option>
+                        </select>
+                        <span class="radar-sat-time" id="radar-sat-time" hidden></span>
+                    </div>
+
                     <!-- SELETTORE COLORI RADAR -->
                     <div class="radar-color-control">
                         <select id="radar-color-scheme" class="radar-select" onchange="changeColorScheme(this.value)">
@@ -439,6 +449,41 @@
         if (playBtn) playBtn.classList.remove('active');
     }
 
+    // Nuvole dal satellite Meteosat (EUMETSAT): sotto la pioggia del radar, sopra la mappa
+    let satelliteLayer = null;
+    let satelliteMode = 'off';
+    let satelliteTimer = null;
+    try { satelliteMode = localStorage.getItem('radar_satellite') || 'off'; } catch (e) {}
+
+    async function setSatellite(mode) {
+        satelliteMode = mode;
+        try { localStorage.setItem('radar_satellite', mode); } catch (e) {}
+        const label = document.getElementById('radar-sat-time');
+        if (satelliteLayer) { map.removeLayer(satelliteLayer); satelliteLayer = null; }
+        if (satelliteTimer) { clearInterval(satelliteTimer); satelliteTimer = null; }
+        if (mode === 'off' || !map) { if (label) label.hidden = true; return; }
+        let info = null;
+        try { info = await (await fetch('/api/satellite/info', { credentials: 'include' })).json(); } catch (e) {}
+        const cfg = info && info.layers && info.layers[mode];
+        if (!cfg || satelliteMode !== mode) return;
+        if (!map.getPane('satellitePane')) {
+            map.createPane('satellitePane');
+            map.getPane('satellitePane').style.zIndex = 250;
+            map.getPane('satellitePane').style.pointerEvents = 'none';
+        }
+        const params = { layers: cfg.layer, format: 'image/png', transparent: true, version: '1.3.0',
+                         pane: 'satellitePane', opacity: mode === 'ir' ? 0.6 : 0.9, maxZoom: 12,
+                         attribution: 'Nuvole © <a href="https://view.eumetsat.int">EUMETSAT</a>' };
+        if (cfg.time) params.time = cfg.time;
+        satelliteLayer = L.tileLayer.wms(info.wms_url, params).addTo(map);
+        if (label) {
+            label.hidden = !cfg.local_time;
+            label.textContent = cfg.local_time ? 'Satellite delle ' + cfg.local_time : '';
+        }
+        // Nuova immagine ogni 10 minuti circa
+        satelliteTimer = setInterval(() => { if (satelliteMode === mode) setSatellite(mode); }, 10 * 60 * 1000);
+    }
+
     // Cambio Opacità
     function changeOpacity(val) {
         radarOpacity = parseFloat(val) / 100.0;
@@ -531,6 +576,9 @@
     // Avvio al caricamento del DOM
     document.addEventListener("DOMContentLoaded", () => {
         initMap();
+        // Ripristina la scelta delle nuvole fatta l'ultima volta
+        const satSel = document.getElementById('radar-satellite');
+        if (satSel && satelliteMode !== 'off') { satSel.value = satelliteMode; setSatellite(satelliteMode); }
         if (window.location.hash === '#lightning') {
             switchRadarTab('lightning');
         }

@@ -315,6 +315,9 @@ class ForecastService:
         daily_sun_sec = daily_raw.get("sunshine_duration", [])
 
         today_dt = settings.now_local().date()
+        from backend.ensemble_service import ensemble_service
+        from backend.climate_service import climate_service
+        ensemble_days = ensemble_service.get_days()
 
         days_list: List[Dict[str, Any]] = []
         for i in range(len(daily_times)):
@@ -345,8 +348,15 @@ class ForecastService:
             rad_mj = round(daily_rad_mj[i], 1) if i < len(daily_rad_mj) and daily_rad_mj[i] is not None else None
             sun_hours = round(daily_sun_sec[i] / 3600.0, 1) if i < len(daily_sun_sec) and daily_sun_sec[i] is not None else None
 
+            try:
+                normal = climate_service.normal_for(datetime.strptime(d_str, "%Y-%m-%d").date())
+            except Exception:
+                normal = None
+
             days_list.append({
                 "date": d_str,
+                "ensemble": ensemble_days.get(d_str),
+                "normal": normal,
                 "formatted_date": formatted_date,
                 "day_name": day_name,
                 "weather_code": code,

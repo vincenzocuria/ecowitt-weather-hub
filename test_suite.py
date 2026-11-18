@@ -2452,6 +2452,52 @@ class TestHourlyForecast(unittest.TestCase):
             self.assertEqual(r.status_code, 200)
             m.assert_awaited_once_with("webostv", "button", "media_player.soggiorno_tv", {"button": "UP"}, refresh=False)
 
+    def test_climate_normals_and_comparison(self):
+        from datetime import date, timedelta, datetime as _dt
+        from unittest.mock import patch
+        from backend.climate_service import compute_normals, ClimateService, _doy
+        # Due anni sintetici: massima 20, minima 10, 1 mm al giorno
+        days = [date(2001, 1, 1) + timedelta(days=i) for i in range(730)]
+        daily = {"time": [d.isoformat() for d in days], "temperature_2m_max": [20.0] * 730,
+                 "temperature_2m_min": [10.0] * 730, "precipitation_sum": [1.0] * 730}
+        n = compute_normals(daily)
+        self.assertEqual(n["tmax"][_doy(date(2026, 11, 18))], 20.0)
+        self.assertEqual(n["rain_month"][11], 30.0)
+        self.assertEqual(n["rain_year"], 365.0)
+        self.assertEqual(_doy(date(2024, 2, 29)), _doy(date(2024, 2, 28)))
+        svc = ClimateService()
+        with patch.object(svc, "get_normals", return_value=n):
+            c = svc.build_comparison({"temp_max": 21.0, "temp_min": 9.0}, {"temp_max": 23.0, "temp_min": 11.0},
+                                     [{"day": "2026-11-01", "max_t": 22.0, "min_t": 12.0},
+                                      {"day": "2026-11-18", "max_t": 30.0, "min_t": 0.0}],  # oggi non conta
+                                     9.0, 200.0, date(2026, 3, 1), now=_dt(2026, 11, 18, 12, 0))
+        self.assertEqual(c["today"]["max"], 23.0)        # prevista più alta della misurata
+        self.assertTrue(c["today"]["max_is_forecast"])
+        self.assertEqual(c["today"]["diff_max"], 3.0)
+        self.assertEqual(c["today"]["diff_min"], -1.0)   # dopo le 9 vale la minima misurata
+        self.assertEqual(c["month_temp"], {"diff": 2.0, "days": 1})
+        self.assertEqual(c["rain_month"]["normal_to_date"], 18.0)
+        self.assertEqual(c["rain_month"]["pct"], 50)
+        self.assertNotIn("rain_year", c)                 # dati solo da marzo: totale annuo incompleto
+        self.assertIn("+3,0°", c["headline"])
+
+    def test_ensemble_reliability(self):
+        from backend.ensemble_service import summarize_day, summarize_payload
+        dry = summarize_day([20.0] * 50, [10.0] * 50, [0.0] * 50)
+        self.assertEqual((dry["level"], dry["rain_pct"], dry["rain_text"]), ("alta", 0, "Asciutto quasi certo"))
+        split = summarize_day([20.0] * 50, [10.0] * 50, [0.0] * 25 + [5.0] * 25)
+        self.assertEqual((split["level"], split["rain_pct"]), ("bassa", 50))
+        wide = summarize_day([15.0 + i * 0.2 for i in range(50)], [10.0] * 50, [0.0] * 50)
+        self.assertEqual(wide["level"], "bassa")         # forbice delle massime oltre 6°
+        self.assertIsNone(summarize_day([20.0] * 5, [10.0] * 5, [0.0] * 5))
+        raw = {"daily": {"time": ["2026-11-18"],
+                         "temperature_2m_max_icon_seamless_eps": [20.0], **{f"temperature_2m_max_member{i:02d}_icon_seamless_eps": [20.0] for i in range(1, 20)},
+                         "temperature_2m_min_icon_seamless_eps": [10.0], **{f"temperature_2m_min_member{i:02d}_icon_seamless_eps": [10.0] for i in range(1, 20)},
+                         "precipitation_sum_icon_seamless_eps": [3.0], **{f"precipitation_sum_member{i:02d}_icon_seamless_eps": [3.0] for i in range(1, 20)}}}
+        days = summarize_payload(raw)
+        self.assertEqual(days["2026-11-18"]["members"], 20)
+        self.assertEqual(days["2026-11-18"]["rain_text"], "Pioggia quasi certa")
+
     def test_weather_guide(self):
         from backend.weather_guide import build_weather_guide
         from backend.analytics import WIND_NAMES

@@ -274,6 +274,12 @@ def api_solar_forecast():
     aton_curr = aton_service.latest_data or get_latest_energy() or {}
     return forecast_service.fetch_solar_forecast(aton_data=aton_curr)
 
+@router.get("/api/satellite/info")
+def api_satellite_info():
+    """Ora dell'ultima immagine Meteosat per i livelli nuvole del radar."""
+    from backend.satellite_service import satellite_service
+    return satellite_service.info()
+
 @router.get("/api/climate-summary")
 def api_climate_summary():
     return get_climate_comparisons()

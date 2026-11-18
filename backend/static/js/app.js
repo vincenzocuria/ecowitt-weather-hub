@@ -3628,6 +3628,28 @@ function dayChartSvg(hours) {
     return out;
 }
 
+// Quanto è sicura la previsione (scenari ICON ed ECMWF) e media del periodo per quel giorno
+function dayReliabilityHtml(day) {
+    const e = day.ensemble, n = day.normal;
+    if (!e && !n) return '';
+    let html = '<div class="day-reliab">';
+    if (e) {
+        html += `<div class="day-reliab-head"><span class="forecast-reliab rel-${dayEsc(e.level)}">${dayEsc(e.label)}</span><span>${dayEsc(e.rain_text)}</span></div>
+            <div class="day-reliab-grid">
+                <div><span>Pioggia</span><strong>${e.rain_pct}%</strong><small>degli scenari${e.rain_pct >= 20 ? ` • fino a ${dayNum(e.rain_high_mm, 0)} mm` : ''}</small></div>
+                <div><span>Massima</span><strong>${e.tmax_low}°–${e.tmax_high}°</strong><small>forbice probabile</small></div>
+                ${e.tmin_low != null ? `<div><span>Minima</span><strong>${e.tmin_low}°–${e.tmin_high}°</strong><small>forbice probabile</small></div>` : ''}
+            </div>`;
+    }
+    if (n && n.tmax != null) {
+        const dm = day.temp_max != null ? day.temp_max - n.tmax : null;
+        const cls = dm == null ? 'ok' : (dm >= 1 ? 'warm' : (dm <= -1 ? 'cold' : 'ok'));
+        html += `<p class="day-normal">📅 Media del periodo: massima ${Math.round(n.tmax)}°, minima ${Math.round(n.tmin)}°${dm != null ? ` • prevista <em class="cc-diff ${cls}">${(dm >= 0 ? '+' : '') + dayNum(dm, 1)}°</em>` : ''}</p>`;
+    }
+    if (e) html += `<p class="day-reliab-note">Calcolata da ${e.members} scenari dei modelli ICON ed ECMWF: più sono d'accordo, più la previsione è sicura.</p>`;
+    return html + '</div>';
+}
+
 function renderDayForecast(d) {
     const body = document.getElementById('day-modal-body');
     if (!body) return;
@@ -3654,6 +3676,7 @@ function renderDayForecast(d) {
             <div class="day-head-temps"><strong>${dayNum(day.temp_max)}°</strong><span>${dayNum(day.temp_min)}°</span></div>
             <p class="day-summary">${dayEsc(d.summary)}</p>
         </div>
+        ${dayReliabilityHtml(day)}
         <div class="day-chart-scroll">${dayChartSvg(d.hours)}</div>
         <div class="day-stats">
             <div><span>🌅 Alba</span><strong>${dayEsc(st.sunrise)}</strong></div>

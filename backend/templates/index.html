@@ -296,6 +296,9 @@
                     💧 0% (asciutto)
                 </span>
                 {% endif %}
+                {% if day.ensemble %}
+                <span class="forecast-reliab rel-{{ day.ensemble.level }}" title="{{ day.ensemble.rain_text }} ({{ day.ensemble.rain_pct }}% di {{ day.ensemble.members }} scenari) • massima tra {{ day.ensemble.tmax_low }}° e {{ day.ensemble.tmax_high }}°">{{ day.ensemble.label }}</span>
+                {% endif %}
             </div>
             {% endfor %}
         </div>
@@ -330,6 +333,62 @@
         {% endif %}
     </div>
 
+
+    <!-- 📅 RISPETTO ALLA MEDIA DEL PERIODO (clima 1991–2020) -->
+    {% if climate_cmp %}
+    {% set cc = climate_cmp %}
+    <div class="card climate-cmp-card">
+        <div class="climate-cmp-head">
+            <span class="climate-cmp-icon">📅</span>
+            <div>
+                <h2>Rispetto alla media</h2>
+                <span>{{ cc.headline }}</span>
+            </div>
+        </div>
+        <div class="climate-cmp-grid">
+            {% if cc.today.diff_max is not none %}
+            <div class="cc-item">
+                <span class="cc-label">Massima di oggi{% if cc.today.max_is_forecast %} (prevista){% endif %}</span>
+                <strong>{{ cc.today.max|round|int }}° <em class="cc-diff {{ 'warm' if cc.today.diff_max >= 1 else ('cold' if cc.today.diff_max <= -1 else 'ok') }}">{{ '%+.1f'|format(cc.today.diff_max)|replace('.', ',') }}°</em></strong>
+                <small>media del periodo {{ cc.today.normal_max|round|int }}°</small>
+            </div>
+            {% endif %}
+            {% if cc.today.diff_min is not none %}
+            <div class="cc-item">
+                <span class="cc-label">Minima di oggi{% if cc.today.min_is_forecast %} (prevista){% endif %}</span>
+                <strong>{{ cc.today.min|round|int }}° <em class="cc-diff {{ 'warm' if cc.today.diff_min >= 1 else ('cold' if cc.today.diff_min <= -1 else 'ok') }}">{{ '%+.1f'|format(cc.today.diff_min)|replace('.', ',') }}°</em></strong>
+                <small>media del periodo {{ cc.today.normal_min|round|int }}°</small>
+            </div>
+            {% endif %}
+            {% if cc.month_temp.diff is not none %}
+            <div class="cc-item">
+                <span class="cc-label">{{ cc.month_name|capitalize }} finora</span>
+                <strong><em class="cc-diff {{ 'warm' if cc.month_temp.diff >= 0.5 else ('cold' if cc.month_temp.diff <= -0.5 else 'ok') }}">{{ '%+.1f'|format(cc.month_temp.diff)|replace('.', ',') }}°</em></strong>
+                <small>{% if cc.month_temp.diff >= 0.5 %}più caldo{% elif cc.month_temp.diff <= -0.5 %}più fresco{% else %}nella media{% endif %} ({{ cc.month_temp.days }} giorni)</small>
+            </div>
+            {% endif %}
+        </div>
+        {% for key, title in (('rain_month', 'Pioggia di ' ~ cc.month_name), ('rain_year', "Pioggia dell'anno")) %}
+        {% set r = cc[key] %}
+        {% if r %}
+        <div class="cc-rain">
+            <div class="cc-rain-top">
+                <span>💧 {{ title }}</span>
+                <strong>{{ r.mm|round(1)|replace('.', ',') }} mm{% if r.pct is not none %} <em class="cc-diff {{ 'cold' if r.pct >= 120 else ('warm' if r.pct <= 70 else 'ok') }}">{{ r.pct }}%</em>{% endif %}</strong>
+            </div>
+            {% set full = r.normal_full or r.normal_to_date or 1 %}
+            <div class="cc-bar" title="Normale fino a oggi {{ r.normal_to_date }} mm">
+                <span class="cc-bar-fill" style="width: {{ [100 * r.mm / ([full, r.mm]|max), 100]|min }}%"></span>
+                <span class="cc-bar-mark" style="left: {{ [100 * r.normal_to_date / ([full, r.mm]|max), 100]|min }}%"></span>
+            </div>
+            <small>Normale fino a oggi {{ r.normal_to_date|round|int }} mm{% if r.normal_full %} • in tutto {{ r.normal_full|round|int }} mm{% endif %}.
+                {% if r.pct is not none %}{% if r.pct >= 120 %}Più piovoso del solito.{% elif r.pct <= 70 %}Più secco del solito.{% else %}Nella norma.{% endif %}{% endif %}</small>
+        </div>
+        {% endif %}
+        {% endfor %}
+        <p class="cc-note">Medie {{ cc.period }} per questo punto ({{ cc.source }}). Il segno sulla barra della pioggia è dove dovresti essere oggi in un anno normale.</p>
+    </div>
+    {% endif %}
 
     <!-- 🌊 MARE: stato del mare davanti alla stazione (tocca per il dettaglio) -->
     {% if marine %}
