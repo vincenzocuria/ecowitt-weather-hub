@@ -1846,6 +1846,100 @@ function renderSwitchDetail(dev) {
     `;
 }
 
+// Colori della luce (Home Assistant): tinte rapide, barra del colore, intensità e bianco
+const LIGHT_SWATCHES = [
+    { name: 'Rosso', h: 0, s: 100 }, { name: 'Arancio', h: 28, s: 100 }, { name: 'Ambra', h: 40, s: 90 },
+    { name: 'Giallo', h: 55, s: 100 }, { name: 'Verde', h: 120, s: 100 }, { name: 'Acqua', h: 170, s: 90 },
+    { name: 'Azzurro', h: 200, s: 100 }, { name: 'Blu', h: 230, s: 100 }, { name: 'Viola', h: 275, s: 100 },
+    { name: 'Rosa', h: 320, s: 80 }, { name: 'Rosa tenue', h: 340, s: 40 }, { name: 'Pesca', h: 20, s: 55 },
+];
+const LIGHT_COLOR_MODES = ['hs', 'rgb', 'rgbw', 'rgbww', 'xy'];
+
+function lightCss(h, s) { return `hsl(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(100 - s / 2)}%)`; }
+
+function renderLightColor(dev) {
+    const a = (dev.raw && dev.raw.attributes) || {};
+    const modes = Array.isArray(a.supported_color_modes) ? a.supported_color_modes : [];
+    const hasColor = modes.some(m => LIGHT_COLOR_MODES.includes(m));
+    const hasWhite = modes.includes('white');
+    const hasTemp = modes.includes('color_temp');
+    if (!hasColor && !hasTemp) return '';
+    const id = tvEsc(dev.raw_id);
+    const hs = Array.isArray(a.hs_color) ? a.hs_color : null;
+    const isOn = dev.is_on === true;
+    const inWhite = isOn && (a.color_mode === 'white' || a.color_mode === 'color_temp');
+    const h = hs ? hs[0] : 30, sat = hs ? hs[1] : 100;
+    const nowCss = !isOn ? 'transparent' : (inWhite || !hs ? '#fff7e6' : lightCss(h, sat));
+    let html = `
+        <div class="light-color-card" data-light="${id}">
+            <div class="light-color-head">
+                <span class="light-color-now" style="background:${nowCss}"></span>
+                <span>Colore${!isOn ? ' <small>(scegliendo un colore la luce si accende)</small>' : (inWhite ? ' <small>bianco</small>' : '')}</span>
+            </div>`;
+    if (hasColor) {
+        html += `<div class="light-swatches">
+            ${hasWhite ? `<button type="button" class="light-swatch light-swatch-white ${inWhite ? 'active' : ''}" onclick="setLightWhite('${id}')" title="Bianco" aria-label="Bianco"><span>Bianco</span></button>` : ''}
+            ${LIGHT_SWATCHES.map(c => {
+                const dh = hs ? Math.abs(((hs[0] - c.h) % 360 + 540) % 360 - 180) : 999;
+                const active = isOn && !inWhite && hs && dh < 6 && Math.abs(hs[1] - c.s) < 8;
+                return `<button type="button" class="light-swatch ${active ? 'active' : ''}" style="--sw:${lightCss(c.h, c.s)}" onclick="setLightHs('${id}', ${c.h}, ${c.s})" title="${c.name}" aria-label="${c.name}"></button>`;
+            }).join('')}
+        </div>
+        <label class="light-slider-label">Tinta</label>
+        <input type="range" class="light-hue-slider" min="0" max="359" value="${Math.round(h)}" aria-label="Tinta"
+               oninput="lightPreview(this)" onchange="setLightHs('${id}', +this.value, +this.closest('.light-color-card').querySelector('.light-sat-slider').value)">
+        <label class="light-slider-label">Intensità del colore</label>
+        <input type="range" class="light-sat-slider" min="10" max="100" value="${Math.round(sat)}" aria-label="Intensità del colore" style="--hue:${Math.round(h)}"
+               oninput="lightPreview(this)" onchange="setLightHs('${id}', +this.closest('.light-color-card').querySelector('.light-hue-slider').value, +this.value)">`;
+    }
+    if (hasTemp) {
+        const kmin = a.min_color_temp_kelvin || 2700, kmax = a.max_color_temp_kelvin || 6500;
+        const k = a.color_temp_kelvin || Math.round((kmin + kmax) / 2);
+        html += `<label class="light-slider-label">Bianco: caldo ↔ freddo</label>
+        <input type="range" class="light-temp-slider" min="${kmin}" max="${kmax}" step="50" value="${k}" aria-label="Temperatura del bianco"
+               onchange="setLightKelvin('${id}', +this.value)">`;
+    }
+    return html + '</div>';
+}
+
+function lightPreview(input) {
+    const card = input.closest('.light-color-card');
+    const h = +card.querySelector('.light-hue-slider').value, s = +card.querySelector('.light-sat-slider').value;
+    card.querySelector('.light-sat-slider').style.setProperty('--hue', h);
+    card.querySelector('.light-color-now').style.background = lightCss(h, s);
+}
+
+async function lightService(rawId, data, okMsg) {
+    try {
+        const resp = await fetch('/api/homeassistant/service', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ domain: 'light', service: 'turn_on', entity_id: rawId, data })
+        });
+        const res = await resp.json().catch(() => ({}));
+        if (!resp.ok || res.success === false) {
+            showToast(res.error || 'La luce non ha cambiato colore', 'danger');
+            return;
+        }
+        if (navigator.vibrate) navigator.vibrate(10);
+        showToast(okMsg, 'success');
+        setTimeout(() => { if (typeof refreshCurrentDeviceDetail === 'function') refreshCurrentDeviceDetail(); else fetchDevicesData(); }, 1000);
+    } catch (e) {
+        showToast('Errore di comunicazione: ' + (e.message || e), 'danger');
+    }
+}
+
+function setLightHs(rawId, h, s) {
+    document.querySelectorAll(`.light-color-card[data-light="${rawId}"] .light-color-now`).forEach(el => el.style.background = lightCss(h, s));
+    return lightService(rawId, { hs_color: [Math.round(h), Math.round(s)] }, 'Colore impostato');
+}
+function setLightWhite(rawId) {
+    const st = (typeof devicesCatalog !== 'undefined' ? devicesCatalog : []).find(d => d.raw_id === rawId);
+    const b = st && st.raw && st.raw.attributes && st.raw.attributes.brightness;
+    return lightService(rawId, { white: b || 255 }, 'Luce bianca');
+}
+function setLightKelvin(rawId, k) { return lightService(rawId, { color_temp_kelvin: k }, 'Bianco impostato'); }
+
 // 11. Luci & Strisce LED
 function renderLightDetail(dev) {
     const raw = dev.raw || {};
@@ -1866,6 +1960,8 @@ function renderLightDetail(dev) {
                 </button>
             ` : ''}
         </div>
+
+        ${dev.ecosystem === 'homeassistant' ? renderLightColor(dev) : ''}
 
         ${brightPct !== null ? `
             <div style="margin-top: 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem;">

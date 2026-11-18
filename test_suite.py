@@ -2517,6 +2517,23 @@ class TestHourlyForecast(unittest.TestCase):
         self.assertIn('data-sea-grade="5"', html)
         self.assertIn("agitato è peggio di molto mosso", html)
 
+    def test_light_colour_service_validation(self):
+        from unittest.mock import AsyncMock, patch
+        from backend.main import app
+        from backend.homeassistant_service import homeassistant_service
+        from fastapi.testclient import TestClient
+        client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
+        url = "/api/homeassistant/service"
+        body = lambda data, domain="light", eid="light.floor_lamp": {"domain": domain, "service": "turn_on", "entity_id": eid, "data": data}
+        for bad in ({"hs_color": [400, 50]}, {"hs_color": [10]}, {"hs_color": "rosso"}, {"white": 999}, {"white": "si"},
+                    {"color_temp_kelvin": 50}, {"rgb_color": [255, 0, 0]}):
+            self.assertIn(client.post(url, json=body(bad)).status_code, (400,), bad)
+        self.assertEqual(client.post(url, json=body({"hs_color": [10, 50]}, "switch", "switch.presa")).status_code, 400)
+        with patch.object(homeassistant_service, "call_service", new=AsyncMock(return_value={"success": True})) as m:
+            for good in ({"hs_color": [230, 100]}, {"white": 255}, {"white": True}, {"color_temp_kelvin": 3000}, {"brightness": 128}):
+                self.assertEqual(client.post(url, json=body(good)).status_code, 200, good)
+            m.assert_any_await("light", "turn_on", "light.floor_lamp", {"hs_color": [230, 100]})
+
     def test_remote_page_and_app_name(self):
         import json as _json
         from backend.main import app

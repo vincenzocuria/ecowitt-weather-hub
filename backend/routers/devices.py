@@ -813,7 +813,25 @@ HASS_SERVICE_DATA_KEYS = {
     "temperature", "hvac_mode", "fan_mode", "swing_mode",
     "brightness", "brightness_pct", "position", "percentage",
     "volume_level", "is_volume_muted", "source",
+    "hs_color", "white", "color_temp_kelvin",
 }
+
+
+def _valid_light_data(data: Dict[str, Any]) -> bool:
+    """Controlla i valori dei parametri colore (gli altri passano come prima)."""
+    hs = data.get("hs_color")
+    if hs is not None:
+        if not (isinstance(hs, (list, tuple)) and len(hs) == 2 and all(isinstance(v, (int, float)) for v in hs)):
+            return False
+        if not (0 <= hs[0] <= 360 and 0 <= hs[1] <= 100):
+            return False
+    w = data.get("white")
+    if w is not None and not (w is True or (isinstance(w, int) and not isinstance(w, bool) and 0 <= w <= 255)):
+        return False
+    k = data.get("color_temp_kelvin")
+    if k is not None and not (isinstance(k, (int, float)) and 1000 <= k <= 12000):
+        return False
+    return True
 _HASS_ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 
 # Tasti del telecomando LG webOS (servizio webostv.button di Home Assistant)
@@ -862,6 +880,8 @@ async def api_homeassistant_call_service(request: Request):
         return JSONResponse({"error": "entity_id non valido per il dominio richiesto"}, status_code=400)
     if not isinstance(data, dict) or any(k not in HASS_SERVICE_DATA_KEYS for k in data):
         return JSONResponse({"error": "Parametri del servizio non consentiti"}, status_code=400)
+    if not _valid_light_data(data) or (domain != "light" and any(k in data for k in ("hs_color", "white", "color_temp_kelvin"))):
+        return JSONResponse({"error": "Valori del colore non validi"}, status_code=400)
     res = await homeassistant_service.call_service(domain, service, entity_id, data)
     return res
 
