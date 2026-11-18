@@ -2068,7 +2068,7 @@
             <div class="modal-title-group">
                 <div class="modal-icon-badge" style="background: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.35); color: #0ea5e9;">🌊</div>
                 <div>
-                    <h3 id="sea-modal-title" style="margin: 0; font-size: 1.15rem; font-weight: 700;">Mare</h3>
+                    <h3 id="sea-modal-title" class="title-with-help" style="margin: 0; font-size: 1.15rem; font-weight: 700;">Mare <button type="button" class="help-q" onclick="openWeatherGuide('mare')" aria-label="Guida agli stati del mare" title="Guida agli stati del mare">?</button></h3>
                     <div class="modal-device-meta" id="sea-modal-meta">Onde, mare lungo e temperatura dell'acqua</div>
                 </div>
             </div>
@@ -2086,6 +2086,8 @@
     </div>
 </div>
 
+{% include "_weather_guide.html" %}
+
 <!-- MODALE ROSA DEI VENTI (tempo reale) -->
 <div id="wind-rose-backdrop" class="device-modal-backdrop" onclick="closeWindRose(event)">
     <div class="device-modal-dialog wind-rose-dialog" role="dialog" aria-modal="true" aria-labelledby="wind-rose-title" onclick="event.stopPropagation()">
@@ -2093,7 +2095,7 @@
             <div class="modal-title-group">
                 <div class="modal-icon-badge" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.35); color: #38bdf8;">🧭</div>
                 <div>
-                    <h3 id="wind-rose-title" style="margin: 0; font-size: 1.15rem; font-weight: 700;">Rosa dei venti</h3>
+                    <h3 id="wind-rose-title" class="title-with-help" style="margin: 0; font-size: 1.15rem; font-weight: 700;">Rosa dei venti <button type="button" class="help-q" onclick="openWeatherGuide('venti')" aria-label="Guida ai venti" title="Guida ai venti">?</button></h3>
                     <div class="modal-device-meta" id="wind-rose-meta">Vento in tempo reale dalla stazione</div>
                 </div>
             </div>

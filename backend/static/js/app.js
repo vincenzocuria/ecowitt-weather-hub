@@ -3270,6 +3270,8 @@ function renderWindRose(data) {
             </div>
             <div class="wr-now-24h">Ultime 24 ore: prevalente <strong>${windEscape(dom)}</strong> • calma ${rose.calm_pct ?? 0}% del tempo</div>`;
     }
+    guideCurrent.wind = calm ? null : name.name;
+    guideCurrent.beaufort = (bf.grade ?? null);
     const list = document.getElementById('wind-rose-winds');
     if (list && data.winds) {
         list.innerHTML = data.winds.map(w =>
@@ -3379,6 +3381,7 @@ function renderSeaModal(d) {
     }
     const c = d.current || {};
     const st = c.state || {};
+    guideCurrent.sea = (st.grade ?? null);
     const adv = d.advice || {};
     const meta = document.getElementById('sea-modal-meta');
     if (meta) meta.textContent = d.name || 'Mare';
@@ -3452,6 +3455,48 @@ document.addEventListener('keydown', (ev) => {
     const bd = document.getElementById('sea-modal-backdrop');
     if (ev.key === 'Escape' && bd && bd.classList.contains('show')) closeSeaModal();
 });
+
+// ============================================================================
+// GUIDA VENTI E MARE (pulsante "?"): evidenzia il vento e lo stato del mare di adesso
+// ============================================================================
+const guideCurrent = { wind: null, beaufort: null, sea: null };
+
+function showGuideTab(tab) {
+    document.querySelectorAll('#guide-backdrop .guide-tab').forEach(b => {
+        const on = b.dataset.guideTab === tab;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', String(on));
+    });
+    document.querySelectorAll('#guide-backdrop .guide-pane').forEach(p => { p.hidden = p.dataset.guidePane !== tab; });
+    const body = document.querySelector('#guide-backdrop .guide-body');
+    if (body) body.scrollTop = 0;
+}
+
+function openWeatherGuide(tab) {
+    const bd = document.getElementById('guide-backdrop');
+    if (!bd) return;
+    bd.querySelectorAll('[data-wind]').forEach(el => el.classList.toggle('is-now', el.dataset.wind === guideCurrent.wind));
+    bd.querySelectorAll('[data-beaufort]').forEach(el => el.classList.toggle('is-now', guideCurrent.beaufort !== null && Number(el.dataset.beaufort) === guideCurrent.beaufort));
+    bd.querySelectorAll('[data-sea-grade]').forEach(el => el.classList.toggle('is-now', guideCurrent.sea !== null && Number(el.dataset.seaGrade) === guideCurrent.sea));
+    showGuideTab(tab || 'venti');
+    bd.classList.add('show');
+    document.body.style.overflow = 'hidden';
+    const now = bd.querySelector('.guide-pane:not([hidden]) .is-now');
+    if (now) setTimeout(() => now.scrollIntoView({ block: 'center', behavior: 'smooth' }), 150);
+}
+
+function closeWeatherGuide(e) {
+    if (e && e.target !== document.getElementById('guide-backdrop')) return;
+    const bd = document.getElementById('guide-backdrop');
+    if (bd) bd.classList.remove('show');
+    // Se sotto è ancora aperta la rosa dei venti o il mare, la pagina resta bloccata
+    if (!document.querySelector('.device-modal-backdrop.show')) document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', (ev) => {
+    const bd = document.getElementById('guide-backdrop');
+    if (ev.key === 'Escape' && bd && bd.classList.contains('show')) { ev.stopImmediatePropagation(); closeWeatherGuide(); }
+}, true);
 
 // ============================================================================
 // PREVISIONE DI UN GIORNO ORA PER ORA (finestra stile app meteo + striscia oraria in Home)

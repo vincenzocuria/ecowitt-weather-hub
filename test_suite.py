@@ -2452,6 +2452,25 @@ class TestHourlyForecast(unittest.TestCase):
             self.assertEqual(r.status_code, 200)
             m.assert_awaited_once_with("webostv", "button", "media_player.soggiorno_tv", {"button": "UP"}, refresh=False)
 
+    def test_weather_guide(self):
+        from backend.weather_guide import build_weather_guide
+        from backend.analytics import WIND_NAMES
+        from jinja2 import Environment, FileSystemLoader
+        g = build_weather_guide()
+        self.assertEqual([w["name"] for w in g["winds"]], [w["name"] for w in WIND_NAMES])
+        self.assertTrue(all(w["character"] and w["sea"] and w["origin"] for w in g["winds"]))
+        self.assertEqual([b["grade"] for b in g["beaufort"]], list(range(13)))
+        self.assertEqual(g["beaufort"][4]["label"], "Vento moderato")
+        labels = [s["label"] for s in g["sea"]]
+        self.assertEqual(labels[:7], ["Calmo", "Quasi calmo", "Poco mosso", "Mosso", "Molto mosso", "Agitato", "Molto agitato"])
+        self.assertLess(labels.index("Molto mosso"), labels.index("Agitato"))
+        self.assertEqual(g["sea"][5]["range"], "2,5–4 m")
+        env = Environment(loader=FileSystemLoader(os.path.join(os.path.dirname(__file__), "backend", "templates")))
+        html = env.get_template("_weather_guide.html").render(weather_guide=g)
+        self.assertIn('data-wind="Grecale"', html)
+        self.assertIn('data-sea-grade="5"', html)
+        self.assertIn("agitato è peggio di molto mosso", html)
+
     def test_remote_page_and_app_name(self):
         import json as _json
         from backend.main import app

@@ -17,6 +17,7 @@ from backend.civil_protection_service import civil_protection_service
 from backend.aton_service import aton_service
 from backend.thinq_service import thinq_service
 from backend.homeassistant_service import homeassistant_service
+from backend.weather_guide import build_weather_guide
 from backend.alert_catalog import build_alert_catalog, quiet_hours_info
 from backend.database import (
     get_latest_reading, get_station_status, get_pressure_trend, get_device_favorites,
@@ -58,7 +59,7 @@ templates.env.filters["local_dt"] = lambda val: to_local_datetime_str(val, "%d/%
 templates.env.filters["local_dt_short"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M")
 templates.env.filters["local_date"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y")
 # Versione unica di CSS/JS per tutte le pagine (base, login, kiosk): cambiarla forza il ricaricamento
-ASSET_VERSION = "6.3"
+ASSET_VERSION = "6.4"
 templates.env.globals["asset_version"] = ASSET_VERSION
 templates.env.filters["local_time"] = lambda val: to_local_datetime_str(val, "%H:%M")
 templates.env.filters["duration_it"] = lambda val: format_duration_italian(val) if val is not None else "--"
@@ -237,7 +238,8 @@ async def dashboard_page(request: Request):
             "db_stats": get_database_stats(),
             "civil_protection": (await asyncio.to_thread(civil_protection_service.fetch_alerts)) if settings.CIVIL_PROTECTION_ENABLED else None,
             "civil_protection_enabled": settings.CIVIL_PROTECTION_ENABLED,
-            "ntfy_topic": settings.NTFY_TOPIC
+            "ntfy_topic": settings.NTFY_TOPIC,
+            "weather_guide": build_weather_guide(),
         }
     )
 

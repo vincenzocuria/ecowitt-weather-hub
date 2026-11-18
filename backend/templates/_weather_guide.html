@@ -1,0 +1,84 @@
+<!-- GUIDA VENTI E MARE (si apre dal pulsante "?" nella rosa dei venti e nella finestra del mare) -->
+<div id="guide-backdrop" class="device-modal-backdrop guide-backdrop" onclick="closeWeatherGuide(event)">
+    <div class="device-modal-dialog guide-dialog" role="dialog" aria-modal="true" aria-labelledby="guide-title" onclick="event.stopPropagation()">
+        <div class="device-modal-header">
+            <div class="modal-title-group">
+                <div class="modal-icon-badge" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.35); color: #38bdf8;">📖</div>
+                <div>
+                    <h3 id="guide-title" style="margin: 0; font-size: 1.15rem; font-weight: 700;">Guida</h3>
+                    <div class="modal-device-meta">Cosa significano i nomi dei venti e del mare</div>
+                </div>
+            </div>
+            <button type="button" class="modal-close-btn" onclick="closeWeatherGuide()" title="Chiudi">&times;</button>
+        </div>
+        <div class="guide-tabs" role="tablist">
+            <button type="button" class="guide-tab" role="tab" data-guide-tab="venti" onclick="showGuideTab('venti')">🧭 Venti</button>
+            <button type="button" class="guide-tab" role="tab" data-guide-tab="mare" onclick="showGuideTab('mare')">🌊 Mare</button>
+        </div>
+        <div class="device-modal-body guide-body">
+            <section class="guide-pane" data-guide-pane="venti">
+                <p class="guide-intro">Il nome dice <b>da dove arriva</b> il vento: il Maestrale soffia da nord-ovest verso sud-est. Sotto ogni vento trovi cosa fa al mare sulla tua costa ionica.</p>
+                <div class="guide-winds">
+                    {% for w in weather_guide.winds %}
+                    <article class="guide-wind" data-wind="{{ w.name }}">
+                        <div class="guide-wind-head">
+                            <span class="guide-compass" aria-hidden="true"><svg viewBox="-12 -12 24 24" width="34" height="34"><circle r="11" class="gc-ring"/><path d="M0,-8.5 L4.5,3 L0,0.5 L-4.5,3 Z" class="gc-arrow" transform="rotate({{ w.deg + 180 }})"/></svg></span>
+                            <div class="guide-wind-title">
+                                <strong>{{ w.name }}</strong>
+                                <span>{{ w.from }} ({{ w.abbr }})</span>
+                            </div>
+                            <span class="guide-sea-tag guide-sea-{{ w.level }}">{{ w.level_label }}</span>
+                        </div>
+                        <p>{{ w.character }}</p>
+                        <p class="guide-wind-sea">🌊 {{ w.sea }}</p>
+                        <p class="guide-wind-origin">{{ w.origin }}</p>
+                    </article>
+                    {% endfor %}
+                </div>
+                <p class="guide-note">💡 Con il bel tempo, d'estate, di giorno soffia la <b>brezza di mare</b> (dal mare verso terra) e di notte la <b>brezza di terra</b>: non sono perturbazioni, solo la differenza di temperatura tra terra e acqua.</p>
+
+                <h4 class="guide-subtitle">Quanto è forte? Scala Beaufort</h4>
+                <div class="guide-table">
+                    {% for b in weather_guide.beaufort %}
+                    <div class="guide-row" data-beaufort="{{ b.grade }}">
+                        <span class="guide-grade">{{ b.grade }}</span>
+                        <div class="guide-row-main"><strong>{{ b.label }}</strong><span>{{ b.desc }}</span></div>
+                        <span class="guide-range">{{ b.range }} km/h</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="guide-pane" data-guide-pane="mare" hidden>
+                <p class="guide-intro">Lo stato del mare segue la <b>scala Douglas</b>, dall'altezza delle onde. Dal più tranquillo al peggiore:</p>
+                <div class="guide-ladder" aria-hidden="true">
+                    {% for s in weather_guide.sea %}<span class="guide-ladder-step" style="--c: var(--sea-g{{ s.grade }})">{{ s.label }}</span>{% endfor %}
+                </div>
+                <p class="guide-answer">Quindi <b>agitato è peggio di molto mosso</b>: dopo "mosso" e "molto mosso" il mare diventa "agitato", poi "grosso".</p>
+                <div class="guide-table">
+                    {% for s in weather_guide.sea %}
+                    <div class="guide-row guide-sea-row" data-sea-grade="{{ s.grade }}" style="--c: var(--sea-g{{ s.grade }})">
+                        <span class="guide-grade">{{ s.grade }}</span>
+                        <div class="guide-row-main"><strong>{{ s.label }}</strong><span>{{ s.desc }} {{ s.practical }}</span></div>
+                        <span class="guide-range">{{ s.range }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <h4 class="guide-subtitle">Le altre parole del mare</h4>
+                <dl class="guide-glossary">
+                    <dt>Mare lungo</dt><dd>Onde arrivate da lontano, dopo che il vento che le ha create è calato. Possono esserci anche senza vento, e sono lente e potenti.</dd>
+                    <dt>Mare vivo</dt><dd>Onde create dal vento che sta soffiando adesso: più corte e disordinate.</dd>
+                    <dt>Periodo</dt><dd>I secondi tra un'onda e la successiva. Più è lungo, più l'onda ha energia: 10 secondi con 1 metro spingono più di 5 secondi con 1 metro.</dd>
+                    <dt>Mareggiata</dt><dd>Onde alte che arrivano sulla spiaggia, con l'acqua che sale oltre il solito.</dd>
+                    <dt>Altezza delle onde</dt><dd>È la media del terzo più alto delle onde: ogni tanto ne arriva una alta quasi il doppio.</dd>
+                </dl>
+            </section>
+        </div>
+        <div class="device-modal-footer">
+            <span></span>
+            <div class="modal-footer-btns">
+                <button type="button" class="btn btn-secondary" onclick="closeWeatherGuide()">Chiudi</button>
+            </div>
+        </div>
+    </div>
+</div>
