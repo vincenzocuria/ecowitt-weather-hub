@@ -51,18 +51,16 @@
             <span class="mobile-app-name">Domus</span>
         </a>
         <div class="mobile-top-right">
-            <div class="mobile-top-actions">
-                <a href="/radar" class="mobile-radar-quickbtn {% if active_page == 'radar' %}active{% endif %}" title="Radar Pioggia Live">
-                    🌧️ <span style="font-size: 0.75rem; font-weight: 600;">Radar</span>
-                </a>
-                <span class="mobile-live-status" id="mobile-live-status" role="status" aria-live="polite">
-                    <span class="mobile-live-dot" aria-hidden="true"></span>
-                    <span class="mobile-live-text" id="mobile-live-indicator">LIVE</span>
-                </span>
-            </div>
+            <span class="mobile-top-actions mobile-live-status" id="mobile-live-status" role="status" aria-live="polite">
+                <span class="mobile-live-dot" aria-hidden="true"></span>
+                <span class="mobile-live-text" id="mobile-live-indicator">LIVE</span>
+            </span>
             <a href="/alerts-page" class="mobile-bell {% if active_page == 'alerts' %}active{% endif %}" aria-label="Notifiche">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="21" height="21"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
                 <span id="mobile-alert-badge" class="mob-badge" style="display:none;">0</span>
+            </a>
+            <a href="/settings" class="mobile-bell {% if active_page == 'settings' %}active{% endif %}" aria-label="Impostazioni">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="21" height="21"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             </a>
         </div>
     </header>
@@ -75,14 +73,15 @@
                 <span>Domus</span>
             </a>
             <div class="nav-links">
-                <a href="/" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">🏠 Home</a>
-                <a href="/devices" class="nav-link {% if active_page == 'devices' %}active{% endif %}">💡 Casa</a>
-                <a href="/#energy-home" class="nav-link">⚡ Energia</a>
-                <a href="/radar" class="nav-link {% if active_page == 'radar' %}active{% endif %}">🌧️ Radar</a>
-                <a href="/alerts-page" class="nav-link {% if active_page == 'alerts' %}active{% endif %}">
-                    🔔 Notifiche <span id="desktop-alert-badge" class="badge-counter" style="display:none;">0</span>
+                <a href="/" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">Home</a>
+                <a href="/devices" class="nav-link {% if active_page == 'devices' %}active{% endif %}">Casa</a>
+                <a href="/radar" class="nav-link {% if active_page == 'radar' %}active{% endif %}">Radar</a>
+                <a href="/telecomando" class="nav-link {% if active_page == 'telecomando' %}active{% endif %}">TV</a>
+                <a href="/more" class="nav-link {% if active_page in ('more', 'records', 'charts', 'history') %}active{% endif %}">Altro</a>
+                <a href="/alerts-page" class="nav-link {% if active_page == 'alerts' %}active{% endif %}" aria-label="Notifiche">
+                    🔔 <span id="desktop-alert-badge" class="badge-counter" style="display:none;">0</span>
                 </a>
-                <a href="/more" class="nav-link {% if active_page in ('more', 'records', 'charts', 'history', 'settings') %}active{% endif %}">☰ Altro</a>
+                <a href="/settings" class="nav-link {% if active_page == 'settings' %}active{% endif %}" aria-label="Impostazioni">⚙️</a>
             </div>
         </div>
     </nav>
@@ -98,7 +97,7 @@
     </footer>
 
     <!-- BOTTOM TAB NAVIGATION BAR PER SMARTPHONE (NATIVE APP FEEL) -->
-    <nav class="mobile-bottom-nav" aria-label="Navigazione principale">
+    <nav class="mobile-bottom-nav" id="app-tabs" aria-label="Navigazione principale">
         <a href="/" class="mobile-tab {% if active_page == 'dashboard' %}active{% endif %}">
             <div class="tab-icon-wrap">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tab-svg"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
@@ -111,13 +110,19 @@
             </div>
             <span class="tab-label">Casa</span>
         </a>
+        <a href="/radar" class="mobile-tab {% if active_page == 'radar' %}active{% endif %}">
+            <div class="tab-icon-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tab-svg"><path d="M17.5 17H7a4.5 4.5 0 1 1 1.3-8.8A6 6 0 0 1 20 10.5 3.5 3.5 0 0 1 17.5 17z"/><line x1="8" y1="20" x2="7" y2="22"/><line x1="12" y1="20" x2="11" y2="22"/><line x1="16" y1="20" x2="15" y2="22"/></svg>
+            </div>
+            <span class="tab-label">Radar</span>
+        </a>
         <a href="/telecomando" class="mobile-tab {% if active_page == 'telecomando' %}active{% endif %}">
             <div class="tab-icon-wrap">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tab-svg"><rect x="2" y="4" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
             </div>
             <span class="tab-label">TV</span>
         </a>
-        <a href="/more" class="mobile-tab {% if active_page in ('more', 'radar', 'records', 'charts', 'history', 'settings') %}active{% endif %}">
+        <a href="/more" class="mobile-tab {% if active_page in ('more', 'records', 'charts', 'history') %}active{% endif %}">
             <div class="tab-icon-wrap">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tab-svg"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
             </div>

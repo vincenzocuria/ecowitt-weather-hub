@@ -3738,3 +3738,69 @@ document.addEventListener('keydown', (ev) => {
         if (next) openDayForecast(next.dataset.date, true);
     }
 });
+
+// ---------------------------------------------------------------------------
+// Swipe a sinistra/destra per passare alla pagina accanto nel menu in basso
+// ---------------------------------------------------------------------------
+(function initPageSwipe() {
+    const nav = document.getElementById('app-tabs');
+    if (!nav) return;
+    const tabs = [...nav.querySelectorAll('a.mobile-tab')];
+    const current = tabs.findIndex(t => t.classList.contains('active'));
+
+    // Animazione d'ingresso coerente con la direzione dello swipe
+    try {
+        const dir = sessionStorage.getItem('swipe_dir');
+        if (dir) {
+            sessionStorage.removeItem('swipe_dir');
+            const main = document.querySelector('main.container');
+            if (main) main.classList.add(dir === 'next' ? 'swipe-in-right' : 'swipe-in-left');
+        }
+    } catch (e) { /* storage non disponibile */ }
+
+    if (current < 0) return;   // pagine fuori dal menu (notifiche, impostazioni...): niente swipe
+
+    // Lo swipe non deve rubare il gesto a mappe, cursori, caroselli e finestre aperte
+    function blocksSwipe(el) {
+        for (let n = el; n && n !== document.body; n = n.parentElement) {
+            if (n.matches && n.matches('input, textarea, select, .leaflet-container, canvas, [data-no-swipe], dialog[open], .modal, .modal-backdrop, [role="dialog"], [role="slider"]')) return true;
+            if (n.scrollWidth > n.clientWidth + 4) {
+                const ox = getComputedStyle(n).overflowX;
+                if (ox === 'auto' || ox === 'scroll') return true;
+            }
+        }
+        return false;
+    }
+
+    let start = null;
+    document.addEventListener('touchstart', (e) => {
+        start = null;
+        if (e.touches.length !== 1 || window.innerWidth > 1200) return;
+        const t = e.touches[0];
+        // I bordi dello schermo restano ai gesti di sistema (indietro)
+        if (t.clientX < 24 || t.clientX > window.innerWidth - 24) return;
+        if (blocksSwipe(e.target)) return;
+        start = { x: t.clientX, y: t.clientY, time: Date.now() };
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+        if (!start) return;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - start.x, dy = t.clientY - start.y, dt = Date.now() - start.time;
+        start = null;
+        if (dt > 600 || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2.2) return;
+        const target = tabs[current + (dx < 0 ? 1 : -1)];
+        if (!target) return;
+        try { sessionStorage.setItem('swipe_dir', dx < 0 ? 'next' : 'prev'); } catch (err) { /* ignore */ }
+        const main = document.querySelector('main.container');
+        if (main) main.classList.add(dx < 0 ? 'swipe-out-left' : 'swipe-out-right');
+        setTimeout(() => { window.location.href = target.getAttribute('href'); }, 110);
+    }, { passive: true });
+
+    document.addEventListener('touchcancel', () => { start = null; }, { passive: true });
+    // Tornando indietro con la pagina in cache, togli l'animazione d'uscita
+    window.addEventListener('pageshow', () => {
+        const main = document.querySelector('main.container');
+        if (main) main.classList.remove('swipe-out-left', 'swipe-out-right');
+    });
+})();

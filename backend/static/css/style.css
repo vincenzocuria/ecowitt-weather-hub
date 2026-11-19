@@ -9076,3 +9076,169 @@ html[data-theme="light"] .leaflet-control-attribution a {
 .light-hue-slider::-moz-range-thumb, .light-sat-slider::-moz-range-thumb, .light-temp-slider::-moz-range-thumb {
     width: 24px; height: 24px; border-radius: 50%; background: #fff; border: 2px solid rgba(15, 23, 42, 0.5); cursor: pointer;
 }
+
+/* ==========================================================================
+   SWIPE TRA LE PAGINE
+   ========================================================================== */
+@keyframes swipeInRight { from { opacity: 0; transform: translateX(36px); } to { opacity: 1; transform: none; } }
+@keyframes swipeInLeft { from { opacity: 0; transform: translateX(-36px); } to { opacity: 1; transform: none; } }
+main.container.swipe-in-right { animation: swipeInRight 0.22s ease-out; }
+main.container.swipe-in-left { animation: swipeInLeft 0.22s ease-out; }
+main.container.swipe-out-left { transition: transform 0.12s ease-in, opacity 0.12s ease-in; transform: translateX(-40px); opacity: 0; }
+main.container.swipe-out-right { transition: transform 0.12s ease-in, opacity 0.12s ease-in; transform: translateX(40px); opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+    main.container.swipe-in-right, main.container.swipe-in-left { animation: none; }
+    main.container.swipe-out-left, main.container.swipe-out-right { transition: none; transform: none; opacity: 1; }
+}
+
+/* Barra in alto: stato + icone rotonde */
+.mobile-top-right .mobile-top-actions { padding: 6px 11px; }
+
+/* ==========================================================================
+   TABLET (769-1200px): stessa app del telefono, con menu a pillola centrato
+   ========================================================================== */
+@media (min-width: 769px) and (max-width: 1200px) {
+    .desktop-only,
+    .navbar.desktop-only,
+    .footer.desktop-only {
+        display: none !important;
+    }
+    .mobile-top-bar {
+        display: flex !important;
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
+    }
+    .mobile-app-icon { width: 34px; height: 34px; }
+    .mobile-app-name { font-size: 1.25rem; }
+    .mobile-bell { width: 44px; height: 44px; }
+    .mobile-bottom-nav {
+        display: flex !important;
+        left: 50%;
+        right: auto;
+        bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+        transform: translateX(-50%);
+        width: min(620px, calc(100% - 48px));
+        padding: 8px 10px;
+        border-radius: 24px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28);
+    }
+    .mobile-tab {
+        flex-direction: row;
+        gap: 8px;
+        padding: 10px 6px;
+        border-radius: 16px;
+    }
+    .mobile-tab .tab-icon-wrap { margin-bottom: 0; }
+    .mobile-tab .tab-svg { width: 24px; height: 24px; }
+    .mobile-tab .tab-label { font-size: 0.92rem; font-weight: 700; }
+    .mobile-tab.active { background: var(--accent-glow); }
+    .container {
+        padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+    }
+}
+
+/* ==========================================================================
+   KIOSK: dimensioni fluide, pensate per tablet e schermi a muro
+   ========================================================================== */
+.kiosk-body { --ku: clamp(12px, 1.9vmin, 30px); }
+.kiosk-container {
+    height: 100vh;
+    height: 100dvh;
+    padding: calc(var(--ku) * 0.7) var(--ku);
+    gap: calc(var(--ku) * 0.7);
+}
+.kiosk-header { padding: calc(var(--ku) * 0.5) var(--ku); border-radius: var(--ku); gap: var(--ku); }
+.kiosk-logo { width: calc(var(--ku) * 2.5); height: calc(var(--ku) * 2.5); }
+.kiosk-station-name { font-size: calc(var(--ku) * 1.2); }
+.kiosk-location-name { font-size: calc(var(--ku) * 0.88); }
+.kiosk-time { font-size: calc(var(--ku) * 2.7); }
+.kiosk-date { font-size: calc(var(--ku) * 1); }
+.kiosk-btn { font-size: calc(var(--ku) * 0.88); padding: calc(var(--ku) * 0.5) calc(var(--ku) * 0.85); border-radius: calc(var(--ku) * 0.6); white-space: nowrap; }
+.kiosk-stale-banner { font-size: calc(var(--ku) * 0.95); }
+
+.kiosk-main-grid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 2fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: calc(var(--ku) * 0.8);
+}
+.kiosk-hero-card {
+    padding: calc(var(--ku) * 1.2);
+    gap: var(--ku);
+    border-radius: calc(var(--ku) * 1.2);
+    container-type: size;
+    overflow: hidden;
+}
+.kiosk-hero-top { flex: 1; min-height: 0; justify-content: center; gap: calc(var(--ku) * 1.2); }
+.kiosk-weather-icon { font-size: calc(var(--ku) * 5.5); font-size: min(24cqw, 20cqh); line-height: 1; }
+.kiosk-temp-val { font-size: calc(var(--ku) * 5.5); font-size: min(25cqw, 21cqh); white-space: nowrap; }
+.kiosk-temp-val small { font-size: 0.38em; }
+.kiosk-condition-text { font-size: calc(var(--ku) * 1.35); font-size: clamp(calc(var(--ku) * 1.1), 5.2cqw, calc(var(--ku) * 2)); line-height: 1.2; margin-top: 0.3em; }
+.kiosk-next-hours { gap: calc(var(--ku) * 0.45); }
+.kiosk-nh { padding: calc(var(--ku) * 0.5) calc(var(--ku) * 0.2); border-radius: calc(var(--ku) * 0.7); }
+.kiosk-nh-time { font-size: calc(var(--ku) * 0.85); }
+.kiosk-nh-icon { font-size: calc(var(--ku) * 1.9); }
+.kiosk-nh-temp { font-size: calc(var(--ku) * 1.3); }
+.kiosk-nh-rain { font-size: calc(var(--ku) * 0.82); }
+.kiosk-extremes-row { padding: calc(var(--ku) * 0.7); border-radius: calc(var(--ku) * 0.8); }
+.kiosk-ext-lbl { font-size: calc(var(--ku) * 0.78); }
+.kiosk-ext-val { font-size: calc(var(--ku) * 1.9); line-height: 1.15; }
+
+.kiosk-tiles-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: calc(var(--ku) * 0.8);
+    min-height: 0;
+}
+.kiosk-tile {
+    padding: calc(var(--ku) * 0.9) calc(var(--ku) * 1.1);
+    border-radius: var(--ku);
+    container-type: size;
+    overflow: hidden;
+}
+.kiosk-tile-hdr { font-size: calc(var(--ku) * 0.92); gap: calc(var(--ku) * 0.45); }
+.kiosk-tile-icon { font-size: 1.35em; }
+.kiosk-tile-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kiosk-tile-val {
+    font-size: calc(var(--ku) * 3.2);
+    font-size: clamp(calc(var(--ku) * 2), min(36cqh, 27cqw), calc(var(--ku) * 7));
+    line-height: 1;
+    white-space: nowrap;
+}
+.kiosk-tile-val small { font-size: 0.36em; }
+.kiosk-tile-sub { font-size: calc(var(--ku) * 1); }
+
+.kiosk-forecast-bar { gap: calc(var(--ku) * 0.7); padding: calc(var(--ku) * 0.6) calc(var(--ku) * 0.8); border-radius: var(--ku); grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.kiosk-fc-item { padding: calc(var(--ku) * 0.55) calc(var(--ku) * 0.7); gap: calc(var(--ku) * 0.4); border-radius: calc(var(--ku) * 0.7); min-width: 0; overflow: hidden; }
+.kiosk-fc-day { font-size: calc(var(--ku) * 1.02); white-space: nowrap; flex: 0 0 auto; }
+.kiosk-fc-icon { font-size: calc(var(--ku) * 1.6); line-height: 1; }
+.kiosk-fc-temps { font-size: calc(var(--ku) * 1.1); white-space: nowrap; gap: calc(var(--ku) * 0.3); }
+.kiosk-fc-rain { font-size: calc(var(--ku) * 0.85); white-space: nowrap; }
+
+/* Tablet o schermo in verticale: meteo sopra, sei riquadri sotto, previsioni 2x2 */
+@media (orientation: portrait) {
+    .kiosk-main-grid {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    }
+    .kiosk-tiles-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-rows: repeat(3, minmax(0, 1fr));
+    }
+    .kiosk-forecast-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kiosk-next-hours { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .kiosk-header { flex-wrap: wrap; row-gap: calc(var(--ku) * 0.4); }
+}
+@media (orientation: portrait) and (max-width: 520px) {
+    .kiosk-actions .kiosk-btn { padding: calc(var(--ku) * 0.45) calc(var(--ku) * 0.6); }
+    .kiosk-date { display: none; }
+}
+.kiosk-nh-rain { white-space: nowrap; }
+@media (orientation: landscape) and (max-width: 1100px) {
+    .kiosk-fc-item { padding: calc(var(--ku) * 0.5) calc(var(--ku) * 0.5); gap: calc(var(--ku) * 0.25); }
+    .kiosk-fc-day, .kiosk-fc-temps { font-size: calc(var(--ku) * 0.95); }
+    .kiosk-fc-icon { font-size: calc(var(--ku) * 1.3); }
+    .kiosk-fc-rain { font-size: calc(var(--ku) * 0.78); }
+    .kiosk-nh-rain { font-size: calc(var(--ku) * 0.72); }
+    .kiosk-nh-temp { font-size: calc(var(--ku) * 1.15); }
+}
