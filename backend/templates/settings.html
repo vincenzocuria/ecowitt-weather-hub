@@ -4,14 +4,14 @@
 <!-- HEADER CARD -->
 <div class="header-card">
     <div class="header-title">
-        <h1>⚙️ Impostazioni</h1>
+        <h1>Impostazioni</h1>
         <p class="settings-header-sub">Notifiche, allarmi, nomi dei sensori, dispositivi di casa e manutenzione.</p>
     </div>
     <div class="settings-header-actions">
-        <a href="/api/system/backup" class="btn btn-gold" style="padding: 0.6rem 1.15rem; text-decoration: none;" download title="Scarica una copia di backup dell'intero database SQLite">
+        <a href="/api/system/backup" class="btn btn-outline" download title="Scarica una copia di backup dell'intero database SQLite">
             💾 Backup
         </a>
-        <a href="/alerts-page" class="btn btn-outline" style="padding: 0.6rem 1.15rem; text-decoration: none;" title="Vai al registro storico delle notifiche">
+        <a href="/alerts-page" class="btn btn-outline" title="Vai al registro storico delle notifiche">
             🔔 Registro notifiche
         </a>
     </div>
@@ -70,8 +70,8 @@
     <div class="card" style="border: 1px solid var(--accent); background: linear-gradient(145deg, rgba(56, 189, 248, 0.05), var(--card-bg));">
         <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2); flex-wrap: wrap; gap: 0.5rem;">
             <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 1.25rem;">🔔</span>
-                <strong>Notifiche Push Native (PWA Web Push) & Canali Meteo</strong>
+                <span class="ui-sec-icon">🔔</span>
+                <strong>Notifiche sul telefono</strong>
             </div>
             <span id="push-status-badge" class="status-pill badge-waiting">Verifica in corso...</span>
         </div>
@@ -129,7 +129,7 @@
     <div class="card quiet-card">
         <div class="card-header quiet-card-header">
             <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 1.25rem;">🌙</span>
+                <span class="ui-sec-icon">🌙</span>
                 <strong>Filtro notturno {{ quiet_hours.start }}–{{ quiet_hours.end }}</strong>
             </div>
             {% if quiet_hours.enabled %}
@@ -167,8 +167,8 @@
     <div class="card" style="margin-top: 1.5rem; border: 1px solid rgba(16, 185, 129, 0.3); background: linear-gradient(145deg, rgba(16, 185, 129, 0.05), var(--card-bg));">
         <div class="card-header" style="border-bottom: 1px solid rgba(16, 185, 129, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between;">
             <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 1.25rem;">🛡️</span>
-                <strong>Allerte Ufficiali Protezione Civile (Calabria & Nazionale)</strong>
+                <span class="ui-sec-icon">🛡️</span>
+                <strong>Allerte Protezione Civile</strong>
             </div>
             <span class="status-pill badge-live">Attivo • DPC / ARPACAL</span>
         </div>
@@ -195,7 +195,7 @@
     <div class="card" style="min-width: 0;">
         <div class="card-header" style="flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.9rem; margin-bottom: 1rem;">
             <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.25rem;">📋</span>
+                <span class="ui-sec-icon">📋</span>
                 <div>
                     <strong>Catalogo allarmi e soglie</strong>
                     <div style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Quando scatta ogni avviso, con quale priorità e se suona di notte. Le soglie sono quelle configurate sul server.</div>
@@ -257,8 +257,8 @@
     <div class="card">
         <div class="card-header" style="flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.25rem;">🏷️</span>
-                <strong>Personalizzazione Nomi Sensori</strong>
+                <span class="ui-sec-icon">🏷️</span>
+                <strong>Nomi dei sensori</strong>
             </div>
             <span class="sub-badge">{% if detected_sensors %}{{ detected_sensors|length }} Rilevati{% else %}Nessun Extra{% endif %}</span>
         </div>
@@ -300,8 +300,8 @@
     <div class="card" id="tuya_settings_card" style="border: 1px solid rgba(168, 85, 247, 0.3); background: linear-gradient(145deg, rgba(168, 85, 247, 0.05), var(--card-bg));">
         <div class="card-header" style="border-bottom: 1px solid rgba(168, 85, 247, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 1.25rem;">🔌</span>
-                <strong>Dispositivi Smart Life / Tuya & Gestione Visibilità</strong>
+                <span class="ui-sec-icon">🔌</span>
+                <strong>Dispositivi Tuya</strong>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
                 <span class="sub-badge" id="tuya_active_count_badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc;">
@@ -374,8 +374,8 @@
     <div class="card" id="tuya_local_card" style="margin-top: 1.5rem; border: 1px solid rgba(56, 189, 248, 0.35); background: linear-gradient(145deg, rgba(56, 189, 248, 0.06), var(--card-bg));">
         <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 1.25rem;">🏠</span>
-                <strong>Controllo 100% Locale LAN (Zero Cloud / Senza Scadenze)</strong>
+                <span class="ui-sec-icon">🏠</span>
+                <strong>Controllo locale</strong>
             </div>
             <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                 <button type="button" class="btn btn-sm btn-outline" onclick="scanTuyaLan()" id="btn_scan_lan" title="Cerca i dispositivi Tuya accesi sulla rete Wi-Fi locale">
@@ -512,7 +512,7 @@
     <div class="card" style="border: 1px solid rgba(56, 189, 248, 0.35); background: linear-gradient(145deg, rgba(56, 189, 248, 0.08), var(--card-bg)); margin-bottom: 1.25rem;">
         <div class="card-header" style="border-bottom: 1px solid rgba(56, 189, 248, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 1.35rem;">❄️</span>
+                <span class="ui-sec-icon">❄️</span>
                 <div>
                     <strong style="font-size: 1.05rem;">Controllo Autonomo & Intelligenza Climatizzatori (LG ThinQ)</strong>
                     <div style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Gestione proattiva di accensione, spegnimento e notifiche intelligenti incrociate con meteo ed energia</div>
@@ -778,7 +778,7 @@
     <div class="card" style="border: 1px solid rgba(34, 197, 94, 0.35); background: linear-gradient(145deg, rgba(34, 197, 94, 0.05), var(--card-bg));">
         <div class="card-header" style="border-bottom: 1px solid rgba(34, 197, 94, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 1.35rem;">🏠</span>
+                <span class="ui-sec-icon">🏠</span>
                 <div>
                     <strong>Home Assistant • Hub Domotico Locale</strong>
                     <div style="font-size: 0.78rem; color: var(--text-dim);">Esecuzione locale su QNAP NAS (Porta 8123)</div>
@@ -850,8 +850,8 @@
         <div class="card">
             <div class="card-header" style="justify-content: space-between; align-items: center;">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.25rem;">🗄️</span>
-                    <strong>Database SQLite Locale & Manutenzione</strong>
+                    <span class="ui-sec-icon">🗄️</span>
+                    <strong>Database e manutenzione</strong>
                 </div>
                 <span class="sub-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">WAL Mode Attivo</span>
             </div>
@@ -876,7 +876,7 @@
         <div class="card" style="border: 1px solid rgba(56, 189, 248, 0.3); background: linear-gradient(145deg, rgba(56, 189, 248, 0.04), var(--card-bg));">
             <div class="card-header" style="justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(56, 189, 248, 0.15); padding-bottom: 0.8rem;">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.25rem;">⏳</span>
+                    <span class="ui-sec-icon">⏳</span>
                     <div>
                         <strong>Sincronizzazione Storico Pluriennale (ICORIG10)</strong>
                         <div style="font-size: 0.82rem; color: var(--text-dim); margin-top: 2px;">Recupera lo storico 2022–oggi da Weather Underground & ricalcola l'Albo dei Record</div>
@@ -929,8 +929,8 @@
         <div class="card">
             <div class="card-header" style="justify-content: space-between; align-items: center;">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.25rem;">📡</span>
-                    <strong>Diagnostica Hardware, Rete & Integrazioni</strong>
+                    <span class="ui-sec-icon">📡</span>
+                    <strong>Diagnostica</strong>
                 </div>
                 <span class="sub-badge badge-live">Connesso</span>
             </div>
@@ -956,8 +956,8 @@
         <div class="card">
             <div class="card-header" style="justify-content: space-between; align-items: center;">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.25rem;">🔒</span>
-                    <strong>Sicurezza & Disconnessione</strong>
+                    <span class="ui-sec-icon">🔒</span>
+                    <strong>Sicurezza</strong>
                 </div>
                 <span class="sub-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">Sessione Protetta</span>
             </div>

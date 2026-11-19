@@ -5,17 +5,13 @@
     <!-- 1. HEADER DELLA PAGINA CON BADGE E AZIONI RAPIDE -->
     <div class="header-card records-header-card">
         <div class="header-title">
-            <div class="records-header-badges">
-                <span class="badge badge-gold-glow">🏆 Hall of Fame Meteo</span>
-                <span class="badge badge-accent-glow">{{ records|length }} Record Attivi</span>
-            </div>
-            <h1>Albo dei Record</h1>
-            <p>I valori estremi e i primati storici registrati dalla stazione Ecowitt/Sainlogic e dall'impianto Aton.</p>
+            <h1>Record</h1>
+            <p>Massimi e minimi registrati dalla stazione e dall'impianto.</p>
         </div>
         <div class="header-actions">
-            <a href="/api/export/records-csv" class="btn btn-gold records-export-btn" title="Esporta tutti i record in formato CSV per Excel">
+            <a href="/api/export/records-csv" class="btn btn-outline records-export-btn" title="Esporta tutti i record in formato CSV per Excel">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                <span>Esporta CSV</span>
+                <span>Esporta</span>
             </a>
         </div>
     </div>
@@ -55,7 +51,7 @@
                 <div class="records-header-left">
                     <span class="section-emoji">🏆</span>
                     <div>
-                        <h2>Primati Storici Assoluti (All-Time)</h2>
+                        <h2>Record di sempre</h2>
                         <p>I massimi e minimi di sempre misurati dalla stazione sul campo.</p>
                     </div>
                 </div>
@@ -176,7 +172,7 @@
                 <div class="records-header-left">
                     <span class="section-emoji">📅</span>
                     <div>
-                        <h2>Estremi Giornalieri di Oggi</h2>
+                        <h2>Oggi</h2>
                         <p>Minime, massime ed escursione termica registrate nelle 24 ore odierne.</p>
                     </div>
                 </div>
@@ -218,7 +214,7 @@
                 <div class="records-header-left">
                     <span class="section-emoji">📊</span>
                     <div>
-                        <h2>Confronti Climatici & Medie Storiche</h2>
+                        <h2>Confronto con le medie</h2>
                         <p>{{ climate_stats.diff_30d_str }}</p>
                     </div>
                 </div>
@@ -265,7 +261,7 @@
                 <div class="records-header-left">
                     <span class="section-emoji">👑</span>
                     <div>
-                        <h2>Albo dei Record Mensili</h2>
+                        <h2>Record mese per mese</h2>
                         <p>I mesi estremi e i primati mensili storici registrati dalla stazione e dal solare.</p>
                     </div>
                 </div>
@@ -301,7 +297,7 @@
                 <div class="records-header-left">
                     <span class="section-emoji">🌴</span>
                     <div>
-                        <h2>Climatologia Notti Tropicali ({{ tropical_stats.year }})</h2>
+                        <h2>Notti tropicali {{ tropical_stats.year }}</h2>
                         <p>Standard WMO: Minima notturna &ge; 20.0°C • Notti Roventi &ge; 25.0°C</p>
                     </div>
                 </div>
@@ -368,7 +364,7 @@
                 <div class="records-header-left">
                     <span class="section-emoji">📜</span>
                     <div>
-                        <h2>Cronologia dei Record Infranti</h2>
+                        <h2>Record battuti</h2>
                         <p>I primati battuti nel tempo con confronto tra vecchio e nuovo valore.</p>
                     </div>
                 </div>

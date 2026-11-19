@@ -185,9 +185,9 @@
     <div class="cp-alert-card cp-border-{{ civil_protection.today.level | lower }}" id="cp_alert_card">
         <div class="cp-card-header">
             <div class="cp-title-wrap">
-                <span style="font-size: 1.35rem;">🛡️</span>
+                <span class="ui-sec-icon">🛡️</span>
                 <div>
-                    <h3>Protezione Civile • Allerte Meteo Ufficiali</h3>
+                    <h3>Allerta Protezione Civile</h3>
                     <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 3px;">
                         <span class="cp-zone-pill" id="cp_zone_name">📍 {{ civil_protection.zone_name }}</span>
                         <span class="cp-meta-date" id="cp_bulletin_date">Bollettino del {{ civil_protection.bulletin_date_str }}</span>
@@ -249,7 +249,7 @@
     <div class="forecast-section">
         <div class="forecast-header">
             <div class="forecast-title-group">
-                <span style="font-size: 1.4rem;">🌐</span>
+                <span class="ui-sec-icon">📆</span>
                 <h2>Previsioni</h2>
             </div>
         </div>
@@ -428,9 +428,9 @@
             <div class="ephemeris-title-group">
                 <span class="ephemeris-header-icon">🌅</span>
                 <div>
-                    <h2>Luce Solare & Effemeridi Astronomiche</h2>
+                    <h2>Sole e luna</h2>
                     <div class="ephemeris-sub-header">
-                        Progressione Solare • Fasi Lunari • Algoritmo Astronomico NOAA
+                        Alba, tramonto e fase lunare
                     </div>
                 </div>
             </div>
@@ -541,10 +541,9 @@
 <div class="now-intelligence-hero" id="now_intelligence_section">
     <div class="now-intelligence-header">
         <div class="now-intelligence-title">
-            <span class="pulse-dot"></span>
-            <span>🧠 Cosa devi sapere adesso</span>
+            <span class="ui-sec-icon">💡</span>
+            <span>Da sapere adesso</span>
         </div>
-        <span style="font-size: 0.76rem; color: var(--text-dim);">Live Weather & Home Intelligence</span>
     </div>
     <div class="now-pills-grid" id="now_pills_container">
         {% if analytics and analytics.now_highlights %}
@@ -1033,44 +1032,37 @@
 
     <!-- ☀️ PREVISIONE PRODUZIONE FOTOVOLTAICO & ACCUMULO DOMANI -->
     <div class="solar-forecast-hero" id="solar_forecast_section">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 2rem;">☀️</span>
-                <div>
-                    <h3 style="margin: 0; font-size: 1.15rem; font-weight: 800; color: #fff;">Previsione Produzione Fotovoltaico Domani</h3>
-                    <p style="margin: 2px 0 0 0; font-size: 0.82rem; color: var(--text-dim);">
-                        Modello solare Open-Meteo • Impianto nominale {{ analytics.solar_forecast.installed_kwp if analytics and analytics.solar_forecast else '6.0' }} kWp
-                    </p>
-                </div>
+        <div class="ui-sec-head">
+            <span class="ui-sec-icon">☀️</span>
+            <div class="ui-sec-title">
+                <h2>Fotovoltaico domani</h2>
+                <span>Stima Open-Meteo · impianto {{ analytics.solar_forecast.installed_kwp if analytics and analytics.solar_forecast else '6.0' }} kWp</span>
             </div>
-            <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4); padding: 4px 10px; font-weight: 700;">
-                ⚡ Solar AI Predictor
-            </span>
         </div>
 
         <div class="solar-fc-grid">
             <div class="solar-fc-item">
-                <div class="fc-label">Stima Produzione Domani</div>
+                <div class="fc-label">Produzione</div>
                 <div class="fc-value" id="solar_fc_kwh">{{ analytics.solar_forecast.tomorrow_range_str if analytics and analytics.solar_forecast else '20-25 kWh' }}</div>
-                <div class="fc-sub">Energia rinnovabile attesa</div>
+                <div class="fc-sub">nell'arco della giornata</div>
             </div>
 
             <div class="solar-fc-item">
-                <div class="fc-label">Batteria 100% Prevista</div>
+                <div class="fc-label">Batteria piena</div>
                 <div class="fc-value" style="color: #34d399;" id="battery_100_est">{{ analytics.solar_forecast.battery_100_est if analytics and analytics.solar_forecast else '12:45' }}</div>
-                <div class="fc-sub">Carica completa accumulatore</div>
+                <div class="fc-sub">ora prevista al 100%</div>
             </div>
 
             <div class="solar-fc-item">
-                <div class="fc-label">Fascia Elettrodomestici</div>
-                <div class="fc-value" style="color: #38bdf8; font-size: 1.3rem;" id="appliances_window_est">{{ analytics.solar_forecast.best_appliances_window if analytics and analytics.solar_forecast else '11:00 - 15:30' }}</div>
-                <div class="fc-sub">Massima resa autoconsumo</div>
+                <div class="fc-label">Elettrodomestici</div>
+                <div class="fc-value" style="color: #38bdf8;" id="appliances_window_est">{{ analytics.solar_forecast.best_appliances_window if analytics and analytics.solar_forecast else '11:00 - 15:30' }}</div>
+                <div class="fc-sub">fascia migliore</div>
             </div>
 
             <div class="solar-fc-item">
-                <div class="fc-label">Surplus FV Previsto</div>
-                <div class="fc-value" style="color: #a78bfa;" id="surplus_fc_kwh">+{{ analytics.solar_forecast.est_surplus_kwh if analytics and analytics.solar_forecast else '6.5' }} <span style="font-size: 0.9rem;">kWh</span></div>
-                <div class="fc-sub">Disponibile per carichi/rete</div>
+                <div class="fc-label">Surplus</div>
+                <div class="fc-value" style="color: #a78bfa;" id="surplus_fc_kwh">+{{ analytics.solar_forecast.est_surplus_kwh if analytics and analytics.solar_forecast else '6.5' }} <span class="unit">kWh</span></div>
+                <div class="fc-sub">per carichi o rete</div>
             </div>
         </div>
     </div>
@@ -1081,7 +1073,7 @@
             <div class="energy-title-group">
                 <span class="energy-header-icon">⚡</span>
                 <div>
-                    <h2>Flusso Energetico & Batteria Aton Storage</h2>
+                    <h2>Energia adesso</h2>
                     <div class="energy-sub-header">
                         SN: <strong id="energy_sn">{{ aton_sn }}</strong> • Aggiornato: <span id="energy_ts">{{ energy_latest.data_aton or 'Live' }}</span>
                     </div>
@@ -1232,14 +1224,14 @@
     </div>
 
     <!-- SEZIONE DETTAGLIO CONSUMI CASA LIVE & MONITORAGGIO CARICHI -->
-    <div class="smart-appliances-hero house-consumption-hero" id="dash_consumption_breakdown_section" style="margin-top: 1.25rem;">
+    <div class="smart-appliances-hero house-consumption-hero" id="dash_consumption_breakdown_section">
         <div class="appliances-header">
             <div class="appliances-title-group">
-                <span class="appliances-header-icon" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.35); color: #38bdf8;">⚡</span>
+                <span class="appliances-header-icon">⚡</span>
                 <div>
-                    <h2>Ripartizione Consumi Domestici in Tempo Reale</h2>
+                    <h2>Consumi della casa</h2>
                     <div class="appliances-sub-header">
-                        Misuratore Aton Storage • Prese Smart Tuya Metering • Elettrodomestici & Clima
+                        Aton, prese smart, elettrodomestici e clima
                     </div>
                 </div>
             </div>
@@ -1254,7 +1246,7 @@
         </div>
 
         <!-- KPI CONSUMI & BARRA PERCENTUALI -->
-        <div class="consumption-overview-card" style="margin-bottom: 1rem;">
+        <div class="consumption-overview-card">
             <div class="consumption-kpis-grid">
                 <div class="cons-kpi-item">
                     <span class="cons-kpi-label">Carico Casa (Aton)</span>
@@ -1303,9 +1295,9 @@
             <div class="climate-title-group">
                 <span class="climate-header-icon">❄️</span>
                 <div>
-                    <h2>Climatizzazione Smart & Comfort Termico</h2>
+                    <h2>Climatizzatori</h2>
                     <div class="climate-sub-header">
-                        Integrazione Cloud <strong>LG ThinQ Connect</strong> • Sinergia con Solare Aton Storage
+                        LG ThinQ
                     </div>
                 </div>
             </div>
@@ -1402,9 +1394,9 @@
             <div class="appliances-title-group">
                 <span class="appliances-header-icon">🧺</span>
                 <div>
-                    <h2>Elettrodomestici Smart & Sinergia Solare</h2>
+                    <h2>Elettrodomestici</h2>
                     <div class="appliances-sub-header">
-                        Integrazione Cloud <strong>Samsung SmartThings</strong> • Monitoraggio Lavatrice, Lavastoviglie e Presenza
+                        Samsung SmartThings
                     </div>
                 </div>
             </div>

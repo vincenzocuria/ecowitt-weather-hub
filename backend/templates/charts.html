@@ -3,11 +3,11 @@
 {% block content %}
 <div class="header-card">
     <div class="header-title">
-        <h1>📈 Grafici & Analisi Meteorologica</h1>
-        <p>Esplora l'andamento storico di temperatura, vento, pioggia, pressione e radiazione.</p>
+        <h1>Grafici</h1>
+        <p>Temperatura, vento, pioggia, pressione e sole nel tempo.</p>
     </div>
     <!-- SELETTORE PERIODO -->
-    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+    <div class="ui-chips">
         <button class="btn btn-secondary period-btn active" data-period="24h">24 Ore</button>
         <button class="btn btn-secondary period-btn" data-period="7d">7 Giorni</button>
         <button class="btn btn-secondary period-btn" data-period="30d">30 Giorni</button>
@@ -18,7 +18,7 @@
 <!-- GRAFICO 1: TEMPERATURA & PUNTO DI RUGIADA -->
 <div class="card">
     <div class="card-header">
-        <span>🌡️ Andamento Temperatura & Punto di Rugiada (°C)</span>
+        <span>🌡️ Temperatura e rugiada <small>°C</small></span>
     </div>
     <div style="height: 280px; position: relative;">
         <canvas id="chartTemp"></canvas>
@@ -28,7 +28,7 @@
 <!-- GRAFICO 2: VENTO & RAFFICHE -->
 <div class="card">
     <div class="card-header">
-        <span>💨 Vento Medio & Raffica Massima (km/h)</span>
+        <span>💨 Vento e raffiche <small>km/h</small></span>
     </div>
     <div style="height: 260px; position: relative;">
         <canvas id="chartWind"></canvas>
@@ -39,7 +39,7 @@
 <div class="grid">
     <div class="card">
         <div class="card-header">
-            <span>🌧️ Pioggia (mm)</span>
+            <span>🌧️ Pioggia <small>mm</small></span>
         </div>
         <div style="height: 240px; position: relative;">
             <canvas id="chartRain"></canvas>
@@ -47,7 +47,7 @@
     </div>
     <div class="card">
         <div class="card-header">
-            <span>📈 Pressione Barometrica (hPa)</span>
+            <span>📈 Pressione <small>hPa</small></span>
         </div>
         <div style="height: 240px; position: relative;">
             <canvas id="chartPress"></canvas>
@@ -58,7 +58,7 @@
 <!-- GRAFICO 4: SOLE & UV -->
 <div class="card">
     <div class="card-header">
-        <span>☀️ Radiazione Solare (W/m²) & Indice UV</span>
+        <span>☀️ Sole e UV <small>W/m²</small></span>
     </div>
     <div style="height: 240px; position: relative;">
         <canvas id="chartSolar"></canvas>
@@ -68,8 +68,8 @@
 <!-- GRAFICO 5: MODELLO IBRIDO (PREVISIONE 48H OPEN-METEO & VERIFICA) -->
 <div class="card">
     <div class="card-header">
-        <span>🛰️ Previsione Modelli ECMWF + ICON Prossime 48 Ore (°C & Pioggia)</span>
-        <span class="badge badge-info" style="font-size: 0.75rem;">Open-Meteo Hybrid</span>
+        <span>🛰️ Previsione 48 ore</span>
+        <span class="badge badge-info">ECMWF + ICON</span>
     </div>
     <div style="height: 250px; position: relative;">
         <canvas id="chartForecast"></canvas>
@@ -79,8 +79,8 @@
 <!-- GRAFICO 6: UMIDITÀ DEL TERRENO WH51 -->
 <div class="card" id="cardChartSoil">
     <div class="card-header">
-        <span>🌱 Umidità del Terreno (% - Sensori WH51)</span>
-        <span class="badge badge-success" style="font-size: 0.75rem;">Soglia Minima: 25%</span>
+        <span>🌱 Umidità del terreno <small>%</small></span>
+        <span class="badge badge-success">soglia 25%</span>
     </div>
     <div style="height: 250px; position: relative;">
         <canvas id="chartSoil"></canvas>

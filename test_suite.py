@@ -469,13 +469,13 @@ class TestEcowittHub(unittest.TestCase):
 
         res_set = client.get("/settings")
         self.assertEqual(res_set.status_code, 200)
-        self.assertIn("⚙️ Impostazioni</h1>", res_set.text)
+        self.assertIn("<h1>Impostazioni</h1>", res_set.text)
         self.assertNotIn("16 Regole Attive", res_set.text)
         self.assertIn("Filtro notturno 23:00–07:00", res_set.text)
         self.assertIn("Nubifragio in corso", res_set.text)
         self.assertNotIn("ECMWF IFS 9km", res_set.text)
-        self.assertIn("Database SQLite", res_set.text)
-        self.assertIn("Personalizzazione Nomi Sensori", res_set.text)
+        self.assertIn("Database e manutenzione", res_set.text)
+        self.assertIn("Nomi dei sensori", res_set.text)
         self.assertIn("Notifiche Push", res_set.text)
         self.assertIn("Clima Smart", res_set.text)
 
@@ -747,7 +747,7 @@ class TestEcowittHub(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertIn("Riepilogo Parametri del Periodo", res.text)
         self.assertIn("history-record-card", res.text)
-        self.assertIn("Esporta CSV", res.text)
+        self.assertIn("export/csv", res.text)
 
         # Test API search kpis
         api_res = client.get("/api/search/kpis")
@@ -761,7 +761,7 @@ class TestEcowittHub(unittest.TestCase):
         client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
         res = client.get("/devices")
         self.assertEqual(res.status_code, 200)
-        self.assertIn("Dispositivi Smart", res.text)
+        self.assertIn("<h1>Casa</h1>", res.text)
         self.assertIn("devices-header-card", res.text)
         self.assertIn("devices-grid", res.text)
 
@@ -1095,7 +1095,7 @@ class TestEcowittHub(unittest.TestCase):
 
         r_page = client.get("/records")
         self.assertEqual(r_page.status_code, 200)
-        self.assertIn("Climatologia Notti Tropicali", r_page.text)
+        self.assertIn("Notti tropicali", r_page.text)
         self.assertIn("Minima Più Alta", r_page.text)
 
         r_charts = client.get("/charts")

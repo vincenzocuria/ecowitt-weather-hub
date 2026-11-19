@@ -914,7 +914,7 @@ class ForecastService:
         elif tomorrow_est_kwh >= 15.0:
             battery_100_est = "13:30 - 14:30"
         else:
-            battery_100_est = "Non garantito (giornata coperta)"
+            battery_100_est = "Difficile"
 
         soc_now = aton_data.get("soc") if aton_data else None
         p_solare_now = aton_data.get("p_solare") if aton_data else None
