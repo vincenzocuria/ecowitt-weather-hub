@@ -1,1014 +1,279 @@
 {% extends "base.html" %}
 
 {% block content %}
-<!-- HEADER PRINCIPALE & AZIONI RAPIDE -->
-<div class="header-card alerts-header">
-    <div class="header-title">
-        <h1>🔔 Notifiche</h1>
-        <p>Allarmi, avvisi meteo e storico degli eventi.</p>
-    </div>
-    <div class="alerts-actions">
-        <button id="btn-mark-all-read" class="btn btn-primary" onclick="markAllAlertsAsRead()">
-            ✓ Segna tutte come lette
-        </button>
-        <a href="/api/export/alerts-csv" class="btn btn-outline">
-            📥 Esporta
-        </a>
-        <a href="/settings#notifications" class="btn btn-outline">
-            ⚙️ Impostazioni
-        </a>
-    </div>
-</div>
-
-<!-- KPI CARDS CRUSCOTTO STATISTICHE -->
-<div class="alerts-kpi-grid">
-    <div class="card alerts-kpi-card" onclick="filterAlertsPage('all')">
-        <div class="kpi-icon-wrap" style="background: rgba(56, 189, 248, 0.12); color: #38bdf8;">📋</div>
-        <div class="kpi-content">
-            <div class="kpi-label">Totale Notifiche</div>
-            <div class="kpi-value" id="kpi-total-val">{{ stats.total_count if stats else alerts|length }}</div>
-            <div class="kpi-sub">Registro complessivo</div>
-        </div>
-    </div>
-
-    <div class="card alerts-kpi-card {% if unread_count > 0 %}kpi-warning-glow{% endif %}" onclick="filterAlertsPage('unread')">
-        <div class="kpi-icon-wrap" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b;">📬</div>
-        <div class="kpi-content">
-            <div class="kpi-label">Da Leggere</div>
-            <div class="kpi-value" id="kpi-unread-val" style="color: {% if unread_count > 0 %}#f59e0b{% else %}#10b981{% endif %};">
-                {{ unread_count }}
-            </div>
-            <div class="kpi-sub" id="kpi-unread-sub">{% if unread_count > 0 %}Richiedono attenzione{% else %}Tutte lette ✨{% endif %}</div>
-        </div>
-    </div>
-
-    <div class="card alerts-kpi-card" onclick="filterByToday()">
-        <div class="kpi-icon-wrap" style="background: rgba(16, 185, 129, 0.12); color: #10b981;">📅</div>
-        <div class="kpi-content">
-            <div class="kpi-label">Oggi</div>
-            <div class="kpi-value" id="kpi-today-val">{{ stats.today_count if stats else 0 }}</div>
-            <div class="kpi-sub">Eventi ultime 24h</div>
-        </div>
-    </div>
-
-    <div class="card alerts-kpi-card">
-        <div class="kpi-icon-wrap" style="background: rgba(168, 85, 247, 0.12); color: #c084fc;">
-            {{ (stats.top_type | alert_icon) if (stats and stats.top_type) else '🔔' }}
-        </div>
-        <div class="kpi-content">
-            <div class="kpi-label">Più frequente</div>
-            <div class="kpi-value kpi-value-text">
-                {{ (stats.top_type | alert_label) if (stats and stats.top_type) else 'Nessuna' }}
-            </div>
-            <div class="kpi-sub">{{ stats.top_type_count if (stats and stats.top_type_count) else 0 }} volte</div>
-        </div>
-    </div>
-</div>
-
-<!-- 🛡️ STATO UFFICIALE PROTEZIONE CIVILE CALABRIA & NAZIONALE -->
-{% if civil_protection_enabled and civil_protection and civil_protection.status == 'success' %}
-<div class="cp-alert-card cp-border-{{ civil_protection.today.level | lower }}" style="margin-bottom: 1.5rem;">
-    <div class="cp-card-header">
-        <div class="cp-title-wrap">
-            <span style="font-size: 1.35rem;">🛡️</span>
-            <div>
-                <h3>Allerta Protezione Civile</h3>
-                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 3px;">
-                    <span class="cp-zone-pill">📍 {{ civil_protection.zone_name }}</span>
-                    <span class="cp-meta-date">Ultimo Bollettino DPC: {{ civil_protection.bulletin_date_str }}</span>
-                </div>
-            </div>
-        </div>
-        <div>
-            <a href="{{ civil_protection.today.preview_url if civil_protection.today.preview_url else '#' }}" target="_blank" class="cp-detail-btn" style="text-decoration: none;">
-                <span>🗺️</span> Mappa Bollettino Ufficiale ↗
-            </a>
-        </div>
-    </div>
-
-    <div class="cp-days-grid">
-        <!-- OGGI -->
-        <div class="cp-day-pill">
-            <div class="cp-day-top">
-                <span class="cp-day-label">📅 Oggi <small class="cp-day-date">{{ civil_protection.today_date_str or '' }}</small></span>
-                <span class="status-pill {{ civil_protection.today.badge_class }}">
-                    {{ civil_protection.today.icon }} {{ civil_protection.today.label }}
-                </span>
-            </div>
-            <div style="font-size: 0.84rem; color: #e2e8f0; line-height: 1.45;">
-                {{ civil_protection.today.overall_text }}
-            </div>
-            {% if civil_protection.today.active_hazards %}
-            <div class="cp-hazards-list">
-                {% for h in civil_protection.today.active_hazards %}
-                <span class="cp-hazard-chip">⚠️ {{ h }}</span>
-                {% endfor %}
-            </div>
-            {% endif %}
-        </div>
-
-        <!-- DOMANI -->
-        <div class="cp-day-pill">
-            <div class="cp-day-top">
-                <span class="cp-day-label">📅 Domani <small class="cp-day-date">{{ civil_protection.tomorrow_date_str or '' }}</small></span>
-                <span class="status-pill {{ civil_protection.tomorrow.badge_class }}">
-                    {{ civil_protection.tomorrow.icon }} {{ civil_protection.tomorrow.label }}
-                </span>
-            </div>
-            <div style="font-size: 0.84rem; color: #e2e8f0; line-height: 1.45;">
-                {{ civil_protection.tomorrow.overall_text }}
-            </div>
-            {% if civil_protection.tomorrow.active_hazards %}
-            <div class="cp-hazards-list">
-                {% for h in civil_protection.tomorrow.active_hazards %}
-                <span class="cp-hazard-chip">⚠️ {{ h }}</span>
-                {% endfor %}
-            </div>
-            {% endif %}
-        </div>
-    </div>
-</div>
-{% endif %}
-
-<!-- BARRA RICERCA & FILTRI AVANZATI -->
-<div class="card" style="margin-bottom: 1.5rem; padding: 1rem 1.25rem;">
-    <div style="display: flex; flex-direction: column; gap: 0.9rem;">
-        <!-- Input di Ricerca Testuale in Tempo Reale -->
-        <div class="search-bar-wrap">
-            <span class="search-icon">🔍</span>
-            <input type="text" id="alert-search-input" class="search-input" placeholder="Cerca notifiche per testo, titolo, tipo (es. pioggia, fulmine, gelo, record)..." oninput="handleAlertSearch()">
-            <button id="search-clear-btn" class="search-clear-btn" style="display:none;" onclick="clearAlertSearch()">✕</button>
-        </div>
-
-        <!-- Barra Filtri Chip Categoria & Stato -->
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
-            <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;" id="category-filter-chips">
-                <button id="filter-btn-all" class="filter-chip active" onclick="filterAlertsPage('all')">
-                    Tutte (<span id="total-count-badge">{{ alerts|length }}</span>)
-                </button>
-                <button id="filter-btn-unread" class="filter-chip" onclick="filterAlertsPage('unread')">
-                    Non lette (<span id="unread-filter-count">{{ unread_count }}</span>)
-                </button>
-                <button class="filter-chip" data-category="civil_protection" onclick="filterCategory('civil_protection', this)">
-                    🛡️ Prot. Civile
-                </button>
-                <button class="filter-chip" data-category="storms" onclick="filterCategory('lightning,storm,wind_spike', this)">
-                    ⚡ Temporali & Vento
-                </button>
-                <button class="filter-chip" data-category="rain" onclick="filterCategory('rain,rain_start,rain_forecast', this)">
-                    🌧️ Pioggia
-                </button>
-                <button class="filter-chip" data-category="temp" onclick="filterCategory('freeze,heatwave', this)">
-                    🌡️ Temperature
-                </button>
-                <button class="filter-chip" data-category="system" onclick="filterCategory('record,offline,online,battery_low,soil_dry,digest,leak', this)">
-                    ⚙️ Sistema & Record
-                </button>
-            </div>
-
-            <div style="display: flex; align-items: center; gap: 0.75rem;">
-                <span class="status-pill {% if unread_count > 0 %}badge-warning{% else %}badge-live{% endif %}" id="unread-status-pill" style="font-size: 0.8rem;">
-                    {% if unread_count > 0 %}
-                    <span id="unread-count-badge">{{ unread_count }}</span> da leggere
-                    {% else %}
-                    Nessuna da leggere
-                    {% endif %}
-                </span>
-
-                {% if alerts %}
-                <button class="btn btn-outline" style="padding: 0.35rem 0.75rem; font-size: 0.78rem; color: var(--danger); border-color: rgba(239,68,68,0.3);" onclick="clearAllAlerts()">
-                    🗑️ Svuota registro
-                </button>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- SEZIONE 1: ULTIME NOTIFICHE RECENTI (VISIBILI DI DEFAULT) -->
-{% if alerts %}
-<div class="section-title-wrap" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
-    <h3 style="font-size: 1.05rem; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 0.5rem;">
-        <span>⚡ Ultime Notifiche</span>
-        <span class="badge-tag" style="background: rgba(56, 189, 248, 0.15); color: var(--accent); font-size: 0.75rem;" id="recent-count-tag">
-            {{ recent_alerts|length if recent_alerts else alerts|length }} recenti
-        </span>
-    </h3>
-    <span style="font-size: 0.8rem; color: var(--text-dim);" id="matching-results-indicator"></span>
-</div>
-
-<div id="recent-notifications-container" class="notifications-feed-list" style="display: flex; flex-direction: column; gap: 0.85rem; margin-bottom: 1.5rem;">
-    {% for a in recent_alerts %}
-    <div class="card notification-item {% if not a.is_read %}unread{% endif %}" id="alert-item-{{ a.id }}" data-unread="{{ 1 if not a.is_read else 0 }}" data-type="{{ a.alert_type }}" data-timestamp="{{ a.timestamp }}">
-        <div class="notification-icon-wrap">
-            {{ a.alert_type | alert_icon }}
-        </div>
-        
-        <div class="notification-content">
-            <div class="notification-meta">
-                <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-                    <span class="alert-type-pill {{ a.alert_type }}">{{ a.alert_type | alert_label }}</span>
-                    {% if not a.is_read %}
-                    <span class="unread-dot" title="Non letta"></span>
-                    {% endif %}
-                </div>
-                <span class="notification-date">{{ a.timestamp | local_dt }}</span>
-            </div>
-            
-            <div class="notification-title">{{ a.title }}</div>
-            <div class="notification-message">{{ a.message }}</div>
-        </div>
-        
-        <div class="notification-actions">
-            {% if not a.is_read %}
-            <button class="btn btn-outline btn-mark-read" onclick="markAlertAsRead({{ a.id }})">
-                ✓ Segna come letta
+<div class="ntf-page">
+    <header class="ntf-head">
+        <h1>Notifiche</h1>
+        <div class="ntf-head-actions">
+            <button type="button" id="ntf-read-all" class="ntf-btn" onclick="ntfReadAll()" {% if unread_count == 0 %}hidden{% endif %}>
+                ✓ Segna tutte lette
             </button>
-            {% else %}
-            <span class="badge-tag read-status-tag">
-                ✓ Letta
+            <details class="ntf-menu">
+                <summary aria-label="Altre azioni">⋯</summary>
+                <div class="ntf-menu-list">
+                    <a href="/settings#notifications">⚙️ Scegli quali ricevere</a>
+                    <a href="/api/export/alerts-csv">📥 Scarica in Excel</a>
+                    {% if has_alerts %}<button type="button" class="is-danger" onclick="ntfClearAll()">🗑️ Cancella tutto</button>{% endif %}
+                </div>
+            </details>
+        </div>
+    </header>
+
+    {% if civil_protection_enabled and civil_protection and civil_protection.status == 'success' %}
+    {% set cp = civil_protection %}
+    <a class="ntf-cp ntf-cp-{{ cp.today.level | lower }}" href="{{ cp.today.preview_url if cp.today.preview_url else '#' }}" target="_blank" rel="noopener">
+        <span class="ntf-cp-icon" aria-hidden="true">🛡️</span>
+        <span class="ntf-cp-body">
+            <strong>Protezione Civile</strong>
+            <span class="ntf-cp-days">
+                <span>Oggi {{ cp.today.icon }} {{ cp.today.level | capitalize }}</span>
+                <span>Domani {{ cp.tomorrow.icon }} {{ cp.tomorrow.level | capitalize }}</span>
+            </span>
+            {% if cp.today.active_hazards or cp.tomorrow.active_hazards %}
+            <span class="ntf-cp-hazards">
+                {% for h in cp.today.active_hazards %}<span>Oggi: {{ h }}</span>{% endfor %}
+                {% for h in cp.tomorrow.active_hazards %}<span>Domani: {{ h }}</span>{% endfor %}
             </span>
             {% endif %}
-            
-            <button class="btn-del-item" onclick="deleteAlertItem({{ a.id }})" title="Elimina notifica">
-                ✕
-            </button>
-        </div>
+            <small>{{ cp.zone_name }}</small>
+        </span>
+        <span class="ntf-chevron" aria-hidden="true">›</span>
+    </a>
+    {% endif %}
+
+    {% if has_alerts %}
+    <div class="ntf-filters" id="ntf-filters" role="tablist" aria-label="Filtra le notifiche">
+        <button type="button" class="ntf-chip active" data-filter="all" onclick="ntfFilter(this)">Tutte</button>
+        <button type="button" class="ntf-chip" data-filter="unread" onclick="ntfFilter(this)">Da leggere <span id="ntf-unread-count" {% if unread_count == 0 %}hidden{% endif %}>{{ unread_count }}</span></button>
+        {% for key, name, icon in categories %}
+        <button type="button" class="ntf-chip" data-filter="{{ key }}" onclick="ntfFilter(this)">{{ icon }} {{ name }}</button>
+        {% endfor %}
     </div>
+    {% endif %}
+
+    {% for day in days %}
+    <section class="ntf-day {% if loop.index0 >= 3 %}is-collapsed{% endif %}" data-day="{{ day.key }}">
+        <h2 class="ntf-day-title" onclick="this.parentElement.classList.toggle('is-collapsed')">
+            <span>{{ day.name }}</span>
+            <small>{{ day.date_label }}{% if day.count %} · {{ day.count }}{% endif %}</small>
+            {% if day.unread %}<span class="ntf-day-unread">{{ day.unread }} da leggere</span>{% endif %}
+            <span class="ntf-day-chevron" aria-hidden="true">›</span>
+        </h2>
+        {% if day.entries %}
+        <div class="ntf-list">
+            {% for e in day.entries %}
+            <article class="ntf-row {% if e.unread %}is-unread{% endif %}" data-cat="{{ e.category }}" data-ids="{{ e.ids | join(',') }}" data-unread-ids="{{ e.occurrences | selectattr('unread') | map(attribute='id') | join(',') }}">
+                <button type="button" class="ntf-row-head" onclick="ntfToggle(this)" aria-expanded="false">
+                    <span class="ntf-icon cat-{{ e.category }}" aria-hidden="true">{{ e.icon }}</span>
+                    <span class="ntf-main">
+                        <span class="ntf-title">
+                            <span class="ntf-title-text">{{ e.latest.title if e.count == 1 else e.label }}</span>
+                            {% if e.count > 1 %}<span class="ntf-count">{{ e.count }} volte</span>{% endif %}
+                        </span>
+                        <span class="ntf-msg">{{ e.latest.message }}</span>
+                    </span>
+                    <span class="ntf-side">
+                        <span class="ntf-time">{{ e.latest.time }}</span>
+                        <span class="ntf-dot" aria-label="Da leggere"></span>
+                    </span>
+                </button>
+                <div class="ntf-detail" hidden>
+                    {% if e.count > 1 %}
+                    <ul class="ntf-occ">
+                        {% for it in e.occurrences %}
+                        <li><time>{{ it.time }}</time><span><strong>{{ it.title }}</strong>{{ it.message }}</span></li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                    <div class="ntf-detail-actions">
+                        <span>{{ e.label }}</span>
+                        <button type="button" onclick="ntfDelete(this)">Elimina</button>
+                    </div>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="ntf-empty">Nessuna notifica oggi.</p>
+        {% endif %}
+        <p class="ntf-empty ntf-empty-filter" hidden>Niente da mostrare con questo filtro.</p>
+    </section>
     {% endfor %}
 </div>
 
-<!-- SEZIONE 2: ARCHIVIO NOTIFICHE STORICHE (COLLASSABILE - CHIUSO DI DEFAULT) -->
-{% if archive_alerts %}
-<div class="card archive-accordion-card" id="archive-accordion-wrapper" style="margin-bottom: 1.5rem; padding: 0; overflow: hidden; border: 1px solid var(--card-border);">
-    <button class="accordion-header-btn" id="btn-toggle-archive" onclick="toggleArchiveAccordion()">
-        <div style="display: flex; align-items: center; gap: 0.75rem;">
-            <span class="accordion-icon" id="archive-chevron">▶</span>
-            <div style="text-align: left;">
-                <div style="font-weight: 600; font-size: 0.95rem; color: var(--text);">
-                    📂 Archivio Notifiche Precedenti
-                </div>
-                <div style="font-size: 0.78rem; color: var(--text-dim);" id="archive-summary-text">
-                    {{ archive_alerts|length }} notifiche storiche meno recenti (chiuso di default)
-                </div>
-            </div>
-        </div>
-        <span class="badge-tag" style="background: rgba(255, 255, 255, 0.06); color: var(--text-dim); font-size: 0.78rem;" id="archive-badge-tag">
-            {{ archive_alerts|length }} archiviate
-        </span>
-    </button>
-
-    <div class="accordion-body-collapse" id="archive-notifications-body" style="display: none; padding: 1rem 1.25rem; background: rgba(0, 0, 0, 0.12);">
-        <div id="archive-notifications-container" class="notifications-feed-list" style="display: flex; flex-direction: column; gap: 0.85rem;">
-            {% for a in archive_alerts %}
-            <div class="card notification-item {% if not a.is_read %}unread{% endif %}" id="alert-item-{{ a.id }}" data-unread="{{ 1 if not a.is_read else 0 }}" data-type="{{ a.alert_type }}" data-timestamp="{{ a.timestamp }}">
-                <div class="notification-icon-wrap">
-                    {{ a.alert_type | alert_icon }}
-                </div>
-                
-                <div class="notification-content">
-                    <div class="notification-meta">
-                        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-                            <span class="alert-type-pill {{ a.alert_type }}">{{ a.alert_type | alert_label }}</span>
-                            {% if not a.is_read %}
-                            <span class="unread-dot" title="Non letta"></span>
-                            {% endif %}
-                        </div>
-                        <span class="notification-date">{{ a.timestamp | local_dt }}</span>
-                    </div>
-                    
-                    <div class="notification-title">{{ a.title }}</div>
-                    <div class="notification-message">{{ a.message }}</div>
-                </div>
-                
-                <div class="notification-actions">
-                    {% if not a.is_read %}
-                    <button class="btn btn-outline btn-mark-read" onclick="markAlertAsRead({{ a.id }})">
-                        ✓ Segna come letta
-                    </button>
-                    {% else %}
-                    <span class="badge-tag read-status-tag">
-                        ✓ Letta
-                    </span>
-                    {% endif %}
-                    
-                    <button class="btn-del-item" onclick="deleteAlertItem({{ a.id }})" title="Elimina notifica">
-                        ✕
-                    </button>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-</div>
-{% endif %}
-
-<!-- STATO NESSUN RISULTATO FILTRO/RICERCA -->
-<div id="no-search-results" class="card" style="display: none; text-align: center; padding: 2.5rem 1.5rem; color: var(--text-dim);">
-    <div style="font-size: 2.2rem; margin-bottom: 0.4rem;">🔍</div>
-    <h3 style="color: var(--text); margin-bottom: 0.3rem;">Nessuna notifica trovata</h3>
-    <p style="font-size: 0.88rem; max-width: 420px; margin: 0 auto 0.75rem;">
-        Non ci sono notifiche corrispondenti ai parametri di ricerca o filtri selezionati.
-    </p>
-    <button class="btn btn-outline" style="padding: 0.45rem 1rem; font-size: 0.82rem;" onclick="resetAllAlertFilters()">
-        Reimposta filtri
-    </button>
-</div>
-
-{% else %}
-<!-- REGISTRO COMPLETAMENTE VUOTO -->
-<div class="card" style="text-align: center; padding: 3rem 1.5rem; color: var(--text-dim); margin-bottom: 1.5rem;">
-    <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">✨</div>
-    <h3 style="color: var(--text); margin-bottom: 0.4rem;">Nessuna notifica presente</h3>
-    <p style="font-size: 0.9rem; max-width: 450px; margin: 0 auto;">
-        Il registro delle notifiche è vuoto. Gli eventi meteorologici rilevati dalla stazione compariranno automaticamente qui.
-    </p>
-</div>
-{% endif %}
-
-<!-- BOX INFORMATIVO COLLEGAMENTO IMPOSTAZIONI -->
-<div class="card" style="background: rgba(15, 23, 42, 0.4); border: 1px dashed var(--card-border); padding: 1rem 1.25rem;">
-    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
-        <div style="font-size: 0.88rem; color: var(--text-dim); line-height: 1.45;">
-            💡 <strong>Configurazione e Soglie:</strong> Per abilitare le Notifiche Push Web sul tuo smartphone (PWA), attivare il canale ntfy.sh o consultare tutte le soglie di scatto degli allarmi, visita la pagina Impostazioni.
-        </div>
-        <a href="/settings#notifications" class="btn btn-outline" style="font-size: 0.85rem; padding: 0.5rem 1rem; text-decoration: none; white-space: nowrap;">
-            ⚙️ Vai a Impostazioni Notifiche →
-        </a>
-    </div>
-</div>
-
 <style>
-/* Grid KPI Cards */
-.alerts-kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-    margin-bottom: 1.25rem;
-}
+.ntf-page { width: 100%; max-width: 720px; min-width: 0; margin: 0 auto; }
+.ntf-page > * { min-width: 0; max-width: 100%; }
+.ntf-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0.25rem 0 0.9rem; }
+.ntf-head h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; margin: 0; color: var(--text); }
+.ntf-head-actions { display: flex; align-items: center; gap: 0.5rem; }
+.ntf-btn { border: 1px solid var(--card-border); background: var(--card-bg); color: var(--accent); font: inherit; font-size: 0.85rem; font-weight: 700; padding: 0.5rem 0.85rem; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+.ntf-menu { position: relative; }
+.ntf-menu summary { list-style: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--card-border); background: var(--card-bg); color: var(--text); font-size: 1.3rem; font-weight: 800; cursor: pointer; line-height: 1; }
+.ntf-menu summary::-webkit-details-marker { display: none; }
+.ntf-menu-list { position: absolute; right: 0; top: 46px; z-index: 30; min-width: 230px; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.25); overflow: hidden; }
+.ntf-menu-list a, .ntf-menu-list button { display: block; width: 100%; text-align: left; padding: 0.85rem 1rem; font: inherit; font-size: 0.92rem; font-weight: 600; color: var(--text); background: none; border: 0; border-top: 1px solid var(--card-border); text-decoration: none; cursor: pointer; }
+.ntf-menu-list > :first-child { border-top: 0; }
+.ntf-menu-list .is-danger { color: var(--danger); }
 
-.alerts-kpi-card {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1.1rem 1.25rem;
-    border-radius: 14px;
-    cursor: pointer;
-    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-    border: 1px solid var(--card-border);
-    background: linear-gradient(145deg, rgba(30, 41, 59, 0.45) 0%, var(--card-bg) 100%);
-}
+.ntf-cp { display: flex; align-items: center; gap: 0.8rem; padding: 0.8rem 0.95rem; margin-bottom: 0.9rem; border-radius: 16px; background: var(--card-bg); border: 1px solid var(--card-border); border-left: 5px solid var(--success); text-decoration: none; color: var(--text); }
+.ntf-cp-gialla { border-left-color: #eab308; }
+.ntf-cp-arancione { border-left-color: #f97316; }
+.ntf-cp-rossa { border-left-color: var(--danger); }
+.ntf-cp-icon { font-size: 1.5rem; }
+.ntf-cp-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.ntf-cp-body strong { font-size: 0.95rem; }
+.ntf-cp-days { display: flex; flex-wrap: wrap; gap: 0.15rem 0.9rem; font-size: 0.88rem; font-weight: 600; }
+.ntf-cp-hazards { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); }
+.ntf-cp-body small { font-size: 0.75rem; color: var(--text-muted); }
+.ntf-chevron { font-size: 1.4rem; color: var(--text-muted); }
 
-.alerts-kpi-card:hover {
-    transform: translateY(-2px);
-    border-color: var(--accent);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-}
+.ntf-filters { display: flex; gap: 0.45rem; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; padding: 0.1rem 0 0.5rem; margin-bottom: 0.3rem; }
+.ntf-filters::-webkit-scrollbar { display: none; }
+.ntf-chip { flex: 0 0 auto; border: 1px solid var(--card-border); background: var(--card-bg); color: var(--text-dim); font: inherit; font-size: 0.85rem; font-weight: 700; padding: 0.5rem 0.9rem; border-radius: 999px; cursor: pointer; white-space: nowrap; min-height: 38px; }
+.ntf-chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.ntf-chip span { display: inline-block; min-width: 18px; margin-left: 4px; padding: 0 5px; border-radius: 9px; background: #dc2626; color: #fff; font-size: 0.72rem; text-align: center; }
 
-.kpi-warning-glow {
-    border-color: rgba(245, 158, 11, 0.45) !important;
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, var(--card-bg) 100%) !important;
-    box-shadow: 0 0 16px rgba(245, 158, 11, 0.1);
-}
-
-.kpi-icon-wrap {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
-    flex-shrink: 0;
-}
-
-.kpi-content {
-    min-width: 0;
-    flex: 1;
-}
-
-.kpi-label {
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 0.15rem;
-}
-
-.kpi-value {
-    font-size: 1.45rem;
-    font-weight: 700;
-    color: var(--text);
-    line-height: 1.2;
-}
-
-.kpi-sub {
-    font-size: 0.75rem;
-    color: var(--text-dim);
-    margin-top: 0.15rem;
-}
-
-.alerts-actions {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-    align-items: center;
-}
-.alerts-actions .btn {
-    padding: 0.6rem 1.1rem;
-    font-size: 0.88rem;
-    text-decoration: none;
-    justify-content: center;
-    white-space: nowrap;
-}
-.kpi-value-text {
-    font-size: 1.05rem;
-    line-height: 1.25;
-    overflow-wrap: anywhere;
-}
-
-/* Search Bar */
-.search-bar-wrap {
-    position: relative;
-    display: flex;
-    align-items: center;
-    width: 100%;
-}
-
-.search-icon {
-    position: absolute;
-    left: 1rem;
-    font-size: 0.95rem;
-    color: var(--text-dim);
-    pointer-events: none;
-}
-
-.search-input {
-    width: 100%;
-    background: rgba(15, 23, 42, 0.6);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
-    padding: 0.65rem 2.4rem 0.65rem 2.6rem;
-    color: var(--text);
-    font-size: 0.88rem;
-    outline: none;
-    transition: all 0.2s ease;
-}
-
-.search-input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
-    background: rgba(15, 23, 42, 0.85);
-}
-
-.search-clear-btn {
-    position: absolute;
-    right: 0.75rem;
-    background: rgba(255, 255, 255, 0.1);
-    border: none;
-    color: var(--text-dim);
-    border-radius: 50%;
-    width: 22px;
-    height: 22px;
-    cursor: pointer;
-    font-size: 0.75rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-}
-
-.search-clear-btn:hover {
-    background: rgba(239, 68, 68, 0.3);
-    color: #ef4444;
-}
-
-/* Filter Chips */
-.filter-chip {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--card-border);
-    color: var(--text-dim);
-    padding: 0.35rem 0.85rem;
-    border-radius: 20px;
-    font-size: 0.82rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-}
-
-.filter-chip:hover {
-    border-color: var(--accent);
-    color: var(--text);
-}
-
-.filter-chip.active {
-    background: rgba(56, 189, 248, 0.2);
-    border-color: var(--accent);
-    color: var(--accent);
-    font-weight: 600;
-}
-
-/* Accordion Archive Button */
-.accordion-header-btn {
-    width: 100%;
-    background: rgba(255, 255, 255, 0.03);
-    border: none;
-    padding: 1rem 1.25rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    cursor: pointer;
-    transition: background 0.2s ease;
-}
-
-.accordion-header-btn:hover {
-    background: rgba(56, 189, 248, 0.06);
-}
-
-.accordion-icon {
-    font-size: 0.75rem;
-    color: var(--accent);
-    display: inline-block;
-    transition: transform 0.25s ease;
-}
-
-.accordion-icon.expanded {
-    transform: rotate(90deg);
-}
-
-/* Modern Notification Item Card */
-.notification-item {
-    position: relative;
-    display: flex;
-    align-items: flex-start;
-    gap: 1rem;
-    padding: 1.1rem 1.25rem;
-    border-radius: 14px;
-    transition: all 0.25s ease;
-    border: 1px solid var(--card-border);
-    background: rgba(17, 24, 39, 0.65);
-    backdrop-filter: blur(8px);
-    border-left: 4px solid rgba(255, 255, 255, 0.15);
-}
-
-/* Left colored borders by alert category */
-.notification-item[data-type="lightning"],
-.notification-item[data-type="storm"],
-.notification-item[data-type="wind_spike"] {
-    border-left-color: #f87171;
-}
-.notification-item[data-type="rain"],
-.notification-item[data-type="rain_start"],
-.notification-item[data-type="rain_forecast"] {
-    border-left-color: #38bdf8;
-}
-.notification-item[data-type="freeze"] {
-    border-left-color: #60a5fa;
-}
-.notification-item[data-type="heatwave"],
-.notification-item[data-type="uv_extreme"] {
-    border-left-color: #fb923c;
-}
-.notification-item[data-type="record"] {
-    border-left-color: #facc15;
-}
-.notification-item[data-type="online"] {
-    border-left-color: #10b981;
-}
-.notification-item[data-type="offline"],
-.notification-item[data-type="battery_low"],
-.notification-item[data-type="leak"] {
-    border-left-color: #ef4444;
-}
-.notification-item[data-type="soil_dry"] {
-    border-left-color: #34d399;
-}
-.notification-item[data-type="digest"] {
-    border-left-color: #c084fc;
-}
-
-.notification-item.unread {
-    border-color: rgba(56, 189, 248, 0.4);
-    background: linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(15, 23, 42, 0.85) 100%);
-    box-shadow: 0 4px 20px rgba(56, 189, 248, 0.06);
-}
-
-.notification-icon-wrap {
-    font-size: 1.5rem;
-    min-width: 44px;
-    height: 44px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.04);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    flex-shrink: 0;
-}
-
-.notification-content {
-    flex: 1;
-    min-width: 0;
-}
-
-.notification-meta {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.6rem;
-    margin-bottom: 0.35rem;
-    flex-wrap: wrap;
-}
-
-.alert-type-pill {
-    font-size: 0.72rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    padding: 2px 7px;
-    border-radius: 6px;
-    background: rgba(56, 189, 248, 0.15);
-    color: var(--accent);
-    letter-spacing: 0.5px;
-}
-
-.alert-type-pill.lightning,
-.alert-type-pill.storm,
-.alert-type-pill.freeze {
-    background: rgba(239, 68, 68, 0.2);
-    color: #f87171;
-}
-
-.alert-type-pill.record {
-    background: rgba(234, 179, 8, 0.2);
-    color: #facc15;
-}
-
-.alert-type-pill.digest {
-    background: rgba(168, 85, 247, 0.2);
-    color: #c084fc;
-}
-
-.notification-date {
-    font-size: 0.78rem;
-    color: var(--text-dim);
-}
-
-.unread-dot {
-    width: 8px;
-    height: 8px;
-    background: var(--accent);
-    border-radius: 50%;
-    box-shadow: 0 0 8px var(--accent);
-    display: inline-block;
-    animation: pulse 2s infinite;
-}
-
-.notification-title {
-    font-size: 0.96rem;
-    font-weight: 600;
-    color: var(--text);
-    margin-bottom: 0.25rem;
-    line-height: 1.35;
-}
-
-.notification-message {
-    font-size: 0.86rem;
-    color: var(--text-dim);
-    line-height: 1.45;
-}
-
-.notification-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    align-self: center;
-    flex-shrink: 0;
-}
-
-.btn-mark-read {
-    padding: 0.38rem 0.85rem;
-    font-size: 0.8rem;
-    white-space: nowrap;
-    border-radius: 8px;
-}
-
-.read-status-tag {
-    background: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-    font-size: 0.75rem;
-    padding: 3px 8px;
-    border-radius: 6px;
-    white-space: nowrap;
-}
-
-.btn-del-item {
-    background: transparent;
-    border: none;
-    color: var(--text-dim);
-    font-size: 0.9rem;
-    cursor: pointer;
-    padding: 0.35rem 0.5rem;
-    border-radius: 6px;
-    transition: all 0.2s;
-}
-
-.btn-del-item:hover {
-    background: rgba(239, 68, 68, 0.15);
-    color: #ef4444;
-}
-
-/* NATIVE MOBILE APP FEEL (< 640px) */
+.ntf-day { margin-bottom: 1.1rem; }
+.ntf-day-title { display: flex; align-items: baseline; gap: 0.5rem; margin: 0 0.25rem 0.45rem; font-size: 1.05rem; font-weight: 800; color: var(--text); }
+.ntf-day-title { cursor: pointer; }
+.ntf-day-chevron { margin-left: auto; color: var(--text-muted); font-size: 1.2rem; transform: rotate(90deg); transition: transform 0.15s; }
+.ntf-day.is-collapsed .ntf-day-chevron { transform: none; }
+.ntf-day.is-collapsed .ntf-list, .ntf-day.is-collapsed .ntf-empty { display: none; }
+.ntf-day.is-collapsed { margin-bottom: 0.5rem; }
+.ntf-day-unread { font-size: 0.72rem; font-weight: 700; color: var(--accent); }
+.ntf-day-title small { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
+.ntf-list { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; overflow: hidden; }
+.ntf-row { border-top: 1px solid var(--card-border); }
+.ntf-row:first-child, .ntf-row.is-first-visible { border-top: 0; }
+.ntf-row-head { display: flex; align-items: flex-start; gap: 0.75rem; width: 100%; padding: 0.8rem 0.9rem; background: none; border: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.ntf-icon { flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; font-size: 1.2rem; background: rgba(56, 189, 248, 0.14); }
+.ntf-icon.cat-casa { background: rgba(168, 85, 247, 0.14); }
+.ntf-icon.cat-giardino { background: rgba(16, 185, 129, 0.14); }
+.ntf-icon.cat-energia { background: rgba(245, 158, 11, 0.16); }
+.ntf-icon.cat-sistema { background: rgba(148, 163, 184, 0.2); }
+.ntf-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.ntf-title { display: flex; align-items: center; flex-wrap: wrap; gap: 0.2rem 0.45rem; font-size: 0.93rem; font-weight: 600; color: var(--text); line-height: 1.3; }
+.ntf-row.is-unread .ntf-title { font-weight: 800; }
+.ntf-count { font-size: 0.72rem; font-weight: 700; color: var(--text-dim); background: rgba(148, 163, 184, 0.18); padding: 1px 7px; border-radius: 9px; white-space: nowrap; }
+.ntf-msg { font-size: 0.84rem; line-height: 1.4; color: var(--text-dim); white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ntf-row.is-open .ntf-msg { display: block; -webkit-line-clamp: unset; }
+.ntf-row.is-open.has-many .ntf-msg { display: none; }
+.ntf-side { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; padding-top: 0.1rem; }
+.ntf-time { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.ntf-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); visibility: hidden; }
+.ntf-row.is-unread .ntf-dot { visibility: visible; }
+.ntf-detail { padding: 0 0.9rem 0.8rem calc(0.9rem + 38px + 0.75rem); }
+.ntf-occ { list-style: none; margin: 0 0 0.6rem; padding: 0; display: flex; flex-direction: column; gap: 0.55rem; }
+.ntf-occ li { display: flex; gap: 0.6rem; font-size: 0.84rem; line-height: 1.4; color: var(--text-dim); }
+.ntf-occ time { flex: 0 0 auto; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.ntf-occ strong { display: block; color: var(--text); font-weight: 600; }
+.ntf-occ span { white-space: pre-line; min-width: 0; }
+.ntf-detail-actions { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.76rem; color: var(--text-muted); }
+.ntf-detail-actions button { border: 0; background: none; color: var(--danger); font: inherit; font-size: 0.84rem; font-weight: 700; padding: 0.4rem 0; cursor: pointer; }
+.ntf-empty { margin: 0; padding: 1rem; text-align: center; font-size: 0.9rem; color: var(--text-muted); background: var(--card-bg); border: 1px dashed var(--card-border); border-radius: 16px; }
+[hidden] { display: none !important; }
 @media (max-width: 640px) {
-    .alerts-kpi-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        grid-auto-rows: 1fr;
-        gap: 0.65rem;
-    }
-    .alerts-kpi-card {
-        padding: 0.75rem 0.85rem;
-        gap: 0.65rem;
-        border-radius: 12px;
-    }
-    .kpi-icon-wrap {
-        width: 36px;
-        height: 36px;
-        font-size: 1.2rem;
-        border-radius: 10px;
-    }
-    .kpi-value {
-        font-size: 1.15rem;
-    }
-    .kpi-label {
-        font-size: 0.7rem;
-    }
-    .kpi-sub {
-        font-size: 0.68rem;
-    }
-    /* Riquadri compatti: icona a sinistra, testo a destra, tutti alti uguali */
-    .alerts-kpi-card {
-        flex-direction: row !important;
-        align-items: center !important;
-        text-align: left;
-        min-height: 72px;
-    }
-    .kpi-value-text {
-        font-size: 0.92rem;
-    }
-    .alerts-header .header-title p {
-        display: none;
-    }
-    .alerts-actions {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        width: 100%;
-    }
-    .alerts-actions .btn {
-        padding: 0.6rem 0.5rem;
-        font-size: 0.85rem;
-        min-height: 42px;
-    }
-    .alerts-actions .btn-primary {
-        grid-column: 1 / -1;
-    }
-    /* Filtri su una sola riga che scorre col dito */
-    #category-filter-chips {
-        flex-wrap: nowrap !important;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-        max-width: 100%;
-        padding-bottom: 2px;
-    }
-    #category-filter-chips::-webkit-scrollbar { display: none; }
-    #category-filter-chips .filter-chip {
-        flex: 0 0 auto;
-        white-space: nowrap;
-    }
-    .cp-card-header > div:last-child,
-    .cp-card-header .cp-detail-btn {
-        width: 100%;
-        justify-content: center;
-    }
-    .alert-type-pill {
-        font-size: 0.66rem;
-    }
-    .cp-day-top {
-        flex-wrap: wrap;
-        gap: 0.35rem 0.6rem;
-    }
-    .cp-day-top .cp-day-label,
-    .cp-day-top .status-pill {
-        white-space: nowrap;
-    }
-
-    /* Struttura a Card Nativa per Smartphone */
-    .notification-item {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        grid-template-rows: auto auto auto;
-        gap: 0.45rem 0.75rem;
-        padding: 0.85rem 0.95rem;
-        border-radius: 12px;
-    }
-    .notification-icon-wrap {
-        grid-column: 1;
-        grid-row: 1 / span 2;
-        width: 38px;
-        height: 38px;
-        min-width: 38px;
-        font-size: 1.3rem;
-        border-radius: 10px;
-        align-self: flex-start;
-    }
-    .notification-content {
-        grid-column: 2;
-        grid-row: 1 / span 2;
-        min-width: 0;
-    }
-    .notification-meta {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 0.2rem;
-        gap: 0.35rem;
-    }
-    .notification-title {
-        font-size: 0.9rem;
-        font-weight: 600;
-        margin-bottom: 0.2rem;
-        line-height: 1.3;
-    }
-    .notification-message {
-        font-size: 0.82rem;
-        line-height: 1.4;
-        color: var(--text-dim);
-    }
-    .notification-actions {
-        grid-column: 1 / span 2;
-        grid-row: 3;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.5rem;
-        padding-top: 0.45rem;
-        border-top: 1px solid rgba(255, 255, 255, 0.05);
-        width: 100%;
-    }
-    .btn-mark-read {
-        padding: 0.3rem 0.7rem !important;
-        font-size: 0.75rem !important;
-    }
-    .read-status-tag {
-        font-size: 0.72rem !important;
-        padding: 2px 6px !important;
-    }
+    .ntf-head h1 { font-size: 1.35rem; }
 }
 </style>
 
 <script>
-let currentFilterMode = 'all';
-let currentCategoryFilter = null;
-let currentSearchQuery = '';
-
-function toggleArchiveAccordion() {
-    const body = document.getElementById('archive-notifications-body');
-    const chevron = document.getElementById('archive-chevron');
-    if (!body) return;
-    const isHidden = body.style.display === 'none';
-    body.style.display = isHidden ? 'block' : 'none';
-    if (chevron) {
-        if (isHidden) chevron.classList.add('expanded');
-        else chevron.classList.remove('expanded');
-    }
+function ntfPost(url, method) {
+    return fetch(url, { method: method || 'POST' }).then(r => r.json()).catch(() => null);
 }
 
-function handleAlertSearch() {
-    const input = document.getElementById('alert-search-input');
-    const clearBtn = document.getElementById('search-clear-btn');
-    if (!input) return;
-    currentSearchQuery = input.value.trim().toLowerCase();
-    if (clearBtn) {
-        clearBtn.style.display = currentSearchQuery ? 'flex' : 'none';
-    }
-
-    // Se c'è una ricerca attiva, espandi automaticamente l'archivio per mostrare tutti i risultati
-    if (currentSearchQuery) {
-        const body = document.getElementById('archive-notifications-body');
-        const chevron = document.getElementById('archive-chevron');
-        if (body && body.style.display === 'none') {
-            body.style.display = 'block';
-            if (chevron) chevron.classList.add('expanded');
-        }
-    }
-    applyCombinedFilters();
+function ntfSetUnreadCount(count) {
+    const n = Math.max(0, parseInt(count, 10) || 0);
+    const chip = document.getElementById('ntf-unread-count');
+    if (chip) { chip.textContent = n; chip.hidden = n === 0; }
+    const all = document.getElementById('ntf-read-all');
+    if (all) all.hidden = n === 0;
+    if (typeof updateBadgeElements === 'function') updateBadgeElements(n);
 }
 
-function clearAlertSearch() {
-    const input = document.getElementById('alert-search-input');
-    if (input) input.value = '';
-    currentSearchQuery = '';
-    const clearBtn = document.getElementById('search-clear-btn');
-    if (clearBtn) clearBtn.style.display = 'none';
-    applyCombinedFilters();
+async function ntfMarkRow(row) {
+    const ids = (row.dataset.unreadIds || '').split(',').filter(Boolean);
+    if (!ids.length) return;
+    row.dataset.unreadIds = '';
+    row.classList.remove('is-unread');
+    let last = null;
+    for (const id of ids) last = await ntfPost('/api/alerts/' + id + '/read') || last;
+    if (last && typeof last.unread_count === 'number') ntfSetUnreadCount(last.unread_count);
 }
 
-function filterAlertsPage(mode) {
-    currentFilterMode = mode;
-    currentCategoryFilter = null;
-    document.querySelectorAll('#category-filter-chips .filter-chip').forEach(btn => btn.classList.remove('active'));
-    const targetBtn = mode === 'unread' ? document.getElementById('filter-btn-unread') : document.getElementById('filter-btn-all');
-    if (targetBtn) targetBtn.classList.add('active');
-    applyCombinedFilters();
+function ntfToggle(btn) {
+    const row = btn.closest('.ntf-row');
+    const detail = row.querySelector('.ntf-detail');
+    const open = detail.hidden;
+    detail.hidden = !open;
+    row.classList.toggle('is-open', open);
+    row.classList.toggle('has-many', !!row.querySelector('.ntf-occ'));
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) ntfMarkRow(row);
 }
 
-function filterCategory(typesCsv, btnElement) {
-    currentFilterMode = 'category';
-    currentCategoryFilter = typesCsv.split(',').map(s => s.trim().toLowerCase());
-    document.querySelectorAll('#category-filter-chips .filter-chip').forEach(btn => btn.classList.remove('active'));
-    if (btnElement) btnElement.classList.add('active');
-    
-    // Espandi archivio se filtra per categoria
-    const body = document.getElementById('archive-notifications-body');
-    const chevron = document.getElementById('archive-chevron');
-    if (body && body.style.display === 'none') {
-        body.style.display = 'block';
-        if (chevron) chevron.classList.add('expanded');
-    }
-    applyCombinedFilters();
+async function ntfReadAll() {
+    const res = await ntfPost('/api/alerts/mark-all-read');
+    if (!res) return;
+    document.querySelectorAll('.ntf-row.is-unread').forEach(r => { r.classList.remove('is-unread'); r.dataset.unreadIds = ''; });
+    ntfSetUnreadCount(0);
+    ntfApplyFilter();
 }
 
-function filterByToday() {
-    currentFilterMode = 'today';
-    currentCategoryFilter = null;
-    document.querySelectorAll('#category-filter-chips .filter-chip').forEach(btn => btn.classList.remove('active'));
-    applyCombinedFilters();
+async function ntfDelete(btn) {
+    const row = btn.closest('.ntf-row');
+    const ids = (row.dataset.ids || '').split(',').filter(Boolean);
+    if (ids.length > 1 && !confirm('Eliminare queste ' + ids.length + ' notifiche?')) return;
+    let last = null;
+    for (const id of ids) last = await ntfPost('/api/alerts/' + id, 'DELETE') || last;
+    row.remove();
+    if (last && typeof last.unread_count === 'number') ntfSetUnreadCount(last.unread_count);
+    ntfApplyFilter();
 }
 
-function resetAllAlertFilters() {
-    clearAlertSearch();
-    filterAlertsPage('all');
+async function ntfClearAll() {
+    if (!confirm('Cancellare tutte le notifiche? Non si possono recuperare.')) return;
+    const res = await ntfPost('/api/alerts/clear-all');
+    if (res) location.reload();
 }
 
-function applyCombinedFilters() {
-    const items = document.querySelectorAll('.notification-item');
-    const now = new Date();
-    let visibleCount = 0;
+let ntfCurrentFilter = 'all';
+let ntfFilterChanged = false;
+function ntfFilter(btn) {
+    ntfFilterChanged = true;
+    ntfCurrentFilter = btn.dataset.filter;
+    document.querySelectorAll('.ntf-chip').forEach(c => c.classList.toggle('active', c === btn));
+    ntfApplyFilter();
+    ntfFilterChanged = false;
+}
 
-    items.forEach(item => {
-        const isUnread = item.getAttribute('data-unread') === '1';
-        const type = (item.getAttribute('data-type') || '').toLowerCase();
-        const timestamp = item.getAttribute('data-timestamp') || '';
-        const textContent = item.innerText.toLowerCase();
-
-        let matchesFilter = true;
-
-        // 1. Filtro di base (all / unread / category / today)
-        if (currentFilterMode === 'unread' && !isUnread) {
-            matchesFilter = false;
-        } else if (currentFilterMode === 'category' && currentCategoryFilter) {
-            if (!currentCategoryFilter.includes(type)) {
-                matchesFilter = false;
-            }
-        } else if (currentFilterMode === 'today') {
-            // Confronto sul giorno LOCALE (i timestamp sono in UTC: tra 00:00 e 02:00 il giorno UTC è diverso)
-            const ts = new Date(timestamp);
-            if (isNaN(ts) || ts.toDateString() !== now.toDateString()) {
-                matchesFilter = false;
-            }
-        }
-
-        // 2. Filtro di ricerca testuale
-        if (matchesFilter && currentSearchQuery) {
-            if (!textContent.includes(currentSearchQuery) && !type.includes(currentSearchQuery)) {
-                matchesFilter = false;
-            }
-        }
-
-        if (matchesFilter) {
-            item.style.display = 'flex';
-            visibleCount++;
-        } else {
-            item.style.display = 'none';
-        }
+function ntfApplyFilter() {
+    const f = ntfCurrentFilter;
+    document.querySelectorAll('.ntf-day').forEach((day, index) => {
+        const rows = [...day.querySelectorAll('.ntf-row')];
+        let shown = 0;
+        rows.forEach(row => {
+            const ok = f === 'all' || (f === 'unread' ? row.classList.contains('is-unread') : row.dataset.cat === f);
+            row.hidden = !ok;
+            row.classList.toggle('is-first-visible', ok && shown === 0);
+            if (ok) shown++;
+        });
+        const list = day.querySelector('.ntf-list');
+        if (list) list.hidden = shown === 0;
+        const emptyFilter = day.querySelector('.ntf-empty-filter');
+        const isToday = index === 0;
+        // I giorni passati senza risultati spariscono; "Oggi" resta sempre, con un messaggio
+        day.hidden = !isToday && shown === 0;
+        if (f !== 'all' && shown > 0) day.classList.remove('is-collapsed');
+        if (f === 'all' && ntfFilterChanged) day.classList.toggle('is-collapsed', index >= 3);
+        if (emptyFilter) emptyFilter.hidden = !(isToday && rows.length > 0 && shown === 0);
     });
-
-    // Indicatore risultati
-    const indicator = document.getElementById('matching-results-indicator');
-    const noResultsBox = document.getElementById('no-search-results');
-    const isFiltered = currentSearchQuery || currentFilterMode !== 'all';
-
-    if (indicator) {
-        if (isFiltered) {
-            indicator.innerText = `${visibleCount} risultati trovati`;
-        } else {
-            indicator.innerText = '';
-        }
-    }
-
-    if (noResultsBox) {
-        noResultsBox.style.display = (visibleCount === 0 && items.length > 0) ? 'block' : 'none';
-    }
 }
+
+document.addEventListener('click', (e) => {
+    const menu = document.querySelector('.ntf-menu[open]');
+    if (menu && !menu.contains(e.target)) menu.removeAttribute('open');
+});
 </script>
 {% endblock %}

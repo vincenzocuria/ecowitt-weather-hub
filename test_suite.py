@@ -444,8 +444,10 @@ class TestEcowittHub(unittest.TestCase):
         client = TestClient(app, cookies={settings.AUTH_COOKIE_NAME: settings.AUTH_TOKEN} if settings.AUTH_TOKEN else {})
         res = client.get("/alerts-page")
         self.assertEqual(res.status_code, 200)
-        self.assertIn("Centro Notifiche", res.text)
-        self.assertIn("Segna tutte come lette", res.text)
+        self.assertIn("ntf-page", res.text)
+        self.assertIn("Segna tutte lette", res.text)
+        self.assertIn("mobile-bell", res.text)
+        self.assertIn("href=\"/telecomando\" class=\"mobile-tab", res.text)
 
         res_rec = client.get("/records")
         self.assertEqual(res_rec.status_code, 200)
@@ -2604,3 +2606,33 @@ def test_alert_labels_are_readable():
     assert alert_label(None) == "Notifica"
     assert alert_icon("rain_start") == "🌧️"
     assert alert_icon("tipo_nuovo_sconosciuto") == "🔔"
+
+
+def test_alert_days_grouping():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from backend.alert_labels import alert_category, build_alert_days, clean_alert_title
+    tz = ZoneInfo("Europe/Rome")
+    now = datetime(2026, 11, 19, 22, 0, tzinfo=tz)
+    alerts = [
+        {"id": 5, "timestamp": "2026-11-19T20:31:00+00:00", "alert_type": "wind_spike", "title": "💨 Raffica!", "message": "46 km/h", "is_read": 0},
+        {"id": 4, "timestamp": "2026-11-19T16:35:00+00:00", "alert_type": "wind_spike", "title": "💨 Raffica!", "message": "56 km/h", "is_read": 1},
+        {"id": 3, "timestamp": "2026-11-19T10:00:00+00:00", "alert_type": "irrigation_skip_wind", "title": "Irrigazione rinviata", "message": "", "is_read": 1},
+        # 23:30 UTC del 17 = 00:30 locali del 18: deve finire in "Ieri"
+        {"id": 2, "timestamp": "2026-11-17T23:30:00+00:00", "alert_type": "rain_start", "title": "🌧️ Piove", "message": "", "is_read": 1},
+        {"id": 1, "timestamp": "2026-11-10T08:00:00+00:00", "alert_type": "offline", "title": "Offline", "message": "", "is_read": 1},
+    ]
+    days = build_alert_days(alerts, tz, now=now)
+    assert [d["name"] for d in days] == ["Oggi", "Ieri", "Martedì"]
+    today = days[0]
+    assert today["count"] == 3 and today["unread"] == 1
+    wind = today["entries"][0]
+    assert wind["type"] == "wind_spike" and wind["count"] == 2 and wind["ids"] == [5, 4]
+    assert wind["latest"]["time"] == "21:31" and wind["latest"]["title"] == "Raffica!"
+    assert days[1]["entries"][0]["latest"]["time"] == "00:30"
+    assert days[2]["date_label"] == "10 novembre"
+    # senza notifiche oggi, "Oggi" compare comunque (vuoto)
+    empty = build_alert_days(alerts[3:], tz, now=now)
+    assert empty[0]["name"] == "Oggi" and empty[0]["entries"] == []
+    assert alert_category("irrigation_skip_wind") == "giardino" and alert_category("rain") == "meteo"
+    assert clean_alert_title("🏆 Record!") == "Record!"

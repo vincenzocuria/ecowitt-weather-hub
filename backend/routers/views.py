@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
-from backend.alert_labels import alert_icon, alert_label
+from backend.alert_labels import ALERT_CATEGORIES, alert_icon, alert_label, build_alert_days
 from backend.config import settings
 from backend.forecast_service import forecast_service
 from backend.civil_protection_service import civil_protection_service
@@ -62,7 +62,7 @@ templates.env.filters["local_dt"] = lambda val: to_local_datetime_str(val, "%d/%
 templates.env.filters["local_dt_short"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M")
 templates.env.filters["local_date"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y")
 # Versione unica di CSS/JS per tutte le pagine (base, login, kiosk): cambiarla forza il ricaricamento
-ASSET_VERSION = "6.7"
+ASSET_VERSION = "6.8"
 templates.env.globals["asset_version"] = ASSET_VERSION
 templates.env.filters["local_time"] = lambda val: to_local_datetime_str(val, "%H:%M")
 templates.env.filters["duration_it"] = lambda val: format_duration_italian(val) if val is not None else "--"
@@ -288,7 +288,7 @@ def remote_page(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="telecomando.html",
-        context={"active_page": "devices", "title": "Telecomando • Domus"},
+        context={"active_page": "telecomando", "title": "Telecomando • Domus"},
     )
 
 @router.get("/records", response_class=HTMLResponse)
@@ -424,28 +424,22 @@ def history_page(request: Request, start_date: Optional[str] = None, end_date: O
 
 @router.get("/alerts-page", response_class=HTMLResponse)
 def alerts_page(request: Request):
-    alerts = get_alert_logs(limit=250)
+    alerts = get_alert_logs(limit=400)
     unread_count = get_unread_alerts_count()
-    stats = get_alerts_stats()
-    recent_limit = 5
-    recent_alerts = alerts[:recent_limit]
-    archive_alerts = alerts[recent_limit:]
+    days = build_alert_days(alerts, settings.get_tz())
+    used = {e["category"] for d in days for e in d["entries"]}
     return templates.TemplateResponse(
         request=request,
         name="alerts.html",
         context={
             "active_page": "alerts",
-            "title": "Centro Notifiche • Domus",
-            "alerts": alerts,
-            "recent_alerts": recent_alerts,
-            "archive_alerts": archive_alerts,
-            "recent_limit": recent_limit,
+            "title": "Notifiche • Domus",
+            "days": days,
+            "has_alerts": bool(alerts),
+            "categories": [c for c in ALERT_CATEGORIES if c[0] in used],
             "unread_count": unread_count,
-            "total_count": stats.get("total_count", len(alerts)),
-            "stats": stats,
             "civil_protection": civil_protection_service.fetch_alerts() if settings.CIVIL_PROTECTION_ENABLED else None,
             "civil_protection_enabled": settings.CIVIL_PROTECTION_ENABLED,
-            "ntfy_topic": settings.NTFY_TOPIC
         }
     )
 

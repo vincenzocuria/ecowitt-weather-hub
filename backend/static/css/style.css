@@ -4130,6 +4130,36 @@ body {
     border-radius: 20px;
 }
 
+.mobile-top-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mobile-bell {
+    position: relative;
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    color: var(--text);
+    background: rgba(148, 163, 184, 0.14);
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    text-decoration: none;
+}
+
+.mobile-bell.active {
+    color: #fff;
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.mobile-bell .mob-badge {
+    top: -4px;
+    right: -5px;
+}
+
 .mobile-live-dot {
     width: 7px;
     height: 7px;
