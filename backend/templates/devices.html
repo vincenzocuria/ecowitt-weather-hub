@@ -223,7 +223,7 @@
         <div class="device-modal-header">
             <div class="modal-title-group" style="flex: 1;">
                 <div class="modal-icon-badge" id="modal-icon-badge">📱</div>
-                <div style="flex: 1;">
+                <div class="modal-title-text" style="flex: 1;">
                     <div class="modal-title-with-rename">
                         <h3 id="modal-device-name">Nome Dispositivo</h3>
                         <button type="button" class="modal-rename-btn" id="btn-toggle-rename" onclick="toggleModalRenameBox()" title="Rinomina questo dispositivo">
@@ -237,7 +237,7 @@
                             <button type="button" class="btn btn-primary btn-sm" onclick="submitModalRename()">Salva</button>
                             <button type="button" class="btn btn-secondary btn-sm" onclick="toggleModalRenameBox(false)">✕</button>
                         </div>
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div class="modal-rename-foot">
                             <small id="modal-rename-original-hint" style="color: var(--text-dim); font-size: 0.72rem;"></small>
                             <button type="button" class="btn btn-outline btn-sm" id="btn-reset-rename" style="padding: 2px 6px; font-size: 0.72rem; color: #f87171; border-color: rgba(239,68,68,0.3); display: none;" onclick="resetDeviceName()">Ripristina Default</button>
                         </div>
@@ -813,6 +813,7 @@ function toggleModalRenameBox(forceOpen = null) {
     if (!dev) return;
 
     const isOpen = (forceOpen !== null) ? forceOpen : (box.style.display === 'none');
+    box.closest('.device-modal-header')?.classList.toggle('is-renaming', isOpen);
     if (isOpen) {
         box.style.display = 'flex';
         input.value = dev.name || '';
@@ -901,6 +902,10 @@ async function performDeviceRename(devId, rawId, newName, ecosystem) {
 // Gestione Modale Dettaglio Dispositivo
 function openDeviceDetail(deviceId) {
     currentOpenDeviceId = deviceId;
+    // Ogni dispositivo si apre con il riquadro Rinomina chiuso
+    const renameBox = document.getElementById('modal-rename-box');
+    if (renameBox) renameBox.style.display = 'none';
+    document.querySelector('.device-modal-header')?.classList.remove('is-renaming');
     const modalBackdrop = document.getElementById('device-modal-backdrop');
     modalBackdrop.classList.add('show');
     document.body.style.overflow = 'hidden';

@@ -9242,3 +9242,33 @@ main.container.swipe-out-right { transition: transform 0.12s ease-in, opacity 0.
     .kiosk-nh-rain { font-size: calc(var(--ku) * 0.72); }
     .kiosk-nh-temp { font-size: calc(var(--ku) * 1.15); }
 }
+
+/* ==========================================================================
+   FINESTRA DISPOSITIVO: intestazione e Rinomina che restano dentro lo schermo
+   ========================================================================== */
+.device-modal-header { align-items: flex-start; gap: 0.5rem; }
+.modal-title-group { min-width: 0; align-items: flex-start; }
+.modal-title-text { min-width: 0; }
+.modal-icon-badge { flex: 0 0 auto; }
+.modal-title-with-rename { min-width: 0; }
+.device-modal-header h3 { min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
+.modal-device-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.modal-close-btn { flex: 0 0 auto; }
+.modal-rename-btn { flex: 0 0 auto; white-space: nowrap; }
+.modal-rename-box { width: 100%; box-sizing: border-box; }
+.modal-rename-input-row { min-width: 0; }
+.modal-rename-input { min-width: 0; width: 100%; box-sizing: border-box; font-size: 16px; color: var(--text); }
+.modal-rename-input-row .btn { flex: 0 0 auto; }
+.modal-rename-foot { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap; min-width: 0; }
+.modal-rename-foot small { min-width: 0; overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+    .device-modal-header { padding: 1rem 1rem; }
+    .modal-icon-badge { width: 40px; height: 40px; font-size: 1.3rem; }
+    /* Con il riquadro aperto il campo usa tutta la larghezza: icona nascosta */
+    .device-modal-header.is-renaming .modal-icon-badge { display: none; }
+    .modal-rename-input-row { flex-wrap: wrap; }
+    .modal-rename-input { flex: 1 1 100%; min-height: 44px; }
+    .modal-rename-input-row .btn { flex: 1 1 0; min-height: 44px; }
+    .modal-rename-input-row .btn-secondary { flex: 0 0 48px; }
+}
