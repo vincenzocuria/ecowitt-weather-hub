@@ -2597,9 +2597,10 @@ if __name__ == "__main__":
     unittest.main()
 
 
-
-
-
-
-
-
+def test_alert_labels_are_readable():
+    from backend.alert_labels import alert_icon, alert_label
+    assert alert_label("climate_comfort_warning") == "Comfort in casa"
+    assert alert_label("tipo_nuovo_sconosciuto") == "Tipo nuovo sconosciuto"
+    assert alert_label(None) == "Notifica"
+    assert alert_icon("rain_start") == "🌧️"
+    assert alert_icon("tipo_nuovo_sconosciuto") == "🔔"

@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
+from backend.alert_labels import alert_icon, alert_label
 from backend.config import settings
 from backend.forecast_service import forecast_service
 from backend.civil_protection_service import civil_protection_service
@@ -53,13 +54,15 @@ def _js_literal(value) -> Markup:
     return escape(json.dumps(value, ensure_ascii=False))
 
 templates.env.filters["js"] = _js_literal
+templates.env.filters["alert_label"] = alert_label
+templates.env.filters["alert_icon"] = alert_icon
 templates.env.filters["localdt"] = lambda v, fmt="%d/%m/%Y %H:%M:%S": to_local_datetime_str(v, fmt) if v else ""
 
 templates.env.filters["local_dt"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M:%S")
 templates.env.filters["local_dt_short"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M")
 templates.env.filters["local_date"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y")
 # Versione unica di CSS/JS per tutte le pagine (base, login, kiosk): cambiarla forza il ricaricamento
-ASSET_VERSION = "6.6"
+ASSET_VERSION = "6.7"
 templates.env.globals["asset_version"] = ASSET_VERSION
 templates.env.filters["local_time"] = lambda val: to_local_datetime_str(val, "%H:%M")
 templates.env.filters["duration_it"] = lambda val: format_duration_italian(val) if val is not None else "--"
