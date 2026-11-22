@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
+from backend.records_view import build_records_view
 from backend.alert_labels import ALERT_CATEGORIES, alert_icon, alert_label, build_alert_days
 from backend.config import settings
 from backend.forecast_service import forecast_service
@@ -62,7 +63,7 @@ templates.env.filters["local_dt"] = lambda val: to_local_datetime_str(val, "%d/%
 templates.env.filters["local_dt_short"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M")
 templates.env.filters["local_date"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y")
 # Versione unica di CSS/JS per tutte le pagine (base, login, kiosk): cambiarla forza il ricaricamento
-ASSET_VERSION = "7.2"
+ASSET_VERSION = "7.3"
 templates.env.globals["asset_version"] = ASSET_VERSION
 templates.env.filters["local_time"] = lambda val: to_local_datetime_str(val, "%H:%M")
 templates.env.filters["duration_it"] = lambda val: format_duration_italian(val) if val is not None else "--"
@@ -307,8 +308,9 @@ def records_page(request: Request):
         name="records.html",
         context={
             "active_page": "records",
-            "title": "Albo dei Record • Domus",
+            "title": "Record • Domus",
             "records": records,
+            "rv": build_records_view(records, history, settings.get_tz()),
             "history": history,
             "tropical_stats": tropical_stats,
             "soil_summary": soil_summary,

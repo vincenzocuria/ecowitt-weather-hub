@@ -451,7 +451,7 @@ class TestEcowittHub(unittest.TestCase):
 
         res_rec = client.get("/records")
         self.assertEqual(res_rec.status_code, 200)
-        self.assertIn("Albo dei Record", res_rec.text)
+        self.assertIn("<h1>Record</h1>", res_rec.text)
 
         res_idx = client.get("/")
         self.assertEqual(res_idx.status_code, 200)
@@ -2646,4 +2646,33 @@ def test_radar_lightning_tab_is_not_nested_in_rain_tab():
     assert len(re.findall(r"<div\b", seg)) == len(re.findall(r"</div>", seg))
     assert 'id="lightning-map-iframe" src=' not in s
     assert "iframe.getAttribute('src')" in s
+
+
+def test_records_view_summary():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from backend.records_view import build_records_view, format_direction
+    tz = ZoneInfo("Europe/Rome")
+    now = datetime(2026, 11, 22, 10, 0, tzinfo=tz)
+    records = [
+        {"record_key": "temp_max", "category": "temperature", "title": "Temperatura Massima", "value": 45.3, "unit": "°C", "timestamp": "2026-08-29T12:23:20+00:00", "details": {}},
+        {"record_key": "wind_gust_max", "category": "wind", "title": "Raffica", "value": 108.0, "unit": "km/h", "timestamp": "2026-11-19T12:59:52+00:00", "details": {"dir": "280° (W)"}},
+        {"record_key": "rain_daily_max", "category": "rain", "title": "Pioggia", "value": 93.2, "unit": "mm", "timestamp": "2026-03-17T23:59:54+00:00", "details": {"date": "2026-03-17"}},
+        {"record_key": "solar_max", "category": "solar", "title": "Sole", "value": 1064.0, "unit": "W/m²", "timestamp": "2023-05-04T10:59:44+00:00", "details": {}},
+        {"record_key": "lightning_closest", "category": "lightning", "title": "Fulmine", "value": None, "unit": "km", "timestamp": None, "details": {}},
+    ]
+    history = [{"record_key": "wind_gust_max", "title": "Raffica", "new_value": 108.0, "unit": "km/h", "timestamp": "2026-11-19T12:59:52+00:00"},
+               {"record_key": "temp_max", "new_value": 44.0, "unit": "°C", "timestamp": "2026-08-01T10:00:00+00:00"}]
+    v = build_records_view(records, history, tz, now=now)
+    cards = {c["key"]: c for c in v["cards"]}
+    assert cards["temp_max"]["when"] == "29 ago 2026 · 14:23" and cards["temp_max"]["age"] == "2 mesi fa"
+    assert cards["temp_max"]["beaten"] == 1 and not cards["temp_max"]["is_new"]
+    assert cards["wind_gust_max"]["is_new"] and cards["wind_gust_max"]["direction"] == "da Ovest · 280°"
+    assert cards["rain_daily_max"]["when"] == "17 mar 2026"          # giorno del record, non l'ora di salvataggio
+    assert cards["solar_max"]["value"] == "1064"
+    assert cards["lightning_closest"]["value"] == "--" and not cards["lightning_closest"]["has_value"]
+    assert [h["key"] for h in v["highlights"]] == ["temp_max", "wind_gust_max", "rain_daily_max"]
+    assert v["new_count"] == 1 and v["latest"]["title"] == "Raffica più forte" and v["latest"]["age"] == "3 giorni fa"
+    assert [f["key"] for f in v["filters"]] == ["temperature", "wind", "rain", "solar", "lightning"]
+    assert format_direction("284° (WNW)") == "da Ovest-Nord-Ovest · 284°"
 

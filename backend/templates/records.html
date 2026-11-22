@@ -21,16 +21,16 @@
         <div class="records-tabs-bar" id="records-tabs-bar" role="tablist">
             <button type="button" class="rec-tab-btn active" id="tab-btn-alltime" role="tab" aria-selected="true" aria-controls="pane-alltime" onclick="switchRecordsTab('alltime')">
                 <span class="tab-icon">🏆</span>
-                <span class="tab-text">Primati All-Time</span>
+                <span class="tab-text">Di sempre</span>
                 <span class="tab-count">{{ records|length }}</span>
             </button>
             <button type="button" class="rec-tab-btn" id="tab-btn-today-climate" role="tab" aria-selected="false" aria-controls="pane-today-climate" onclick="switchRecordsTab('today-climate')">
                 <span class="tab-icon">📅</span>
-                <span class="tab-text">Oggi & Clima</span>
+                <span class="tab-text">Oggi</span>
             </button>
             <button type="button" class="rec-tab-btn" id="tab-btn-monthly-tropical" role="tab" aria-selected="false" aria-controls="pane-monthly-tropical" onclick="switchRecordsTab('monthly-tropical')">
                 <span class="tab-icon">👑</span>
-                <span class="tab-text">Mesi & Notti</span>
+                <span class="tab-text">Mesi</span>
             </button>
             <button type="button" class="rec-tab-btn" id="tab-btn-history" role="tab" aria-selected="false" aria-controls="pane-history" onclick="switchRecordsTab('history')">
                 <span class="tab-icon">📜</span>
@@ -46,118 +46,77 @@
          TAB PANE 1: PRIMATI STORICI ASSOLUTI (ALL-TIME)
          ========================================================================== -->
     <div class="records-tab-pane active" id="pane-alltime" role="tabpanel" aria-labelledby="tab-btn-alltime">
+        {% if rv.highlights %}
+        <!-- I record principali in evidenza -->
+        <div class="rv-kpis">
+            {% for h in rv.highlights %}
+            <button type="button" class="rv-kpi cat-{{ h.category }}" onclick="rvFocus('{{ h.key }}')">
+                <span class="rv-kpi-label">{{ h.icon }} {{ h.label }}</span>
+                <span class="rv-kpi-value">{{ h.value }}<small>{{ h.unit }}</small></span>
+                <span class="rv-kpi-when">{{ h.when }}</span>
+            </button>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if rv.latest %}
+        <p class="rv-latest">🏆 Ultimo record battuto: <strong>{{ rv.latest.title }}</strong>, {{ rv.latest.value }} {{ rv.latest.unit }} · {{ rv.latest.age }}</p>
+        {% endif %}
+
         <div class="records-section-card alltime-section">
-            <div class="records-section-header">
-                <div class="records-header-left">
-                    <span class="section-emoji">🏆</span>
-                    <div>
-                        <h2>Record di sempre</h2>
-                        <p>I massimi e minimi di sempre misurati dalla stazione sul campo.</p>
-                    </div>
+            <!-- Filtri per categoria (con il numero di record) e ricerca -->
+            <div class="rv-toolbar">
+                <div class="records-filter-pills ui-chips" id="alltime-category-pills">
+                    <button type="button" class="rec-filter-pill active" data-cat="all" onclick="filterAllTimeCategory('all', this)">Tutti <span class="rv-count">{{ rv.total }}</span></button>
+                    {% if rv.new_count %}
+                    <button type="button" class="rec-filter-pill" data-cat="new" onclick="filterAllTimeCategory('new', this)">✨ Recenti <span class="rv-count">{{ rv.new_count }}</span></button>
+                    {% endif %}
+                    {% for f in rv.filters %}
+                    <button type="button" class="rec-filter-pill" data-cat="{{ f.key }}" onclick="filterAllTimeCategory('{{ f.key }}', this)">{{ f.icon }} {{ f.name }} <span class="rv-count">{{ f.count }}</span></button>
+                    {% endfor %}
                 </div>
-                <span id="alltime-counter-badge" class="badge badge-gold-pill">
-                    {{ records|length }} primati
-                </span>
+                <div class="records-search-wrapper rv-search">
+                    <span class="search-icon" aria-hidden="true">🔍</span>
+                    <input type="search" id="alltime-search-input" placeholder="Cerca un record" aria-label="Cerca un record" class="records-search-input" autocomplete="off">
+                    <button id="alltime-search-clear" type="button" onclick="clearAllTimeSearch()" class="records-search-clear" title="Azzera ricerca">✕</button>
+                </div>
+                <span id="alltime-counter-badge" class="rv-counter">{{ rv.total }} record</span>
             </div>
 
-            <!-- TOOLBAR: RICERCA & FILTRI CATEGORIA CON SCORRIMENTO ORIZZONTALE -->
-            <div class="records-toolbar">
-                <div class="records-search-wrapper">
-                    <span class="search-icon">🔍</span>
-                    <input 
-                        type="text" 
-                        id="alltime-search-input" 
-                        placeholder="Cerca record (es. Raffica, Temp, Pioggia)..." 
-                        aria-label="Cerca nei record storici"
-                        class="records-search-input"
-                    >
-                    <button 
-                        id="alltime-search-clear" 
-                        type="button" 
-                        onclick="clearAllTimeSearch()" 
-                        class="records-search-clear" 
-                        title="Azzera ricerca"
-                    >✕</button>
-                </div>
-
-                <!-- CAROSELLO CHIPS CATEGORIA SCORREVOLI -->
-                <div class="records-filter-scroll-wrap">
-                    <div class="records-filter-pills" id="alltime-category-pills">
-                        <button type="button" class="rec-filter-pill active" data-cat="all" onclick="filterAllTimeCategory('all', this)">Tutti</button>
-                        <button type="button" class="rec-filter-pill" data-cat="temperature" onclick="filterAllTimeCategory('temperature', this)">🌡️ Temperature</button>
-                        <button type="button" class="rec-filter-pill" data-cat="wind" onclick="filterAllTimeCategory('wind', this)">💨 Vento</button>
-                        <button type="button" class="rec-filter-pill" data-cat="rain" onclick="filterAllTimeCategory('rain', this)">🌧️ Pioggia</button>
-                        <button type="button" class="rec-filter-pill" data-cat="pressure" onclick="filterAllTimeCategory('pressure', this)">⏲️ Pressione</button>
-                        <button type="button" class="rec-filter-pill" data-cat="solar" onclick="filterAllTimeCategory('solar', this)">☀️ Sole & UV</button>
-                        <button type="button" class="rec-filter-pill" data-cat="lightning" onclick="filterAllTimeCategory('lightning', this)">⚡ Fulmini</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- GRIGLIA RECORD OTTIMIZZATA MOBILE & TOUCH (NESSUN TESTO TRONCATO) -->
-            <div class="records-alltime-grid" id="alltime-grid">
-                {% for r in records %}
-                <div class="rec-item-card cat-{{ r.category }}" 
-                     data-category="{{ r.category }}" 
-                     data-key="{{ r.key }}"
-                     data-title="{{ r.title }}"
-                     data-value="{{ r.value if r.value is not none else '' }}"
-                     data-search="{{ r.title }} {{ r.category }} {{ r.value }} {{ r.unit }} {{ r.timestamp | local_dt }}">
-                    
-                    <div class="rec-item-top">
-                        <span class="rec-item-cat-badge badge-{{ r.category }}">{{ r.category }}</span>
-                        <div class="rec-item-title">{{ r.title }}</div>
-                    </div>
-
-                    <div class="rec-item-val-wrap">
-                        <span class="rec-item-val">
-                            {% if r.value is not none %}{{ r.value }}{% else %}--{% endif %}
-                        </span>
-                        <span class="rec-item-unit">{{ r.unit }}</span>
-                    </div>
-
-                    <!-- METADATI FLUIDI (SENZA TAGLI DI TESTO) -->
-                    <div class="rec-item-meta">
-                        <div class="rec-meta-item">
-                            <span class="meta-icon">📅</span>
-                            <span class="meta-text">
-                                {% if r.timestamp %}{{ r.timestamp | local_dt }}{% else %}<em class="muted-text">In attesa dati</em>{% endif %}
-                            </span>
+            <div class="rv-grid" id="alltime-grid">
+                {% for c in rv.cards %}
+                <article class="rec-item-card rv-card cat-{{ c.category }} {% if not c.has_value %}is-empty{% endif %}"
+                         id="rv-{{ c.key }}" data-category="{{ c.category }}" data-new="{{ 1 if c.is_new else 0 }}"
+                         data-search="{{ c.search }}">
+                    <div class="rv-card-head">
+                        <span class="rv-icon" aria-hidden="true">{{ c.icon }}</span>
+                        <div class="rv-card-title">
+                            <strong>{{ c.title }}</strong>
+                            <span>{{ c.cat_name }}{% if c.note %} · {{ c.note }}{% endif %}</span>
                         </div>
-
-                        {% if r.details and r.details.dir %}
-                        <div class="rec-meta-chip">
-                            <span class="meta-icon">🧭</span>
-                            <span>Dir: <strong>{{ r.details.dir }}</strong></span>
-                        </div>
-                        {% endif %}
-
-                        {% if r.details and r.details.date %}
-                        <div class="rec-meta-chip">
-                            <span class="meta-icon">🗓️</span>
-                            <span>Giorno: <strong>{{ r.details.date }}</strong></span>
-                        </div>
-                        {% endif %}
-
-                        {% if r.details and r.details.count %}
-                        <div class="rec-meta-chip">
-                            <span class="meta-icon">⚡</span>
-                            <span>Scariche: <strong>{{ r.details.count }}</strong></span>
-                        </div>
-                        {% endif %}
+                        {% if c.is_new %}<span class="rv-new">Nuovo</span>{% endif %}
                     </div>
-                </div>
+                    <div class="rv-value">{{ c.value }}<small>{{ c.unit }}</small></div>
+                    {% if c.has_value %}
+                    <div class="rv-when">{{ c.when }} <span>· {{ c.age }}</span></div>
+                    {% else %}
+                    <div class="rv-when"><span>Nessun dato ancora</span></div>
+                    {% endif %}
+                    {% if c.direction or c.beaten %}
+                    <div class="rv-tags">
+                        {% if c.direction %}<span>🧭 {{ c.direction }}</span>{% endif %}
+                        {% if c.beaten %}<span>🔁 battuto {{ c.beaten }} {{ 'volta' if c.beaten == 1 else 'volte' }}</span>{% endif %}
+                    </div>
+                    {% endif %}
+                </article>
                 {% endfor %}
             </div>
 
-            <!-- STATO NESSUN RISULTATO -->
             <div id="alltime-no-results" class="records-empty-state" style="display: none;">
                 <span class="empty-icon">🔍</span>
                 <h3>Nessun record trovato</h3>
-                <p>Nessun record corrisponde ai filtri o al termine cercato.</p>
-                <button type="button" onclick="clearAllTimeSearch(true)" class="btn btn-primary btn-sm" style="margin-top: 0.8rem;">
-                    Azzera Filtri
-                </button>
+                <p>Prova un'altra parola o un altro filtro.</p>
+                <button type="button" onclick="clearAllTimeSearch(true)" class="btn btn-outline btn-sm" style="margin-top: 0.8rem;">Mostra tutti</button>
             </div>
         </div>
     </div>
@@ -1402,6 +1361,15 @@
         });
     }
 
+    // Tocco su un record in evidenza: mostra tutti e porta alla sua scheda
+    window.rvFocus = function(key) {
+        clearAllTimeSearch(true);
+        const card = document.getElementById('rv-' + key);
+        if (!card) return;
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.classList.remove('rv-flash'); void card.offsetWidth; card.classList.add('rv-flash');
+    };
+
     function applyAllTimeFilters() {
         if (!allTimeGrid) return;
         const query = allTimeSearchInput ? allTimeSearchInput.value.toLowerCase().trim() : '';
@@ -1412,7 +1380,8 @@
             const cardCat = (card.getAttribute('data-category') || '').toLowerCase();
             const searchData = (card.getAttribute('data-search') || '').toLowerCase();
 
-            const matchCat = (currentAllTimeCategory === 'all' || cardCat === currentAllTimeCategory);
+            const matchCat = currentAllTimeCategory === 'all'
+                || (currentAllTimeCategory === 'new' ? card.getAttribute('data-new') === '1' : cardCat === currentAllTimeCategory);
             const matchQuery = !query || searchData.includes(query);
 
             if (matchCat && matchQuery) {
@@ -1428,11 +1397,8 @@
         }
 
         if (allTimeCounterBadge) {
-            if (query || currentAllTimeCategory !== 'all') {
-                allTimeCounterBadge.textContent = `${visibleCount} di ${cards.length} record`;
-            } else {
-                allTimeCounterBadge.textContent = `${cards.length} primati`;
-            }
+            allTimeCounterBadge.textContent = (query || currentAllTimeCategory !== 'all')
+                ? `${visibleCount} di ${cards.length} record` : `${cards.length} record`;
         }
     }
 
@@ -1548,4 +1514,45 @@
     });
 })();
 </script>
+<style>
+.rv-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+@media (min-width: 700px) { .rv-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.rv-kpi { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 14px; border-radius: 16px; border: 1px solid var(--card-border); background: var(--card-bg); color: var(--text); font: inherit; cursor: pointer; border-top: 4px solid var(--rv-c, var(--accent)); min-width: 0; }
+.rv-kpi-label { font-size: 0.76rem; font-weight: 700; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rv-kpi-value { font-size: 1.75rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; color: var(--rv-c, var(--text)); }
+.rv-kpi-value small, .rv-value small { font-size: 0.5em; font-weight: 700; color: var(--text-dim); margin-left: 3px; letter-spacing: 0; }
+.rv-kpi-when { font-size: 0.76rem; color: var(--text-muted); }
+.cat-temperature { --rv-c: #dc2626; } .cat-wind { --rv-c: #0d9488; } .cat-rain { --rv-c: #2563eb; }
+.cat-pressure { --rv-c: #7c3aed; } .cat-solar { --rv-c: #d97706; } .cat-lightning { --rv-c: #ca8a04; }
+html:not([data-theme="light"]) .cat-temperature { --rv-c: #f87171; } html:not([data-theme="light"]) .cat-wind { --rv-c: #2dd4bf; }
+html:not([data-theme="light"]) .cat-rain { --rv-c: #60a5fa; } html:not([data-theme="light"]) .cat-pressure { --rv-c: #a78bfa; }
+html:not([data-theme="light"]) .cat-solar { --rv-c: #fbbf24; } html:not([data-theme="light"]) .cat-lightning { --rv-c: #facc15; }
+.rv-latest { margin: 0 0.25rem 10px; font-size: 0.84rem; color: var(--text-dim); }
+.rv-latest strong { color: var(--text); }
+
+.rv-toolbar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.rv-count { display: inline-block; margin-left: 4px; padding: 0 6px; border-radius: 9px; font-size: 0.72rem; background: rgba(148, 163, 184, 0.22); }
+.rec-filter-pill.active .rv-count { background: rgba(255, 255, 255, 0.25); }
+.rv-search { margin: 0 !important; }
+.rv-counter { font-size: 0.78rem; color: var(--text-muted); font-weight: 600; }
+
+.rv-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+@media (min-width: 600px) { .rv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1000px) { .rv-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.rv-card { display: flex; flex-direction: column; gap: 6px; padding: 14px !important; border-left: 4px solid var(--rv-c) !important; min-width: 0; }
+.rv-card-head { display: flex; align-items: center; gap: 10px; }
+.rv-icon { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-size: 1.05rem; background: var(--card-bg); }
+.rv-card-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.rv-card-title strong { font-size: 0.95rem; font-weight: 700; color: var(--text); line-height: 1.25; }
+.rv-card-title span { font-size: 0.74rem; color: var(--text-muted); }
+.rv-new { flex: 0 0 auto; font-size: 0.7rem; font-weight: 800; padding: 2px 8px; border-radius: 999px; color: #fff; background: var(--rv-c); }
+.rv-value { font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.05; color: var(--text); }
+.rv-when { font-size: 0.82rem; font-weight: 600; color: var(--text); }
+.rv-when span { font-weight: 500; color: var(--text-muted); }
+.rv-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.rv-tags span { font-size: 0.74rem; font-weight: 600; color: var(--text-dim); background: var(--card-bg); padding: 2px 8px; border-radius: 999px; }
+.rv-card.is-empty .rv-value { color: var(--text-muted); }
+@keyframes rvFlash { 0%, 100% { box-shadow: none; } 30% { box-shadow: 0 0 0 3px var(--rv-c); } }
+.rv-flash { animation: rvFlash 1.4s ease-out; }
+</style>
 {% endblock %}
