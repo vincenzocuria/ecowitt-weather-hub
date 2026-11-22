@@ -132,7 +132,7 @@
                     <span class="section-emoji">📅</span>
                     <div>
                         <h2>Oggi</h2>
-                        <p>Minime, massime ed escursione termica registrate nelle 24 ore odierne.</p>
+                        <p>Gli estremi registrati da mezzanotte.</p>
                     </div>
                 </div>
                 <span class="badge badge-info-pill">
@@ -142,27 +142,27 @@
 
             <div class="records-kpi-grid">
                 <div class="records-kpi-box temp-min">
-                    <span class="kpi-mini-label">Minima Oggi</span>
+                    <span class="kpi-mini-label">Minima</span>
                     <div class="kpi-main-val min-color">{{ today_extremes.temp_min if today_extremes and today_extremes.temp_min is not none else '--' }}<span class="kpi-unit">°C</span></div>
                     <span class="kpi-sub-label">ore {{ today_extremes.temp_min_time or '--:--' }}</span>
                 </div>
 
                 <div class="records-kpi-box temp-max">
-                    <span class="kpi-mini-label">Massima Oggi</span>
+                    <span class="kpi-mini-label">Massima</span>
                     <div class="kpi-main-val max-color">{{ today_extremes.temp_max if today_extremes and today_extremes.temp_max is not none else '--' }}<span class="kpi-unit">°C</span></div>
                     <span class="kpi-sub-label">ore {{ today_extremes.temp_max_time or '--:--' }}</span>
                 </div>
 
                 <div class="records-kpi-box temp-delta">
-                    <span class="kpi-mini-label">Escursione Termica</span>
-                    <div class="kpi-main-val delta-color">Δ {{ today_extremes.temp_range if today_extremes and today_extremes.temp_range is not none else '--' }}<span class="kpi-unit">°C</span></div>
-                    <span class="kpi-sub-label">delta 24h</span>
+                    <span class="kpi-mini-label">Escursione</span>
+                    <div class="kpi-main-val delta-color">{{ today_extremes.temp_range if today_extremes and today_extremes.temp_range is not none else '--' }}<span class="kpi-unit">°C</span></div>
+                    <span class="kpi-sub-label">tra minima e massima</span>
                 </div>
 
                 <div class="records-kpi-box wind-gust">
-                    <span class="kpi-mini-label">Raffica Max Oggi</span>
+                    <span class="kpi-mini-label">Raffica</span>
                     <div class="kpi-main-val wind-color">{{ today_extremes.max_gust if today_extremes and today_extremes.max_gust is not none else '--' }} <span class="kpi-unit">km/h</span></div>
-                    <span class="kpi-sub-label">vento massimo</span>
+                    <span class="kpi-sub-label">la più forte di oggi</span>
                 </div>
             </div>
         </div>
@@ -184,27 +184,27 @@
 
             <div class="records-kpi-grid">
                 <div class="records-kpi-box">
-                    <span class="kpi-mini-label">Giorni Caldi &ge; 30°C</span>
+                    <span class="kpi-mini-label">Giorni &ge; 30 °C</span>
                     <div class="kpi-main-val" style="color: #f59e0b;">{{ climate_stats.days_above_30 }} <span class="kpi-unit">gg</span></div>
                     <span class="kpi-sub-label">nel mese di {{ climate_stats.month_name }}</span>
                 </div>
 
                 <div class="records-kpi-box">
-                    <span class="kpi-mini-label">Giorni Roventi &ge; 35°C</span>
+                    <span class="kpi-mini-label">Giorni &ge; 35 °C</span>
                     <div class="kpi-main-val" style="color: #ef4444;">{{ climate_stats.days_above_35 }} <span class="kpi-unit">gg</span></div>
-                    <span class="kpi-sub-label">caldo estremo diurno</span>
+                    <span class="kpi-sub-label">caldo estremo</span>
                 </div>
 
                 <div class="records-kpi-box">
-                    <span class="kpi-mini-label">Giorni Pioggia (&ge;1mm)</span>
+                    <span class="kpi-mini-label">Giorni di pioggia</span>
                     <div class="kpi-main-val" style="color: #38bdf8;">{{ climate_stats.days_rain }} <span class="kpi-unit">gg</span></div>
-                    <span class="kpi-sub-label">frequenza piogge</span>
+                    <span class="kpi-sub-label">almeno 1 mm</span>
                 </div>
 
                 <div class="records-kpi-box">
-                    <span class="kpi-mini-label">Media Ultimi 30 Giorni</span>
+                    <span class="kpi-mini-label">Media 30 giorni</span>
                     <div class="kpi-main-val" style="color: #a78bfa;">{{ climate_stats.last_30d_avg_temp or '--' }}<span class="kpi-unit">°C</span></div>
-                    <span class="kpi-sub-label">baseline storico DB</span>
+                    <span class="kpi-sub-label">temperatura media</span>
                 </div>
             </div>
         </div>
@@ -221,31 +221,27 @@
                     <span class="section-emoji">👑</span>
                     <div>
                         <h2>Record mese per mese</h2>
-                        <p>I mesi estremi e i primati mensili storici registrati dalla stazione e dal solare.</p>
+                        <p>Il mese migliore e peggiore per ogni misura. Medie e totali contano solo i mesi registrati quasi per intero.</p>
                     </div>
                 </div>
-                <button type="button" onclick="rebuildMonthlyRecords()" class="btn btn-sm btn-recalc-monthly" title="Ricalcola i bilanci mensili storici e aggiorna i record">
+                <button type="button" onclick="rebuildMonthlyRecords()" class="btn btn-outline btn-sm btn-recalc-monthly" title="Ricalcola i bilanci mensili storici e aggiorna i record">
                     🔄 Ricalcola
                 </button>
             </div>
 
-            <div class="records-monthly-grid">
-                {% for mr in monthly_records %}
-                <div class="monthly-rec-card cat-{{ mr.category }}">
-                    <div class="monthly-rec-header">
-                        <span class="monthly-rec-title">{{ mr.title }}</span>
-                        <span class="badge badge-monthly-cat">{{ mr.category }}</span>
+            <div class="rv-grid">
+                {% for c in mv %}
+                <article class="rec-item-card rv-card cat-{{ c.color }} {% if not c.has_value %}is-empty{% endif %}">
+                    <div class="rv-card-head">
+                        <span class="rv-icon" aria-hidden="true">{{ c.icon }}</span>
+                        <div class="rv-card-title">
+                            <strong>{{ c.title }}</strong>
+                            <span>{{ c.cat_name }}{% if c.note %} · {{ c.note }}{% endif %}</span>
+                        </div>
                     </div>
-                    <div class="monthly-rec-val-wrap">
-                        <span class="monthly-rec-val">
-                            {% if mr.value is not none %}{{ mr.value }}{% else %}--{% endif %}
-                        </span>
-                        <span class="monthly-rec-unit">{{ mr.unit }}</span>
-                    </div>
-                    <div class="monthly-rec-date">
-                        📅 {{ mr.month_name if mr.month_name else 'In attesa dati' }}
-                    </div>
-                </div>
+                    <div class="rv-value">{{ c.value }}<small>{{ c.unit }}</small></div>
+                    <div class="rv-when">{% if c.has_value %}{{ c.month }}{% else %}<span>Nessun dato ancora</span>{% endif %}</div>
+                </article>
                 {% endfor %}
             </div>
         </div>
@@ -257,7 +253,7 @@
                     <span class="section-emoji">🌴</span>
                     <div>
                         <h2>Notti tropicali {{ tropical_stats.year }}</h2>
-                        <p>Standard WMO: Minima notturna &ge; 20.0°C • Notti Roventi &ge; 25.0°C</p>
+                        <p>Notti con minima di almeno 20 °C (tropicali) e 25 °C (roventi). Contano solo le notti registrate.</p>
                     </div>
                 </div>
                 {% if tropical_stats.today_is_tropical %}
@@ -269,38 +265,38 @@
 
             <div class="records-kpi-grid">
                 <div class="records-kpi-box">
-                    <span class="kpi-mini-label">Notti Tropicali (&ge;20°)</span>
+                    <span class="kpi-mini-label">Notti tropicali</span>
                     <div class="kpi-main-val" style="color: #f97316;">{{ tropical_stats.total_tropical_nights }}</div>
-                    <span class="kpi-sub-label">anno {{ tropical_stats.year }}</span>
+                    <span class="kpi-sub-label">minima &ge; 20 °C</span>
                 </div>
 
                 <div class="records-kpi-box">
-                    <span class="kpi-mini-label">Notti Roventi (&ge;25°)</span>
+                    <span class="kpi-mini-label">Notti roventi</span>
                     <div class="kpi-main-val" style="color: #ef4444;">{{ tropical_stats.total_super_tropical_nights }}</div>
-                    <span class="kpi-sub-label">caldo notturno estremo</span>
+                    <span class="kpi-sub-label">minima &ge; 25 °C</span>
                 </div>
 
                 <div class="records-kpi-box">
-                    <span class="kpi-mini-label">Streak Consecutivo</span>
+                    <span class="kpi-mini-label">Notti di fila</span>
                     <div class="kpi-main-val" style="color: #eab308;">
-                        {{ tropical_stats.current_streak }}<span class="kpi-unit"> gg</span>
+                        {{ tropical_stats.current_streak }}
                     </div>
-                    <span class="kpi-sub-label">Max anno: <strong>{{ tropical_stats.max_streak }} gg</strong></span>
+                    <span class="kpi-sub-label">adesso · record dell'anno <strong>{{ tropical_stats.max_streak }}</strong></span>
                 </div>
 
                 <div class="records-kpi-box">
-                    <span class="kpi-mini-label">Minima Più Alta</span>
+                    <span class="kpi-mini-label">Notte più calda</span>
                     <div class="kpi-main-val" style="color: #ec4899;">
                         {% if tropical_stats.highest_min_temp is not none %}{{ tropical_stats.highest_min_temp }}<span class="kpi-unit">°C</span>{% else %}--{% endif %}
                     </div>
-                    <span class="kpi-sub-label">{% if tropical_stats.highest_min_day %}{{ tropical_stats.highest_min_day }}{% else %}In attesa dati{% endif %}</span>
+                    <span class="kpi-sub-label">{% if tropical_stats.highest_min_day %}{{ tropical_stats.highest_min_day | day_it }}{% else %}Nessun dato ancora{% endif %}</span>
                 </div>
             </div>
 
             <!-- RIPARTIZIONE MENSILE PULITA & RESPONSIVE -->
             <div class="tropical-months-box">
                 <span class="tropical-months-title">
-                    📅 Distribuzione per Mese ({{ tropical_stats.year }}):
+                    Notti tropicali per mese
                 </span>
                 <div class="tropical-months-grid">
                     {% for m in tropical_stats.monthly_stats %}
@@ -324,11 +320,11 @@
                     <span class="section-emoji">📜</span>
                     <div>
                         <h2>Record battuti</h2>
-                        <p>I primati battuti nel tempo con confronto tra vecchio e nuovo valore.</p>
+                        <p>Ogni volta che un record è stato superato, con il valore di prima.</p>
                     </div>
                 </div>
                 <span id="history-total-count" class="badge badge-gold-pill">
-                    {{ history|length }} registrazioni
+                    {{ history|length }} record
                 </span>
             </div>
 
@@ -340,7 +336,7 @@
                     <input 
                         type="text" 
                         id="history-search-input" 
-                        placeholder="Cerca nella cronologia (es. Raffica, 35.4)..." 
+                        placeholder="Cerca un record" 
                         aria-label="Cerca nella cronologia"
                         class="records-search-input"
                     >
@@ -376,17 +372,17 @@
                     
                     <div class="hist-card-top">
                         <div class="hist-card-title-row">
-                            <span class="hist-badge badge-{{ h.category or 'gen' }}">{{ h.category or 'Record' }}</span>
-                            <strong class="hist-title-text">{{ h.title }}</strong>
+                            <span class="hist-badge badge-{{ h.category or 'gen' }}">{{ hist_cats[h.category][1] if h.category in hist_cats else '🏆' }} {{ hist_cats[h.category][0] if h.category in hist_cats else 'Record' }}</span>
+                            <strong class="hist-title-text">{{ rec_titles.get(h.record_key, h.title) }}</strong>
                         </div>
                         <div class="hist-time-tag">
-                            🕒 {{ h.timestamp | local_dt }}
+                            {{ h.timestamp | local_dt_short }}
                         </div>
                     </div>
 
                     <div class="hist-values-comparison">
                         <div class="hist-val-box old-val">
-                            <span class="hist-val-label">PRECEDENTE</span>
+                            <span class="hist-val-label">Prima</span>
                             <span class="hist-val-num">
                                 {% if h.old_value is not none %}
                                     <del>{{ h.old_value }}</del> <small>{{ h.unit }}</small>
@@ -399,7 +395,7 @@
                         <div class="hist-arrow">➔</div>
 
                         <div class="hist-val-box new-val">
-                            <span class="hist-val-label">NUOVO RECORD</span>
+                            <span class="hist-val-label">Nuovo record</span>
                             <span class="hist-val-num gold-highlight">
                                 {{ h.new_value }} <small>{{ h.unit }}</small>
                             </span>
@@ -409,7 +405,7 @@
                     {% if (h.details and h.details.dir) or (h.details and h.details.count) or (h.details and h.details.date) %}
                     <div class="hist-details-row">
                         {% if h.details and h.details.dir %}
-                        <span class="hist-detail-pill">💨 Direzione: <strong>{{ h.details.dir }}</strong></span>
+                        <span class="hist-detail-pill">🧭 <strong>{{ h.details.dir }}</strong></span>
                         {% endif %}
                         {% if h.details and h.details.count %}
                         <span class="hist-detail-pill">⚡ <strong>{{ h.details.count }}</strong> scariche</span>

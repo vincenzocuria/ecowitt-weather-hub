@@ -171,3 +171,62 @@ def build_records_view(records, history, tz, now=None):
         "new_count": sum(1 for c in cards if c["is_new"]),
         "latest": latest,
     }
+
+
+# --------------------------------------------------------------------------- Mesi
+_MONTH_CATS = {
+    "temperature": ("Temperatura", "🌡️", "temperature"),
+    "rain": ("Pioggia", "🌧️", "rain"),
+    "wind": ("Vento", "💨", "wind"),
+    "solar_energy": ("Energia", "⚡", "solar"),
+    "climate": ("Notti", "🌙", "pressure"),
+}
+MONTH_TITLES = {
+    "hottest_month": ("Mese più caldo", "temperatura media"),
+    "coldest_month": ("Mese più freddo", "temperatura media"),
+    "highest_temp_month": ("Mese con la massima più alta", ""),
+    "lowest_temp_month": ("Mese con la minima più bassa", ""),
+    "rainiest_month": ("Mese più piovoso", "pioggia totale"),
+    "driest_month": ("Mese più secco", "pioggia totale"),
+    "highest_solar_production_month": ("Più energia dal sole", "produzione fotovoltaico"),
+    "highest_autarky_month": ("Più autosufficienza", "casa alimentata dal sole"),
+    "most_tropical_nights_month": ("Più notti tropicali", "minima di almeno 20 °C"),
+    "highest_wind_gust_month": ("Raffica più forte", ""),
+    "highest_rain_rate_month": ("Pioggia più intensa", ""),
+}
+_MONTH_ORDER = list(MONTH_TITLES)
+
+
+def format_day(day_str):
+    """'2026-08-30' -> '30 ago 2026'."""
+    try:
+        d = datetime.strptime(str(day_str)[:10], "%Y-%m-%d")
+        return f"{d.day} {_MONTHS[d.month - 1]} {d.year}"
+    except (TypeError, ValueError):
+        return day_str or ""
+
+
+def build_monthly_view(monthly_records):
+    cards = []
+    for m in monthly_records or []:
+        key = m.get("record_key") or ""
+        cat_name, icon, color = _MONTH_CATS.get(m.get("category"), ("Altro", "📈", "pressure"))
+        title, note = MONTH_TITLES.get(key, (m.get("title") or key, ""))
+        unit = m.get("unit") or ""
+        value = m.get("value")
+        if value is None:
+            shown = "--"
+        elif unit in ("notti", "kWh"):
+            shown = f"{float(value):.0f}"
+        else:
+            shown = f"{float(value):.1f}"
+        cards.append({
+            "key": key, "title": title, "note": note, "cat_name": cat_name, "icon": icon, "color": color,
+            "value": shown, "unit": unit, "has_value": value is not None,
+            "month": (m.get("month_name") or "") if value is not None else "",
+        })
+    cards.sort(key=lambda c: _MONTH_ORDER.index(c["key"]) if c["key"] in _MONTH_ORDER else 99)
+    return cards
+
+
+HISTORY_CATS = {k: (name, icon) for k, name, icon in CATEGORIES}

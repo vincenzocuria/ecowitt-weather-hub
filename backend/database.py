@@ -34,6 +34,27 @@ def _sql_local_date(ts: Optional[str]) -> Optional[str]:
         return ts[:10]
     return _local_date_for_hour(ts[:13])
 
+@lru_cache(maxsize=65536)
+def _local_hour_for_hour(utc_hour_prefix: str) -> Optional[int]:
+    try:
+        dt = datetime.strptime(utc_hour_prefix.replace(" ", "T"), "%Y-%m-%dT%H").replace(tzinfo=timezone.utc)
+        return dt.astimezone(settings.get_tz()).hour
+    except ValueError:
+        return None
+
+
+def _sql_local_hour(ts: Optional[str]) -> Optional[int]:
+    """Funzione SQL local_hour(timestamp): ora locale (0-23, DST incluso) di un timestamp UTC."""
+    if not ts or len(str(ts)) < 13:
+        return None
+    return _local_hour_for_hour(str(ts)[:13])
+
+
+# Un giorno vale per le "notti" (tropicali, minima più alta) solo se la notte è stata registrata:
+# almeno 6 ore diverse tra le 00 e le 08 locali. Evita minime false da giorni con poche letture diurne.
+NIGHT_COVERAGE_SQL = "COUNT(DISTINCT CASE WHEN local_hour(timestamp) BETWEEN 0 AND 8 THEN local_hour(timestamp) END) >= 6"
+
+
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -41,6 +62,7 @@ def get_connection() -> sqlite3.Connection:
     # I contatori giornalieri della stazione (es. daily_rain_mm) si azzerano a mezzanotte LOCALE:
     # i raggruppamenti per giorno devono usare local_date(timestamp), non local_date(timestamp) (UTC).
     conn.create_function("local_date", 1, _sql_local_date, deterministic=True)
+    conn.create_function("local_hour", 1, _sql_local_hour, deterministic=True)
     return conn
 
 from backend.helpers import (
@@ -1390,6 +1412,7 @@ def get_history_kpis(start_date: Optional[str] = None, end_date: Optional[str] =
             SELECT local_date(timestamp) as day, MIN(temp_c) as day_min
             FROM weather_records {where_temp_sql}
             GROUP BY local_date(timestamp)
+            HAVING {NIGHT_COVERAGE_SQL}
         )
     """, params)
     trop_row = cursor.fetchone()
@@ -2426,7 +2449,7 @@ def get_tropical_nights_stats(year: Optional[int] = None) -> Dict[str, Any]:
     year_start = f"{year}-01-01T00:00:00"
     year_end = f"{year}-12-31T23:59:59"
 
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT 
             local_date(timestamp) as day_str,
             ROUND(MIN(temp_c), 1) as min_temp,
@@ -2436,7 +2459,7 @@ def get_tropical_nights_stats(year: Optional[int] = None) -> Dict[str, Any]:
         FROM weather_records
         WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
         GROUP BY local_date(timestamp)
-        HAVING readings_count >= 1
+        HAVING {NIGHT_COVERAGE_SQL}
         ORDER BY day_str ASC
     """, (year_start, year_end))
     days = cursor.fetchall()
@@ -3479,6 +3502,27 @@ def calculate_monthly_summary(year: int, month: int) -> Dict[str, Any]:
 
     total_records = row["total_records"] if row else 0
     avg_temp = round(row["avg_temp"], 1) if row and row["avg_temp"] is not None else None
+    # Media del mese = media delle medie dei giorni registrati per almeno 18 ore: le letture fitte di alcuni
+    # giorni (o i giorni con una sola lettura di pomeriggio) non devono pesare più degli altri.
+    cursor.execute("""
+        SELECT AVG(day_avg) AS m FROM (
+            SELECT AVG(temp_c) AS day_avg FROM weather_records
+            WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
+            GROUP BY local_date(timestamp)
+            HAVING COUNT(DISTINCT local_hour(timestamp)) >= 18
+        )
+    """, (start_iso, end_iso))
+    r_avg = cursor.fetchone()
+    if r_avg and r_avg["m"] is not None:
+        avg_temp = round(r_avg["m"], 1)
+    cursor.execute("""
+        SELECT COUNT(*) AS n FROM (
+            SELECT local_date(timestamp) FROM weather_records
+            WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
+            GROUP BY local_date(timestamp) HAVING COUNT(DISTINCT local_hour(timestamp)) >= 18
+        )
+    """, (start_iso, end_iso))
+    days_recorded = cursor.fetchone()["n"] or 0
     min_temp = round(row["min_temp"], 1) if row and row["min_temp"] is not None else None
     max_temp = round(row["max_temp"], 1) if row and row["max_temp"] is not None else None
     temp_range = round(max_temp - min_temp, 1) if (max_temp is not None and min_temp is not None) else None
@@ -3548,12 +3592,12 @@ def calculate_monthly_summary(year: int, month: int) -> Dict[str, Any]:
         max_daily_rain_date = best_rain["day"]
 
     # Notti Tropicali (Tmin >= 20°C) e Notti Roventi (Tmin >= 25°C)
-    cursor.execute("""
-        SELECT day, MIN(temp_c) as day_min FROM (
-            SELECT local_date(timestamp) as day, temp_c
-            FROM weather_records
-            WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
-        ) GROUP BY day
+    cursor.execute(f"""
+        SELECT local_date(timestamp) as day, MIN(temp_c) as day_min
+        FROM weather_records
+        WHERE timestamp >= ? AND timestamp <= ? AND temp_c IS NOT NULL
+        GROUP BY local_date(timestamp)
+        HAVING {NIGHT_COVERAGE_SQL}
     """, (start_iso, end_iso))
     temp_days = cursor.fetchall()
 
@@ -3618,6 +3662,7 @@ def calculate_monthly_summary(year: int, month: int) -> Dict[str, Any]:
         "temp_range": temp_range,
         "tropical_nights_count": tropical_nights_count,
         "super_tropical_nights_count": super_tropical_nights_count,
+        "days_recorded": days_recorded,
         "total_rain_mm": total_rain_mm,
         "max_daily_rain_mm": max_daily_rain_mm,
         "max_daily_rain_date": max_daily_rain_date,
@@ -3677,6 +3722,10 @@ def save_monthly_summary(summary: Dict[str, Any]) -> None:
     conn.commit()
     conn.close()
 
+MONTHLY_NEEDS_FULL_MONTH = {"hottest_month", "coldest_month", "rainiest_month", "driest_month",
+                            "highest_solar_production_month", "highest_autarky_month", "most_tropical_nights_month"}
+
+
 def check_and_update_monthly_records(summary: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Confronta le metriche del mese con l'Albo dei Record Mensili Storici (All-Time Monthly Extremes).
@@ -3704,6 +3753,9 @@ def check_and_update_monthly_records(summary: Dict[str, Any]) -> List[Dict[str, 
         val = float(val)
         # Salta valori non validi o nulli per record di tipo max (es. pioggia 0 non è record max pioggia)
         if defn["type"] == "max" and val <= 0 and key in ("rainiest_month", "highest_solar_production_month", "highest_rain_rate_month", "most_tropical_nights_month"):
+            continue
+        # Medie, totali e conteggi hanno senso solo su mesi registrati quasi per intero
+        if key in MONTHLY_NEEDS_FULL_MONTH and (summary.get("days_recorded") or 0) < 25:
             continue
 
         curr = current_records.get(key)
@@ -3849,6 +3901,12 @@ def rebuild_all_historical_monthly_summaries() -> Dict[str, Any]:
     conn.close()
 
     months = [r["ym"] for r in rows if r["ym"] and len(r["ym"]) == 7]
+    # Ricalcolo completo: i primati mensili ripartono da zero, così un valore sbagliato del passato non resta
+    conn = get_connection()
+    conn.execute("DELETE FROM monthly_extremes")
+    conn.execute("DELETE FROM monthly_records_history")
+    conn.commit()
+    conn.close()
     processed_count = 0
     all_broken_records = []
 

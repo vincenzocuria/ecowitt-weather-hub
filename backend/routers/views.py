@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
-from backend.records_view import build_records_view
+from backend.records_view import HISTORY_CATS, TITLES as REC_TITLES, build_monthly_view, build_records_view, format_day
 from backend.alert_labels import ALERT_CATEGORIES, alert_icon, alert_label, build_alert_days
 from backend.config import settings
 from backend.forecast_service import forecast_service
@@ -56,6 +56,7 @@ def _js_literal(value) -> Markup:
 
 templates.env.filters["js"] = _js_literal
 templates.env.filters["alert_label"] = alert_label
+templates.env.filters["day_it"] = format_day
 templates.env.filters["alert_icon"] = alert_icon
 templates.env.filters["localdt"] = lambda v, fmt="%d/%m/%Y %H:%M:%S": to_local_datetime_str(v, fmt) if v else ""
 
@@ -63,7 +64,7 @@ templates.env.filters["local_dt"] = lambda val: to_local_datetime_str(val, "%d/%
 templates.env.filters["local_dt_short"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y %H:%M")
 templates.env.filters["local_date"] = lambda val: to_local_datetime_str(val, "%d/%m/%Y")
 # Versione unica di CSS/JS per tutte le pagine (base, login, kiosk): cambiarla forza il ricaricamento
-ASSET_VERSION = "7.3"
+ASSET_VERSION = "7.4"
 templates.env.globals["asset_version"] = ASSET_VERSION
 templates.env.filters["local_time"] = lambda val: to_local_datetime_str(val, "%H:%M")
 templates.env.filters["duration_it"] = lambda val: format_duration_italian(val) if val is not None else "--"
@@ -311,6 +312,8 @@ def records_page(request: Request):
             "title": "Record • Domus",
             "records": records,
             "rv": build_records_view(records, history, settings.get_tz()),
+            "mv": build_monthly_view(monthly_records),
+            "rec_titles": REC_TITLES, "hist_cats": HISTORY_CATS,
             "history": history,
             "tropical_stats": tropical_stats,
             "soil_summary": soil_summary,

@@ -1030,21 +1030,19 @@ class TestEcowittHub(unittest.TestCase):
         from backend.main import app
 
         # 1. Inserisci letture con notti tropicali e sensori suolo
-        save_reading({
-            "timestamp": "2026-07-15T04:00:00",
-            "temp_c": 22.5,
-            "soil_moisture": {"ch1": 42.0}
-        })
-        save_reading({
-            "timestamp": "2026-07-16T04:00:00",
-            "temp_c": 26.2, # Notte Rovente >= 25°C
-            "soil_moisture": {"ch1": 40.0}
-        })
-        save_reading({
-            "timestamp": "2026-07-17T04:00:00",
-            "temp_c": 23.0,
-            "soil_moisture": {"ch1": 55.0}
-        })
+        from datetime import datetime as _dt, timedelta as _td
+        from zoneinfo import ZoneInfo as _Zi
+        def _night(day, temp_min, soil):
+            # notte completa: una lettura ogni ora dalle 00 alle 08 locali
+            start = _dt.fromisoformat(day).replace(tzinfo=_Zi("Europe/Rome"))
+            for h in range(9):
+                save_reading({"timestamp": (start + _td(hours=h)).astimezone(_Zi("UTC")).isoformat(),
+                              "temp_c": temp_min + (0 if h == 4 else 1.0), "soil_moisture": {"ch1": soil}})
+        _night("2026-07-15", 22.5, 42.0)
+        _night("2026-07-16", 26.2, 40.0)   # Notte Rovente >= 25°C
+        _night("2026-07-17", 23.0, 55.0)
+        # un giorno con una sola lettura pomeridiana non è una notte registrata
+        save_reading({"timestamp": "2026-07-20T13:00:00+00:00", "temp_c": 34.8})
 
         # 2. Test calcolo statistiche Notti Tropicali
         trop_stats = get_tropical_nights_stats(year=2026)
@@ -1052,6 +1050,7 @@ class TestEcowittHub(unittest.TestCase):
         self.assertGreaterEqual(trop_stats["total_tropical_nights"], 3)
         self.assertGreaterEqual(trop_stats["total_super_tropical_nights"], 1)
         self.assertGreaterEqual(trop_stats["highest_min_temp"], 22.5)
+        self.assertLess(trop_stats["highest_min_temp"], 34.8)
         self.assertGreaterEqual(trop_stats["max_streak"], 1)
         self.assertIn("monthly_stats", trop_stats)
 
@@ -1096,7 +1095,7 @@ class TestEcowittHub(unittest.TestCase):
         r_page = client.get("/records")
         self.assertEqual(r_page.status_code, 200)
         self.assertIn("Notti tropicali", r_page.text)
-        self.assertIn("Minima Più Alta", r_page.text)
+        self.assertIn("Notte più calda", r_page.text)
 
         r_charts = client.get("/charts")
         self.assertEqual(r_charts.status_code, 200)
