@@ -311,6 +311,13 @@
                 <small class="rt-hint">Quali luci: <a href="/settings#routines">Impostazioni › Routine</a>.</small>
             </div>
             <div class="rt-field">
+                <span class="rt-label">📺 TV</span>
+                <div class="rt-seg" data-group="tv">
+                    <button type="button" data-v="off">Spegni</button>
+                    <button type="button" data-v="">Niente</button>
+                </div>
+            </div>
+            <div class="rt-field">
                 <span class="rt-label">🪟 Persiana</span>
                 <div class="rt-seg" data-group="cover">
                     <button type="button" data-v="open">Apri</button>
@@ -3018,6 +3025,8 @@ function rtOpenEditor(id) {
         `<button type="button" class="rt-day ${days.includes(i) ? 'active' : ''}" data-d="${i}" aria-label="${RT_DAY_NAMES[i]}" aria-pressed="${days.includes(i)}" onclick="this.classList.toggle('active'); this.setAttribute('aria-pressed', this.classList.contains('active'))">${d}</button>`).join('');
     rtSeg('lights', lights ? lights.state : '');
     rtSeg('cover', cover ? cover.mode : '');
+    const tv = r && r.actions.find(a => a.type === 'tv');
+    rtSeg('tv', tv ? 'off' : '');
     document.getElementById('rt-modal').classList.add('show');
     document.body.style.overflow = 'hidden';
 }
@@ -3034,6 +3043,8 @@ async function rtSave() {
     const oldLights = old && old.actions.find(a => a.type === 'lights');
     const oldCover = old && old.actions.find(a => a.type === 'cover');
     if (l) actions.push({type: 'lights', state: l, exclude: oldLights ? oldLights.exclude || [] : []});
+    const oldTv = old && old.actions.find(a => a.type === 'tv');
+    if (rtSegValue('tv')) actions.push({type: 'tv', state: 'off', exclude: oldTv ? oldTv.exclude || [] : []});
     if (c) actions.push({type: 'cover', entities: oldCover ? oldCover.entities || [] : ['cover.persiana_tenda'], mode: c,
         pct: +document.getElementById('rt-ed-pct').value, travel_sec: +document.getElementById('rt-ed-travel').value || 20});
     const days = [...document.querySelectorAll('#rt-ed-days .rt-day.active')].map(b => +b.dataset.d);

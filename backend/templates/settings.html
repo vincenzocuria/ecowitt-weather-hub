@@ -1435,7 +1435,7 @@ function switchSettingsTab(tabName, btnElem) {
 // =========================================================================
 // ROUTINE: quali luci e persiane comanda ogni routine
 // =========================================================================
-let rtsetRoutines = [], rtsetDevices = {lights: [], covers: []};
+let rtsetRoutines = [], rtsetDevices = {lights: [], covers: [], tvs: []};
 const RTSET_ESC = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
 function rtsetEsc(v) { return String(v ?? '').replace(/[&<>"']/g, c => RTSET_ESC[c]); }
 
@@ -1445,7 +1445,7 @@ async function rtsetLoad() {
     try {
         const [r, d] = await Promise.all([fetch('/api/routines').then(x => x.json()), fetch('/api/routines/devices').then(x => x.json())]);
         rtsetRoutines = r.routines || [];
-        rtsetDevices = {lights: d.lights || [], covers: d.covers || []};
+        rtsetDevices = {lights: d.lights || [], covers: d.covers || [], tvs: d.tvs || []};
         rtsetRender();
     } catch (e) {
         box.innerHTML = '<p class="rtset-none">Non riesco a caricare le routine.</p>';
@@ -1470,6 +1470,12 @@ function rtsetRender() {
                 <div class="rtset-group-title">💡 Luci da ${lights.state === 'on' ? 'accendere' : 'spegnere'}<small>le luci nuove entrano da sole</small></div>
                 <div class="rtset-items">${rtsetDevices.lights.map(d => rtsetItem(r.id, 'lights', d, !(lights.exclude || []).includes(d.id))).join('') || '<p class="rtset-none">Nessuna luce trovata.</p>'}</div>
             </div>` : '<p class="rtset-none">💡 Questa routine non tocca le luci.</p>';
+        const tv = r.actions.find(a => a.type === 'tv');
+        const tvHtml = tv ? `
+            <div class="rtset-group">
+                <div class="rtset-group-title">📺 TV da spegnere<small>se è già spenta non succede nulla</small></div>
+                <div class="rtset-items">${rtsetDevices.tvs.map(d => rtsetItem(r.id, 'tv', d, !(tv.exclude || []).includes(d.id))).join('') || '<p class="rtset-none">Nessuna TV trovata.</p>'}</div>
+            </div>` : '<p class="rtset-none">📺 Questa routine non tocca la TV.</p>';
         const coverHtml = cover ? `
             <div class="rtset-group">
                 <div class="rtset-group-title">🪟 Persiane<small>${rtsetEsc((r.summary || []).find(t => /persian/i.test(t)) || '')}</small></div>
@@ -1478,7 +1484,7 @@ function rtsetRender() {
         return `<section class="rtset-card">
             <div class="rtset-head"><span class="rt-icon">${rtsetEsc(r.icon)}</span>
                 <div><strong>${rtsetEsc(r.name)}</strong><small>${r.enabled ? rtsetEsc(r.when) : 'Solo a mano'}</small></div></div>
-            ${lightsHtml}${coverHtml}
+            ${lightsHtml}${tvHtml}${coverHtml}
         </section>`;
     }).join('');
 }
@@ -1487,7 +1493,7 @@ async function rtsetChange(rid, kind, devId, input) {
     const r = rtsetRoutines.find(x => x.id === rid);
     if (!r) return;
     const a = r.actions.find(x => x.type === kind);
-    if (kind === 'lights') {
+    if (kind === 'lights' || kind === 'tv') {
         const ex = new Set(a.exclude || []);
         input.checked ? ex.delete(devId) : ex.add(devId);
         a.exclude = [...ex];

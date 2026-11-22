@@ -36,16 +36,17 @@ def api_routine_devices():
         aliases = get_device_aliases()
     except Exception:
         aliases = {}
-    lights, covers = [], []
+    from backend.routines import is_tv
+    lights, covers, tvs = [], [], []
     for d in homeassistant_service.get_catalog_devices():
         raw = str(d.get("raw_id", ""))
-        if not raw.startswith(("light.", "cover.")):
+        if not (raw.startswith(("light.", "cover.")) or is_tv(d)):
             continue
         item = {"id": raw, "name": aliases.get(f"hass_{raw}") or aliases.get(raw) or d.get("name") or raw,
                 "online": bool(d.get("is_online"))}
-        (lights if raw.startswith("light.") else covers).append(item)
+        (lights if raw.startswith("light.") else covers if raw.startswith("cover.") else tvs).append(item)
     key = lambda x: x["name"].lower()
-    return {"lights": sorted(lights, key=key), "covers": sorted(covers, key=key)}
+    return {"lights": sorted(lights, key=key), "covers": sorted(covers, key=key), "tvs": sorted(tvs, key=key)}
 
 
 @router.post("/api/routines")

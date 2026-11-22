@@ -3,6 +3,8 @@
 Azioni supportate:
 - {"type": "lights", "state": "on" | "off", "exclude": [...]}
   tutte le luci di Home Assistant raggiungibili, tranne quelle escluse (le luci nuove entrano da sole)
+- {"type": "tv", "state": "off", "exclude": [...]}
+  spegne le TV accese (media player con "tv" nel nome), tranne quelle escluse
 - {"type": "cover", "entities": [...], "mode": "open" | "close" | "position", "pct": 50, "travel_sec": 20}
   "position": la persiana non dice la sua posizione (e si può muovere anche dall'interruttore a muro),
   quindi prima la chiude tutta per avere un punto fermo, poi la apre per pct% del tempo di corsa e la ferma.
@@ -43,6 +45,7 @@ DEFAULT_ROUTINES = [
         "enabled": False,
         "actions": [
             {"type": "lights", "state": "off"},
+            {"type": "tv", "state": "off"},
             # non del tutto chiusa: al risveglio entra un po' di luce
             {"type": "cover", "entities": [DEFAULT_COVER], "mode": "position", "pct": 15,
              "travel_sec": DEFAULT_TRAVEL_SEC},
@@ -137,6 +140,9 @@ def _clean_actions(actions: Any) -> List[Dict[str, Any]]:
         if t == "lights" and a.get("state") in ("on", "off"):
             exclude = sorted({str(e) for e in (a.get("exclude") or []) if str(e).startswith("light.")})
             out.append({"type": "lights", "state": a["state"], "exclude": exclude})
+        elif t == "tv" and a.get("state") == "off":
+            exclude = sorted({str(e) for e in (a.get("exclude") or []) if str(e).startswith("media_player.")})
+            out.append({"type": "tv", "state": "off", "exclude": exclude})
         elif t == "cover" and a.get("mode") in ("open", "close", "position", "half"):
             if "entities" in a:
                 entities = list(dict.fromkeys(str(e) for e in (a.get("entities") or []) if str(e).startswith("cover.")))
@@ -212,12 +218,20 @@ def _claim_day(rid: str, day: str) -> bool:
     return n > 0
 
 
+def is_tv(d: Dict[str, Any]) -> bool:
+    raw = str(d.get("raw_id", ""))
+    return raw.startswith("media_player.") and "tv" in (raw + " " + str(d.get("name", ""))).lower()
+
+
 # --------------------------------------------------------------------------- testo
 def describe_action(a: Dict[str, Any]) -> str:
     if a["type"] == "lights":
         text = "Accende le luci" if a["state"] == "on" else "Spegne le luci"
         n = len(a.get("exclude") or [])
         return text + (f" (tranne {n})" if n else "")
+    if a["type"] == "tv":
+        n = len(a.get("exclude") or [])
+        return "Spegne la TV" + (f" (tranne {n})" if n else "")
     if a["type"] == "cover":
         entities = a.get("entities") or []
         if not entities:
@@ -277,6 +291,10 @@ class RoutineRunner:
                 if str(d.get("raw_id", "")).startswith("light.") and d.get("is_online") and d.get("can_toggle")
                 and d["raw_id"] not in exclude]
 
+    def _tvs(self, exclude=()) -> List[Dict[str, Any]]:
+        return [d for d in self.hass.get_catalog_devices()
+                if is_tv(d) and d.get("can_toggle") and d["raw_id"] not in exclude]
+
     async def _move_cover(self, eid: str, a: Dict[str, Any]) -> Dict[str, Any]:
         if a["mode"] != "position":
             return await self.hass.call_service("cover", f"{a['mode']}_cover", eid)
@@ -298,6 +316,14 @@ class RoutineRunner:
                 if d.get("is_on") == want:
                     continue
                 res = await self.hass.toggle_device(d["raw_id"], want)
+                (done if res.get("success") else failed).append(d.get("name") or d["raw_id"])
+            return {"ok": not failed, "text": describe_action(a), "done": done, "failed": failed}
+        if a["type"] == "tv":
+            done, failed = [], []
+            for d in self._tvs(set(a.get("exclude") or [])):
+                if not d.get("is_online") or d.get("is_on") is False:
+                    continue  # già spenta o staccata: niente da fare
+                res = await self.hass.toggle_device(d["raw_id"], False)
                 (done if res.get("success") else failed).append(d.get("name") or d["raw_id"])
             return {"ok": not failed, "text": describe_action(a), "done": done, "failed": failed}
         if a["type"] == "cover":

@@ -2771,7 +2771,7 @@ def test_routines_seed_run_and_schedule():
     R.delete_routine(r["id"])
 
     # Buonanotte lascia uno spiraglio; il vecchio formato "half" con una sola persiana è ancora capito
-    assert R.describe_action(R.get_routine("buonanotte")["actions"][1]) == "Lascia la persiana socchiusa (15%)"
+    assert R.describe_action(R.get_routine("buonanotte")["actions"][2]) == "Lascia la persiana socchiusa (15%)"
     old = R._clean_actions([{"type": "cover", "entity_id": "cover.x", "mode": "half"}])[0]
     assert old["entities"] == ["cover.x"] and old["mode"] == "position" and old["pct"] == 50
     assert R._clean_actions([{"type": "cover", "entities": ["cover.x"], "mode": "position", "pct": 0}])[0]["mode"] == "close"
@@ -2785,3 +2785,20 @@ def test_routines_seed_run_and_schedule():
     assert R.describe_action(excl["actions"][0]) == "Accende le luci (tranne 1)"
     assert asyncio.run(runner.run({**excl, "id": "buongiorno"}))["ok"]
     assert hass.calls == []  # luce comò esclusa, floor già accesa, nessuna persiana
+
+    # TV: spegne solo quelle accese e raggiungibili, non gli altoparlanti né le escluse
+    class TvHass(FakeHass):
+        def get_catalog_devices(self):
+            return [
+                {"raw_id": "media_player.soggiorno_tv", "name": "Soggiorno TV", "is_on": True, "is_online": True, "can_toggle": True},
+                {"raw_id": "media_player.salotto_tv_samsung", "name": "TV Samsung", "is_on": None, "is_online": False, "can_toggle": True},
+                {"raw_id": "media_player.camera_tv", "name": "Camera", "is_on": True, "is_online": True, "can_toggle": True},
+                {"raw_id": "media_player.nestcasa", "name": "NestCasa", "is_on": True, "is_online": True, "can_toggle": True},
+            ]
+    th = TvHass()
+    tvr = R.RoutineRunner(hass=th, notifier=notif)
+    acts = R._clean_actions([{"type": "tv", "state": "off", "exclude": ["media_player.camera_tv"]}])
+    assert R.describe_action(acts[0]) == "Spegne la TV (tranne 1)"
+    assert asyncio.run(tvr.run({"id": "buongiorno", "name": "T", "actions": acts}))["ok"]
+    assert th.calls == [("toggle", "media_player.soggiorno_tv", False)]
+    assert [a["type"] for a in R.DEFAULT_ROUTINES[1]["actions"]] == ["lights", "tv", "cover"]
