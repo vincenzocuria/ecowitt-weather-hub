@@ -1511,6 +1511,14 @@
 })();
 </script>
 <style>
+/* Le 4 schede stanno sempre nello schermo: su telefono icona sopra e nome sotto */
+.records-tabs-bar { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 4px !important; overflow: visible !important; }
+.rec-tab-btn { min-width: 0 !important; justify-content: center !important; white-space: nowrap; }
+.rec-tab-btn .tab-text { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 600px) {
+    .rec-tab-btn { flex-direction: column !important; gap: 2px !important; padding: 8px 2px !important; font-size: 0.78rem !important; }
+    .rec-tab-btn .tab-count { display: none !important; }
+}
 .rv-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
 @media (min-width: 700px) { .rv-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .rv-kpi { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 14px; border-radius: 16px; border: 1px solid var(--card-border); background: var(--card-bg); color: var(--text); font: inherit; cursor: pointer; border-top: 4px solid var(--rv-c, var(--accent)); min-width: 0; }
