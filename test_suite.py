@@ -2742,12 +2742,13 @@ def test_routines_seed_run_and_schedule():
     hass, notif = FakeHass(), FakeNotifier()
     runner = R.RoutineRunner(hass=hass, notifier=notif)
     morning = R.get_routine("buongiorno")
-    morning["actions"][1]["travel_sec"] = 3  # metà = 1,5 s nel test
+    morning["actions"][1]["travel_sec"] = 3
+    R.HALF_MARGIN_SEC = 0
     res = asyncio.run(runner.run(morning))
     assert res["ok"]
-    # solo la luce spenta e raggiungibile, niente prese; persiana aperta e poi fermata
-    assert hass.calls == [("toggle", "light.como", True), ("cover", "open_cover", "cover.persiana_tenda"),
-                          ("cover", "stop_cover", "cover.persiana_tenda")]
+    # solo la luce spenta e raggiungibile, niente prese; persiana chiusa tutta, riaperta e fermata a metà
+    assert hass.calls == [("toggle", "light.como", True), ("cover", "close_cover", "cover.persiana_tenda"),
+                          ("cover", "open_cover", "cover.persiana_tenda"), ("cover", "stop_cover", "cover.persiana_tenda")]
     assert notif.sent == []  # avvio a mano riuscito: nessuna notifica
 
     # orario: parte una volta sola alle 23:00 e non dopo la finestra di ritardo

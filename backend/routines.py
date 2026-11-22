@@ -3,8 +3,8 @@
 Azioni supportate:
 - {"type": "lights", "state": "on" | "off"}       tutte le luci di Home Assistant raggiungibili
 - {"type": "cover", "entity_id": "...", "mode": "open" | "close" | "half", "travel_sec": 20}
-  "half" apre per metà del tempo di corsa e poi ferma: la persiana non dice la sua posizione,
-  quindi si parte dal presupposto che sia chiusa (come dopo la Buonanotte).
+  "half": la persiana non dice la sua posizione (e si può muovere anche dall'interruttore a muro),
+  quindi prima la chiude tutta per avere un punto fermo, poi la apre per metà del tempo di corsa e la ferma.
 """
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ DAYS = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"]
 LATE_GRACE_MIN = 10  # se l'hub era spento all'orario, la routine parte solo se in ritardo di pochi minuti
 DEFAULT_COVER = "cover.persiana_tenda"
 DEFAULT_TRAVEL_SEC = 20
+HALF_MARGIN_SEC = 2  # un po' di margine perché arrivi davvero a fine corsa
 
 DEFAULT_ROUTINES = [
     {
@@ -246,9 +247,13 @@ class RoutineRunner:
         if a["type"] == "cover":
             eid, mode = a["entity_id"], a["mode"]
             if mode == "half":
-                res = await self.hass.call_service("cover", "open_cover", eid)
+                travel = a.get("travel_sec", DEFAULT_TRAVEL_SEC)
+                res = await self.hass.call_service("cover", "close_cover", eid)
                 if res.get("success"):
-                    await asyncio.sleep(a.get("travel_sec", DEFAULT_TRAVEL_SEC) / 2)
+                    await asyncio.sleep(travel + HALF_MARGIN_SEC)  # tutta chiusa, qualunque fosse la posizione
+                    res = await self.hass.call_service("cover", "open_cover", eid)
+                if res.get("success"):
+                    await asyncio.sleep(travel / 2)
                     res = await self.hass.call_service("cover", "stop_cover", eid)
             else:
                 res = await self.hass.call_service("cover", f"{mode}_cover", eid)
