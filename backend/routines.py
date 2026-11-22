@@ -1,10 +1,12 @@
 """Routine della casa: più azioni insieme, a mano o a un orario nei giorni scelti.
 
 Azioni supportate:
-- {"type": "lights", "state": "on" | "off"}       tutte le luci di Home Assistant raggiungibili
-- {"type": "cover", "entity_id": "...", "mode": "open" | "close" | "half", "travel_sec": 20}
-  "half": la persiana non dice la sua posizione (e si può muovere anche dall'interruttore a muro),
-  quindi prima la chiude tutta per avere un punto fermo, poi la apre per metà del tempo di corsa e la ferma.
+- {"type": "lights", "state": "on" | "off", "exclude": [...]}
+  tutte le luci di Home Assistant raggiungibili, tranne quelle escluse (le luci nuove entrano da sole)
+- {"type": "cover", "entities": [...], "mode": "open" | "close" | "position", "pct": 50, "travel_sec": 20}
+  "position": la persiana non dice la sua posizione (e si può muovere anche dall'interruttore a muro),
+  quindi prima la chiude tutta per avere un punto fermo, poi la apre per pct% del tempo di corsa e la ferma.
+  Le persiane vanno scelte una per una: una nuova non si muove finché non la aggiungi.
 """
 from __future__ import annotations
 
@@ -32,7 +34,8 @@ DEFAULT_ROUTINES = [
         "enabled": False,
         "actions": [
             {"type": "lights", "state": "on"},
-            {"type": "cover", "entity_id": DEFAULT_COVER, "mode": "half", "travel_sec": DEFAULT_TRAVEL_SEC},
+            {"type": "cover", "entities": [DEFAULT_COVER], "mode": "position", "pct": 50,
+             "travel_sec": DEFAULT_TRAVEL_SEC},
         ],
     },
     {
@@ -40,7 +43,9 @@ DEFAULT_ROUTINES = [
         "enabled": False,
         "actions": [
             {"type": "lights", "state": "off"},
-            {"type": "cover", "entity_id": DEFAULT_COVER, "mode": "close"},
+            # non del tutto chiusa: al risveglio entra un po' di luce
+            {"type": "cover", "entities": [DEFAULT_COVER], "mode": "position", "pct": 15,
+             "travel_sec": DEFAULT_TRAVEL_SEC},
         ],
     },
 ]
@@ -81,11 +86,20 @@ def seed_default_routines() -> None:
         save_routine({**r, "position": i})
 
 
+def _read_actions(raw: Optional[str]) -> List[Dict[str, Any]]:
+    """Le routine salvate col vecchio formato (una persiana, "half") vengono lette nel formato nuovo."""
+    actions = json.loads(raw or "[]")
+    try:
+        return _clean_actions(actions)
+    except (ValueError, TypeError):
+        return actions
+
+
 def _row(r) -> Dict[str, Any]:
     return {
         "id": r["id"], "name": r["name"], "icon": r["icon"] or "✨",
         "time": r["time"] or "", "days": json.loads(r["days_json"] or "[]"),
-        "actions": json.loads(r["actions_json"] or "[]"),
+        "actions": _read_actions(r["actions_json"]),
         "enabled": bool(r["enabled"]), "position": r["position"] or 0,
         "last_run_at": r["last_run_at"], "last_run_date": r["last_run_date"],
         "last_result": json.loads(r["last_result_json"]) if r["last_result_json"] else None,
@@ -121,11 +135,26 @@ def _clean_actions(actions: Any) -> List[Dict[str, Any]]:
     for a in actions or []:
         t = a.get("type")
         if t == "lights" and a.get("state") in ("on", "off"):
-            out.append({"type": "lights", "state": a["state"]})
-        elif t == "cover" and a.get("mode") in ("open", "close", "half"):
+            exclude = sorted({str(e) for e in (a.get("exclude") or []) if str(e).startswith("light.")})
+            out.append({"type": "lights", "state": a["state"], "exclude": exclude})
+        elif t == "cover" and a.get("mode") in ("open", "close", "position", "half"):
+            if "entities" in a:
+                entities = list(dict.fromkeys(str(e) for e in (a.get("entities") or []) if str(e).startswith("cover.")))
+            else:  # vecchio formato con una sola persiana
+                entities = [str(a.get("entity_id") or DEFAULT_COVER)]
+            mode = "position" if a["mode"] == "half" else a["mode"]
             travel = int(a.get("travel_sec") or DEFAULT_TRAVEL_SEC)
-            out.append({"type": "cover", "entity_id": str(a.get("entity_id") or DEFAULT_COVER),
-                        "mode": a["mode"], "travel_sec": max(3, min(travel, 180))})
+            act = {"type": "cover", "entities": entities, "mode": mode, "travel_sec": max(3, min(travel, 180))}
+            if mode == "position":
+                pct = 50 if a["mode"] == "half" else int(a.get("pct") if a.get("pct") is not None else 50)
+                pct = max(0, min(pct, 100))
+                if pct == 0:
+                    act["mode"] = "close"
+                elif pct == 100:
+                    act["mode"] = "open"
+                else:
+                    act["pct"] = pct
+            out.append(act)
     if not out:
         raise ValueError("La routine non ha azioni")
     return out
@@ -186,10 +215,23 @@ def _claim_day(rid: str, day: str) -> bool:
 # --------------------------------------------------------------------------- testo
 def describe_action(a: Dict[str, Any]) -> str:
     if a["type"] == "lights":
-        return "Accende le luci" if a["state"] == "on" else "Spegne le luci"
+        text = "Accende le luci" if a["state"] == "on" else "Spegne le luci"
+        n = len(a.get("exclude") or [])
+        return text + (f" (tranne {n})" if n else "")
     if a["type"] == "cover":
-        return {"open": "Apre la persiana", "close": "Chiude la persiana",
-                "half": "Apre la persiana a metà"}[a["mode"]]
+        entities = a.get("entities") or []
+        if not entities:
+            return "Nessuna persiana scelta"
+        many = len(entities) > 1
+        art = "le persiane" if many else "la persiana"
+        if a["mode"] == "position":
+            pct = a.get("pct", 50)
+            if pct == 50:
+                return f"Apre {art} a metà"
+            if pct <= 25:
+                return f"Lascia {art} " + ("socchiuse" if many else "socchiusa") + f" ({pct}%)"
+            return f"Apre {art} al {pct}%"
+        return ("Apre " if a["mode"] == "open" else "Chiude ") + art
     return ""
 
 
@@ -230,35 +272,39 @@ class RoutineRunner:
             self._notifier = notifier
         return self._notifier
 
-    def _lights(self) -> List[Dict[str, Any]]:
+    def _lights(self, exclude=()) -> List[Dict[str, Any]]:
         return [d for d in self.hass.get_catalog_devices()
-                if str(d.get("raw_id", "")).startswith("light.") and d.get("is_online") and d.get("can_toggle")]
+                if str(d.get("raw_id", "")).startswith("light.") and d.get("is_online") and d.get("can_toggle")
+                and d["raw_id"] not in exclude]
+
+    async def _move_cover(self, eid: str, a: Dict[str, Any]) -> Dict[str, Any]:
+        if a["mode"] != "position":
+            return await self.hass.call_service("cover", f"{a['mode']}_cover", eid)
+        travel = a.get("travel_sec", DEFAULT_TRAVEL_SEC)
+        res = await self.hass.call_service("cover", "close_cover", eid)
+        if res.get("success"):
+            await asyncio.sleep(travel + HALF_MARGIN_SEC)  # tutta chiusa, qualunque fosse la posizione
+            res = await self.hass.call_service("cover", "open_cover", eid)
+        if res.get("success"):
+            await asyncio.sleep(travel * a.get("pct", 50) / 100)
+            res = await self.hass.call_service("cover", "stop_cover", eid)
+        return res
 
     async def _run_action(self, a: Dict[str, Any]) -> Dict[str, Any]:
         if a["type"] == "lights":
             want = a["state"] == "on"
             done, failed = [], []
-            for d in self._lights():
+            for d in self._lights(set(a.get("exclude") or [])):
                 if d.get("is_on") == want:
                     continue
                 res = await self.hass.toggle_device(d["raw_id"], want)
                 (done if res.get("success") else failed).append(d.get("name") or d["raw_id"])
             return {"ok": not failed, "text": describe_action(a), "done": done, "failed": failed}
         if a["type"] == "cover":
-            eid, mode = a["entity_id"], a["mode"]
-            if mode == "half":
-                travel = a.get("travel_sec", DEFAULT_TRAVEL_SEC)
-                res = await self.hass.call_service("cover", "close_cover", eid)
-                if res.get("success"):
-                    await asyncio.sleep(travel + HALF_MARGIN_SEC)  # tutta chiusa, qualunque fosse la posizione
-                    res = await self.hass.call_service("cover", "open_cover", eid)
-                if res.get("success"):
-                    await asyncio.sleep(travel / 2)
-                    res = await self.hass.call_service("cover", "stop_cover", eid)
-            else:
-                res = await self.hass.call_service("cover", f"{mode}_cover", eid)
-            return {"ok": bool(res.get("success")), "text": describe_action(a),
-                    "error": None if res.get("success") else res.get("error")}
+            entities = a.get("entities") or []
+            results = await asyncio.gather(*(self._move_cover(e, a) for e in entities))  # tutte insieme
+            errors = [str(r.get("error") or "errore") for r in results if not r.get("success")]
+            return {"ok": not errors, "text": describe_action(a), "error": "; ".join(errors) or None}
         return {"ok": False, "text": "Azione sconosciuta"}
 
     async def run(self, routine: Dict[str, Any], source: str = "manual") -> Dict[str, Any]:

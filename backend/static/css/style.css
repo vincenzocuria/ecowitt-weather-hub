@@ -9799,3 +9799,29 @@ html[data-theme] .rt-day.active, html[data-theme] .rt-seg button.active { backgr
     .rt-grid { grid-template-columns: 1fr; }
     .rt-day { width: 36px; height: 36px; }
 }
+.rt-pct { display: flex; flex-direction: column; gap: 6px; }
+.rt-pct[hidden] { display: none; }
+.rt-pct input[type=range] { width: 100%; accent-color: var(--primary); }
+.rt-pct-scale { display: flex; justify-content: space-between; font-size: .72rem; color: var(--text-dim); }
+.rt-field-row label { color: var(--text-dim); font-size: .85rem; }
+.rt-hint a { color: var(--accent); }
+
+/* Impostazioni › Routine: dispositivi inclusi in ogni routine */
+.rtset-list { display: flex; flex-direction: column; gap: 1rem; }
+.rtset-card { display: flex; flex-direction: column; gap: .9rem; }
+.rtset-head { display: flex; align-items: center; gap: 10px; }
+.rtset-head .rt-icon { flex-basis: 40px; height: 40px; }
+.rtset-head small { display: block; color: var(--text-dim); font-size: .8rem; }
+.rtset-group { display: flex; flex-direction: column; gap: 6px; }
+.rtset-group-title { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 700; font-size: .88rem; color: var(--text); }
+.rtset-group-title small { font-weight: 500; color: var(--text-dim); font-size: .76rem; }
+.rtset-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
+.rtset-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer;
+    border: 1px solid rgba(148,163,184,.2); border-radius: 12px; background: var(--ui-tile, rgba(148,163,184,.06));
+}
+.rtset-item input { width: 18px; height: 18px; accent-color: var(--primary); flex: 0 0 auto; margin: 0; }
+.rtset-item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: .88rem; }
+.rtset-item em { margin-left: auto; font-style: normal; font-size: .7rem; color: var(--text-dim); white-space: nowrap; }
+.rtset-item:has(input:not(:checked)) span { color: var(--text-dim); text-decoration: line-through; }
+.rtset-none { color: var(--text-dim); font-size: .82rem; margin: 0; }

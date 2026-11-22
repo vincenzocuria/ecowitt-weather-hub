@@ -308,21 +308,26 @@
                     <button type="button" data-v="off">Spegni</button>
                     <button type="button" data-v="">Niente</button>
                 </div>
-                <small class="rt-hint">Tutte le luci raggiungibili in quel momento.</small>
+                <small class="rt-hint">Quali luci: <a href="/settings#routines">Impostazioni › Routine</a>.</small>
             </div>
             <div class="rt-field">
                 <span class="rt-label">🪟 Persiana</span>
                 <div class="rt-seg" data-group="cover">
                     <button type="button" data-v="open">Apri</button>
-                    <button type="button" data-v="half">A metà</button>
+                    <button type="button" data-v="position">In parte</button>
                     <button type="button" data-v="close">Chiudi</button>
                     <button type="button" data-v="">Niente</button>
+                </div>
+                <div class="rt-pct" id="rt-ed-pct-row">
+                    <div class="rt-field-row"><label for="rt-ed-pct">Quanto aperta</label><strong id="rt-ed-pct-val">50%</strong></div>
+                    <input type="range" id="rt-ed-pct" min="5" max="95" step="5" value="50" oninput="rtPctLabel()">
+                    <div class="rt-pct-scale"><span>uno spiraglio</span><span>a metà</span><span>quasi tutta</span></div>
                 </div>
                 <div class="rt-travel" id="rt-ed-travel-row">
                     <label for="rt-ed-travel">Secondi per aprirla tutta (da chiusa)</label>
                     <input type="number" id="rt-ed-travel" min="3" max="180" step="1" value="20" inputmode="numeric">
                 </div>
-                <small class="rt-hint" id="rt-ed-half-hint">"A metà" la chiude tutta, poi la riapre per metà di questo tempo: funziona anche se l'hai mossa dall'interruttore.</small>
+                <small class="rt-hint" id="rt-ed-half-hint">"In parte" la chiude tutta, poi la riapre per la percentuale scelta di questo tempo: funziona anche se l'hai mossa dall'interruttore.</small>
             </div>
         </div>
         <div class="device-modal-footer rt-ed-foot">
@@ -2980,10 +2985,15 @@ async function rtToggle(id, input) {
 function rtSeg(group, value) {
     document.querySelectorAll(`.rt-seg[data-group="${group}"] button`).forEach(b => b.classList.toggle('active', b.dataset.v === (value || '')));
     if (group === 'cover') {
-        const half = value === 'half';
-        document.getElementById('rt-ed-travel-row').hidden = !half;
-        document.getElementById('rt-ed-half-hint').hidden = !half;
+        const part = value === 'position';
+        document.getElementById('rt-ed-pct-row').hidden = !part;
+        document.getElementById('rt-ed-travel-row').hidden = !part;
+        document.getElementById('rt-ed-half-hint').hidden = !part;
     }
+}
+function rtPctLabel() {
+    const v = +document.getElementById('rt-ed-pct').value;
+    document.getElementById('rt-ed-pct-val').textContent = v === 50 ? 'a metà (50%)' : `${v}%`;
 }
 function rtSegValue(group) {
     const b = document.querySelector(`.rt-seg[data-group="${group}"] button.active`);
@@ -3000,6 +3010,8 @@ function rtOpenEditor(id) {
     document.getElementById('rt-ed-time').value = (r && r.time) || '07:00';
     document.getElementById('rt-ed-enabled').checked = !!(r && r.enabled);
     document.getElementById('rt-ed-travel').value = (cover && cover.travel_sec) || 20;
+    document.getElementById('rt-ed-pct').value = (cover && cover.pct) || 50;
+    rtPctLabel();
     document.getElementById('rt-ed-delete').hidden = !r;
     const days = r ? r.days : [0, 1, 2, 3, 4, 5, 6];
     document.getElementById('rt-ed-days').innerHTML = RT_DAYS.map((d, i) =>
@@ -3018,8 +3030,12 @@ async function rtSave() {
     const old = rtEditing ? rtList.find(x => x.id === rtEditing) : null;
     const actions = [];
     const l = rtSegValue('lights'), c = rtSegValue('cover');
-    if (l) actions.push({type: 'lights', state: l});
-    if (c) actions.push({type: 'cover', entity_id: 'cover.persiana_tenda', mode: c, travel_sec: +document.getElementById('rt-ed-travel').value || 20});
+    // i dispositivi scelti in Impostazioni › Routine restano quelli
+    const oldLights = old && old.actions.find(a => a.type === 'lights');
+    const oldCover = old && old.actions.find(a => a.type === 'cover');
+    if (l) actions.push({type: 'lights', state: l, exclude: oldLights ? oldLights.exclude || [] : []});
+    if (c) actions.push({type: 'cover', entities: oldCover ? oldCover.entities || [] : ['cover.persiana_tenda'], mode: c,
+        pct: +document.getElementById('rt-ed-pct').value, travel_sec: +document.getElementById('rt-ed-travel').value || 20});
     const days = [...document.querySelectorAll('#rt-ed-days .rt-day.active')].map(b => +b.dataset.d);
     const enabled = document.getElementById('rt-ed-enabled').checked;
     if (enabled && !days.length) { showToast('Scegli almeno un giorno', 'danger'); return; }

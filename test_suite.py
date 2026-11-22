@@ -2769,3 +2769,19 @@ def test_routines_seed_run_and_schedule():
     r = R.save_routine({"name": "Sera", "time": "", "days": [0], "enabled": True, "actions": [{"type": "lights", "state": "off"}]})
     assert r["enabled"] is False
     R.delete_routine(r["id"])
+
+    # Buonanotte lascia uno spiraglio; il vecchio formato "half" con una sola persiana è ancora capito
+    assert R.describe_action(R.get_routine("buonanotte")["actions"][1]) == "Lascia la persiana socchiusa (15%)"
+    old = R._clean_actions([{"type": "cover", "entity_id": "cover.x", "mode": "half"}])[0]
+    assert old["entities"] == ["cover.x"] and old["mode"] == "position" and old["pct"] == 50
+    assert R._clean_actions([{"type": "cover", "entities": ["cover.x"], "mode": "position", "pct": 0}])[0]["mode"] == "close"
+
+    # luci escluse e persiane scelte a mano
+    hass.calls.clear()
+    excl = {"id": "t", "name": "T", "actions": [
+        {"type": "lights", "state": "on", "exclude": ["light.como"]},
+        {"type": "cover", "entities": [], "mode": "close"}]}
+    excl["actions"] = R._clean_actions(excl["actions"])
+    assert R.describe_action(excl["actions"][0]) == "Accende le luci (tranne 1)"
+    assert asyncio.run(runner.run({**excl, "id": "buongiorno"}))["ok"]
+    assert hass.calls == []  # luce comò esclusa, floor già accesa, nessuna persiana

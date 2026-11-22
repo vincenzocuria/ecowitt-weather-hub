@@ -48,6 +48,10 @@
         <span class="settings-tab-badge" style="background: rgba(56, 189, 248, 0.25); color: #38bdf8;">Auto</span>
         {% endif %}
     </button>
+    <button type="button" class="settings-tab-btn" data-tab="routines" onclick="switchSettingsTab('routines', this)" role="tab" aria-selected="false">
+        <span class="settings-tab-icon">🕒</span>
+        <span>Routine</span>
+    </button>
     <button type="button" class="settings-tab-btn" data-tab="homeassistant" onclick="switchSettingsTab('homeassistant', this)" role="tab" aria-selected="false">
         <span class="settings-tab-icon">🏠</span>
         <span>Home Assistant</span>
@@ -774,6 +778,22 @@
 <!-- ========================================================================= -->
 <!-- TAB: HOME ASSISTANT (HUB DOMOTICO LOCALE UNIFICATO) -->
 <!-- ========================================================================= -->
+<div class="settings-tab-pane" id="pane-routines" role="tabpanel">
+    <div class="card">
+        <div class="card-header" style="flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="ui-sec-icon">🕒</span>
+                <div>
+                    <strong>Dispositivi delle routine</strong>
+                    <div style="font-size: 0.78rem; color: var(--text-dim);">Togli la spunta a quello che una routine non deve toccare. Si salva da solo.</div>
+                </div>
+            </div>
+            <a href="/devices" class="btn btn-sm btn-outline" style="text-decoration: none;">Orari e azioni in Casa ↗</a>
+        </div>
+        <div class="rtset-list" id="rtset-list"><p class="rtset-none">Caricamento…</p></div>
+    </div>
+</div>
+
 <div class="settings-tab-pane" id="pane-homeassistant" role="tabpanel">
     <div class="card" style="border: 1px solid rgba(34, 197, 94, 0.35); background: linear-gradient(145deg, rgba(34, 197, 94, 0.05), var(--card-bg));">
         <div class="card-header" style="border-bottom: 1px solid rgba(34, 197, 94, 0.2); flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center;">
@@ -1067,7 +1087,7 @@
     .header-card .header-title h1 { font-size: 1.35rem; }
     .settings-header-sub { font-size: 0.82rem; }
     .settings-header-actions .btn { padding: 0.45rem 0.8rem !important; font-size: 0.82rem; }
-    /* Tutte le 8 schede visibili: due colonne invece della barra a scorrimento */
+    /* Tutte le schede visibili: due colonne invece della barra a scorrimento */
     .settings-tab-bar { display: grid; grid-template-columns: 1fr 1fr; overflow: visible; gap: 4px; }
     .settings-tab-btn { justify-content: flex-start; padding: 0.55rem 0.6rem; font-size: 0.8rem; gap: 5px; min-width: 0; }
     .settings-tab-btn > span:not(.settings-tab-icon):not(.settings-tab-badge) { overflow: hidden; text-overflow: ellipsis; }
@@ -1411,13 +1431,92 @@ function switchSettingsTab(tabName, btnElem) {
     } catch (e) {}
 }
 
+
+// =========================================================================
+// ROUTINE: quali luci e persiane comanda ogni routine
+// =========================================================================
+let rtsetRoutines = [], rtsetDevices = {lights: [], covers: []};
+const RTSET_ESC = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
+function rtsetEsc(v) { return String(v ?? '').replace(/[&<>"']/g, c => RTSET_ESC[c]); }
+
+async function rtsetLoad() {
+    const box = document.getElementById('rtset-list');
+    if (!box) return;
+    try {
+        const [r, d] = await Promise.all([fetch('/api/routines').then(x => x.json()), fetch('/api/routines/devices').then(x => x.json())]);
+        rtsetRoutines = r.routines || [];
+        rtsetDevices = {lights: d.lights || [], covers: d.covers || []};
+        rtsetRender();
+    } catch (e) {
+        box.innerHTML = '<p class="rtset-none">Non riesco a caricare le routine.</p>';
+    }
+}
+
+function rtsetItem(rid, kind, dev, checked) {
+    return `<label class="rtset-item">
+        <input type="checkbox" ${checked ? 'checked' : ''} onchange="rtsetChange('${rtsetEsc(rid)}', '${kind}', '${rtsetEsc(dev.id)}', this)">
+        <span>${rtsetEsc(dev.name)}</span>${dev.online ? '' : '<em>non risponde</em>'}
+    </label>`;
+}
+
+function rtsetRender() {
+    const box = document.getElementById('rtset-list');
+    if (!rtsetRoutines.length) { box.innerHTML = '<p class="rtset-none">Nessuna routine: creane una nella pagina Casa.</p>'; return; }
+    box.innerHTML = rtsetRoutines.map(r => {
+        const lights = r.actions.find(a => a.type === 'lights');
+        const cover = r.actions.find(a => a.type === 'cover');
+        const lightsHtml = lights ? `
+            <div class="rtset-group">
+                <div class="rtset-group-title">💡 Luci da ${lights.state === 'on' ? 'accendere' : 'spegnere'}<small>le luci nuove entrano da sole</small></div>
+                <div class="rtset-items">${rtsetDevices.lights.map(d => rtsetItem(r.id, 'lights', d, !(lights.exclude || []).includes(d.id))).join('') || '<p class="rtset-none">Nessuna luce trovata.</p>'}</div>
+            </div>` : '<p class="rtset-none">💡 Questa routine non tocca le luci.</p>';
+        const coverHtml = cover ? `
+            <div class="rtset-group">
+                <div class="rtset-group-title">🪟 Persiane<small>${rtsetEsc((r.summary || []).find(t => /persian/i.test(t)) || '')}</small></div>
+                <div class="rtset-items">${rtsetDevices.covers.map(d => rtsetItem(r.id, 'cover', d, (cover.entities || []).includes(d.id))).join('') || '<p class="rtset-none">Nessuna persiana trovata.</p>'}</div>
+            </div>` : '<p class="rtset-none">🪟 Questa routine non tocca le persiane.</p>';
+        return `<section class="rtset-card">
+            <div class="rtset-head"><span class="rt-icon">${rtsetEsc(r.icon)}</span>
+                <div><strong>${rtsetEsc(r.name)}</strong><small>${r.enabled ? rtsetEsc(r.when) : 'Solo a mano'}</small></div></div>
+            ${lightsHtml}${coverHtml}
+        </section>`;
+    }).join('');
+}
+
+async function rtsetChange(rid, kind, devId, input) {
+    const r = rtsetRoutines.find(x => x.id === rid);
+    if (!r) return;
+    const a = r.actions.find(x => x.type === kind);
+    if (kind === 'lights') {
+        const ex = new Set(a.exclude || []);
+        input.checked ? ex.delete(devId) : ex.add(devId);
+        a.exclude = [...ex];
+    } else {
+        const en = new Set(a.entities || []);
+        input.checked ? en.add(devId) : en.delete(devId);
+        a.entities = [...en];
+    }
+    try {
+        const resp = await fetch('/api/routines', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(r)});
+        const res = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(res.error || 'Non salvato');
+        Object.assign(r, res.routine);
+        showToast(`${r.name}: ${input.checked ? 'incluso' : 'escluso'}`, 'success');
+    } catch (e) {
+        input.checked = !input.checked;
+        showToast(e.message || 'Non salvato', 'danger');
+        rtsetLoad();
+    }
+}
+document.addEventListener('DOMContentLoaded', rtsetLoad);
+
 // Inizializza tab da URL hash o da localStorage
 document.addEventListener('DOMContentLoaded', () => {
     let initialTab = 'notifications';
     const hash = window.location.hash.replace('#', '').toLowerCase();
     
     // Mappa tab valide
-    const validTabs = ['notifications', 'alarms', 'sensors', 'tuya', 'climate', 'homeassistant', 'database', 'system'];
+    const validTabs = ['notifications', 'alarms', 'sensors', 'tuya', 'climate', 'routines', 'homeassistant', 'database', 'system'];
     if (hash && validTabs.includes(hash)) {
         initialTab = hash;
     } else {
