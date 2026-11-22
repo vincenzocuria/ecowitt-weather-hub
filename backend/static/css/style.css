@@ -9668,3 +9668,41 @@ html[data-theme="light"] { --ui-tile: #f1f5f9; }
     .devices-header-actions::-webkit-scrollbar { display: none; }
     .devices-header-actions .btn { flex: 0 0 auto; }
 }
+
+/* ==========================================================================
+   SCHEDA LUCE: anteprima luminosa, accensione, luminosità, ruota dei colori
+   ========================================================================== */
+html[data-theme] .lamp { --lc: transparent; display: flex; flex-direction: column; gap: 14px; }
+html[data-theme] .lamp-hero { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 20px; background: var(--ui-tile); position: relative; overflow: hidden; }
+html[data-theme] .lamp.is-on .lamp-hero { background: radial-gradient(circle at 44px 50%, color-mix(in srgb, var(--lc) 55%, transparent) 0%, transparent 70%), var(--ui-tile); }
+html[data-theme] .lamp-orb { flex: 0 0 auto; width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; font-size: 1.6rem; background: var(--card-bg); border: 1px solid var(--ui-line); transition: background .3s, box-shadow .3s; }
+html[data-theme] .lamp.is-on .lamp-orb { background: var(--lc); border-color: transparent; box-shadow: 0 0 0 6px color-mix(in srgb, var(--lc) 35%, transparent), 0 0 34px 6px color-mix(in srgb, var(--lc) 70%, transparent); }
+html[data-theme] .lamp.is-off .lamp-orb span { filter: grayscale(1); opacity: .5; }
+html[data-theme] .lamp-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+html[data-theme] .lamp-info strong { font-size: 1.15rem; font-weight: 800; color: var(--text); }
+html[data-theme] .lamp-label { font-size: 0.85rem; color: var(--text-dim); }
+html[data-theme] .lamp-power { flex: 0 0 auto; width: 54px; height: 54px; border-radius: 50%; border: 0; display: grid; place-items: center; cursor: pointer; color: var(--text-dim); background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--ui-line); }
+html[data-theme] .lamp.is-on .lamp-power { color: #fff; background: #f59e0b; box-shadow: 0 6px 18px rgba(245, 158, 11, 0.35); }
+html[data-theme] .lamp-section { display: flex; flex-direction: column; gap: 10px; }
+html[data-theme] .lamp-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+html[data-theme] .lamp-row span { font-size: 0.95rem; font-weight: 700; color: var(--text); }
+html[data-theme] .lamp-row strong { font-size: 0.95rem; font-weight: 800; color: var(--text); }
+html[data-theme] .lamp-row small { font-size: 0.76rem; color: var(--text-muted); text-align: right; }
+
+html[data-theme] .lamp-bright, html[data-theme] .lamp-temp { -webkit-appearance: none; appearance: none; width: 100%; height: 44px; border-radius: 14px; margin: 0; outline: none; cursor: pointer; }
+html[data-theme] .lamp-bright { background: linear-gradient(90deg, #f59e0b 0 var(--p, 50%), rgba(148, 163, 184, 0.22) var(--p, 50%) 100%); }
+html[data-theme] .lamp-temp { background: linear-gradient(90deg, #ffb46b, #fff4e5, #cfe3ff); }
+html[data-theme] .lamp-bright::-webkit-slider-thumb, html[data-theme] .lamp-temp::-webkit-slider-thumb { -webkit-appearance: none; width: 8px; height: 30px; border-radius: 4px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+html[data-theme] .lamp-bright::-moz-range-thumb, html[data-theme] .lamp-temp::-moz-range-thumb { width: 8px; height: 30px; border-radius: 4px; background: #fff; border: 0; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+
+html[data-theme] .lamp-wheel { position: relative; width: min(260px, 78vw); aspect-ratio: 1; margin: 4px auto; border-radius: 50%; touch-action: none; cursor: crosshair;
+    background: radial-gradient(circle, #fff 0%, rgba(255,255,255,0.85) 12%, rgba(255,255,255,0) 68%),
+                conic-gradient(hsl(0,100%,50%), hsl(30,100%,50%), hsl(60,100%,50%), hsl(90,100%,50%), hsl(120,100%,50%), hsl(150,100%,50%), hsl(180,100%,50%), hsl(210,100%,50%), hsl(240,100%,50%), hsl(270,100%,50%), hsl(300,100%,50%), hsl(330,100%,50%), hsl(360,100%,50%));
+    box-shadow: 0 6px 22px rgba(15, 23, 42, 0.18), inset 0 0 0 1px rgba(0,0,0,0.06); }
+html[data-theme] .lamp-knob { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: var(--lc); border: 3px solid #fff; box-shadow: 0 2px 10px rgba(0,0,0,.4); pointer-events: none; }
+html[data-theme] .lamp-knob.is-hidden { display: none; }
+html[data-theme] .lamp-presets { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+html[data-theme] .lamp-preset { width: 40px; height: 40px; border-radius: 50%; border: 0; padding: 0; cursor: pointer; background: var(--sw); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+html[data-theme] .lamp-preset.active { box-shadow: 0 0 0 3px var(--card-bg), 0 0 0 5px var(--text); }
+html[data-theme] .lamp-preset-white { width: auto; padding: 0 16px; border-radius: 999px; background: linear-gradient(135deg, #fff, #ffe8c2); color: #1e293b; font: inherit; font-size: 0.85rem; font-weight: 700; }
+html[data-theme] .lamp-offline { margin: 0; font-size: 0.85rem; color: var(--danger); }

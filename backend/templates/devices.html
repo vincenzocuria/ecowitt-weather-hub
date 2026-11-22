@@ -218,7 +218,7 @@
 
 <!-- MODALE ELEGANTE DI DETTAGLIO DISPOSITIVO -->
 <div id="device-modal-backdrop" class="device-modal-backdrop" onclick="closeDeviceDetail(event)">
-    <div class="device-modal-dialog" onclick="event.stopPropagation()">
+    <div class="device-modal-dialog" onclick="event.stopPropagation()" data-no-swipe>
         
         <div class="device-modal-header">
             <div class="modal-title-group" style="flex: 1;">
@@ -268,7 +268,7 @@
 
 <!-- MODALE RIEPILOGO TUTTI I TIMER ATTIVI -->
 <div id="schedules-modal-backdrop" class="device-modal-backdrop" onclick="closeSchedulesModal(event)">
-    <div class="device-modal-dialog" onclick="event.stopPropagation()">
+    <div class="device-modal-dialog" onclick="event.stopPropagation()" data-no-swipe>
         
         <div class="device-modal-header">
             <div class="modal-title-group">
@@ -1853,65 +1853,138 @@ function renderSwitchDetail(dev) {
 
 // Colori della luce (Home Assistant): tinte rapide, barra del colore, intensità e bianco
 const LIGHT_SWATCHES = [
-    { name: 'Rosso', h: 0, s: 100 }, { name: 'Arancio', h: 28, s: 100 }, { name: 'Ambra', h: 40, s: 90 },
-    { name: 'Giallo', h: 55, s: 100 }, { name: 'Verde', h: 120, s: 100 }, { name: 'Acqua', h: 170, s: 90 },
-    { name: 'Azzurro', h: 200, s: 100 }, { name: 'Blu', h: 230, s: 100 }, { name: 'Viola', h: 275, s: 100 },
-    { name: 'Rosa', h: 320, s: 80 }, { name: 'Rosa tenue', h: 340, s: 40 }, { name: 'Pesca', h: 20, s: 55 },
+    { name: 'Rosso', h: 0, s: 100 }, { name: 'Arancio', h: 28, s: 100 }, { name: 'Giallo', h: 50, s: 100 },
+    { name: 'Verde', h: 120, s: 90 }, { name: 'Azzurro', h: 195, s: 100 }, { name: 'Blu', h: 230, s: 100 },
+    { name: 'Viola', h: 275, s: 100 }, { name: 'Rosa', h: 325, s: 70 }, { name: 'Pesca', h: 22, s: 50 },
 ];
 const LIGHT_COLOR_MODES = ['hs', 'rgb', 'rgbw', 'rgbww', 'xy'];
+const LIGHT_WARM = '#ffe8c2';
 
 function lightCss(h, s) { return `hsl(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(100 - s / 2)}%)`; }
-
-function renderLightColor(dev) {
-    const a = (dev.raw && dev.raw.attributes) || {};
-    const modes = Array.isArray(a.supported_color_modes) ? a.supported_color_modes : [];
-    const hasColor = modes.some(m => LIGHT_COLOR_MODES.includes(m));
-    const hasWhite = modes.includes('white');
-    const hasTemp = modes.includes('color_temp');
-    if (!hasColor && !hasTemp) return '';
-    const id = tvEsc(dev.raw_id);
-    const hs = Array.isArray(a.hs_color) ? a.hs_color : null;
-    const isOn = dev.is_on === true;
-    const inWhite = isOn && (a.color_mode === 'white' || a.color_mode === 'color_temp');
-    const h = hs ? hs[0] : 30, sat = hs ? hs[1] : 100;
-    const nowCss = !isOn ? 'transparent' : (inWhite || !hs ? '#fff7e6' : lightCss(h, sat));
-    let html = `
-        <div class="light-color-card" data-light="${id}">
-            <div class="light-color-head">
-                <span class="light-color-now" style="background:${nowCss}"></span>
-                <span>Colore${!isOn ? ' <small>(scegliendo un colore la luce si accende)</small>' : (inWhite ? ' <small>bianco</small>' : '')}</span>
-            </div>`;
-    if (hasColor) {
-        html += `<div class="light-swatches">
-            ${hasWhite ? `<button type="button" class="light-swatch light-swatch-white ${inWhite ? 'active' : ''}" onclick="setLightWhite('${id}')" title="Bianco" aria-label="Bianco"><span>Bianco</span></button>` : ''}
-            ${LIGHT_SWATCHES.map(c => {
-                const dh = hs ? Math.abs(((hs[0] - c.h) % 360 + 540) % 360 - 180) : 999;
-                const active = isOn && !inWhite && hs && dh < 6 && Math.abs(hs[1] - c.s) < 8;
-                return `<button type="button" class="light-swatch ${active ? 'active' : ''}" style="--sw:${lightCss(c.h, c.s)}" onclick="setLightHs('${id}', ${c.h}, ${c.s})" title="${c.name}" aria-label="${c.name}"></button>`;
-            }).join('')}
-        </div>
-        <label class="light-slider-label">Tinta</label>
-        <input type="range" class="light-hue-slider" min="0" max="359" value="${Math.round(h)}" aria-label="Tinta"
-               oninput="lightPreview(this)" onchange="setLightHs('${id}', +this.value, +this.closest('.light-color-card').querySelector('.light-sat-slider').value)">
-        <label class="light-slider-label">Intensità del colore</label>
-        <input type="range" class="light-sat-slider" min="10" max="100" value="${Math.round(sat)}" aria-label="Intensità del colore" style="--hue:${Math.round(h)}"
-               oninput="lightPreview(this)" onchange="setLightHs('${id}', +this.closest('.light-color-card').querySelector('.light-hue-slider').value, +this.value)">`;
-    }
-    if (hasTemp) {
-        const kmin = a.min_color_temp_kelvin || 2700, kmax = a.max_color_temp_kelvin || 6500;
-        const k = a.color_temp_kelvin || Math.round((kmin + kmax) / 2);
-        html += `<label class="light-slider-label">Bianco: caldo ↔ freddo</label>
-        <input type="range" class="light-temp-slider" min="${kmin}" max="${kmax}" step="50" value="${k}" aria-label="Temperatura del bianco"
-               onchange="setLightKelvin('${id}', +this.value)">`;
-    }
-    return html + '</div>';
+function lightColorName(h, s) {
+    if (s < 15) return 'Bianco';
+    const near = LIGHT_SWATCHES.reduce((best, c) => {
+        const d = Math.abs(((h - c.h) % 360 + 540) % 360 - 180) + Math.abs(s - c.s) / 4;
+        return d < best.d ? { c, d } : best;
+    }, { c: null, d: 1e9 });
+    return near.c ? near.c.name : 'Colore';
 }
 
-function lightPreview(input) {
-    const card = input.closest('.light-color-card');
-    const h = +card.querySelector('.light-hue-slider').value, s = +card.querySelector('.light-sat-slider').value;
-    card.querySelector('.light-sat-slider').style.setProperty('--hue', h);
-    card.querySelector('.light-color-now').style.background = lightCss(h, s);
+// Scheda luce: anteprima che si illumina col colore vero, accensione, luminosità, ruota dei colori e preferiti
+function renderLightDetail(dev) {
+    const raw = dev.raw || {};
+    const a = raw.attributes || {};
+    const isOn = dev.is_on === true;
+    const id = tvEsc(dev.raw_id);
+    const eco = tvEsc(dev.ecosystem);
+    const modes = Array.isArray(a.supported_color_modes) ? a.supported_color_modes : [];
+    const isHa = dev.ecosystem === 'homeassistant';
+    const hasColor = isHa && modes.some(m => LIGHT_COLOR_MODES.includes(m));
+    const hasWhite = isHa && modes.includes('white');
+    const hasTemp = isHa && modes.includes('color_temp');
+    const dimmable = modes.length ? !(modes.length === 1 && modes[0] === 'onoff') : (a.brightness != null || raw.brightness != null);
+    const brightness = a.brightness != null ? a.brightness : (raw.brightness != null ? raw.brightness : null);
+    const pct = brightness != null ? Math.max(1, Math.round(brightness / 255 * 100)) : 100;
+    const hs = Array.isArray(a.hs_color) ? a.hs_color : null;
+    const inWhite = isOn && (a.color_mode === 'white' || a.color_mode === 'color_temp' || !hs);
+    const h = hs ? hs[0] : 30, s = hs ? hs[1] : 0;
+    const glow = !isOn ? 'transparent' : (inWhite ? LIGHT_WARM : lightCss(h, s));
+    const label = !isOn ? 'Spenta' : (inWhite ? 'Bianco' : lightColorName(h, s));
+    const pW = dev.power_w || 0;
+    const rad = (h * Math.PI) / 180, r = (inWhite ? 0 : s) / 100 * 50;
+
+    return `
+    <div class="lamp ${isOn ? 'is-on' : 'is-off'}" data-light="${id}" style="--lc:${glow}" data-no-swipe>
+        <div class="lamp-hero">
+            <div class="lamp-orb" aria-hidden="true"><span>💡</span></div>
+            <div class="lamp-info">
+                <strong>${isOn ? `Accesa${dimmable ? ` · <span class="lamp-pct">${pct}%</span>` : ''}` : 'Spenta'}</strong>
+                <span class="lamp-label">${label}${pW > 0 ? ` · ${pW.toFixed(0)} W` : ''}</span>
+            </div>
+            ${dev.can_toggle ? `<button type="button" class="lamp-power" aria-label="${isOn ? 'Spegni' : 'Accendi'}"
+                onclick="modalToggleDevice(this, '${eco}', '${id}', ${isOn ? 'true' : 'false'})">
+                <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v9"/><path d="M6.3 7.2a8 8 0 1 0 11.4 0"/></svg>
+            </button>` : ''}
+        </div>
+
+        ${dimmable ? `
+        <div class="lamp-section">
+            <div class="lamp-row"><span>Luminosità</span><strong class="lamp-pct">${pct}%</strong></div>
+            <input type="range" class="lamp-bright" min="1" max="100" value="${pct}" aria-label="Luminosità"
+                   style="--p:${pct}%" oninput="lampBrightPreview(this)" onchange="setLightBrightness('${eco}', '${id}', this.value)">
+        </div>` : ''}
+
+        ${hasColor ? `
+        <div class="lamp-section">
+            <div class="lamp-row"><span>Colore</span><small>${isOn ? 'trascina sulla ruota' : 'scegliendo un colore la luce si accende'}</small></div>
+            <div class="lamp-wheel" role="slider" aria-label="Ruota dei colori" data-light="${id}"
+                 onpointerdown="lampWheelStart(event)">
+                <span class="lamp-knob ${inWhite ? 'is-hidden' : ''}" style="left:${50 + Math.sin(rad) * r}%;top:${50 - Math.cos(rad) * r}%"></span>
+            </div>
+            <div class="lamp-presets">
+                ${hasWhite ? `<button type="button" class="lamp-preset lamp-preset-white ${inWhite ? 'active' : ''}" onclick="setLightWhite('${id}')">Bianco</button>` : ''}
+                ${LIGHT_SWATCHES.map(c => {
+                    const dh = hs ? Math.abs(((hs[0] - c.h) % 360 + 540) % 360 - 180) : 999;
+                    const active = isOn && !inWhite && hs && dh < 6 && Math.abs(hs[1] - c.s) < 8;
+                    return `<button type="button" class="lamp-preset ${active ? 'active' : ''}" style="--sw:${lightCss(c.h, c.s)}" onclick="setLightHs('${id}', ${c.h}, ${c.s})" title="${c.name}" aria-label="${c.name}"></button>`;
+                }).join('')}
+            </div>
+        </div>` : ''}
+
+        ${hasTemp ? (() => {
+            const kmin = a.min_color_temp_kelvin || 2700, kmax = a.max_color_temp_kelvin || 6500;
+            const k = a.color_temp_kelvin || Math.round((kmin + kmax) / 2);
+            return `<div class="lamp-section">
+                <div class="lamp-row"><span>Bianco</span><small>caldo ↔ freddo</small></div>
+                <input type="range" class="lamp-temp" min="${kmin}" max="${kmax}" step="50" value="${k}" aria-label="Temperatura del bianco" onchange="setLightKelvin('${id}', +this.value)">
+            </div>`;
+        })() : ''}
+
+        ${!dev.is_online ? `<p class="lamp-offline">La luce non risponde: controlla che sia alimentata.</p>` : ''}
+    </div>`;
+}
+
+function lampBrightPreview(input) {
+    const lamp = input.closest('.lamp');
+    input.style.setProperty('--p', input.value + '%');
+    lamp.querySelectorAll('.lamp-pct').forEach(el => el.textContent = input.value + '%');
+}
+
+// Ruota dei colori: angolo = tinta, distanza dal centro = intensità. Il comando parte quando si alza il dito.
+function lampWheelPick(wheel, ev) {
+    const r = wheel.getBoundingClientRect();
+    const dx = ev.clientX - (r.left + r.width / 2), dy = ev.clientY - (r.top + r.height / 2);
+    const R = r.width / 2;
+    const dist = Math.min(1, Math.hypot(dx, dy) / R);
+    const h = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+    const s = Math.max(5, Math.round(dist * 100));
+    const knob = wheel.querySelector('.lamp-knob');
+    const rad = h * Math.PI / 180;
+    knob.classList.remove('is-hidden');
+    knob.style.left = (50 + Math.sin(rad) * dist * 50) + '%';
+    knob.style.top = (50 - Math.cos(rad) * dist * 50) + '%';
+    const lamp = wheel.closest('.lamp');
+    lamp.style.setProperty('--lc', lightCss(h, s));
+    lamp.classList.add('is-on');
+    const lbl = lamp.querySelector('.lamp-label');
+    if (lbl) lbl.textContent = lightColorName(h, s);
+    return { h, s };
+}
+function lampWheelStart(ev) {
+    const wheel = ev.currentTarget;
+    ev.preventDefault();
+    try { wheel.setPointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
+    let last = lampWheelPick(wheel, ev);
+    const move = (e) => { last = lampWheelPick(wheel, e); };
+    const up = () => {
+        wheel.removeEventListener('pointermove', move);
+        wheel.removeEventListener('pointerup', up);
+        wheel.removeEventListener('pointercancel', up);
+        setLightHs(wheel.dataset.light, last.h, last.s);
+    };
+    wheel.addEventListener('pointermove', move);
+    wheel.addEventListener('pointerup', up);
+    wheel.addEventListener('pointercancel', up);
 }
 
 async function lightService(rawId, data, okMsg) {
@@ -1935,73 +2008,16 @@ async function lightService(rawId, data, okMsg) {
 }
 
 function setLightHs(rawId, h, s) {
-    document.querySelectorAll(`.light-color-card[data-light="${rawId}"] .light-color-now`).forEach(el => el.style.background = lightCss(h, s));
+    document.querySelectorAll(`.lamp[data-light="${rawId}"]`).forEach(el => { el.style.setProperty('--lc', lightCss(h, s)); el.classList.add('is-on'); });
     return lightService(rawId, { hs_color: [Math.round(h), Math.round(s)] }, 'Colore impostato');
 }
 function setLightWhite(rawId) {
     const st = (typeof devicesCatalog !== 'undefined' ? devicesCatalog : []).find(d => d.raw_id === rawId);
     const b = st && st.raw && st.raw.attributes && st.raw.attributes.brightness;
+    document.querySelectorAll(`.lamp[data-light="${rawId}"]`).forEach(el => el.style.setProperty('--lc', LIGHT_WARM));
     return lightService(rawId, { white: b || 255 }, 'Luce bianca');
 }
 function setLightKelvin(rawId, k) { return lightService(rawId, { color_temp_kelvin: k }, 'Bianco impostato'); }
-
-// 11. Luci & Strisce LED
-function renderLightDetail(dev) {
-    const raw = dev.raw || {};
-    const isOn = dev.is_on;
-    const brightness = raw.attributes ? raw.attributes.brightness : (raw.brightness || null);
-    const brightPct = brightness !== null ? Math.round((brightness / 255) * 100) : null;
-    const pW = dev.power_w || 0;
-
-    return `
-        <div class="modal-quick-state-card ${isOn ? 'state-card-on' : 'state-card-off'}">
-            <div class="state-card-info">
-                <span class="state-indicator-dot ${isOn ? 'dot-on' : 'dot-off'}" style="${isOn ? 'background: #fbbf24; box-shadow: 0 0 10px #fbbf24;' : ''}"></span>
-                <span class="state-text">${isOn ? 'Luce Accesa 💡' : 'Luce Spenta 🌑'}</span>
-            </div>
-            ${dev.can_toggle ? `
-                <button type="button" class="btn ${isOn ? 'btn-danger' : 'btn-success'}" onclick="modalToggleDevice(this, '${dev.ecosystem}', '${dev.raw_id}', ${isOn ? 'true' : 'false'})">
-                    ${isOn ? 'Spegni' : 'Accendi'}
-                </button>
-            ` : ''}
-        </div>
-
-        ${dev.ecosystem === 'homeassistant' ? renderLightColor(dev) : ''}
-
-        ${brightPct !== null ? `
-            <div style="margin-top: 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem;">
-                <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 6px;">
-                    <span>Regolazione Luminosità:</span>
-                    <strong style="color: #fbbf24;">${brightPct}%</strong>
-                </div>
-                <input type="range" min="1" max="100" value="${brightPct}" style="width: 100%; accent-color: #fbbf24;" onchange="setLightBrightness('${dev.ecosystem}', '${dev.raw_id}', this.value)" />
-            </div>
-        ` : ''}
-
-        <div class="modal-telemetry-grid" style="margin-top: 1.25rem;">
-            <div class="telemetry-card">
-                <span class="tel-label">💡 Stato Illuminazione</span>
-                <span class="tel-val ${isOn ? 'text-warning' : 'text-dim'}">${isOn ? 'Attiva' : 'Spenta'}</span>
-            </div>
-            ${brightPct !== null ? `
-                <div class="telemetry-card">
-                    <span class="tel-label">🔆 Luminosità</span>
-                    <span class="tel-val text-warning">${brightPct}%</span>
-                </div>
-            ` : ''}
-            ${pW > 0 ? `
-                <div class="telemetry-card">
-                    <span class="tel-label">⚡ Potenza Assorbita</span>
-                    <span class="tel-val text-accent">${pW.toFixed(1)} W</span>
-                </div>
-            ` : ''}
-            <div class="telemetry-card">
-                <span class="tel-label">🟢 Stato Connessione</span>
-                <span class="tel-val ${dev.is_online ? 'text-success' : 'text-danger'}">${dev.is_online ? 'Online 🟢' : 'Offline 🔴'}</span>
-            </div>
-        </div>
-    `;
-}
 
 // 12. Sensori di Contatto / Porta / Finestra / Movimento
 function renderSensorDetail(dev) {
