@@ -34,6 +34,8 @@ from backend.routers.energy import router as energy_router
 from backend.routers.devices import router as devices_router
 from backend.routers.system import router as system_router
 from backend.routers.views import router as views_router, templates
+from backend.routers.routines import router as routines_router
+from backend.routines import routine_runner
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -113,6 +115,7 @@ async def lifespan(app: FastAPI):
     thinq_task = asyncio.create_task(thinq_service.worker_loop())
     hass_task = asyncio.create_task(homeassistant_service.worker_loop())
     scheduler_task = asyncio.create_task(device_scheduler.worker_loop())
+    routines_task = asyncio.create_task(routine_runner.worker_loop())
     yield
     watchdog_task.cancel()
     aton_service.stop()
@@ -125,6 +128,8 @@ async def lifespan(app: FastAPI):
     await homeassistant_service.close()
     device_scheduler.stop()
     scheduler_task.cancel()
+    routine_runner.stop()
+    routines_task.cancel()
 
 # Inizializzazione FastAPI
 app = FastAPI(title="Ecowitt & Sainlogic Weather Station Hub", lifespan=lifespan)
@@ -268,6 +273,7 @@ app.include_router(energy_router)
 app.include_router(devices_router)
 app.include_router(system_router)
 app.include_router(views_router)
+app.include_router(routines_router)
 
 if __name__ == "__main__":
     uvicorn.run(app, host=settings.HOST, port=settings.PORT)

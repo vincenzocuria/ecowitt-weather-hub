@@ -33,6 +33,17 @@
         </div>
     </section>
 
+    <!-- ROUTINE: più azioni con un tocco o a un orario -->
+    <section class="rt-section" aria-labelledby="rt-title">
+        <div class="rt-head">
+            <h2 id="rt-title">Routine</h2>
+            <button type="button" class="rt-add" onclick="rtOpenEditor()">+ Nuova</button>
+        </div>
+        <div class="rt-grid" id="rt-grid">
+            <div class="rt-card rt-skeleton"></div><div class="rt-card rt-skeleton"></div>
+        </div>
+    </section>
+
     <!-- BARRA FILTRI PER CATEGORIA -->
     <div class="devices-filter-bar">
         <button class="filter-chip active" data-filter="all">
@@ -263,6 +274,62 @@
             </button>
         </div>
 
+    </div>
+</div>
+
+<!-- MODALE MODIFICA ROUTINE -->
+<div id="rt-modal" class="device-modal-backdrop" onclick="if(event.target===this) rtCloseEditor()">
+    <div class="device-modal-dialog rt-dialog" onclick="event.stopPropagation()" data-no-swipe>
+        <div class="device-modal-header">
+            <div class="modal-title-group" style="flex:1;">
+                <div class="modal-icon-badge" id="rt-ed-icon">✨</div>
+                <div class="modal-title-text" style="flex:1;">
+                    <input type="text" id="rt-ed-name" class="rt-name-input" maxlength="40" placeholder="Nome della routine" aria-label="Nome della routine">
+                </div>
+            </div>
+            <button type="button" class="modal-close-btn" onclick="rtCloseEditor()" title="Chiudi">&times;</button>
+        </div>
+        <div class="device-modal-body rt-ed-body">
+            <div class="rt-field">
+                <div class="rt-field-row">
+                    <div><strong>Automatica</strong><small>parte da sola all'orario scelto</small></div>
+                    <label class="rt-switch"><input type="checkbox" id="rt-ed-enabled"><span></span></label>
+                </div>
+            </div>
+            <div class="rt-field">
+                <label class="rt-label" for="rt-ed-time">Orario</label>
+                <input type="time" id="rt-ed-time" class="rt-time" value="07:00">
+                <div class="rt-days" id="rt-ed-days"></div>
+            </div>
+            <div class="rt-field">
+                <span class="rt-label">💡 Luci</span>
+                <div class="rt-seg" data-group="lights">
+                    <button type="button" data-v="on">Accendi</button>
+                    <button type="button" data-v="off">Spegni</button>
+                    <button type="button" data-v="">Niente</button>
+                </div>
+                <small class="rt-hint">Tutte le luci raggiungibili in quel momento.</small>
+            </div>
+            <div class="rt-field">
+                <span class="rt-label">🪟 Persiana</span>
+                <div class="rt-seg" data-group="cover">
+                    <button type="button" data-v="open">Apri</button>
+                    <button type="button" data-v="half">A metà</button>
+                    <button type="button" data-v="close">Chiudi</button>
+                    <button type="button" data-v="">Niente</button>
+                </div>
+                <div class="rt-travel" id="rt-ed-travel-row">
+                    <label for="rt-ed-travel">Secondi per aprirla tutta</label>
+                    <input type="number" id="rt-ed-travel" min="3" max="180" step="1" value="20" inputmode="numeric">
+                </div>
+                <small class="rt-hint" id="rt-ed-half-hint">"A metà" apre per metà di questo tempo partendo da chiusa, poi si ferma.</small>
+            </div>
+        </div>
+        <div class="device-modal-footer rt-ed-foot">
+            <button type="button" class="btn btn-outline rt-del" id="rt-ed-delete" onclick="rtDelete()">Elimina</button>
+            <button type="button" class="btn btn-secondary" onclick="rtCloseEditor()">Annulla</button>
+            <button type="button" class="btn btn-primary" onclick="rtSave()">Salva</button>
+        </div>
     </div>
 </div>
 
@@ -2828,6 +2895,163 @@ setInterval(() => {
         fetchDevicesData();
     }
 }, 8000);
+
+
+// ================================================================ ROUTINE
+const RT_DAYS = ['L', 'M', 'M', 'G', 'V', 'S', 'D'];
+const RT_DAY_NAMES = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+const RT_ESC = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
+let rtList = [];
+let rtEditing = null;
+
+function rtEsc(v) { return String(v ?? '').replace(/[&<>"']/g, c => RT_ESC[c]); }
+
+async function rtLoad() {
+    try {
+        const r = await fetch('/api/routines');
+        const data = await r.json();
+        rtList = data.routines || [];
+    } catch (e) { rtList = []; }
+    rtRender();
+}
+
+function rtLastRun(r) {
+    if (!r.last_run_at) return '';
+    const d = new Date(r.last_run_at);
+    const same = d.toDateString() === new Date().toDateString();
+    const hm = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'});
+    const ok = !r.last_result || r.last_result.ok;
+    const day = same ? 'oggi' : d.toLocaleDateString('it-IT', {day: 'numeric', month: 'short'});
+    return `<span class="rt-last ${ok ? '' : 'is-bad'}">${ok ? 'Ultima volta' : 'Non riuscita'} ${day} alle ${hm}</span>`;
+}
+
+function rtRender() {
+    const grid = document.getElementById('rt-grid');
+    if (!grid) return;
+    if (!rtList.length) {
+        grid.innerHTML = '<p class="rt-empty">Nessuna routine. Tocca "+ Nuova" per crearne una.</p>';
+        return;
+    }
+    grid.innerHTML = rtList.map(r => `
+        <article class="rt-card ${r.enabled ? 'is-auto' : ''}" data-id="${rtEsc(r.id)}">
+            <button type="button" class="rt-main" onclick="rtOpenEditor('${rtEsc(r.id)}')" aria-label="Modifica ${rtEsc(r.name)}">
+                <span class="rt-icon" aria-hidden="true">${rtEsc(r.icon)}</span>
+                <span class="rt-text">
+                    <strong>${rtEsc(r.name)}</strong>
+                    <span class="rt-when">${r.enabled ? rtEsc(r.when) : 'Solo a mano'}</span>
+                    <span class="rt-sum">${(r.summary || []).map(rtEsc).join(' · ')}</span>
+                    ${rtLastRun(r)}
+                </span>
+            </button>
+            <div class="rt-actions">
+                <label class="rt-switch" title="Automatica"><input type="checkbox" ${r.enabled ? 'checked' : ''} onchange="rtToggle('${rtEsc(r.id)}', this)" aria-label="Automatica"><span></span></label>
+                <button type="button" class="rt-run" onclick="rtRun('${rtEsc(r.id)}', this)">Avvia</button>
+            </div>
+        </article>`).join('');
+}
+
+async function rtRun(id, btn) {
+    const r = rtList.find(x => x.id === id);
+    btn.disabled = true; btn.textContent = '…';
+    try {
+        const resp = await fetch(`/api/routines/${encodeURIComponent(id)}/run`, {method: 'POST'});
+        const res = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(res.error || 'Errore');
+        if (navigator.vibrate) navigator.vibrate(15);
+        showToast(`${r ? r.name : 'Routine'} avviata`, 'success');
+        setTimeout(() => { rtLoad(); if (typeof fetchDevicesData === 'function') fetchDevicesData(); }, 2500);
+    } catch (e) {
+        showToast(e.message || 'Routine non avviata', 'danger');
+    } finally {
+        setTimeout(() => { btn.disabled = false; btn.textContent = 'Avvia'; }, 1500);
+    }
+}
+
+async function rtToggle(id, input) {
+    const resp = await fetch(`/api/routines/${encodeURIComponent(id)}/enabled`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({enabled: input.checked})
+    });
+    const res = await resp.json().catch(() => ({}));
+    if (!resp.ok) { input.checked = false; showToast(res.error || 'Errore', 'danger'); return; }
+    showToast(input.checked ? `Automatica: ${res.routine.when}` : 'Ora parte solo a mano', 'success');
+    rtLoad();
+}
+
+function rtSeg(group, value) {
+    document.querySelectorAll(`.rt-seg[data-group="${group}"] button`).forEach(b => b.classList.toggle('active', b.dataset.v === (value || '')));
+    if (group === 'cover') {
+        const half = value === 'half';
+        document.getElementById('rt-ed-travel-row').hidden = !half;
+        document.getElementById('rt-ed-half-hint').hidden = !half;
+    }
+}
+function rtSegValue(group) {
+    const b = document.querySelector(`.rt-seg[data-group="${group}"] button.active`);
+    return b ? b.dataset.v : '';
+}
+
+function rtOpenEditor(id) {
+    const r = id ? rtList.find(x => x.id === id) : null;
+    rtEditing = r ? r.id : null;
+    const lights = r && r.actions.find(a => a.type === 'lights');
+    const cover = r && r.actions.find(a => a.type === 'cover');
+    document.getElementById('rt-ed-icon').textContent = r ? r.icon : '✨';
+    document.getElementById('rt-ed-name').value = r ? r.name : '';
+    document.getElementById('rt-ed-time').value = (r && r.time) || '07:00';
+    document.getElementById('rt-ed-enabled').checked = !!(r && r.enabled);
+    document.getElementById('rt-ed-travel').value = (cover && cover.travel_sec) || 20;
+    document.getElementById('rt-ed-delete').hidden = !r;
+    const days = r ? r.days : [0, 1, 2, 3, 4, 5, 6];
+    document.getElementById('rt-ed-days').innerHTML = RT_DAYS.map((d, i) =>
+        `<button type="button" class="rt-day ${days.includes(i) ? 'active' : ''}" data-d="${i}" aria-label="${RT_DAY_NAMES[i]}" aria-pressed="${days.includes(i)}" onclick="this.classList.toggle('active'); this.setAttribute('aria-pressed', this.classList.contains('active'))">${d}</button>`).join('');
+    rtSeg('lights', lights ? lights.state : '');
+    rtSeg('cover', cover ? cover.mode : '');
+    document.getElementById('rt-modal').classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+function rtCloseEditor() {
+    document.getElementById('rt-modal').classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+async function rtSave() {
+    const old = rtEditing ? rtList.find(x => x.id === rtEditing) : null;
+    const actions = [];
+    const l = rtSegValue('lights'), c = rtSegValue('cover');
+    if (l) actions.push({type: 'lights', state: l});
+    if (c) actions.push({type: 'cover', entity_id: 'cover.persiana_tenda', mode: c, travel_sec: +document.getElementById('rt-ed-travel').value || 20});
+    const days = [...document.querySelectorAll('#rt-ed-days .rt-day.active')].map(b => +b.dataset.d);
+    const enabled = document.getElementById('rt-ed-enabled').checked;
+    if (enabled && !days.length) { showToast('Scegli almeno un giorno', 'danger'); return; }
+    const body = {
+        id: rtEditing, name: document.getElementById('rt-ed-name').value.trim(),
+        icon: old ? old.icon : '✨', time: document.getElementById('rt-ed-time').value,
+        days, enabled, actions,
+    };
+    const resp = await fetch('/api/routines', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    const res = await resp.json().catch(() => ({}));
+    if (!resp.ok) { showToast(res.error || 'Non salvata', 'danger'); return; }
+    showToast('Routine salvata', 'success');
+    rtCloseEditor();
+    rtLoad();
+}
+
+async function rtDelete() {
+    if (!rtEditing) return;
+    const r = rtList.find(x => x.id === rtEditing);
+    if (!confirm(`Eliminare la routine "${r ? r.name : ''}"?`)) return;
+    const resp = await fetch(`/api/routines/${encodeURIComponent(rtEditing)}`, {method: 'DELETE'});
+    if (!resp.ok) { showToast('Non eliminata', 'danger'); return; }
+    showToast('Routine eliminata', 'success');
+    rtCloseEditor();
+    rtLoad();
+}
+
+document.querySelectorAll('.rt-seg').forEach(seg => seg.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (b) rtSeg(seg.dataset.group, b.dataset.v);
+}));
+rtLoad();
 
 // Toast helper
 // showToast è definita globalmente in base.html

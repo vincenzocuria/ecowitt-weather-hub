@@ -2705,3 +2705,66 @@ def test_record_not_logged_when_history_already_better():
     conn.close()
     assert v == 1.0 and n == 0
 
+
+
+def test_routines_seed_run_and_schedule():
+    import asyncio
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from backend import routines as R
+
+    class FakeHass:
+        def __init__(self):
+            self.calls = []
+        def get_catalog_devices(self):
+            return [
+                {"raw_id": "light.como", "name": "Comò", "is_on": False, "is_online": True, "can_toggle": True},
+                {"raw_id": "light.tavolo", "name": "Tavolo", "is_on": None, "is_online": False, "can_toggle": True},
+                {"raw_id": "light.floor", "name": "Floor", "is_on": True, "is_online": True, "can_toggle": True},
+                {"raw_id": "switch.cisterna", "name": "Cisterna", "is_on": False, "is_online": True, "can_toggle": True},
+            ]
+        async def toggle_device(self, eid, state):
+            self.calls.append(("toggle", eid, state)); return {"success": True}
+        async def call_service(self, domain, service, eid=None, data=None):
+            self.calls.append((domain, service, eid)); return {"success": True}
+
+    class FakeNotifier:
+        def __init__(self): self.sent = []
+        def send_alert(self, **kw): self.sent.append(kw)
+
+    R.init_routines_table()
+    conn = R.get_connection(); conn.execute("DELETE FROM routines"); conn.commit(); conn.close()
+    R.seed_default_routines(); R.seed_default_routines()
+    names = [r["name"] for r in R.list_routines()]
+    assert names == ["Buongiorno", "Buonanotte"]
+    assert not any(r["enabled"] for r in R.list_routines())
+
+    hass, notif = FakeHass(), FakeNotifier()
+    runner = R.RoutineRunner(hass=hass, notifier=notif)
+    morning = R.get_routine("buongiorno")
+    morning["actions"][1]["travel_sec"] = 3  # metà = 1,5 s nel test
+    res = asyncio.run(runner.run(morning))
+    assert res["ok"]
+    # solo la luce spenta e raggiungibile, niente prese; persiana aperta e poi fermata
+    assert hass.calls == [("toggle", "light.como", True), ("cover", "open_cover", "cover.persiana_tenda"),
+                          ("cover", "stop_cover", "cover.persiana_tenda")]
+    assert notif.sent == []  # avvio a mano riuscito: nessuna notifica
+
+    # orario: parte una volta sola alle 23:00 e non dopo la finestra di ritardo
+    night = R.get_routine("buonanotte"); night["enabled"] = True; R.save_routine(night)
+    tz = ZoneInfo("Europe/Rome")
+    assert [r["id"] for r in runner.due(datetime(2026, 11, 23, 23, 0, 30, tzinfo=tz))] == ["buonanotte"]
+    assert runner.due(datetime(2026, 11, 23, 22, 59, tzinfo=tz)) == []
+    assert runner.due(datetime(2026, 11, 23, 23, 15, tzinfo=tz)) == []
+    assert R._claim_day("buonanotte", "2026-11-23") and not R._claim_day("buonanotte", "2026-11-23")
+    assert runner.due(datetime(2026, 11, 23, 23, 1, tzinfo=tz)) == []
+    assert R.describe_when(R.get_routine("buonanotte")) == "Ogni giorno alle 23:00"
+
+    # senza orario non può essere automatica
+    try:
+        R.save_routine({"name": "Vuota", "actions": []}); assert False
+    except ValueError:
+        pass
+    r = R.save_routine({"name": "Sera", "time": "", "days": [0], "enabled": True, "actions": [{"type": "lights", "state": "off"}]})
+    assert r["enabled"] is False
+    R.delete_routine(r["id"])
