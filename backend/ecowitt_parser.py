@@ -98,8 +98,18 @@ def parse_ecowitt_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
         vpd = calc_vpd(temp_c, humidity)
 
     # Lightning Sensor (WH57)
-    lightning_count = safe_int(raw_data.get("lightning_num") if ("lightning_num" in raw_data and raw_data["lightning_num"] != "") else raw_data.get("lightning"))
-    lightning_distance_km = safe_float(raw_data.get("lightning_distance"))
+    # Protocollo Ecowitt: "lightning_num" = scariche del giorno, "lightning" = distanza (km) dell'ultima scarica.
+    # Alcuni formati alternativi mandano invece "lightning_distance" per la distanza e "lightning" per il conteggio.
+    has = lambda k: raw_data.get(k) not in (None, "")
+    if has("lightning_distance"):
+        raw_dist = raw_data.get("lightning_distance")
+        lightning_count = safe_int(raw_data.get("lightning_num") if has("lightning_num") else raw_data.get("lightning"))
+    else:
+        raw_dist = raw_data.get("lightning")
+        lightning_count = safe_int(raw_data.get("lightning_num")) if has("lightning_num") else None
+    lightning_distance_km = safe_float(raw_dist) if raw_dist not in (None, "") else None
+    if lightning_distance_km is not None and lightning_distance_km <= 0:
+        lightning_distance_km = None
     lightning_time_epoch = safe_int(raw_data.get("lightning_time"))
     
     lightning_time_iso = None

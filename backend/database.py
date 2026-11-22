@@ -839,6 +839,35 @@ def get_lightning_stats(hours: int = 24) -> Dict[str, Any]:
 # ----------------- GESTIONE RECORD & EXTREMES -----------------
 
 
+# Colonna di weather_records e verso di ogni record, per confrontarli con tutto lo storico
+RECORD_FIELDS = {
+    "temp_max": ("temp_c", "max"), "temp_min": ("temp_c", "min"), "dew_point_max": ("dew_point_c", "max"),
+    "wind_gust_max": ("wind_gust_kmh", "max"), "wind_speed_max": ("wind_speed_kmh", "max"),
+    "rain_rate_max": ("rain_rate_mm_hr", "max"), "rain_daily_max": ("daily_rain_mm", "max"),
+    "pressure_max": ("pressure_rel_hpa", "max"), "pressure_min": ("pressure_rel_hpa", "min"),
+    "uv_max": ("uv_index", "max"), "solar_max": ("solar_radiation", "max"),
+    "lightning_closest": ("lightning_distance_km", "min"),
+}
+
+
+def _stored_best(cursor, key: str, before_ts: str):
+    """Miglior valore già presente nelle letture salvate prima di before_ts (None se non disponibile)."""
+    field = RECORD_FIELDS.get(key)
+    if not field:
+        return None
+    col, kind = field
+    extra = " AND lightning_distance_km > 0" if key == "lightning_closest" else ""
+    order = "DESC" if kind == "max" else "ASC"
+    try:
+        cursor.execute(
+            f"SELECT {col} AS v, timestamp FROM weather_records WHERE {col} IS NOT NULL{extra} AND timestamp < ? "
+            f"ORDER BY {col} {order}, timestamp ASC LIMIT 1", (before_ts,))
+        row = cursor.fetchone()
+        return (float(row["v"]), row["timestamp"]) if row and row["v"] is not None else None
+    except Exception:
+        return None
+
+
 def check_and_update_records(
     data_or_key: Union[Dict[str, Any], str],
     val_arg: Optional[float] = None,
@@ -984,6 +1013,20 @@ def check_and_update_records(
                 is_broken = True
 
             if is_broken and old_val is not None:
+                # Se lo storico contiene già un valore migliore (es. record non ancora importati),
+                # non è un record vero: allinea il record a quel valore e non scrivere la cronologia.
+                best = _stored_best(cursor, key, ts)
+                if best is not None:
+                    best_val, best_ts = best
+                    beaten_by_history = (best_val >= val) if defn["type"] == "max" else (best_val <= val)
+                    if beaten_by_history:
+                        if (best_val > old_val) if defn["type"] == "max" else (best_val < old_val):
+                            cursor.execute("""
+                                INSERT OR REPLACE INTO weather_extremes (record_key, category, title, value, unit, timestamp, details_json)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """, (key, defn["category"], defn["title"], best_val, defn["unit"], best_ts, json.dumps({})))
+                        continue
+
                 # Soglie minime di variazione per evitare spam nei log e notifiche per ogni 0.1
                 min_step = 0.2
                 if key in ("temp_max", "temp_min", "temp_min_highest", "dew_point_max"):

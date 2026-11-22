@@ -480,7 +480,11 @@ class AlertEngine:
         dist_km = lightning.get("distance_km")
         if dist_km is None:
             dist_km = data.get("lightning_distance_km")
-        
+        # La stazione ripete la distanza dell'ultima scarica anche giorni dopo: vale solo se recente
+        strike_epoch = lightning.get("last_strike_epoch")
+        if dist_km is not None and not (strike_epoch and 0 <= now - strike_epoch <= 1800):
+            dist_km = None
+
         is_severe_hail_risk = (
             (rain_rate is not None and rain_rate >= 40.0) or
             (rain_rate is not None and rain_rate >= 25.0 and dist_km is not None and dist_km <= 6.0 and gust is not None and gust >= 35.0)

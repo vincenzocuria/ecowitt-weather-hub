@@ -2676,3 +2676,33 @@ def test_records_view_summary():
     assert [f["key"] for f in v["filters"]] == ["temperature", "wind", "rain", "solar", "lightning"]
     assert format_direction("284° (WNW)") == "da Ovest-Nord-Ovest · 284°"
 
+
+def test_lightning_distance_comes_from_lightning_field():
+    from backend.ecowitt_parser import parse_ecowitt_payload
+    d = parse_ecowitt_payload({"tempf": "60", "lightning_num": "6", "lightning": "5", "lightning_time": "1794742769"})
+    assert d["lightning"]["count_total"] == 6
+    assert d["lightning"]["distance_km"] == 5.0
+    assert d["lightning"]["last_strike_epoch"] == 1794742769
+    empty = parse_ecowitt_payload({"tempf": "60", "lightning_num": "0", "lightning": "", "lightning_time": ""})
+    assert empty["lightning"]["distance_km"] is None and empty["lightning"]["count_total"] == 0
+
+
+def test_record_not_logged_when_history_already_better():
+    import sqlite3
+    from backend import database as db
+    db.init_db()
+    conn = db.get_connection(); cur = conn.cursor()
+    cur.execute("DELETE FROM weather_extremes WHERE record_key IN ('temp_min','temp_max')")
+    cur.execute("DELETE FROM records_history WHERE record_key IN ('temp_min','temp_max')")
+    # storico: minima di 1.0 nel 2025, ma il record salvato dice 20.0 (storico non ancora importato)
+    cur.execute("INSERT INTO weather_records (timestamp, temp_c) VALUES ('2025-01-10T06:00:00+00:00', 1.0)")
+    cur.execute("INSERT INTO weather_extremes (record_key, category, title, value, unit, timestamp, details_json) VALUES ('temp_min','temperature','Temperatura Minima',20.0,'°C','2026-08-15T10:00:00+00:00','{}')")
+    conn.commit(); conn.close()
+    out = db.check_and_update_records({"timestamp": "2026-08-15T18:00:00+00:00", "temp_c": 18.0})
+    assert not any(r["key"] == "temp_min" for r in out)
+    conn = db.get_connection(); cur = conn.cursor()
+    v = cur.execute("SELECT value FROM weather_extremes WHERE record_key='temp_min'").fetchone()[0]
+    n = cur.execute("SELECT COUNT(*) FROM records_history WHERE record_key='temp_min'").fetchone()[0]
+    conn.close()
+    assert v == 1.0 and n == 0
+
