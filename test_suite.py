@@ -2636,3 +2636,14 @@ def test_alert_days_grouping():
     assert empty[0]["name"] == "Oggi" and empty[0]["entries"] == []
     assert alert_category("irrigation_skip_wind") == "giardino" and alert_category("rain") == "meteo"
     assert clean_alert_title("🏆 Record!") == "Record!"
+
+
+def test_radar_lightning_tab_is_not_nested_in_rain_tab():
+    import re
+    s = open("backend/templates/radar.html", encoding="utf-8").read()
+    seg = s[s.index('id="radar-view-rain"'):s.index('id="radar-view-lightning"')]
+    # la scheda Pioggia si chiude prima che inizi quella Fulmini
+    assert len(re.findall(r"<div\b", seg)) == len(re.findall(r"</div>", seg))
+    assert 'id="lightning-map-iframe" src=' not in s
+    assert "iframe.getAttribute('src')" in s
+

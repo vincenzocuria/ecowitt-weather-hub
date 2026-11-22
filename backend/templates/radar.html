@@ -103,6 +103,7 @@
                 </div>
             </div>
         </div>
+        </div>
     </div>
     <!-- FINE TAB 1: RADAR PIOGGIA -->
 
@@ -173,7 +174,7 @@
 
         <!-- MAPPA LIVE FULMINI BLITZORTUNG A TUTTO SCHERMO -->
         <div class="radar-container" style="height: 620px; position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--border, rgba(255,255,255,0.1)); box-shadow: 0 8px 24px rgba(0,0,0,0.3);">
-            <iframe id="lightning-map-iframe" src="" data-src="https://map.blitzortung.org/#8/{{ lat or 41.9028 }}/{{ lon or 12.4964 }}" style="width: 100%; height: 100%; border: 0; display: block; background: #121212;" title="Mappa Fulmini Live Blitzortung" loading="lazy" allowfullscreen></iframe>
+            <iframe id="lightning-map-iframe" data-src="https://map.blitzortung.org/#8/{{ lat or 41.9028 }}/{{ lon or 12.4964 }}" style="width: 100%; height: 100%; border: 0; display: block; background: #121212;" title="Mappa Fulmini Live Blitzortung" loading="lazy" allowfullscreen></iframe>
         </div>
     </div>
     <!-- FINE TAB 2: RADAR FULMINI -->
@@ -547,7 +548,8 @@
                 btnRain.style.opacity = '0.85';
             }
             stopPlay();
-            if (iframe && !iframe.src && iframe.dataset.src) {
+            // src="" fa restituire a iframe.src l'indirizzo della pagina: si guarda l'attributo vero
+            if (iframe && !iframe.getAttribute('src') && iframe.dataset.src) {
                 iframe.src = iframe.dataset.src;
             }
         }
