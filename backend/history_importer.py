@@ -265,6 +265,8 @@ class WeatherHistoryImporter:
         return self.get_status()
 
     def _insert_records_batch(self, records: List[Dict[str, Any]]) -> int:
+        from backend.database import invalidate_rain_cache
+        invalidate_rain_cache()
         if not records:
             return 0
 

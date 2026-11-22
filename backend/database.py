@@ -1762,6 +1762,14 @@ def get_wind_samples(hours: int = 24) -> List[Dict[str, Any]]:
         conn.close()
 
 
+_RAIN_DAYS_CACHE: Dict[str, Any] = {}
+
+
+def invalidate_rain_cache() -> None:
+    """Da chiamare quando cambiano letture di giorni passati (importazioni, compattazione)."""
+    _RAIN_DAYS_CACHE.clear()
+
+
 def get_recent_rain_totals() -> Dict[str, float]:
     """
     Calcola gli accumuli pioggia degli ultimi 7 giorni, del mese in corso e dell'anno dal 1° gennaio.
@@ -1780,13 +1788,27 @@ def get_recent_rain_totals() -> Dict[str, float]:
     # Unica scansione dal punto più vecchio richiesto: massimo giornaliero per giorno LOCALE
     # (daily_rain_mm si azzera alla mezzanotte locale della stazione).
     scan_start_utc = min(week_start_utc, month_start_utc, year_start_utc)
+    # I giorni già chiusi non cambiano più: si calcolano una volta al giorno e si tengono in memoria,
+    # così ogni apertura della Home rilegge solo le letture di oggi (prima: tutte quelle dall'inizio dell'anno).
+    today_start_utc = datetime(now.year, now.month, now.day, tzinfo=tz).astimezone(timezone.utc).isoformat()
+    cache_key = (scan_start_utc[:10], today_start_utc)
+    if _RAIN_DAYS_CACHE.get("key") != cache_key:
+        cursor.execute("""
+            SELECT local_date(timestamp) as day, MAX(daily_rain_mm) as day_rain
+            FROM weather_records
+            WHERE timestamp >= ? AND timestamp < ? AND daily_rain_mm IS NOT NULL
+            GROUP BY local_date(timestamp)
+        """, (scan_start_utc, today_start_utc))
+        _RAIN_DAYS_CACHE["days"] = {r["day"]: float(r["day_rain"] or 0) for r in cursor.fetchall()}
+        _RAIN_DAYS_CACHE["key"] = cache_key
     cursor.execute("""
         SELECT local_date(timestamp) as day, MAX(daily_rain_mm) as day_rain
         FROM weather_records
         WHERE timestamp >= ? AND daily_rain_mm IS NOT NULL
         GROUP BY local_date(timestamp)
-    """, (scan_start_utc,))
-    day_max = {r["day"]: float(r["day_rain"] or 0) for r in cursor.fetchall()}
+    """, (max(scan_start_utc, today_start_utc),))
+    day_max = dict(_RAIN_DAYS_CACHE["days"])
+    day_max.update({r["day"]: float(r["day_rain"] or 0) for r in cursor.fetchall()})
 
     week_start_day = (now - timedelta(days=7)).strftime("%Y-%m-%d")
     month_start_day = month_start_local.strftime("%Y-%m-%d")
@@ -2410,6 +2432,7 @@ def perform_database_maintenance(retention_days: int = 60) -> Dict[str, Any]:
 
     # 1-2. Downsampling orario di meteo ed energia (giorno per giorno)
     compressed_buckets, purged_records = _downsample_table_hourly(conn, "weather_records", _WEATHER_DOWNSAMPLE_COLUMNS, cutoff_day)
+    invalidate_rain_cache()
     _, purged_energy = _downsample_table_hourly(conn, "energy_records", _ENERGY_DOWNSAMPLE_COLUMNS, cutoff_day)
 
     # 3. Checkpoint WAL & Ottimizzazione indici SQLite
